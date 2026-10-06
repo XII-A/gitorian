@@ -191,6 +191,22 @@ export class GitHub {
         }
         return activities
     }
+    async commitDetails(repository: Repository, sha: string): Promise<{ diff: string; files: Activity['files'] }> {
+        const remote = githubRemote(repository.remote)
+        if (!remote || !/^[a-f0-9]{40,64}$/.test(sha)) throw new Error('GitHub commit source is unavailable')
+        const path = `repos/${remote}/commits/${sha}`
+        const metadata = await this.request<{ files: File[] }>(path)
+        const diff = await this.http.request<string>(
+            `https://api.github.com/${path}`,
+            this.token(),
+            { headers: { Accept: 'application/vnd.github.diff' } },
+            'text'
+        )
+        return {
+            diff: diff.length <= 2_000_000 ? diff : 'Diff is too large. Open in GitHub.',
+            files: metadata.files.map((file) => ({ name: file.filename, status: file.status }))
+        }
+    }
     async snapshot(
         repository: Repository,
         activity: Activity
@@ -200,21 +216,39 @@ export class GitHub {
         if (!remote || !number) throw new Error('GitHub remote is unavailable')
         const path = `repos/${remote}/pulls/${number}`
         const before = await this.request<Pull>(path)
+        const integration =
+            before.merged_at && before.merge_commit_sha
+                ? await this.request<{ parents: { sha: string }[] }>(
+                      `repos/${remote}/commits/${before.merge_commit_sha}`
+                  )
+                : undefined
+        // A linear integration tip may be only the last of several rebased commits.
+        // Only a true merge proves that its first-parent diff includes the full integration.
+        const provenIntegration = integration && integration.parents.length > 1
+        const diffPath = provenIntegration ? `repos/${remote}/commits/${before.merge_commit_sha}` : path
         const diff = await this.http.request<string>(
-            `https://api.github.com/${path}`,
+            `https://api.github.com/${diffPath}`,
             this.token(),
             { headers: { Accept: 'application/vnd.github.diff' } },
             'text'
         )
         const after = await this.request<Pull>(path)
-        if (before.base.sha !== after.base.sha || before.head.sha !== after.head.sha)
+        if (
+            before.base.sha !== after.base.sha ||
+            before.head.sha !== after.head.sha ||
+            before.merge_commit_sha !== after.merge_commit_sha ||
+            before.merged_at !== after.merged_at
+        )
             throw new Error('PR changed while capturing its revision; refresh and try again')
-        const comparable = !/Binary files .* differ/.test(diff) && !diff.includes('GIT binary patch')
+        const comparable =
+            (!integration || provenIntegration) &&
+            !/Binary files .* differ/.test(diff) &&
+            !diff.includes('GIT binary patch')
         return {
             diff: diff.length <= 2_000_000 ? diff : 'Diff is too large. Open in GitHub.',
             fingerprint: comparable ? fingerprint(diff) : undefined,
-            base: before.base.sha,
-            head: before.head.sha
+            base: provenIntegration ? integration.parents[0].sha : before.base.sha,
+            head: integration ? before.merge_commit_sha! : before.head.sha
         }
     }
 }

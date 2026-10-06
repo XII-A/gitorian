@@ -7,7 +7,7 @@ const backendFiles = [
     'src/shared/**/*.ts',
     'tests/**/*.ts',
     '*.ts',
-    'tools/**/*.{js,ts}'
+    'tools/**/*.{js,mjs,ts}'
 ]
 
 const eslintRecommendedRules = {

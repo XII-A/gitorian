@@ -5,6 +5,7 @@ import { promisify } from 'node:util'
 import { execFile } from 'node:child_process'
 import { commits } from '../src/main/git'
 import { workspace } from './fixtures'
+import { inbox, weekOf } from '../src/shared/model'
 
 it('uses author dates after rewriting commits and compares ordinary branches against development', async () => {
     const app = await workspace()
@@ -69,6 +70,71 @@ it('retains captured metadata, diffs, features and journal associations after a 
         expect(app.store.state.coverage[0].activityId).toBe(activity.id)
         expect(app.store.state.diffs).toHaveProperty(activity.id)
         expect(app.store.state.features[0].members).toContain(`branch:${app.repository.id}:temporary`)
+    } finally {
+        await app.close()
+    }
+})
+
+it('keeps other authors searchable without admitting their history to the personal inbox', async () => {
+    const app = await workspace()
+    try {
+        await app.git(
+            'commit',
+            '--allow-empty',
+            '--author',
+            'Someone else <other@example.com>',
+            '-m',
+            'Other author work'
+        )
+        await app.service.handle({
+            type: 'history',
+            repositoryId: app.repository.id,
+            branch: 'development',
+            view: 'history',
+            author: '',
+            since: ''
+        })
+        const other = app.store.state.activities.find((item) => item.title === 'Other author work')!
+        expect(other).toBeDefined()
+        expect(
+            inbox(app.store.state, weekOf(new Date(), app.store.state.settings)).some((item) => item.id === other.id)
+        ).toBe(false)
+        await app.service.handle({ type: 'newDraft', week: weekOf(new Date(), app.store.state.settings) })
+        await app.service.handle({
+            type: 'select',
+            draftId: app.store.state.drafts[0].id,
+            activityId: other.id,
+            included: true
+        })
+        expect(
+            inbox(app.store.state, weekOf(new Date(), app.store.state.settings)).some((item) => item.id === other.id)
+        ).toBe(true)
+    } finally {
+        await app.close()
+    }
+})
+
+it('uses the linked PR target when browsing a remote-tracking branch', async () => {
+    const app = await workspace()
+    try {
+        await app.git('commit', '--allow-empty', '-m', 'Development ahead of main')
+        await app.git('checkout', '-b', 'feature')
+        await app.git('commit', '--allow-empty', '-m', 'Feature work')
+        await app.git('remote', 'add', 'origin', 'https://github.com/example/project.git')
+        await app.git('update-ref', 'refs/remotes/origin/feature', await app.git('rev-parse', 'feature'))
+        app.remote.github = true
+        await app.service.handle({ type: 'refresh' })
+        const reply = await app.service.handle({
+            type: 'history',
+            repositoryId: app.repository.id,
+            branch: 'origin/feature',
+            view: 'introduced',
+            author: '',
+            since: ''
+        })
+        expect(reply.message).toBe('Comparison: main')
+        expect(reply.activityIds).toHaveLength(2)
+        expect(app.repository.base).toBe('development')
     } finally {
         await app.close()
     }

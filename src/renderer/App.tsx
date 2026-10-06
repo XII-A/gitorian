@@ -1,13 +1,13 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
-import { ArrowLeft, ArrowRight, BookOpen, GitBranch, RefreshCw, Settings as SettingsIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BookOpen, RefreshCw, Settings as SettingsIcon } from 'lucide-react'
 import { coveredEntries, defaultLayout, inbox, featureActivities, shiftWeek, weekOf } from '../shared/model'
 import type { Activity, Command, Draft, Entry, Reply, State } from '../shared/model'
 import { plainText } from '../shared/notion-format'
 import { Button } from './components/arc/button/button'
-import { Editor } from './Editor'
+import { DraftPane } from './DraftPane'
 import { Settings } from './Settings'
-import { DiffViewer } from './DiffViewer'
+import { DetailsPane } from './DetailsPane'
 
 export function App() {
     const [state, setState] = useState<State>()
@@ -20,6 +20,7 @@ export function App() {
     const [week, setWeek] = useState('')
     const [error, setError] = useState('')
     const [busy, setBusy] = useState(false)
+    const [layoutReset, setLayoutReset] = useState(0)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [search, setSearch] = useState('')
     const [repositoryId, setRepositoryId] = useState('')
@@ -27,7 +28,6 @@ export function App() {
     const [view, setView] = useState('inbox')
     const [selectedId, setSelectedId] = useState('')
     const [entryId, setEntryId] = useState('')
-    const [diff, setDiff] = useState('')
     const [historyIds, setHistoryIds] = useState<string[]>([])
     const [comparison, setComparison] = useState('')
     const [branch, setBranch] = useState('')
@@ -36,12 +36,10 @@ export function App() {
     const [since, setSince] = useState('')
     const [draft, setDraft] = useState<Draft>()
     const draftRef = useRef<Draft | undefined>(undefined)
+    const restoredId = useRef<string | undefined>(undefined)
     const saveQueue = useRef(Promise.resolve())
     const [saveStatus, setSaveStatus] = useState('Saved locally')
     const [featureName, setFeatureName] = useState('')
-    const [deferWeek, setDeferWeek] = useState('')
-    const [reason, setReason] = useState('')
-    const [linkEntry, setLinkEntry] = useState('')
     const [insertLink, setInsertLink] = useState<{ url: string; title: string; nonce: number }>()
     const parameters = new URLSearchParams(window.location.search)
     const reference = parameters.get('reference')
@@ -96,6 +94,10 @@ export function App() {
     }
     useEffect(() => {
         if (!state || reference) return
+        if (restoredId.current !== state.restoreId) {
+            draftRef.current = undefined
+            restoredId.current = state.restoreId
+        }
         const current = draftRef.current
         if (!current || current.week !== week) {
             const candidate = state.drafts.filter((item) => item.week === week && !item.publishedEntryId).at(-1)
@@ -115,9 +117,7 @@ export function App() {
         if (reference === 'entry') setEntryId(referenceId)
         else {
             setSelectedId(referenceId)
-            void run({ type: 'details', activityId: referenceId }).then((reply) => {
-                setDiff(reply?.diff ?? '')
-            })
+            void run({ type: 'details', activityId: referenceId })
         }
     }, [reference, referenceId, run])
     if (!state)
@@ -133,6 +133,11 @@ export function App() {
     const repository = state.repositories.find((item) => item.id === repositoryId)
     const feature = state.features.find((item) => item.id === featureId)
     const featureItems = featureId ? featureActivities(state, featureId).map((item) => item.id) : undefined
+    const matchingFeatureWork = new Set(
+        state.features
+            .filter((item) => search && item.name.toLowerCase().includes(search.toLowerCase()))
+            .flatMap((item) => featureActivities(state, item.id).map((activity) => activity.id))
+    )
     let items: Activity[] =
         view === 'inbox'
             ? inbox(state, week)
@@ -148,7 +153,8 @@ export function App() {
             (item) =>
                 (!repositoryId || item.repositoryId === repositoryId) &&
                 (!featureItems || featureItems.includes(item.id)) &&
-                `${item.title} ${item.description} ${item.author}`.toLowerCase().includes(search.toLowerCase())
+                (`${item.title} ${item.description} ${item.author}`.toLowerCase().includes(search.toLowerCase()) ||
+                    matchingFeatureWork.has(item.id))
         )
         .sort((left, right) => right.date.localeCompare(left.date))
     const entries = state.entries.filter((item) =>
@@ -157,9 +163,7 @@ export function App() {
     const selectActivity = async (item: Activity) => {
         setSelectedId(item.id)
         setEntryId('')
-        setDiff('')
-        const result = await run({ type: 'details', activityId: item.id })
-        setDiff(result?.diff ?? '')
+        await run({ type: 'details', activityId: item.id })
     }
     const showEntry = (value: Entry) => {
         setEntryId(value.id)
@@ -168,333 +172,16 @@ export function App() {
     const changeLayout = (layout: State['settings']['layout']) =>
         run({ type: 'settings', settings: { ...state.settings, layout } })
     const details = (
-        <section className="pane details">
-            <header className="pane-header">
-                <span>{entry ? 'JOURNAL ENTRY' : 'WORK DETAILS'}</span>
-                {(activity || entry) && !reference && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                            run({ type: 'popout', kind: entry ? 'entry' : 'activity', id: entry?.id ?? activity!.id })
-                        }
-                    >
-                        Pop out ↗
-                    </Button>
-                )}
-            </header>
-            <div className="pane-content">
-                {entry ? (
-                    <>
-                        <h2>{entry.title}</h2>
-                        <p className="muted">
-                            {new Date(entry.date).toLocaleDateString()} · Cached{' '}
-                            {new Date(entry.refreshedAt).toLocaleString()}
-                        </p>
-                        <Button variant="secondary" onClick={() => run({ type: 'open', url: entry.url })}>
-                            Open in Notion ↗
-                        </Button>
-                        <Editor key={entry.id} value={entry.body} readOnly />
-                    </>
-                ) : activity ? (
-                    <>
-                        <p className="eyebrow">
-                            {state.repositories.find((item) => item.id === activity.repositoryId)?.name} /{' '}
-                            {activity.kind}
-                        </p>
-                        <h2>{activity.title}</h2>
-                        <p className="muted">
-                            {activity.author} · {new Date(activity.date).toLocaleString()}
-                            <br />
-                            {activity.sha?.slice(0, 12)}
-                        </p>
-                        {activity.base && (
-                            <p className="comparison">
-                                Comparison: <strong>{activity.base}</strong>
-                            </p>
-                        )}
-                        {activity.deletedBranches.length > 0 && (
-                            <p className="muted">
-                                Deleted branches: {activity.deletedBranches.join(', ')} · History retained
-                            </p>
-                        )}
-                        <div className="row wrap">
-                            {activity.url && (
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => run({ type: 'open', url: activity.url! })}
-                                >
-                                    Open in GitHub ↗
-                                </Button>
-                            )}
-                            {draft && !draft.publishedEntryId && !reference && (
-                                <Button
-                                    size="sm"
-                                    onClick={() =>
-                                        run({
-                                            type: 'select',
-                                            draftId: draft.id,
-                                            activityId: activity.id,
-                                            included: !draft.selections.some((item) => item.activityId === activity.id)
-                                        })
-                                    }
-                                >
-                                    {draft.selections.some((item) => item.activityId === activity.id)
-                                        ? 'Remove from draft'
-                                        : 'Include in draft'}
-                                </Button>
-                            )}
-                            {activity.kind === 'pr' && activity.url && draft && !reference && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                        setInsertLink({ url: activity.url!, title: activity.title, nonce: Date.now() })
-                                    }}
-                                >
-                                    Insert PR link
-                                </Button>
-                            )}
-                        </div>
-                        <div className="coverage">
-                            <h3>Journal coverage</h3>
-                            {coveredEntries(state, activity).map((value) => (
-                                <div key={value.id} className="row">
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() => {
-                                            showEntry(value)
-                                        }}
-                                    >
-                                        {value.title}
-                                    </Button>
-                                    {!reference && (
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() =>
-                                                run({
-                                                    type: 'coverage',
-                                                    activityId: activity.id,
-                                                    entryId: value.id,
-                                                    linked: false
-                                                })
-                                            }
-                                        >
-                                            Unlink
-                                        </Button>
-                                    )}
-                                </div>
-                            ))}
-                            {!coveredEntries(state, activity).length && (
-                                <p className="muted">
-                                    {activity.kind === 'pr' &&
-                                    state.coverage.some((link) => link.activityId === activity.id)
-                                        ? 'Updated work · earlier revisions have journal entries'
-                                        : 'Uncovered work'}
-                                </p>
-                            )}
-                            {activity.kind === 'pr' &&
-                                state.coverage
-                                    .filter(
-                                        (link) => link.activityId === activity.id && link.revision !== activity.revision
-                                    )
-                                    .map((link) => (
-                                        <Button
-                                            key={`${link.entryId}:${link.revision}`}
-                                            variant="ghost"
-                                            onClick={() => {
-                                                const prior = state.entries.find((value) => value.id === link.entryId)
-                                                if (prior) showEntry(prior)
-                                            }}
-                                        >
-                                            Previously:{' '}
-                                            {state.entries.find((value) => value.id === link.entryId)?.title ??
-                                                'Saved entry'}
-                                        </Button>
-                                    ))}
-                            {!reference && entries.length > 0 && (
-                                <div className="row">
-                                    <label>
-                                        Link existing entry
-                                        <select
-                                            value={linkEntry}
-                                            onChange={(event) => {
-                                                setLinkEntry(event.target.value)
-                                            }}
-                                        >
-                                            <option value="">Choose entry</option>
-                                            {state.entries.map((value) => (
-                                                <option key={value.id} value={value.id}>
-                                                    {value.title}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </label>
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        disabled={!linkEntry}
-                                        onClick={() =>
-                                            run({
-                                                type: 'coverage',
-                                                activityId: activity.id,
-                                                entryId: linkEntry,
-                                                linked: true
-                                            })
-                                        }
-                                    >
-                                        Link
-                                    </Button>
-                                </div>
-                            )}
-                        </div>
-                        <p className="description">{activity.description}</p>
-                        {activity.files.length > 0 && (
-                            <details>
-                                <summary>{activity.files.length} changed files</summary>
-                                {activity.files.map((file) => (
-                                    <p className="path" key={file.name}>
-                                        {file.status} · {file.name}
-                                    </p>
-                                ))}
-                            </details>
-                        )}
-                        <DiffViewer key={activity.id} text={diff || state.diffs[activity.id] || ''} />
-                        {!reference && (
-                            <details className="decisions">
-                                <summary>Inbox decisions & features</summary>
-                                <label>
-                                    Defer to week
-                                    <input
-                                        type="date"
-                                        value={deferWeek}
-                                        onChange={(event) => {
-                                            setDeferWeek(event.target.value)
-                                        }}
-                                    />
-                                </label>
-                                <Button
-                                    variant="secondary"
-                                    disabled={!deferWeek}
-                                    onClick={() =>
-                                        run({
-                                            type: 'disposition',
-                                            activityId: activity.id,
-                                            disposition: 'deferred',
-                                            until: weekOf(new Date(`${deferWeek}T12:00:00`), state.settings)
-                                        })
-                                    }
-                                >
-                                    Defer
-                                </Button>
-                                <label>
-                                    Dismiss reason (optional)
-                                    <input
-                                        value={reason}
-                                        onChange={(event) => {
-                                            setReason(event.target.value)
-                                        }}
-                                    />
-                                </label>
-                                <div className="row">
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() =>
-                                            run({
-                                                type: 'disposition',
-                                                activityId: activity.id,
-                                                disposition: 'dismissed',
-                                                reason
-                                            })
-                                        }
-                                    >
-                                        Dismiss
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() =>
-                                            run({ type: 'disposition', activityId: activity.id, disposition: 'inbox' })
-                                        }
-                                    >
-                                        Return to inbox
-                                    </Button>
-                                </div>
-                                {state.features.map((value) => (
-                                    <div key={value.id}>
-                                        <label className="row">
-                                            <input
-                                                type="checkbox"
-                                                checked={value.members.includes(activity.id)}
-                                                onChange={(event) =>
-                                                    run({
-                                                        type: 'feature',
-                                                        ...value,
-                                                        members: event.target.checked
-                                                            ? [...value.members, activity.id]
-                                                            : value.members.filter((id) => id !== activity.id)
-                                                    })
-                                                }
-                                            />
-                                            {value.name}
-                                            {value.archived && ' (archived)'}
-                                        </label>
-                                        {activity.prId && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() =>
-                                                    run({
-                                                        type: 'feature',
-                                                        ...value,
-                                                        members: value.members.includes(activity.prId!)
-                                                            ? value.members.filter((id) => id !== activity.prId)
-                                                            : [...value.members, activity.prId!]
-                                                    })
-                                                }
-                                            >
-                                                {value.members.includes(activity.prId)
-                                                    ? 'Remove PR membership'
-                                                    : 'Track future PR work'}
-                                            </Button>
-                                        )}
-                                        {activity.branches.map((name) => (
-                                            <Button
-                                                key={name}
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    const id = `branch:${activity.repositoryId}:${name}`
-                                                    return run({
-                                                        type: 'feature',
-                                                        ...value,
-                                                        members: value.members.includes(id)
-                                                            ? value.members.filter((member) => member !== id)
-                                                            : [...value.members, id]
-                                                    })
-                                                }}
-                                            >
-                                                {value.members.includes(`branch:${activity.repositoryId}:${name}`)
-                                                    ? 'Untrack'
-                                                    : 'Track'}{' '}
-                                                {name}
-                                            </Button>
-                                        ))}
-                                    </div>
-                                ))}
-                            </details>
-                        )}
-                    </>
-                ) : (
-                    <div className="empty">
-                        <GitBranch size={36} />
-                        <h2>Make room for reflection.</h2>
-                        <p>Choose work on the left to inspect changes and see what you’ve already written.</p>
-                    </div>
-                )}
-            </div>
-        </section>
+        <DetailsPane
+            state={state}
+            activity={activity}
+            entry={entry}
+            draft={draft}
+            reference={!!reference}
+            run={run}
+            showEntry={showEntry}
+            setInsertLink={setInsertLink}
+        />
     )
     if (reference)
         return (
@@ -770,172 +457,42 @@ export function App() {
         ),
         details,
         draft: (
-            <section className="pane draft-pane">
-                <header className="pane-header">
-                    <span>YOUR REFLECTION</span>
-                    <span className="local-label">LOCAL DRAFT</span>
-                </header>
-                <div className="pane-content">
-                    <div className="row between">
-                        <label>
-                            Draft
-                            <select
-                                value={draft?.id ?? ''}
-                                onChange={async (event) => {
-                                    await saveQueue.current
-                                    setActiveDraft(state.drafts.find((item) => item.id === event.target.value))
-                                    setInsertLink(undefined)
-                                }}
-                            >
-                                <option value="">Choose draft</option>
-                                {state.drafts
-                                    .filter((item) => item.week === week)
-                                    .map((item) => (
-                                        <option key={item.id} value={item.id}>
-                                            {item.title}
-                                            {item.publishedEntryId ? ' · published' : ''}
-                                        </option>
-                                    ))}
-                            </select>
-                        </label>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={async () => {
-                                await saveQueue.current
-                                const result = await run({ type: 'newDraft', week })
-                                if (result) setActiveDraft(result.state.drafts.at(-1))
-                            }}
-                        >
-                            New entry
-                        </Button>
-                    </div>
-                    {draft ? (
-                        <>
-                            <label className="sr-only" htmlFor="draft-title">
-                                Draft title
-                            </label>
-                            <input
-                                id="draft-title"
-                                className="draft-title"
-                                value={draft.title}
-                                disabled={!!draft.publishedEntryId}
-                                onChange={(event) => {
-                                    editDraft({ ...draft, title: event.target.value })
-                                }}
-                            />
-                            <Editor
-                                key={draft.id}
-                                value={draft.body}
-                                readOnly={!!draft.publishedEntryId}
-                                onChange={(body) => {
-                                    const latest = draftRef.current
-                                    if (latest) editDraft({ ...latest, body })
-                                }}
-                                insertLink={insertLink}
-                            />
-                            <div className="selected-work">
-                                <h3>
-                                    Included work <span className="muted">{draft.selections.length}</span>
-                                </h3>
-                                {draft.selections.map((selection) => (
-                                    <div className="row" key={selection.activityId}>
-                                        <span>
-                                            {state.activities.find((item) => item.id === selection.activityId)?.title ??
-                                                selection.activityId}
-                                            {selection.revision && (
-                                                <small className="muted"> · Captured revision</small>
-                                            )}
-                                        </span>
-                                        {!draft.publishedEntryId && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() =>
-                                                    run({
-                                                        type: 'select',
-                                                        draftId: draft.id,
-                                                        activityId: selection.activityId,
-                                                        included: false
-                                                    })
-                                                }
-                                            >
-                                                Remove
-                                            </Button>
-                                        )}
-                                    </div>
-                                ))}
-                                <p className="muted">
-                                    Coverage is confirmed only after saving to Notion. Selecting work does not add it to
-                                    your prose.
-                                </p>
-                            </div>
-                            {state.saves
-                                .filter((save) => save.draftId === draft.id && save.status !== 'confirmed')
-                                .map((save) => (
-                                    <div className="save-warning" key={save.id}>
-                                        <p>
-                                            {save.status === 'failed'
-                                                ? 'Save failed. Your draft is safe.'
-                                                : 'Save outcome is uncertain; coverage is pending.'}
-                                        </p>
-                                        <p>{save.error}</p>
-                                        {save.status === 'unknown' && (
-                                            <Button
-                                                variant="secondary"
-                                                onClick={() => run({ type: 'reconcile', saveId: save.id })}
-                                            >
-                                                Verify Notion save
-                                            </Button>
-                                        )}
-                                    </div>
-                                ))}
-                            <footer className="draft-footer">
-                                <span className="muted" role="status">
-                                    {saveStatus}
-                                </span>
-                                {draft.publishedEntryId ? (
-                                    <Button
-                                        onClick={() => {
-                                            const saved = state.entries.find(
-                                                (item) => item.id === draft.publishedEntryId
-                                            )
-                                            if (saved) showEntry(saved)
-                                        }}
-                                    >
-                                        View saved entry
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        loading={busy}
-                                        onClick={async () => {
-                                            setBusy(true)
-                                            await saveQueue.current
-                                            const latest = draftRef.current
-                                            const persisted = latest
-                                                ? await run({ type: 'draft', draft: latest })
-                                                : undefined
-                                            if (persisted) await run({ type: 'publish', draftId: draft.id })
-                                            setBusy(false)
-                                        }}
-                                    >
-                                        Save to Notion ↗
-                                    </Button>
-                                )}
-                            </footer>
-                        </>
-                    ) : (
-                        <div className="empty">
-                            <BookOpen size={36} />
-                            <h2>What did this week teach you?</h2>
-                            <p>
-                                Create an entry when you’re ready. Your writing stays on this machine until you save to
-                                Notion.
-                            </p>
-                        </div>
-                    )}
-                </div>
-            </section>
+            <DraftPane
+                state={state}
+                week={week}
+                draft={draft}
+                busy={busy}
+                saveStatus={saveStatus}
+                insertLink={insertLink}
+                run={run}
+                showEntry={showEntry}
+                onEdit={editDraft}
+                onBodyChange={(body) => {
+                    const latest = draftRef.current
+                    if (latest) editDraft({ ...latest, body })
+                }}
+                onChoose={async (id) => {
+                    await saveQueue.current
+                    const result = await run({ type: 'state' })
+                    if (result) setActiveDraft(result.state.drafts.find((item) => item.id === id))
+                    setInsertLink(undefined)
+                }}
+                onCreate={async () => {
+                    await saveQueue.current
+                    const result = await run({ type: 'newDraft', week })
+                    if (result) setActiveDraft(result.state.drafts.at(-1))
+                    setInsertLink(undefined)
+                }}
+                onPublish={async () => {
+                    if (!draft) return
+                    setBusy(true)
+                    await saveQueue.current
+                    const latest = draftRef.current
+                    const persisted = latest ? await run({ type: 'draft', draft: latest }) : undefined
+                    if (persisted) await run({ type: 'publish', draftId: draft.id })
+                    setBusy(false)
+                }}
+            />
         )
     }
     const layout = state.settings.layout
@@ -1024,7 +581,13 @@ export function App() {
                     >
                         Writing focus
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => changeLayout(structuredClone(defaultLayout))}>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={async () => {
+                            if (await changeLayout(structuredClone(defaultLayout))) setLayoutReset((value) => value + 1)
+                        }}
+                    >
                         Reset layout
                     </Button>
                     {layout.order.map((id, index) => (
@@ -1078,7 +641,7 @@ export function App() {
                 </div>
             )}
             <Group
-                key={visible.join(':')}
+                key={`${visible.join(':')}:${layoutReset}`}
                 orientation="horizontal"
                 defaultLayout={layout.sizes}
                 onLayoutChanged={(sizes) => {

@@ -17,7 +17,8 @@
         "format:check": "oxfmt --check .",
         "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
         "package": "npm run build && electron-builder",
-        "package:dir": "npm run build && electron-builder --dir"
+        "package:dir": "npm run build && electron-builder --dir",
+        "smoke": "electron tools/desktop-smoke.mjs"
     },
     "build": {
         "appId": "io.github.xiia.weeklyj",

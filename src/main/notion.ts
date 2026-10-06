@@ -96,7 +96,17 @@ export class Notion {
         children.unshift({
             object: 'block',
             type: 'paragraph',
-            paragraph: { rich_text: [{ type: 'text', text: { content: save.marker } }] }
+            paragraph: {
+                rich_text: [
+                    {
+                        type: 'text',
+                        text: {
+                            content: 'Published with weekly-j',
+                            link: { url: `https://github.com/XII-A/weekly-j#${save.marker}` }
+                        }
+                    }
+                ]
+            }
         })
         const batches = this.batches(children)
         const destination = save.destination

@@ -76,9 +76,15 @@ export function transport() {
         token: '',
         patch,
         head: 'a'.repeat(40),
+        authorDate: '2026-10-06T10:00:00Z',
+        authorEmail: 'second@example.com',
+        merged: false,
+        mergeParents: ['b'.repeat(40), 'a'.repeat(40)],
+        finalPatch: patch,
         failCreate: false,
         loseCreateResponse: false,
         failAppend: false,
+        failDiff: false,
         fetch: (input: string | URL | Request, init: RequestInit = {}): Promise<Response> =>
             Promise.resolve().then(() => {
                 const url = input instanceof Request ? input.url : String(input)
@@ -95,20 +101,29 @@ export function transport() {
                         body: 'Context',
                         html_url: 'https://github.com/example/project/pull/1',
                         created_at: '2026-10-05T10:00:00Z',
-                        merged_at: '2026-10-07T10:00:00Z',
-                        merge_commit_sha: 'c'.repeat(40),
+                        merged_at: remote.merged ? '2026-10-07T10:00:00Z' : null,
+                        merge_commit_sha: remote.merged ? 'c'.repeat(40) : null,
                         user: { login: 'someone-else' },
                         base: { ref: 'main', sha: 'b'.repeat(40) },
                         head: { ref: 'feature', sha: remote.head }
                     }
-                    if (new Headers(init.headers).get('Accept') === 'application/vnd.github.diff')
-                        return new Response(remote.patch)
+                    if (new Headers(init.headers).get('Accept') === 'application/vnd.github.diff') {
+                        if (remote.failDiff) throw new Error('Diff connection unavailable')
+                        return new Response(
+                            url.includes(`/commits/${'c'.repeat(40)}`) ? remote.finalPatch : remote.patch
+                        )
+                    }
+                    if (/\/commits\/[a-f0-9]+/.test(url))
+                        return json({
+                            files: [{ filename: 'a.ts', status: 'modified' }],
+                            parents: remote.mergeParents.map((sha) => ({ sha }))
+                        })
                     if (url.includes('/commits'))
                         return json([
                             {
                                 sha: 'd'.repeat(40),
                                 commit: {
-                                    author: { email: 'second@example.com', date: '2026-10-06T10:00:00Z' },
+                                    author: { email: remote.authorEmail, date: remote.authorDate },
                                     message: 'My contribution'
                                 }
                             }

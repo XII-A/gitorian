@@ -44,6 +44,7 @@ export const activitySchema = z.object({
     description: z.string(),
     files: z.array(z.object({ name: z.string(), status: z.string() })),
     revision: z.string().optional(),
+    diffRevision: z.string().optional(),
     base: z.string().optional(),
     head: z.string().optional(),
     fingerprint: z.string().optional(),
@@ -80,6 +81,7 @@ export const destinationSchema = z.object({
 })
 export const stateSchema = z.object({
     version: z.literal(1),
+    restoreId: z.string().optional(),
     repositories: z.array(repositorySchema),
     activities: z.array(activitySchema),
     drafts: z.array(draftSchema),
@@ -192,7 +194,7 @@ export function coveredEntries(state: State, activity: Activity): Entry[] {
         .filter(
             (link) =>
                 link.activityId === activity.id &&
-                (activity.kind !== 'pr' || (activity.fingerprint !== undefined && link.revision === activity.revision))
+                (activity.kind !== 'pr' || (activity.revision !== undefined && link.revision === activity.revision))
         )
         .map((link) => link.entryId)
     return state.entries.filter((entry) => ids.includes(entry.id))
@@ -222,6 +224,12 @@ export function inbox(state: State, week: string): Activity[] {
             return false
         if (activity.disposition === 'deferred') return !!activity.deferUntil && activity.deferUntil <= week
         const date = localDate(new Date(activity.date), state.settings.timezone)
+        if (
+            activity.kind === 'commit' &&
+            !activity.explicit &&
+            !repository.emails.some((email) => email.toLowerCase() === activity.author.toLowerCase())
+        )
+            return false
         return date < end && (activity.explicit || date >= repository.trackingStart)
     })
 }

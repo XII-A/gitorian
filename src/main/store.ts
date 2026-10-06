@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
+import { randomUUID } from 'node:crypto'
 import { initialState, stateSchema } from '../shared/model'
 import type { State } from '../shared/model'
 
@@ -30,6 +31,7 @@ export class Store {
     }
     restore(json: string): void {
         const restored = stateSchema.parse(JSON.parse(json))
+        restored.restoreId = randomUUID()
         for (const repository of restored.repositories) {
             repository.path = ''
             repository.available = false

@@ -102,7 +102,10 @@ export function fromNotion(blocks: NotionBlock[]): JournalNode {
         const nested = item.children?.length ? (fromNotion(item.children).content ?? []) : []
         if (
             item.type === 'paragraph' &&
-            plainText({ type: 'paragraph', content: text }).startsWith('weekly-j-operation:')
+            plainText({ type: 'paragraph', content: text }) === 'Published with weekly-j' &&
+            data?.rich_text?.some((value) =>
+                value.text?.link?.url.startsWith('https://github.com/XII-A/weekly-j#weekly-j-operation:')
+            )
         )
             continue
         if (['bulleted_list_item', 'numbered_list_item', 'to_do'].includes(item.type)) {

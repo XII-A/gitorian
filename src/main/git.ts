@@ -78,6 +78,9 @@ export async function commits(
                 repositoryId: repository.id,
                 kind: 'commit',
                 sha,
+                url: githubRemote(repository.remote)
+                    ? `https://github.com/${githubRemote(repository.remote)}/commit/${sha}`
+                    : undefined,
                 date,
                 author,
                 title,
@@ -112,15 +115,7 @@ export async function commitDetails(
             const [status, ...name] = line.split('\t')
             return { status, name: name.join('\t') }
         })
-    const diff = await git(repository.path, [
-        'show',
-        '--format=',
-        '--no-ext-diff',
-        '--no-textconv',
-        '--binary',
-        sha,
-        '--'
-    ])
+    const diff = await git(repository.path, ['show', '--format=', '--no-ext-diff', '--no-textconv', sha, '--'])
     return { diff: diff.length > MAX_DIFF ? 'Diff is too large to display. View the source externally.' : diff, files }
 }
 // Hash the complete net patch, including whitespace, modes, and binary payloads.

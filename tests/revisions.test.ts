@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import { coveredEntries, inbox } from '../src/shared/model'
 import { patch, workspace } from './fixtures'
+import { weekOf } from '../src/shared/model'
 
 it('pins a selected PR revision, retains coverage after equivalent rewrites, and groups later changes', async () => {
     const app = await workspace()
@@ -48,6 +49,7 @@ it('does not infer whole-PR coverage from commits and suppresses a known integra
     const app = await workspace()
     try {
         app.remote.github = true
+        app.remote.merged = true
         app.repository.emails.push('second@example.com')
         await app.service.handle({ type: 'refresh' })
         const pr = app.store.state.activities.find((item) => item.kind === 'pr')!
@@ -108,6 +110,162 @@ it('resumes a verified partial Notion save without creating a second page and ma
         expect(creation.body?.parent).toEqual({ data_source_id: 'source' })
         expect(creation.body?.properties).toHaveProperty('Week.date.start', '2026-09-07')
         expect(app.store.state.saves[0].status).toBe('confirmed')
+    } finally {
+        await app.close()
+    }
+})
+
+it('loads and caches remote authored commit diffs when the object is absent locally', async () => {
+    const app = await workspace()
+    try {
+        app.remote.github = true
+        app.repository.emails.push('second@example.com')
+        await app.service.handle({ type: 'refresh' })
+        const commit = app.store.state.activities.find((item) => item.sha === 'd'.repeat(40))!
+        const reply = await app.service.handle({ type: 'details', activityId: commit.id })
+        expect(reply.diff).toContain('+new')
+        expect(reply.state.activities.find((item) => item.id === commit.id)?.files).toEqual([
+            { name: 'a.ts', status: 'modified' }
+        ])
+        app.remote.github = false
+        expect((await app.service.handle({ type: 'details', activityId: commit.id })).diff).toContain('+new')
+    } finally {
+        await app.close()
+    }
+})
+
+it('does not import newly discovered old PR work as fresh but detects later net changes with old author dates', async () => {
+    const app = await workspace()
+    try {
+        app.remote.github = true
+        app.remote.authorDate = '2025-01-01T12:00:00Z'
+        app.repository.trackingStart = '2026-10-05'
+        const week = weekOf(new Date(), app.store.state.settings)
+        await app.service.handle({ type: 'refresh' })
+        const pr = app.store.state.activities.find((item) => item.kind === 'pr')!
+        expect(inbox(app.store.state, week).some((item) => item.id === pr.id)).toBe(false)
+        expect(app.store.state.diffs[pr.id]).toBeUndefined()
+        app.remote.head = 'e'.repeat(40)
+        app.remote.patch = patch.replace('1111111..2222222', '3333333..4444444')
+        await app.service.handle({ type: 'refresh' })
+        expect(inbox(app.store.state, week).some((item) => item.id === pr.id)).toBe(false)
+        app.remote.patch = patch.replace('+new', '+new work')
+        await app.service.handle({ type: 'refresh' })
+        expect(inbox(app.store.state, week).filter((item) => item.id === pr.id)).toHaveLength(1)
+    } finally {
+        await app.close()
+    }
+})
+
+it('keeps edits made after an uncertain save editable when the earlier captured entry is reconciled', async () => {
+    const app = await workspace()
+    try {
+        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        const draft = app.store.state.drafts[0]
+        app.remote.loseCreateResponse = true
+        await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow()
+        await app.service.handle({ type: 'draft', draft: { ...draft, title: 'Further reflection' } })
+        await app.service.handle({ type: 'reconcile', saveId: app.store.state.saves[0].id })
+        expect(draft.title).toBe('Further reflection')
+        expect(draft.publishedEntryId).toBeUndefined()
+        expect(app.store.state.entries[0].title).not.toBe('Further reflection')
+    } finally {
+        await app.close()
+    }
+})
+
+it('conservatively surfaces changed references for old PRs whose patches cannot be compared', async () => {
+    const app = await workspace()
+    try {
+        app.remote.github = true
+        app.remote.authorDate = '2025-01-01T12:00:00Z'
+        app.remote.patch = 'Binary files a/image.png and b/image.png differ'
+        app.repository.trackingStart = '2026-10-05'
+        const week = weekOf(new Date(), app.store.state.settings)
+        await app.service.handle({ type: 'refresh' })
+        const pr = app.store.state.activities.find((item) => item.kind === 'pr')!
+        expect(inbox(app.store.state, week).some((item) => item.id === pr.id)).toBe(false)
+        await app.service.handle({ type: 'refresh' })
+        expect(inbox(app.store.state, week).some((item) => item.id === pr.id)).toBe(false)
+        app.remote.head = 'f'.repeat(40)
+        await app.service.handle({ type: 'refresh' })
+        expect(inbox(app.store.state, week).some((item) => item.id === pr.id)).toBe(true)
+        expect(coveredEntries(app.store.state, pr)).toEqual([])
+    } finally {
+        await app.close()
+    }
+})
+
+it('identifies an old cached patch after a failed refresh rather than presenting it as the new revision', async () => {
+    const app = await workspace()
+    try {
+        app.remote.github = true
+        await app.service.handle({ type: 'refresh' })
+        const pr = app.store.state.activities.find((item) => item.kind === 'pr')!
+        await app.service.handle({ type: 'details', activityId: pr.id })
+        const cachedRevision = pr.diffRevision
+        app.remote.head = 'f'.repeat(40)
+        app.remote.failDiff = true
+        await app.service.handle({ type: 'refresh' })
+        expect(pr.revision).toBeUndefined()
+        expect(pr.diffRevision).toBe(cachedRevision)
+        expect(app.store.state.diffs[pr.id]).toContain('+new')
+        await expect(app.service.handle({ type: 'details', activityId: pr.id })).rejects.toThrow('unavailable')
+        expect(coveredEntries(app.store.state, pr)).toEqual([])
+    } finally {
+        await app.close()
+    }
+})
+
+it('compares the final integration patch separately from the covered pre-merge PR snapshot', async () => {
+    const app = await workspace()
+    try {
+        app.remote.github = true
+        await app.service.handle({ type: 'refresh' })
+        const pr = app.store.state.activities.find((item) => item.kind === 'pr')!
+        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        await app.service.handle({
+            type: 'select',
+            draftId: app.store.state.drafts[0].id,
+            activityId: pr.id,
+            included: true
+        })
+        await app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id })
+        app.remote.merged = true
+        app.remote.finalPatch = patch.replace('+new', '+resolved during integration')
+        await app.service.handle({ type: 'refresh' })
+        expect(coveredEntries(app.store.state, pr)).toEqual([])
+        expect(pr.head).toBe('c'.repeat(40))
+        expect(app.store.state.diffs[pr.id]).toContain('+resolved during integration')
+        expect(app.store.state.activities.some((item) => item.kind === 'merged')).toBe(true)
+    } finally {
+        await app.close()
+    }
+})
+
+it('retains the whole PR patch and uncertain coverage for an unproven linear merge range', async () => {
+    const app = await workspace()
+    try {
+        app.remote.github = true
+        await app.service.handle({ type: 'refresh' })
+        const pr = app.store.state.activities.find((item) => item.kind === 'pr')!
+        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        await app.service.handle({
+            type: 'select',
+            draftId: app.store.state.drafts[0].id,
+            activityId: pr.id,
+            included: true
+        })
+        await app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id })
+        app.remote.merged = true
+        app.remote.mergeParents = ['b'.repeat(40)]
+        app.remote.finalPatch = patch.replace('+new', '+last rebased commit only')
+        await app.service.handle({ type: 'refresh' })
+        await app.service.handle({ type: 'details', activityId: pr.id })
+        expect(app.store.state.diffs[pr.id]).toBe(patch)
+        expect(pr.fingerprint).toBeUndefined()
+        expect(pr.head).toBe('c'.repeat(40))
+        expect(coveredEntries(app.store.state, pr)).toEqual([])
     } finally {
         await app.close()
     }

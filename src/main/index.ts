@@ -55,11 +55,8 @@ function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
 }
 async function openExternal(value: string): Promise<void> {
     const url = new URL(value)
-    if (
-        url.protocol !== 'https:' ||
-        !['github.com', 'www.notion.so', 'notion.so', 'www.notion.com'].includes(url.hostname)
-    )
-        throw new Error('Only GitHub and Notion links can be opened')
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password)
+        throw new Error('Only web links can be opened')
     await shell.openExternal(url.toString())
 }
 async function folder(): Promise<string | undefined> {
@@ -110,8 +107,8 @@ void app.whenReady().then(() => {
                 break
             }
             case 'notionConnect':
+                await new Notion(http, () => command.token).verify()
                 vault.set('notion', command.token)
-                await notion.verify()
                 break
             case 'githubStart': {
                 const device = await github.start(store.state.settings.githubClientId)
