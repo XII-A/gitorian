@@ -1,3 +1,4 @@
+import { Disclosure } from './components/Disclosure'
 import { Input, Select, Field } from './components/Fields'
 import { useState } from 'react'
 import { GitBranch } from 'lucide-react'
@@ -215,14 +216,13 @@ export function DetailsPane({
                         </div>
                         <p className="description">{activity.description}</p>
                         {activity.files.length > 0 && (
-                            <details>
-                                <summary>{activity.files.length} changed files</summary>
+                            <Disclosure title={`${activity.files.length} changed files`}>
                                 {activity.files.map((file) => (
                                     <p className="path" key={file.name}>
                                         {file.status} · {file.name}
                                     </p>
                                 ))}
-                            </details>
+                            </Disclosure>
                         )}
                         {activity.kind === 'pr' &&
                             state.diffs[activity.id] !== undefined &&
@@ -234,8 +234,7 @@ export function DetailsPane({
                             )}
                         <DiffViewer key={activity.id} text={state.diffs[activity.id] ?? ''} />
                         {!reference && (
-                            <details className="decisions">
-                                <summary>Inbox decisions & features</summary>
+                            <Disclosure className="decisions" title="Inbox decisions & features">
                                 <Field>
                                     Defer to week
                                     <Input
@@ -354,7 +353,7 @@ export function DetailsPane({
                                         ))}
                                     </div>
                                 ))}
-                            </details>
+                            </Disclosure>
                         )}
                     </>
                 ) : (

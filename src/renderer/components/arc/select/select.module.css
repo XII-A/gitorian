@@ -43,7 +43,8 @@
     background: var(--surface-muted);
 }
 .trigger:focus-visible {
-    border-color: var(--border-strong);
+    outline: none;
+    border-color: var(--foreground);
 }
 .trigger[data-disabled] {
     opacity: 0.5;

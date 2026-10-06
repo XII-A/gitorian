@@ -14,47 +14,11 @@ select,
 textarea {
     font: inherit;
 }
-button,
-a,
-input,
-select,
-textarea,
-[tabindex] {
-    outline-offset: 4px;
-}
-:focus-visible {
-    outline: 2px solid #a1ccaa;
-}
-input,
-select,
-textarea {
-    width: 100%;
-    min-height: 34px;
-    border: 1px solid var(--border-strong);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--foreground);
-    padding: 7px 10px;
-}
-input[type='checkbox'] {
+/* Only editor-owned task inputs need native form styling. */
+.tiptap input[type='checkbox'] {
     width: 16px;
-    min-height: 16px;
-    accent-color: #a1ccaa;
-}
-input[type='date'] {
-    color-scheme: dark;
-}
-label {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    color: var(--text-secondary);
-    font-size: 12px;
-    margin-block: 8px;
-}
-label.row {
-    flex-direction: row;
-    align-items: center;
+    height: 16px;
+    accent-color: var(--control-on);
 }
 h1,
 h2,
@@ -92,7 +56,7 @@ p {
     display: flex;
     gap: 12px;
     align-items: center;
-    color: #b3d4b6;
+    color: var(--text-secondary);
 }
 .brand h1 {
     font-size: 20px;
@@ -194,7 +158,7 @@ p {
     width: 100%;
     padding: 16px;
     border: 1px solid transparent;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     background: transparent;
     color: var(--foreground);
     cursor: pointer;
@@ -205,7 +169,7 @@ p {
 }
 .activity-card.selected {
     background: var(--surface);
-    border-color: #718e76;
+    border-color: var(--border-strong);
 }
 .activity-card strong {
     font-size: 13px;
@@ -220,7 +184,7 @@ p {
 .coverage-label,
 .local-label {
     font-size: 10px;
-    color: #b3d4b6;
+    color: var(--text-secondary);
 }
 .empty {
     max-width: 360px;
@@ -228,7 +192,7 @@ p {
     color: var(--text-secondary);
 }
 .empty svg {
-    color: #a1ccaa;
+    color: var(--accent);
     margin-bottom: 20px;
 }
 .empty h2 {
@@ -254,7 +218,7 @@ p {
     margin-top: 24px;
     padding: 16px;
     background: var(--surface-muted);
-    border-radius: 12px;
+    border-radius: var(--radius-control);
 }
 .coverage h3 {
     margin-bottom: 10px;
@@ -265,7 +229,7 @@ p {
         monospace;
     padding: 10px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-control);
 }
 .separator {
     width: 6px;
@@ -274,7 +238,7 @@ p {
 }
 .separator:hover,
 .separator:focus-visible {
-    background: #718e76;
+    background: var(--border-strong);
 }
 .draft-title {
     font-size: 24px;
@@ -314,7 +278,7 @@ p {
 .diff-fallback {
     background: var(--surface-muted);
     padding: 14px;
-    border-radius: 8px;
+    border-radius: var(--radius-control);
     overflow: auto;
     font:
         12px/1.6 ui-monospace,
@@ -326,12 +290,12 @@ p {
         monospace;
 }
 .tiptap blockquote {
-    border-left: 3px solid #718e76;
+    border-left: 3px solid var(--border-strong);
     padding-left: 18px;
     color: var(--text-secondary);
 }
 .tiptap a {
-    color: #a1ccaa;
+    color: var(--accent);
     text-decoration: underline;
     cursor: pointer;
 }
@@ -378,7 +342,7 @@ p {
     margin-top: 20px;
     overflow: auto;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-control);
 }
 .file-diff h4 {
     padding: 10px;
@@ -387,23 +351,18 @@ p {
     margin-bottom: 0;
 }
 .diff {
-    --diff-background-color: #191d1b;
-    --diff-text-color: #dce2dc;
-    --diff-gutter-insert-background-color: #27412e;
-    --diff-code-insert-background-color: #24372b;
-    --diff-gutter-delete-background-color: #4a2d2d;
-    --diff-code-delete-background-color: #392727;
+    --diff-background-color: var(--surface);
+    --diff-text-color: var(--foreground);
+    --diff-gutter-insert-background-color: color-mix(in oklab, var(--success) 20%, var(--surface));
+    --diff-code-insert-background-color: color-mix(in oklab, var(--success) 12%, var(--surface));
+    --diff-gutter-delete-background-color: color-mix(in oklab, var(--danger) 20%, var(--surface));
+    --diff-code-delete-background-color: color-mix(in oklab, var(--danger) 12%, var(--surface));
     font:
         11px/1.6 ui-monospace,
         monospace;
 }
 .decisions {
     margin-top: 24px;
-}
-summary {
-    cursor: pointer;
-    color: var(--text-secondary);
-    padding-block: 10px;
 }
 .feature-controls {
     border-top: 1px solid var(--border);
@@ -414,8 +373,8 @@ summary {
 .error-bar,
 .save-warning {
     padding: 12px 20px;
-    color: #f0c1b5;
-    background: #352720;
+    color: var(--danger);
+    background: color-mix(in oklab, var(--danger) 10%, var(--surface));
     white-space: pre-wrap;
     font-size: 12px;
 }
@@ -439,11 +398,11 @@ summary {
     height: min(850px, 90vh);
     background: var(--background);
     border: 1px solid var(--border-strong);
-    border-radius: 18px;
+    border-radius: var(--radius-control);
     display: flex;
     flex-direction: column;
     padding: 24px;
-    box-shadow: 0 24px 80px #0006;
+    box-shadow: var(--shadow-floating);
 }
 .settings h2 {
     margin-bottom: 0;
@@ -461,12 +420,12 @@ summary {
 }
 fieldset {
     border: 1px solid var(--border-strong);
-    border-radius: 12px;
+    border-radius: var(--radius-control);
     padding: 18px;
     margin-block: 18px;
 }
 legend {
-    color: #b3d4b6;
+    color: var(--text-secondary);
     padding-inline: 6px;
 }
 .loading {

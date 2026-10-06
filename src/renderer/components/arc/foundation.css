@@ -363,7 +363,7 @@
 
 /* Chart series palette, shared by every chart. Series 1 is the accent itself; series 2 to 4 rotate its hue at lightness steps
    around it, so they stay distinct for every accent. A neutral accent falls back to a blue. Validated with the dataviz script
-   across all eight accents in both themes: every pair (not only neighbours) clears CVD ÎE 9 and normal vision ÎE 17. Browsers
+   across all eight accents in both themes: every pair (not only neighbours) clears CVD ΔE 9 and normal vision ΔE 17. Browsers
    without relative color get the neutral set. Override --series-1 to --series-4 on any element to rebrand a chart. */
 :root {
     --series-1: #1f7dcf;
@@ -421,9 +421,4 @@
                 calc(h * sign(max(c - 0.02, 0)) + 250 * (1 - sign(max(c - 0.02, 0))) + 270)
         );
     }
-}
-
-/* No focus rings or outlines for any input method (product decision). */
-:is(*:focus, *:focus-visible, *:focus-within) {
-    outline: none !important;
 }

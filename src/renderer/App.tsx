@@ -1,3 +1,5 @@
+import { Popover, PopoverTrigger, PopoverContent } from './components/arc/popover/popover'
+import { Disclosure } from './components/Disclosure'
 import { Input, Select, Field } from './components/Fields'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
@@ -428,8 +430,7 @@ export function App() {
                         </p>
                     )}
                 </div>
-                <details className="feature-controls">
-                    <summary>Manage features</summary>
+                <Disclosure className="feature-controls" title="Manage features">
                     <Field>
                         Feature name
                         <Input
@@ -488,7 +489,7 @@ export function App() {
                             </Button>
                         </div>
                     ))}
-                </details>
+                </Disclosure>
             </section>
         ),
         details,
@@ -661,11 +662,14 @@ export function App() {
                         >
                             <PenLine size={14} /> Writing focus
                         </Button>
-                        <details className="layout-menu">
-                            <summary>
-                                <SlidersHorizontal size={14} /> Customize workspace
-                            </summary>
-                            <div className="layout-menu-content">
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                    <SlidersHorizontal size={14} />
+                                    Customize workspace
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="layout-menu-content" align="end">
                                 <Button
                                     variant="ghost"
                                     size="sm"
@@ -709,8 +713,8 @@ export function App() {
                                         </Button>
                                     </div>
                                 ))}
-                            </div>
-                        </details>
+                            </PopoverContent>
+                        </Popover>
                     </div>
                 </div>
                 {(error || state.refreshError) && (

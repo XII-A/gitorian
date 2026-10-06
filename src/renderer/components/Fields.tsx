@@ -10,6 +10,7 @@ import { Input as ArcInput } from './arc/input/input'
 import { Select as ArcSelect } from './arc/select/select'
 import { Checkbox } from './arc/checkbox/checkbox'
 import { Textarea as ArcTextarea } from './arc/textarea/textarea'
+import { DatePicker } from './arc/date-picker/date-picker'
 
 const FieldName = createContext<string | undefined>(undefined)
 export function Field({ children, className = '', ...props }: HTMLAttributes<HTMLDivElement>) {
@@ -28,6 +29,33 @@ export function Field({ children, className = '', ...props }: HTMLAttributes<HTM
 }
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
     const name = useContext(FieldName)
+    if (props.type === 'date') {
+        const parse = (value: unknown) => {
+            if (typeof value !== 'string' || !value) return undefined
+            const [year, month, day] = value.split('-').map(Number)
+            return new Date(year, month - 1, day)
+        }
+        return (
+            <DatePicker
+                label=""
+                id={props.id ?? name}
+                aria-labelledby={name ? `${name}-label` : undefined}
+                aria-label={props['aria-label']}
+                className={props.className}
+                disabled={props.disabled}
+                value={parse(props.value)}
+                minDate={parse(props.min)}
+                maxDate={parse(props.max)}
+                showToday
+                onChange={(date) => {
+                    const value = date
+                        ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+                        : ''
+                    props.onChange?.({ target: { value } } as React.ChangeEvent<HTMLInputElement>)
+                }}
+            />
+        )
+    }
     if (props.type === 'checkbox')
         return (
             <Checkbox

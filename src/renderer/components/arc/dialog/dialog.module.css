@@ -97,6 +97,10 @@
         color var(--duration-fast) var(--ease-standard),
         transform var(--duration-spring) var(--ease-spring);
 }
+.close:focus-visible {
+    outline: none;
+    border-color: var(--foreground);
+}
 @media (hover: hover) and (pointer: fine) {
     .close:hover {
         background: var(--surface-muted);

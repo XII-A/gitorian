@@ -1,7 +1,10 @@
-weekly-j includes Arc UI Free button, foundation, and motion token sources.
+weekly-j includes Arc UI Free accordion, button, calendar, checkbox, date-picker,
+dialog, input, popover, select, textarea, foundation, and motion token sources.
 Source: https://uiarc.dev and https://github.com/kuratlielia/arc-library
 Their MIT notice is retained at src/renderer/components/arc/LICENSE.
-Arc source was formatted for this repository; its component styles are retained.
+Arc source was formatted for this repository. Its theme and component styling
+are retained, with component-scoped keyboard focus feedback, inert collapsed
+accordion panels, and a portaled date-picker popup that fits the desktop window.
 
 Runtime dependency licenses are supplied with the packaged dependencies and
 Electron's LICENSES.chromium.html. No Arc Pro source is included.

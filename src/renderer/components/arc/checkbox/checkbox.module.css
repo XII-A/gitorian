@@ -19,6 +19,12 @@
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
+.box:focus-visible {
+    outline: none;
+}
+.box:focus-visible .visual {
+    border-color: var(--foreground);
+}
 /* The square is the only part that reacts to a press, so the hit area and label never move. */
 .visual {
     position: relative;
