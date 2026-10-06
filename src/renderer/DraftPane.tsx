@@ -1,3 +1,4 @@
+import { Input, Select, Field } from './components/Fields'
 import { BookOpen } from 'lucide-react'
 import type { Command, Draft, Entry, JournalNode, Reply, State } from '../shared/model'
 import { Editor } from './Editor'
@@ -36,14 +37,14 @@ export function DraftPane({
     return (
         <section className="pane draft-pane">
             <header className="pane-header">
-                <span>YOUR REFLECTION</span>
-                <span className="local-label">LOCAL DRAFT</span>
+                <span>Journal</span>
+                <span className="local-label">{draft?.publishedEntryId ? 'Published' : 'Private draft'}</span>
             </header>
             <div className="pane-content">
                 <div className="row between">
-                    <label>
+                    <Field>
                         Draft
-                        <select
+                        <Select
                             value={draft?.id ?? ''}
                             onChange={(event) => {
                                 void onChoose(event.target.value)
@@ -58,8 +59,8 @@ export function DraftPane({
                                         {item.publishedEntryId ? ' · published' : ''}
                                     </option>
                                 ))}
-                        </select>
-                    </label>
+                        </Select>
+                    </Field>
                     <Button variant="secondary" size="sm" onClick={onCreate}>
                         New entry
                     </Button>
@@ -69,7 +70,7 @@ export function DraftPane({
                         <label className="sr-only" htmlFor="draft-title">
                             Draft title
                         </label>
-                        <input
+                        <Input
                             id="draft-title"
                             className="draft-title"
                             value={draft.title}
@@ -115,8 +116,7 @@ export function DraftPane({
                                 </div>
                             ))}
                             <p className="muted">
-                                Coverage is confirmed only after saving to Notion. Selecting work does not add it to
-                                your prose.
+                                Work stays linked to this draft. Coverage is confirmed when you publish.
                             </p>
                         </div>
                         {state.saves
@@ -154,7 +154,7 @@ export function DraftPane({
                                 </Button>
                             ) : (
                                 <Button loading={busy} onClick={onPublish}>
-                                    Save to Notion ↗
+                                    Publish to Notion ↗
                                 </Button>
                             )}
                         </footer>
@@ -167,6 +167,7 @@ export function DraftPane({
                             Create an entry when you’re ready. Your writing stays on this machine until you save to
                             Notion.
                         </p>
+                        <Button onClick={onCreate}>Create this week’s entry</Button>
                     </div>
                 )}
             </div>

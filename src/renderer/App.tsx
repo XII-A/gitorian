@@ -1,6 +1,19 @@
+import { Input, Select, Field } from './components/Fields'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
-import { ArrowLeft, ArrowRight, BookOpen, RefreshCw, Settings as SettingsIcon } from 'lucide-react'
+import {
+    ArrowLeft,
+    ArrowRight,
+    BookOpen,
+    RefreshCw,
+    Settings as SettingsIcon,
+    Inbox,
+    History,
+    Search,
+    PanelLeft,
+    SlidersHorizontal,
+    PenLine
+} from 'lucide-react'
 import { coveredEntries, defaultLayout, inbox, featureActivities, shiftWeek, weekOf } from '../shared/model'
 import type { Activity, Command, Draft, Entry, Reply, State } from '../shared/model'
 import { plainText } from '../shared/notion-format'
@@ -8,6 +21,7 @@ import { Button } from './components/arc/button/button'
 import { DraftPane } from './DraftPane'
 import { Settings } from './Settings'
 import { DetailsPane } from './DetailsPane'
+import { CommandMenu } from './components/CommandMenu'
 
 export function App() {
     const [state, setState] = useState<State>()
@@ -22,6 +36,24 @@ export function App() {
     const [busy, setBusy] = useState(false)
     const [layoutReset, setLayoutReset] = useState(0)
     const [settingsOpen, setSettingsOpen] = useState(false)
+    const [commandsOpen, setCommandsOpen] = useState(false)
+    const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 900px)').matches)
+    useEffect(() => {
+        const media = window.matchMedia('(max-width: 900px)')
+        const changed = () => setNarrow(media.matches)
+        media.addEventListener('change', changed)
+        return () => media.removeEventListener('change', changed)
+    }, [])
+    useEffect(() => {
+        const keyboard = (event: KeyboardEvent) => {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+                event.preventDefault()
+                if (!document.querySelector('.settings')) setCommandsOpen((open) => !open)
+            }
+        }
+        window.addEventListener('keydown', keyboard)
+        return () => window.removeEventListener('keydown', keyboard)
+    }, [])
     const [search, setSearch] = useState('')
     const [repositoryId, setRepositoryId] = useState('')
     const [featureId, setFeatureId] = useState('')
@@ -194,14 +226,14 @@ export function App() {
         activity: (
             <section className="pane activity-pane">
                 <header className="pane-header">
-                    <span>YOUR WORK</span>
-                    <span>{items.length}</span>
+                    <span>{view === 'entries' ? 'Journal library' : 'Work explorer'}</span>
+                    <span>{view === 'entries' ? entries.length : items.length}</span>
                 </header>
                 <div className="filters">
                     <label className="sr-only" htmlFor="search">
                         Search work and journals
                     </label>
-                    <input
+                    <Input
                         id="search"
                         placeholder="Search work & journals…"
                         value={search}
@@ -209,9 +241,9 @@ export function App() {
                             setSearch(event.target.value)
                         }}
                     />
-                    <label>
+                    <Field>
                         Repository
-                        <select
+                        <Select
                             value={repositoryId}
                             onChange={(event) => {
                                 setRepositoryId(event.target.value)
@@ -225,11 +257,11 @@ export function App() {
                                     {!item.available ? ' · cached' : ''}
                                 </option>
                             ))}
-                        </select>
-                    </label>
-                    <label>
+                        </Select>
+                    </Field>
+                    <Field>
                         Feature
-                        <select
+                        <Select
                             value={featureId}
                             onChange={(event) => {
                                 setFeatureId(event.target.value)
@@ -245,11 +277,11 @@ export function App() {
                                     {item.archived ? ' · archived' : ''}
                                 </option>
                             ))}
-                        </select>
-                    </label>
-                    <label>
+                        </Select>
+                    </Field>
+                    <Field>
                         Browse
-                        <select
+                        <Select
                             value={view}
                             onChange={(event) => {
                                 setView(event.target.value)
@@ -261,14 +293,14 @@ export function App() {
                             <option value="history">All captured history</option>
                             <option value="branch">Branch browser</option>
                             <option value="entries">Saved journals</option>
-                        </select>
-                    </label>
+                        </Select>
+                    </Field>
                     {view === 'branch' && (
                         <fieldset>
                             <legend>Branch comparison</legend>
-                            <label>
+                            <Field>
                                 Branch
-                                <select
+                                <Select
                                     value={branch}
                                     onChange={(event) => {
                                         setBranch(event.target.value)
@@ -278,11 +310,11 @@ export function App() {
                                     {repository?.branches.map((name) => (
                                         <option key={name}>{name}</option>
                                     ))}
-                                </select>
-                            </label>
-                            <label>
+                                </Select>
+                            </Field>
+                            <Field>
                                 View
-                                <select
+                                <Select
                                     value={historyView}
                                     onChange={(event) => {
                                         setHistoryView(event.target.value as 'introduced' | 'history')
@@ -290,27 +322,27 @@ export function App() {
                                 >
                                     <option value="introduced">Introduced relative to base</option>
                                     <option value="history">Reachable history</option>
-                                </select>
-                            </label>
-                            <label>
+                                </Select>
+                            </Field>
+                            <Field>
                                 Author filter
-                                <input
+                                <Input
                                     value={author}
                                     onChange={(event) => {
                                         setAuthor(event.target.value)
                                     }}
                                 />
-                            </label>
-                            <label>
+                            </Field>
+                            <Field>
                                 From author date
-                                <input
+                                <Input
                                     type="date"
                                     value={since}
                                     onChange={(event) => {
                                         setSince(event.target.value)
                                     }}
                                 />
-                            </label>
+                            </Field>
                             <Button
                                 size="sm"
                                 disabled={!repository || !branch}
@@ -338,7 +370,9 @@ export function App() {
                 <div className="activity-list">
                     {view === 'entries'
                         ? entries.map((value) => (
-                              <button
+                              <Button
+                                  variant="ghost"
+                                  contentLayout="stack"
                                   className="activity-card"
                                   key={value.id}
                                   onClick={() => {
@@ -348,10 +382,12 @@ export function App() {
                                   <span className="eyebrow">JOURNAL · {value.date.slice(0, 10)}</span>
                                   <strong>{value.title}</strong>
                                   <span className="muted">{plainText(value.body).slice(0, 100)}</span>
-                              </button>
+                              </Button>
                           ))
                         : items.map((item) => (
-                              <button
+                              <Button
+                                  variant="ghost"
+                                  contentLayout="stack"
                                   className={`activity-card ${selectedId === item.id ? 'selected' : ''}`}
                                   key={item.id}
                                   onClick={() => {
@@ -382,7 +418,7 @@ export function App() {
                                                 ? `Dismissed ${item.reason ?? ''}`
                                                 : 'Uncovered'}
                                   </span>
-                              </button>
+                              </Button>
                           ))}
                     {(view === 'entries' ? !entries.length : !items.length) && (
                         <p className="list-empty">
@@ -394,15 +430,15 @@ export function App() {
                 </div>
                 <details className="feature-controls">
                     <summary>Manage features</summary>
-                    <label>
+                    <Field>
                         Feature name
-                        <input
+                        <Input
                             value={featureName}
                             onChange={(event) => {
                                 setFeatureName(event.target.value)
                             }}
                         />
-                    </label>
+                    </Field>
                     <div className="row">
                         <Button
                             size="sm"
@@ -499,168 +535,233 @@ export function App() {
     const visible = layout.order.filter((id) => !layout.hidden.includes(id))
     return (
         <main className="app">
-            <header className="app-header">
-                <div className="brand">
-                    <BookOpen size={23} />
-                    <h1>weekly-j</h1>
-                    <span>Work into words.</span>
+            <nav className="app-rail" aria-label="Workspace navigation">
+                <div className="app-mark" aria-label="weekly-j">
+                    <BookOpen size={20} />
                 </div>
-                <div className="week-picker">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Search workspace"
+                    title="Search workspace (Ctrl/Cmd+K)"
+                    onClick={() => {
+                        setCommandsOpen(true)
+                    }}
+                >
+                    <Search size={18} />
+                </Button>
+                {[
+                    { id: 'inbox', name: 'Work inbox', icon: Inbox },
+                    { id: 'entries', name: 'Journal library', icon: BookOpen },
+                    { id: 'history', name: 'Work history', icon: History }
+                ].map(({ id, name, icon: Icon }) => (
                     <Button
+                        key={id}
                         variant="ghost"
                         size="sm"
-                        aria-label="Previous week"
+                        aria-label={name}
+                        title={name}
+                        aria-pressed={view === id}
                         onClick={() => {
-                            setWeek(shiftWeek(week, -1))
+                            setView(id)
+                            void changeLayout({
+                                ...layout,
+                                hidden: layout.hidden.filter((pane) => pane !== 'activity')
+                            })
                         }}
                     >
-                        <ArrowLeft size={16} />
+                        <Icon size={18} />
                     </Button>
-                    <label>
-                        Week of{' '}
-                        <input
-                            type="date"
-                            value={week}
-                            onChange={(event) => {
-                                if (event.target.value)
-                                    setWeek(weekOf(new Date(`${event.target.value}T12:00:00`), state.settings))
-                            }}
-                        />
-                    </label>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label="Next week"
-                        onClick={() => {
-                            setWeek(shiftWeek(week, 1))
-                        }}
-                    >
-                        <ArrowRight size={16} />
-                    </Button>
-                </div>
-                <div className="row">
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        loading={busy}
-                        onClick={async () => {
-                            setBusy(true)
-                            await run({ type: 'refresh' })
-                            setBusy(false)
-                        }}
-                    >
-                        <RefreshCw size={14} />
-                        Refresh
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label="Settings"
-                        onClick={() => {
-                            setSettingsOpen(true)
-                        }}
-                    >
-                        <SettingsIcon size={18} />
-                    </Button>
-                </div>
-            </header>
-            <div className="workspace-toolbar">
-                <span className="muted">
-                    {state.lastRefreshed
-                        ? `Last refresh ${new Date(state.lastRefreshed).toLocaleString()}`
-                        : 'Local workspace · Refresh to discover activity'}
-                    {state.refreshError && ' · Refresh incomplete'}
-                </span>
-                <div className="row">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                            changeLayout({ ...layout, hidden: ['activity'], sizes: { details: 40, draft: 60 } })
-                        }
-                    >
-                        Writing focus
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={async () => {
-                            if (await changeLayout(structuredClone(defaultLayout))) setLayoutReset((value) => value + 1)
-                        }}
-                    >
-                        Reset layout
-                    </Button>
-                    {layout.order.map((id, index) => (
-                        <div className="row" key={id}>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                    changeLayout({
-                                        ...layout,
-                                        hidden: layout.hidden.includes(id)
-                                            ? layout.hidden.filter((item) => item !== id)
-                                            : visible.length > 1
-                                              ? [...layout.hidden, id]
-                                              : layout.hidden
-                                    })
-                                }
-                            >
-                                {layout.hidden.includes(id) ? 'Show' : 'Hide'} {id}
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                aria-label={`Move ${id} pane left`}
-                                disabled={index === 0}
-                                onClick={() => {
-                                    const order = [...layout.order]
-                                    ;[order[index - 1], order[index]] = [order[index], order[index - 1]]
-                                    return changeLayout({ ...layout, order })
-                                }}
-                            >
-                                ←
-                            </Button>
-                        </div>
-                    ))}
-                </div>
-            </div>
-            {(error || state.refreshError) && (
-                <div className="error-bar" role="alert">
-                    <span>{error || state.refreshError}</span>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                            setError('')
-                            if (state.refreshError) void run({ type: 'refresh' })
-                        }}
-                    >
-                        Retry / dismiss
-                    </Button>
-                </div>
-            )}
-            <Group
-                key={`${visible.join(':')}:${layoutReset}`}
-                orientation="horizontal"
-                defaultLayout={layout.sizes}
-                onLayoutChanged={(sizes) => {
-                    if (Object.keys(sizes).some((id) => Math.abs((layout.sizes[id] ?? 0) - sizes[id]) > 0.5))
-                        void changeLayout({ ...layout, sizes: { ...layout.sizes, ...sizes } })
-                }}
-                className="workspace"
-            >
-                {visible.map((id, index) => (
-                    <Fragment key={id}>
-                        {index > 0 && (
-                            <Separator className="separator" aria-label={`Resize ${visible[index - 1]} and ${id}`} />
-                        )}
-                        <Panel id={id} minSize={id === 'activity' ? 210 : 280}>
-                            {panes[id]}
-                        </Panel>
-                    </Fragment>
                 ))}
-            </Group>
+                <div className="rail-spacer" />
+                <Button variant="ghost" size="sm" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+                    <SettingsIcon size={18} />
+                </Button>
+            </nav>
+            <div className="workspace-shell">
+                <header className="app-header">
+                    <div className="brand">
+                        <h1>weekly-j</h1>
+                        <span>/</span>
+                        <span>{view === 'entries' ? 'Journal library' : 'Weekly workspace'}</span>
+                    </div>
+                    <div className="week-picker">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Previous week"
+                            onClick={() => {
+                                setWeek(shiftWeek(week, -1))
+                            }}
+                        >
+                            <ArrowLeft size={16} />
+                        </Button>
+                        <Field>
+                            Week of{' '}
+                            <Input
+                                type="date"
+                                value={week}
+                                onChange={(event) => {
+                                    if (event.target.value)
+                                        setWeek(weekOf(new Date(`${event.target.value}T12:00:00`), state.settings))
+                                }}
+                            />
+                        </Field>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Next week"
+                            onClick={() => {
+                                setWeek(shiftWeek(week, 1))
+                            }}
+                        >
+                            <ArrowRight size={16} />
+                        </Button>
+                    </div>
+                    <div className="row">
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            loading={busy}
+                            onClick={async () => {
+                                setBusy(true)
+                                await run({ type: 'refresh' })
+                                setBusy(false)
+                            }}
+                        >
+                            <RefreshCw size={14} />
+                            Refresh
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Settings"
+                            onClick={() => {
+                                setSettingsOpen(true)
+                            }}
+                        >
+                            <SettingsIcon size={18} />
+                        </Button>
+                    </div>
+                </header>
+                <div className="workspace-toolbar">
+                    <span className="muted">
+                        {state.lastRefreshed
+                            ? `Last refresh ${new Date(state.lastRefreshed).toLocaleString()}`
+                            : 'Local workspace · Refresh to discover activity'}
+                        {state.refreshError && ' · Refresh incomplete'}
+                    </span>
+                    <div className="row">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                                changeLayout({ ...layout, hidden: ['activity'], sizes: { details: 40, draft: 60 } })
+                            }
+                        >
+                            <PenLine size={14} /> Writing focus
+                        </Button>
+                        <details className="layout-menu">
+                            <summary>
+                                <SlidersHorizontal size={14} /> Customize workspace
+                            </summary>
+                            <div className="layout-menu-content">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={async () => {
+                                        if (await changeLayout(structuredClone(defaultLayout)))
+                                            setLayoutReset((value) => value + 1)
+                                    }}
+                                >
+                                    Reset layout
+                                </Button>
+                                {layout.order.map((id, index) => (
+                                    <div className="row" key={id}>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() =>
+                                                changeLayout({
+                                                    ...layout,
+                                                    hidden: layout.hidden.includes(id)
+                                                        ? layout.hidden.filter((item) => item !== id)
+                                                        : visible.length > 1
+                                                          ? [...layout.hidden, id]
+                                                          : layout.hidden
+                                                })
+                                            }
+                                        >
+                                            <PanelLeft size={14} /> {layout.hidden.includes(id) ? 'Show' : 'Hide'} {id}
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            aria-label={`Move ${id} pane left`}
+                                            disabled={index === 0}
+                                            onClick={() => {
+                                                const order = [...layout.order]
+                                                ;[order[index - 1], order[index]] = [order[index], order[index - 1]]
+                                                return changeLayout({ ...layout, order })
+                                            }}
+                                        >
+                                            ←
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        </details>
+                    </div>
+                </div>
+                {(error || state.refreshError) && (
+                    <div className="error-bar" role="alert">
+                        <span>{error || state.refreshError}</span>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                                setError('')
+                                if (state.refreshError) void run({ type: 'refresh' })
+                            }}
+                        >
+                            Retry / dismiss
+                        </Button>
+                    </div>
+                )}
+                <Group
+                    key={`${visible.join(':')}:${layoutReset}`}
+                    orientation={narrow ? 'vertical' : 'horizontal'}
+                    defaultLayout={layout.sizes}
+                    onLayoutChanged={(sizes) => {
+                        if (Object.keys(sizes).some((id) => Math.abs((layout.sizes[id] ?? 0) - sizes[id]) > 0.5))
+                            void changeLayout({ ...layout, sizes: { ...layout.sizes, ...sizes } })
+                    }}
+                    className="workspace"
+                >
+                    {visible.map((id, index) => (
+                        <Fragment key={id}>
+                            {index > 0 && (
+                                <Separator
+                                    className="separator"
+                                    aria-label={`Resize ${visible[index - 1]} and ${id}`}
+                                />
+                            )}
+                            <Panel id={id} minSize={narrow ? 160 : id === 'activity' ? 210 : 280}>
+                                {panes[id]}
+                            </Panel>
+                        </Fragment>
+                    ))}
+                </Group>
+                <footer className="app-statusbar">
+                    <span>
+                        <span className="status-dot" /> Local workspace
+                    </span>
+                    <span>
+                        {connections.notion ? 'Notion connected' : 'Notion offline'} ·{' '}
+                        {state.repositories.filter((item) => !item.removed).length} repositories
+                    </span>
+                </footer>
+            </div>
             {settingsOpen && (
                 <Settings
                     state={state}
@@ -670,6 +771,55 @@ export function App() {
                     close={() => {
                         setSettingsOpen(false)
                     }}
+                />
+            )}
+            {commandsOpen && (
+                <CommandMenu
+                    close={() => setCommandsOpen(false)}
+                    commands={[
+                        ...[
+                            { id: 'inbox', name: 'Open work inbox', hint: 'Uncovered work and carryover' },
+                            { id: 'entries', name: 'Open journal library', hint: 'Read your published entries' },
+                            {
+                                id: 'history',
+                                name: 'Browse work history',
+                                hint: 'Find earlier commits and pull requests'
+                            }
+                        ].map(({ id, name, hint }) => ({
+                            name,
+                            hint,
+                            action: () => {
+                                setView(id)
+                                void changeLayout({
+                                    ...layout,
+                                    hidden: layout.hidden.filter((pane) => pane !== 'activity')
+                                })
+                            }
+                        })),
+                        {
+                            name: 'Open settings',
+                            hint: 'Repositories, connections, and preferences',
+                            action: () => setSettingsOpen(true)
+                        },
+                        {
+                            name: 'Focus on writing',
+                            hint: 'Make room for your journal',
+                            action: () => {
+                                void changeLayout({
+                                    ...layout,
+                                    hidden: ['activity'],
+                                    sizes: { draft: 65, details: 35 }
+                                })
+                            }
+                        },
+                        {
+                            name: 'Refresh workspace',
+                            hint: 'Discover new activity',
+                            action: () => {
+                                void run({ type: 'refresh' })
+                            }
+                        }
+                    ]}
                 />
             )}
         </main>

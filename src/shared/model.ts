@@ -142,9 +142,9 @@ export type Selection = z.infer<typeof selectionSchema>
 export type Entry = z.infer<typeof entrySchema>
 export type Destination = z.infer<typeof destinationSchema>
 export const defaultLayout: State['settings']['layout'] = {
-    order: ['activity', 'details', 'draft'],
+    order: ['activity', 'draft', 'details'],
     hidden: [],
-    sizes: { activity: 25, details: 40, draft: 35 }
+    sizes: { activity: 24, draft: 46, details: 30 }
 }
 export function initialState(): State {
     return {

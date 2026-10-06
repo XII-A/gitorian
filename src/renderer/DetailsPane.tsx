@@ -1,3 +1,4 @@
+import { Input, Select, Field } from './components/Fields'
 import { useState } from 'react'
 import { GitBranch } from 'lucide-react'
 import { coveredEntries, weekOf } from '../shared/model'
@@ -32,7 +33,7 @@ export function DetailsPane({
     return (
         <section className="pane details">
             <header className="pane-header">
-                <span>{entry ? 'JOURNAL ENTRY' : 'WORK DETAILS'}</span>
+                <span>{entry ? 'Journal entry' : 'Inspector'}</span>
                 {(activity || entry) && !reference && (
                     <Button
                         variant="ghost"
@@ -178,9 +179,9 @@ export function DetailsPane({
                                     ))}
                             {!reference && state.entries.length > 0 && (
                                 <div className="row">
-                                    <label>
+                                    <Field>
                                         Link existing entry
-                                        <select
+                                        <Select
                                             value={linkEntry}
                                             onChange={(event) => {
                                                 setLinkEntry(event.target.value)
@@ -192,8 +193,8 @@ export function DetailsPane({
                                                     {value.title}
                                                 </option>
                                             ))}
-                                        </select>
-                                    </label>
+                                        </Select>
+                                    </Field>
                                     <Button
                                         variant="secondary"
                                         size="sm"
@@ -235,16 +236,16 @@ export function DetailsPane({
                         {!reference && (
                             <details className="decisions">
                                 <summary>Inbox decisions & features</summary>
-                                <label>
+                                <Field>
                                     Defer to week
-                                    <input
+                                    <Input
                                         type="date"
                                         value={deferWeek}
                                         onChange={(event) => {
                                             setDeferWeek(event.target.value)
                                         }}
                                     />
-                                </label>
+                                </Field>
                                 <Button
                                     variant="secondary"
                                     disabled={!deferWeek}
@@ -259,15 +260,15 @@ export function DetailsPane({
                                 >
                                     Defer
                                 </Button>
-                                <label>
+                                <Field>
                                     Dismiss reason (optional)
-                                    <input
+                                    <Input
                                         value={reason}
                                         onChange={(event) => {
                                             setReason(event.target.value)
                                         }}
                                     />
-                                </label>
+                                </Field>
                                 <div className="row">
                                     <Button
                                         variant="ghost"
@@ -293,8 +294,8 @@ export function DetailsPane({
                                 </div>
                                 {state.features.map((value) => (
                                     <div key={value.id}>
-                                        <label className="row">
-                                            <input
+                                        <Field className="row">
+                                            <Input
                                                 type="checkbox"
                                                 checked={value.members.includes(activity.id)}
                                                 onChange={(event) =>
@@ -309,7 +310,7 @@ export function DetailsPane({
                                             />
                                             {value.name}
                                             {value.archived && ' (archived)'}
-                                        </label>
+                                        </Field>
                                         {activity.prId && (
                                             <Button
                                                 variant="ghost"

@@ -1,3 +1,4 @@
+import { Input, Select, Field } from './components/Fields'
 import { useMemo, useState } from 'react'
 import { Diff, Hunk, parseDiff } from 'react-diff-view'
 
@@ -17,9 +18,9 @@ export function DiffViewer({ text }: { text: string }) {
     return (
         <div className="diff-viewer">
             <div className="row">
-                <label>
+                <Field>
                     Changed file{' '}
-                    <select
+                    <Select
                         value={selected}
                         onChange={(event) => {
                             setSelected(event.target.value)
@@ -31,10 +32,10 @@ export function DiffViewer({ text }: { text: string }) {
                                 {file.newPath}
                             </option>
                         ))}
-                    </select>
-                </label>
-                <label className="row">
-                    <input
+                    </Select>
+                </Field>
+                <Field className="row">
+                    <Input
                         type="checkbox"
                         checked={split}
                         onChange={(event) => {
@@ -42,7 +43,7 @@ export function DiffViewer({ text }: { text: string }) {
                         }}
                     />
                     Side by side
-                </label>
+                </Field>
             </div>
             {files
                 .filter((file) => !selected || file.newPath === selected)

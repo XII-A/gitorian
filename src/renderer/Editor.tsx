@@ -1,3 +1,4 @@
+import { Input } from './components/Fields'
 import { useEffect, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -187,7 +188,7 @@ export function Editor({
                     <label className="sr-only" htmlFor="editor-link">
                         Link URL
                     </label>
-                    <input
+                    <Input
                         id="editor-link"
                         aria-label="Link URL"
                         placeholder="https://…"
