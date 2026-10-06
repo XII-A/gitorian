@@ -125,6 +125,7 @@
 }
 .popover[data-state] {
     animation: none;
+    transition: none;
 }
 /* On phone widths the calendar matches the field instead of running past the screen edge, and a tighter inset keeps the month and its controls on one row. */
 @media (max-width: 360px) {

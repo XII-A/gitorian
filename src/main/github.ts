@@ -69,7 +69,13 @@ export class GitHub {
         if (!response.ok) throw new Error(`GitHub sign-in failed (${response.status})`)
         const device = (await response.json()) as Device & { error?: string }
         if (device.error || !device.device_code)
-            throw new Error(device.error ?? 'Invalid device authorization response')
+            throw new Error(
+                device.error === 'device_flow_disabled'
+                    ? 'Enable device flow in your GitHub OAuth application settings, then try again'
+                    : device.error === 'incorrect_client_credentials'
+                      ? 'GitHub rejected this OAuth client ID. Copy the client ID from your OAuth application settings'
+                      : (device.error ?? 'Invalid device authorization response')
+            )
         this.device = {
             ...device,
             clientId,
@@ -78,10 +84,11 @@ export class GitHub {
         }
         return { code: device.user_code, url: device.verification_uri, interval: device.interval }
     }
-    async poll(): Promise<{ login: string; emails: string[] }> {
+    async poll(): Promise<{ login: string; emails: string[] } | { pending: true; interval: number }> {
         const device = this.device
         if (!device || Date.now() > device.expires) throw new Error('Device sign-in expired; start again')
-        if (Date.now() < device.nextPoll) throw new Error('Wait for the device sign-in polling interval')
+        if (Date.now() < device.nextPoll)
+            return { pending: true, interval: Math.ceil((device.nextPoll - Date.now()) / 1000) }
         device.nextPoll = Date.now() + device.interval * 1000
         const response = await fetch('https://github.com/login/oauth/access_token', {
             method: 'POST',
@@ -93,21 +100,29 @@ export class GitHub {
                 grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
             })
         })
+        if (!response.ok) throw new Error(`GitHub sign-in failed (${response.status}); try again`)
         const result = (await response.json()) as { access_token?: string; error?: string }
         if (result.error === 'slow_down') {
             device.interval += 5
             device.nextPoll = Date.now() + device.interval * 1000
         }
+        if (result.error === 'authorization_pending' || result.error === 'slow_down')
+            return { pending: true, interval: device.interval }
         if (!result.access_token)
             throw new Error(
-                result.error === 'authorization_pending'
-                    ? 'Authorize in your browser, then check sign-in'
-                    : (result.error ?? 'GitHub sign-in failed')
+                result.error === 'access_denied'
+                    ? 'GitHub authorization was declined; start sign-in again'
+                    : result.error === 'expired_token'
+                      ? 'GitHub sign-in expired; start again'
+                      : (result.error ?? 'GitHub sign-in failed')
             )
+        const user = await this.http.request<User>('https://api.github.com/user', result.access_token)
+        const emails = await this.http.request<{ email: string }[]>(
+            'https://api.github.com/user/emails',
+            result.access_token
+        )
         this.setToken(result.access_token)
         this.device = undefined
-        const user = await this.request<User>('user')
-        const emails = await this.request<{ email: string }[]>('user/emails')
         return { login: user.login, emails: emails.map((item) => item.email) }
     }
     async activities(repository: Repository, login: string, trackedPrIds: string[]): Promise<Activity[]> {

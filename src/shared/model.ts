@@ -284,6 +284,7 @@ export interface Reply {
     diff?: string
     activityIds?: string[]
     device?: { code: string; url: string; interval: number }
+    devicePending?: { interval: number }
     connections: { github: boolean; notion: boolean; protectedStorage: boolean }
     message?: string
 }

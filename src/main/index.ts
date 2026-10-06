@@ -112,11 +112,19 @@ void app.whenReady().then(() => {
                 break
             case 'githubStart': {
                 const device = await github.start(store.state.settings.githubClientId)
-                await openExternal(device.url)
+                try {
+                    await openExternal(device.url)
+                } catch {
+                    return service.reply({
+                        device,
+                        message: 'Could not open your browser. Use Open browser or visit the displayed address.'
+                    })
+                }
                 return service.reply({ device })
             }
             case 'githubPoll': {
                 const account = await github.poll()
+                if ('pending' in account) return service.reply({ devicePending: { interval: account.interval } })
                 store.state.settings.githubLogin = account.login
                 for (const repository of store.state.repositories)
                     repository.emails = [...new Set([...repository.emails, ...account.emails])]

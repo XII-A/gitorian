@@ -1,5 +1,6 @@
+import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/arc/tabs/tabs'
 import { Input, Select, Textarea, Field } from './components/Fields'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import { Editor } from './Editor'
 import { Button } from './components/arc/button/button'
@@ -22,8 +23,66 @@ export function Settings({
     const [repositories, setRepositories] = useState(state.repositories)
     const [token, setToken] = useState('')
     const [device, setDevice] = useState<Reply['device']>()
+    const [signInError, setSignInError] = useState('')
+    const [signInBusy, setSignInBusy] = useState(false)
+    const [signInStatus, setSignInStatus] = useState('')
     const [section, setSection] = useState('repositories')
     const [previousFocus] = useState(() => document.activeElement)
+    useEffect(() => {
+        if (!device) return
+        let cancelled = false
+        let timer: ReturnType<typeof setTimeout>
+        const poll = async () => {
+            try {
+                const result = await window.journal.invoke({ type: 'githubPoll' })
+                if (cancelled) return
+                if (result.devicePending) {
+                    timer = setTimeout(() => void poll(), result.devicePending.interval * 1000)
+                } else {
+                    setDevice(undefined)
+                    setSettings(result.state.settings)
+                    setRepositories(result.state.repositories)
+                    setSignInStatus(`Connected as ${result.state.settings.githubLogin}`)
+                    await run({ type: 'state' })
+                }
+            } catch (failure) {
+                if (!cancelled) {
+                    setSignInError(failure instanceof Error ? failure.message : String(failure))
+                    setDevice(undefined)
+                    setSignInStatus('')
+                }
+            }
+        }
+        timer = setTimeout(() => void poll(), device.interval * 1000)
+        return () => {
+            cancelled = true
+            clearTimeout(timer)
+        }
+    }, [device, run])
+    const startSignIn = async () => {
+        setSignInError('')
+        setSignInStatus('')
+        setDevice(undefined)
+        if (!settings.githubClientId.trim()) {
+            setSignInError('Enter a GitHub OAuth client ID with device flow enabled to sign in.')
+            return
+        }
+        setSignInBusy(true)
+        try {
+            await window.journal.invoke({
+                type: 'settings',
+                settings: { ...settings, githubClientId: settings.githubClientId.trim() }
+            })
+            const result = await window.journal.invoke({ type: 'githubStart' })
+            setDevice(result.device)
+            setSignInStatus(result.message ?? 'Waiting for authorization in your browser…')
+            await run({ type: 'state' })
+        } catch (failure) {
+            setSignInError(failure instanceof Error ? failure.message : String(failure))
+        } finally {
+            setSignInBusy(false)
+        }
+    }
     const editRepository = (repository: Repository, patch: Partial<Repository>) => {
         setRepositories((items) => items.map((item) => (item.id === repository.id ? { ...item, ...patch } : item)))
     }
@@ -47,21 +106,15 @@ export function Settings({
                     if (previousFocus instanceof HTMLElement) previousFocus.focus()
                 }}
             >
-                <nav className="row">
-                    {['repositories', 'connections', 'preferences', 'template', 'backup'].map((tab) => (
-                        <Button
-                            key={tab}
-                            variant={section === tab ? 'secondary' : 'ghost'}
-                            onClick={() => {
-                                setSection(tab)
-                            }}
-                        >
-                            {tab}
-                        </Button>
-                    ))}
-                </nav>
-                <div className="settings-content">
-                    {section === 'repositories' && (
+                <Tabs value={section} onValueChange={setSection} orientation="vertical" className="settings-tabs">
+                    <TabsList aria-label="Settings sections">
+                        {['repositories', 'connections', 'preferences', 'template', 'backup'].map((tab) => (
+                            <TabsTrigger key={tab} value={tab}>
+                                {tab[0].toUpperCase() + tab.slice(1)}
+                            </TabsTrigger>
+                        ))}
+                    </TabsList>
+                    <TabsContent value="repositories" className="settings-content">
                         <>
                             <p className="muted">
                                 Choose existing folders. weekly-j never fetches, checks out, or changes your
@@ -179,8 +232,8 @@ export function Settings({
                                 </fieldset>
                             ))}
                         </>
-                    )}
-                    {section === 'connections' && (
+                    </TabsContent>
+                    <TabsContent value="connections" className="settings-content">
                         <>
                             <fieldset>
                                 <legend>GitHub · {connections.github ? 'Connected' : 'Disconnected'}</legend>
@@ -194,42 +247,63 @@ export function Settings({
                                     />
                                 </Field>
                                 <p className="muted">
-                                    Use a GitHub OAuth application with device flow enabled. No client secret is needed.
+                                    Register a GitHub OAuth app, enable device flow, then paste its Client ID above. No
+                                    client secret is needed. This build does not include a registered client ID.
                                 </p>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                        run({ type: 'open', url: 'https://github.com/settings/applications/new' })
+                                    }
+                                >
+                                    Set up GitHub OAuth app ↗
+                                </Button>
                                 <div className="row">
                                     <Button
-                                        onClick={async () => {
-                                            await run({ type: 'settings', settings })
-                                            const result = await run({ type: 'githubStart' })
-                                            setDevice(result?.device)
-                                        }}
+                                        loading={signInBusy}
+                                        disabled={signInBusy || !!device}
+                                        onClick={startSignIn}
                                     >
                                         Sign in with browser
                                     </Button>
                                     <Button
                                         variant="ghost"
-                                        onClick={() => run({ type: 'disconnect', service: 'github' })}
+                                        onClick={() => {
+                                            setDevice(undefined)
+                                            setSignInStatus('')
+                                            void run({ type: 'disconnect', service: 'github' })
+                                        }}
                                     >
                                         Disconnect
                                     </Button>
                                 </div>
+                                {signInError && (
+                                    <p className="save-warning" role="alert">
+                                        {signInError}
+                                    </p>
+                                )}
+                                {signInStatus && <p role="status">{signInStatus}</p>}
                                 {device && (
                                     <div>
                                         <p>
                                             Enter <strong>{device.code}</strong> in the opened browser.
                                         </p>
+                                        <p className="path">{device.url}</p>
                                         <Button
                                             variant="secondary"
-                                            onClick={async () => {
-                                                const result = await run({ type: 'githubPoll' })
-                                                if (result) {
-                                                    setDevice(undefined)
-                                                    setSettings(result.state.settings)
-                                                    setRepositories(result.state.repositories)
-                                                }
+                                            onClick={() => run({ type: 'open', url: device.url })}
+                                        >
+                                            Open browser
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            onClick={() => {
+                                                setDevice(undefined)
+                                                setSignInStatus('')
                                             }}
                                         >
-                                            Check sign-in
+                                            Cancel sign-in
                                         </Button>
                                     </div>
                                 )}
@@ -346,8 +420,8 @@ export function Settings({
                                 </p>
                             </fieldset>
                         </>
-                    )}
-                    {section === 'preferences' && (
+                    </TabsContent>
+                    <TabsContent value="preferences" className="settings-content">
                         <fieldset>
                             <legend>Time and refresh</legend>
                             <Field>
@@ -389,8 +463,8 @@ export function Settings({
                                 />
                             </Field>
                         </fieldset>
-                    )}
-                    {section === 'template' && (
+                    </TabsContent>
+                    <TabsContent value="template" className="settings-content">
                         <>
                             <p className="muted">New drafts copy this template. Existing drafts keep their content.</p>
                             <Editor
@@ -400,8 +474,8 @@ export function Settings({
                                 }}
                             />
                         </>
-                    )}
-                    {section === 'backup' && (
+                    </TabsContent>
+                    <TabsContent value="backup" className="settings-content">
                         <>
                             <p>
                                 Back up tracking, drafts, settings and cached journal text. Credentials and repository
@@ -415,8 +489,8 @@ export function Settings({
                                 </Button>
                             </div>
                         </>
-                    )}
-                </div>
+                    </TabsContent>
+                </Tabs>
                 <footer className="row between">
                     <span className="muted">Changes apply when saved.</span>
                     <Button onClick={save}>Save settings</Button>
