@@ -1,0 +1,7 @@
+weekly-j includes Arc UI Free button, foundation, and motion token sources.
+Source: https://uiarc.dev and https://github.com/kuratlielia/arc-library
+Their MIT notice is retained at src/renderer/components/arc/LICENSE.
+Arc source was formatted for this repository; its component styles are retained.
+
+Runtime dependency licenses are supplied with the packaged dependencies and
+Electron's LICENSES.chromium.html. No Arc Pro source is included.

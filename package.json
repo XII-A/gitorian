@@ -1,0 +1,81 @@
+{
+    "name": "weekly-j",
+    "version": "0.1.0",
+    "private": true,
+    "description": "A local developer journal with revision-aware Notion coverage",
+    "main": "out/main/index.js",
+    "type": "module",
+    "scripts": {
+        "dev": "electron-vite dev",
+        "build": "npm run typecheck && electron-vite build",
+        "start": "electron-vite preview",
+        "typecheck": "tsc --noEmit",
+        "test": "vitest run",
+        "lint": "oxlint --type-aware",
+        "lint:fix": "oxlint --type-aware --fix",
+        "format": "oxfmt --write .",
+        "format:check": "oxfmt --check .",
+        "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+        "package": "npm run build && electron-builder",
+        "package:dir": "npm run build && electron-builder --dir"
+    },
+    "build": {
+        "appId": "io.github.xiia.weeklyj",
+        "productName": "weekly-j",
+        "directories": {
+            "output": "release"
+        },
+        "files": [
+            "out/**/*",
+            "package.json",
+            "LICENSE",
+            "NOTICE",
+            "src/renderer/components/arc/LICENSE"
+        ],
+        "win": {
+            "target": "nsis"
+        },
+        "mac": {
+            "target": "dmg"
+        },
+        "linux": {
+            "target": "AppImage",
+            "category": "Office"
+        }
+    },
+    "dependencies": {
+        "@tiptap/extension-task-item": "3.31.4",
+        "@tiptap/extension-task-list": "3.31.4",
+        "@tiptap/react": "3.31.4",
+        "@tiptap/starter-kit": "3.31.4",
+        "effect": "3.22.2",
+        "lucide-react": "1.52.0",
+        "motion": "14.0.0",
+        "react": "19.3.0",
+        "react-diff-view": "3.3.3",
+        "react-dom": "19.3.0",
+        "react-resizable-panels": "4.14.2",
+        "zod": "4.6.5"
+    },
+    "devDependencies": {
+        "@types/node": "24.19.1",
+        "@types/react": "19.3.0",
+        "@types/react-dom": "19.3.0",
+        "@vitejs/plugin-react": "5.1.4",
+        "electron": "44.5.1",
+        "electron-builder": "26.15.3",
+        "electron-vite": "5.0.0",
+        "eslint-plugin-unused-imports": "4.4.1",
+        "oxfmt": "0.72.0",
+        "oxlint": "1.87.0",
+        "oxlint-tsgolint": "7.0.2003",
+        "tsx": "4.23.15",
+        "typescript": "5.9.3",
+        "vite": "7.3.7",
+        "vitest": "5.0.3"
+    },
+    "license": "MIT",
+    "engines": {
+        "node": ">=22.19.0"
+    }
+}

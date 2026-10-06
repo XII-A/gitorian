@@ -1,0 +1,21 @@
+{
+    "$schema": "./node_modules/oxfmt/configuration_schema.json",
+    "printWidth": 120,
+    "trailingComma": "none",
+    "tabWidth": 4,
+    "semi": false,
+    "singleQuote": true,
+    "sortTailwindcss": {},
+    "sortPackageJson": false,
+    "ignorePatterns": [
+        "/.ai-docs",
+        "/dist",
+        "/coverage",
+        "/node_modules",
+        "**/dist",
+        "**/node_modules",
+        "/out",
+        "/release",
+        "/package-lock.json"
+    ]
+}

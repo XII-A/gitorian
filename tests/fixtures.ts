@@ -1,0 +1,179 @@
+import { randomUUID } from 'node:crypto'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { Store } from '../src/main/store'
+import { Http } from '../src/main/http'
+import { Notion } from '../src/main/notion'
+import { GitHub } from '../src/main/github'
+import { JournalService } from '../src/main/service'
+import type { NotionBlock } from '../src/shared/notion-format'
+
+const execute = promisify(execFile)
+export const patch =
+    'diff --git a/a.ts b/a.ts\nindex 1111111..2222222 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n'
+export async function workspace() {
+    const directory = await mkdtemp(join(tmpdir(), 'weekly-j-test-'))
+    const git = async (...args: string[]) =>
+        (await execute('git', args, { cwd: directory, windowsHide: true })).stdout.trim()
+    await git('init', '-b', 'development')
+    await git('config', 'user.name', 'Journal author')
+    await git('config', 'user.email', 'first@example.com')
+    await writeFile(join(directory, 'work.txt'), 'initial\n')
+    await git('add', 'work.txt')
+    await git('commit', '-m', 'Initial work')
+    await git('branch', 'main')
+    const store = new Store(join(directory, 'tracking.sqlite'))
+    const remote = transport()
+    const http = new Http(remote.fetch)
+    const github = new GitHub(
+        http,
+        () => 'test-token',
+        (token) => {
+            remote.token = token
+        }
+    )
+    const notion = new Notion(http, () => 'test-token')
+    const service = new JournalService(store, github, notion, () => ({
+        github: remote.github,
+        notion: true,
+        protectedStorage: true
+    }))
+    await service.addRepository(directory)
+    const repository = store.state.repositories[0]
+    repository.remote = 'https://github.com/example/project.git'
+    store.state.settings.githubLogin = 'me'
+    store.state.settings.destination = { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' }
+    return {
+        directory,
+        git,
+        store,
+        remote,
+        service,
+        notion,
+        repository,
+        close: async () => {
+            store.close()
+            await rm(directory, { recursive: true, force: true })
+        }
+    }
+}
+export function transport() {
+    const pages: {
+        id: string
+        url: string
+        created_time: string
+        properties: Record<string, unknown>
+        blocks: NotionBlock[]
+    }[] = []
+    const requests: { url: string; method: string; body?: Record<string, unknown> }[] = []
+    const remote = {
+        pages,
+        requests,
+        github: false,
+        token: '',
+        patch,
+        head: 'a'.repeat(40),
+        failCreate: false,
+        loseCreateResponse: false,
+        failAppend: false,
+        fetch: (input: string | URL | Request, init: RequestInit = {}): Promise<Response> =>
+            Promise.resolve().then(() => {
+                const url = input instanceof Request ? input.url : String(input)
+                const method = init.method ?? 'GET'
+                const body =
+                    typeof init.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : undefined
+                requests.push({ url, method, body })
+                const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 })
+                const list = (results: unknown[]) => json({ results, has_more: false, next_cursor: null })
+                if (url.includes('api.github.com')) {
+                    const pull = {
+                        number: 1,
+                        title: 'Improve work',
+                        body: 'Context',
+                        html_url: 'https://github.com/example/project/pull/1',
+                        created_at: '2026-10-05T10:00:00Z',
+                        merged_at: '2026-10-07T10:00:00Z',
+                        merge_commit_sha: 'c'.repeat(40),
+                        user: { login: 'someone-else' },
+                        base: { ref: 'main', sha: 'b'.repeat(40) },
+                        head: { ref: 'feature', sha: remote.head }
+                    }
+                    if (new Headers(init.headers).get('Accept') === 'application/vnd.github.diff')
+                        return new Response(remote.patch)
+                    if (url.includes('/commits'))
+                        return json([
+                            {
+                                sha: 'd'.repeat(40),
+                                commit: {
+                                    author: { email: 'second@example.com', date: '2026-10-06T10:00:00Z' },
+                                    message: 'My contribution'
+                                }
+                            }
+                        ])
+                    if (url.includes('/reviews'))
+                        return json([
+                            {
+                                id: 10,
+                                body: 'Reviewed thoughtfully',
+                                submitted_at: '2026-10-07T11:00:00Z',
+                                user: { login: 'me' },
+                                state: 'APPROVED',
+                                html_url: 'https://github.com/example/project/pull/1#review-10'
+                            }
+                        ])
+                    if (url.includes('/files')) return json([{ filename: 'a.ts', status: 'modified' }])
+                    if (url.includes('/pulls?')) return json([pull])
+                    return json(pull)
+                }
+                if (url.endsWith('/pages') && method === 'POST') {
+                    if (remote.failCreate) return new Response('{}', { status: 400, statusText: 'Bad Request' })
+                    const page = {
+                        id: randomUUID(),
+                        url: 'https://www.notion.so/entry',
+                        created_time: new Date().toISOString(),
+                        properties: body?.properties as Record<string, unknown>,
+                        blocks: body?.children as NotionBlock[]
+                    }
+                    pages.push(page)
+                    if (remote.loseCreateResponse) {
+                        remote.loseCreateResponse = false
+                        throw new Error('Connection lost after server commit')
+                    }
+                    return json(page)
+                }
+                if (url.includes('/data_sources/') && url.endsWith('/query')) return list(pages)
+                if (url.includes('/blocks/parent/children'))
+                    return list([
+                        {
+                            id: 'year-toggle',
+                            type: 'toggle',
+                            toggle: { rich_text: [{ type: 'text', text: { content: '2026' } }] },
+                            has_children: true
+                        }
+                    ])
+                if (url.includes('/blocks/year-toggle/children'))
+                    return list(
+                        pages.map((page) => ({ id: page.id, type: 'child_page', child_page: { title: 'Saved entry' } }))
+                    )
+                const id = /\/(?:blocks|pages)\/([^/?]+)/.exec(url)?.[1]
+                const page = pages.find((item) => item.id === id)
+                if (page && url.includes('/children')) {
+                    if (method === 'PATCH') {
+                        if (remote.failAppend) {
+                            remote.failAppend = false
+                            throw new Error('Append connection lost')
+                        }
+                        page.blocks.push(...(body?.children as NotionBlock[]))
+                        return list(page.blocks)
+                    }
+                    return list(page.blocks)
+                }
+                if (page) return json(page)
+                throw new Error(`Unexpected fixture request: ${method} ${url}`)
+            })
+    }
+    return remote
+}
