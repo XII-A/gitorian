@@ -9,13 +9,55 @@ app.setPath('userData', directory)
 let passed = false
 let checking = false
 app.on('browser-window-created', (_, window) => {
+    window.show = () => window.hide()
     window.webContents.once('did-finish-load', async () => {
         if (checking || window.webContents.getURL().includes('reference=')) return
         checking = true
         try {
             await new Promise((resolve) => setTimeout(resolve, 1000))
+            window.webContents.debugger.attach('1.3')
+            await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+                features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
+            })
+            const reducedMotion = await window.webContents.executeJavaScript(`(async () => {
+                document.querySelector('.hub-thread').scrollIntoView()
+                await new Promise(resolve => setTimeout(resolve, 100))
+                const value = matchMedia('(prefers-reduced-motion: reduce)').matches && document.querySelectorAll('.pin-spacer').length === 0
+                return value
+            })()`)
+            await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] })
+            window.webContents.debugger.detach()
+            window.webContents.setBackgroundThrottling(false)
+            const stablePickerHeight = await window.webContents.executeJavaScript(`(async () => {
+                document.querySelector('.hub-date-controls > div > button').click()
+                await new Promise(resolve => setTimeout(resolve, 700))
+                const panel = document.querySelector('[role="dialog"]')
+                const surface = panel.parentElement
+                const initial = panel.offsetHeight
+                const heights = []
+                const start = performance.now()
+                panel.querySelector('[aria-label="Previous month"]').click()
+                await new Promise(resolve => {
+                    const sample = () => {
+                        heights.push(panel.offsetHeight, surface.getBoundingClientRect().height)
+                        if (performance.now() - start < 1000) requestAnimationFrame(sample)
+                        else resolve()
+                    }
+                    requestAnimationFrame(sample)
+                })
+                panel.querySelector('button').focus()
+                Array.from(panel.querySelectorAll('button')).find(button => button.textContent === 'Cancel').click()
+                await new Promise(resolve => setTimeout(resolve, 300))
+                return { passed: heights.every(height => Math.abs(height - initial) < 2), initial, min: Math.min(...heights), max: Math.max(...heights) }
+            })()`)
             const result = await window.webContents.executeJavaScript(`(async () => {
                 const initial = await window.journal.invoke({ type: 'state' })
+                const opensOnHub = !!document.querySelector('.weekly-hub')
+                document.querySelector('[aria-label="Open journal"]').click()
+                const deadline = Date.now() + 3000
+                while (!document.querySelector('.hub-writing') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50))
+                const focusedDraft = document.querySelectorAll('.pane').length === 1
+                const autoCreatedDraft = (await window.journal.invoke({ type: 'state' })).state.drafts.length === 1
                 const created = await window.journal.invoke({ type: 'newDraft', week: '2026-10-05' })
                 const draft = created.state.drafts.at(-1)
                 const body = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Desktop recovery check' }] }] }
@@ -23,6 +65,7 @@ app.on('browser-window-created', (_, window) => {
                 const recovered = await window.journal.invoke({ type: 'state' })
                 await window.journal.invoke({ type: 'popout', kind: 'activity', id: 'reference-check' })
                 return { version: initial.state.version, node: typeof require,
+                    opensOnHub, focusedDraft, autoCreatedDraft,
                     panes: document.querySelectorAll('.pane').length,
                     recovered: recovered.state.drafts.at(-1).body.content[0].content[0].text }
             })()`)
@@ -31,15 +74,24 @@ app.on('browser-window-created', (_, window) => {
             const referenceResult = await reference.webContents.executeJavaScript(
                 `window.journal.invoke({type:'newDraft',week:'2026-10-05'}).then(()=>false,()=>true)`
             )
+            await window.webContents.executeJavaScript(`document.querySelector('.app-header button').click()`)
+            await new Promise((resolve) => setTimeout(resolve, 100))
             passed =
                 result.version === 1 &&
                 result.node === 'undefined' &&
-                result.panes === 3 &&
+                result.opensOnHub &&
+                result.focusedDraft &&
+                result.autoCreatedDraft &&
+                reducedMotion &&
+                stablePickerHeight.passed &&
+                result.panes === 1 &&
                 result.recovered === 'Desktop recovery check' &&
                 referenceResult
             console.info(
                 JSON.stringify({
                     ...result,
+                    reducedMotion,
+                    stablePickerHeight,
                     referenceReadOnly: referenceResult,
                     electron: process.versions.electron,
                     passed

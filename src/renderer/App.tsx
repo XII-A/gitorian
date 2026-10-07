@@ -24,8 +24,13 @@ import { DraftPane } from './DraftPane'
 import { Settings } from './Settings'
 import { DetailsPane } from './DetailsPane'
 import { CommandMenu } from './components/CommandMenu'
+import { WeeklyHub } from './WeeklyHub'
+import { journalWeek } from './hub-model'
 
 export function App() {
+    const [screen, setScreen] = useState<'hub' | 'workspace'>('hub')
+    const [writingFocus, setWritingFocus] = useState(false)
+    const openingJournal = useRef(false)
     const [state, setState] = useState<State>()
     const [connections, setConnections] = useState<Reply['connections']>({
         github: false,
@@ -158,8 +163,11 @@ export function App() {
         return (
             <main className="loading">
                 <BookOpen />
-                <h1>weekly-j</h1>
-                <p>{error || 'Opening your workspace…'}</p>
+                <h1>A moment for your week.</h1>
+                <p role={error ? 'alert' : 'status'}>
+                    {error ? 'Unable to open your journal. Try again.' : 'Opening your journal…'}
+                </p>
+                {error && <Button onClick={() => void run({ type: 'state' })}>Try again</Button>}
             </main>
         )
     const activity = state.activities.find((item) => item.id === selectedId)
@@ -533,9 +541,76 @@ export function App() {
         )
     }
     const layout = state.settings.layout
-    const visible = layout.order.filter((id) => !layout.hidden.includes(id))
+    const visible = writingFocus ? ['draft' as const] : layout.order.filter((id) => !layout.hidden.includes(id))
+    if (screen === 'hub')
+        return (
+            <>
+                <WeeklyHub
+                    state={state}
+                    run={run}
+                    error={error}
+                    onSettings={() => setSettingsOpen(true)}
+                    onWrite={(date) => {
+                        if (openingJournal.current) return
+                        openingJournal.current = true
+                        void (async () => {
+                            try {
+                                await saveQueue.current
+                                const targetWeek = journalWeek(date, state.settings.weekStart)
+                                const existing = state.drafts
+                                    .filter((item) => item.week === targetWeek && !item.publishedEntryId)
+                                    .at(-1)
+                                const result = existing ? undefined : await run({ type: 'newDraft', week: targetWeek })
+                                if (!existing && !result) return
+                                setWeek(targetWeek)
+                                setActiveDraft(existing ?? result?.state.drafts.at(-1))
+                                setWritingFocus(true)
+                                setScreen('workspace')
+                                window.scrollTo(0, 0)
+                            } finally {
+                                openingJournal.current = false
+                            }
+                        })()
+                    }}
+                    onActivity={(item) => {
+                        void selectActivity(item)
+                        setWritingFocus(false)
+                        setScreen('workspace')
+                    }}
+                />
+                {settingsOpen && (
+                    <Settings
+                        state={state}
+                        connections={connections}
+                        remotes={remotes}
+                        run={run}
+                        close={() => setSettingsOpen(false)}
+                    />
+                )}
+                {commandsOpen && (
+                    <CommandMenu
+                        close={() => setCommandsOpen(false)}
+                        commands={[
+                            { name: 'Open journal', hint: 'Continue writing', action: () => setScreen('workspace') },
+                            {
+                                name: 'Open settings',
+                                hint: 'Repositories and connections',
+                                action: () => setSettingsOpen(true)
+                            },
+                            {
+                                name: 'Refresh activity',
+                                hint: 'Discover work',
+                                action: () => {
+                                    void run({ type: 'refresh' })
+                                }
+                            }
+                        ]}
+                    />
+                )}
+            </>
+        )
     return (
-        <main className="app">
+        <main className={`app hub-workspace ${writingFocus ? 'hub-writing' : ''}`}>
             <nav className="app-rail" aria-label="Workspace navigation">
                 <div className="app-mark" aria-label="weekly-j">
                     <BookOpen size={20} />
@@ -581,11 +656,9 @@ export function App() {
             </nav>
             <div className="workspace-shell">
                 <header className="app-header">
-                    <div className="brand">
-                        <h1>weekly-j</h1>
-                        <span>/</span>
-                        <span>{view === 'entries' ? 'Journal library' : 'Weekly workspace'}</span>
-                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => setScreen('hub')}>
+                        <ArrowLeft size={16} /> Back to week
+                    </Button>
                     <div className="week-picker">
                         <Button
                             variant="ghost"
@@ -737,7 +810,10 @@ export function App() {
                     orientation={narrow ? 'vertical' : 'horizontal'}
                     defaultLayout={layout.sizes}
                     onLayoutChanged={(sizes) => {
-                        if (Object.keys(sizes).some((id) => Math.abs((layout.sizes[id] ?? 0) - sizes[id]) > 0.5))
+                        if (
+                            !writingFocus &&
+                            Object.keys(sizes).some((id) => Math.abs((layout.sizes[id] ?? 0) - sizes[id]) > 0.5)
+                        )
                             void changeLayout({ ...layout, sizes: { ...layout.sizes, ...sizes } })
                     }}
                     className="workspace"
