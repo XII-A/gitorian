@@ -86,39 +86,6 @@ export function DraftPane({
                             onChange={onBodyChange}
                             insertLink={insertLink}
                         />
-                        <div className="selected-work">
-                            <h3>
-                                Included work <span className="muted">{draft.selections.length}</span>
-                            </h3>
-                            {draft.selections.map((selection) => (
-                                <div className="row" key={selection.activityId}>
-                                    <span>
-                                        {state.activities.find((item) => item.id === selection.activityId)?.title ??
-                                            selection.activityId}
-                                        {selection.revision && <small className="muted"> · Captured revision</small>}
-                                    </span>
-                                    {!draft.publishedEntryId && (
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() =>
-                                                run({
-                                                    type: 'select',
-                                                    draftId: draft.id,
-                                                    activityId: selection.activityId,
-                                                    included: false
-                                                })
-                                            }
-                                        >
-                                            Remove
-                                        </Button>
-                                    )}
-                                </div>
-                            ))}
-                            <p className="muted">
-                                Work stays linked to this draft. Coverage is confirmed when you publish.
-                            </p>
-                        </div>
                         {state.saves
                             .filter((save) => save.draftId === draft.id && save.status !== 'confirmed')
                             .map((save) => (
@@ -126,7 +93,7 @@ export function DraftPane({
                                     <p>
                                         {save.status === 'failed'
                                             ? 'Save failed. Your draft is safe.'
-                                            : 'Save outcome is uncertain; coverage is pending.'}
+                                            : 'Save outcome is uncertain. Verify it before retrying.'}
                                     </p>
                                     <p>{save.error}</p>
                                     {save.status === 'unknown' && (

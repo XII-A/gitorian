@@ -41,8 +41,22 @@ describe('weekly hub calendar ranges', () => {
             activity('after', '2026-03-09T04:00:00Z')
         ]
         expect(rangeActivities(state, '2026-03-08', '2026-03-08').map((item) => item.id)).toEqual(['end', 'start'])
+        // Legacy tracking decisions must not change the selected date range.
         state.activities[1].disposition = 'dismissed'
-        expect(rangeActivities(state, '2026-03-08', '2026-03-08').map((item) => item.id)).toEqual(['end'])
+        state.activities[2].disposition = 'deferred'
+        state.activities[2].deferUntil = '2026-04-01'
+        state.entries.push({
+            id: 'saved-entry',
+            title: 'Earlier reflection',
+            date: '2026-03-08',
+            url: 'https://notion.so/saved-entry',
+            body: { type: 'doc', content: [] },
+            refreshedAt: '2026-03-09T04:00:00Z'
+        })
+        state.coverage.push({ activityId: 'end', entryId: 'saved-entry' })
+        state.repositories[0].trackingStart = '2026-04-01'
+        state.activities[0].explicit = true
+        expect(rangeActivities(state, '2026-03-08', '2026-03-08').map((item) => item.id)).toEqual(['end', 'start'])
         state.repositories[0].removed = true
         expect(rangeActivities(state, '2026-03-08', '2026-03-08')).toEqual([])
     })

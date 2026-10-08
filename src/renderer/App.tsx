@@ -9,14 +9,14 @@ import {
     BookOpen,
     RefreshCw,
     Settings as SettingsIcon,
-    Inbox,
+    CalendarDays,
     History,
     Search,
     PanelLeft,
     SlidersHorizontal,
     PenLine
 } from 'lucide-react'
-import { coveredEntries, defaultLayout, inbox, featureActivities, shiftWeek, weekOf } from '../shared/model'
+import { defaultLayout, featureActivities, shiftWeek, weekOf } from '../shared/model'
 import type { Activity, Command, Draft, Entry, Reply, State } from '../shared/model'
 import { plainText } from '../shared/notion-format'
 import { Button } from './components/arc/button/button'
@@ -25,7 +25,7 @@ import { Settings } from './Settings'
 import { DetailsPane } from './DetailsPane'
 import { CommandMenu } from './components/CommandMenu'
 import { WeeklyHub } from './WeeklyHub'
-import { journalWeek } from './hub-model'
+import { journalWeek, offsetDay, rangeActivities } from './hub-model'
 
 export function App() {
     const [screen, setScreen] = useState<'hub' | 'workspace'>('hub')
@@ -64,7 +64,7 @@ export function App() {
     const [search, setSearch] = useState('')
     const [repositoryId, setRepositoryId] = useState('')
     const [featureId, setFeatureId] = useState('')
-    const [view, setView] = useState('inbox')
+    const [view, setView] = useState('week')
     const [selectedId, setSelectedId] = useState('')
     const [entryId, setEntryId] = useState('')
     const [historyIds, setHistoryIds] = useState<string[]>([])
@@ -181,15 +181,11 @@ export function App() {
             .flatMap((item) => featureActivities(state, item.id).map((activity) => activity.id))
     )
     let items: Activity[] =
-        view === 'inbox'
-            ? inbox(state, week)
-            : view === 'deferred'
-              ? state.activities.filter((item) => item.disposition === 'deferred')
-              : view === 'dismissed'
-                ? state.activities.filter((item) => item.disposition === 'dismissed')
-                : view === 'branch'
-                  ? state.activities.filter((item) => historyIds.includes(item.id))
-                  : state.activities
+        view === 'week'
+            ? rangeActivities(state, week, offsetDay(week, 6))
+            : view === 'branch'
+              ? state.activities.filter((item) => historyIds.includes(item.id))
+              : state.activities
     items = items
         .filter(
             (item) =>
@@ -221,7 +217,6 @@ export function App() {
             draft={draft}
             reference={!!reference}
             run={run}
-            showEntry={showEntry}
             setInsertLink={setInsertLink}
         />
     )
@@ -297,9 +292,7 @@ export function App() {
                                 setView(event.target.value)
                             }}
                         >
-                            <option value="inbox">Inbox & carryover</option>
-                            <option value="deferred">Deferred</option>
-                            <option value="dismissed">Dismissed</option>
+                            <option value="week">This week’s work</option>
                             <option value="history">All captured history</option>
                             <option value="branch">Branch browser</option>
                             <option value="entries">Saved journals</option>
@@ -405,28 +398,12 @@ export function App() {
                                   }}
                               >
                                   <span className="eyebrow">
-                                      {item.kind === 'pr' &&
-                                      state.coverage.some((link) => link.activityId === item.id) &&
-                                      !coveredEntries(state, item).length
-                                          ? 'UPDATED WORK'
-                                          : item.kind.toUpperCase()}{' '}
-                                      · {item.date.slice(0, 10)}
+                                      {item.kind.toUpperCase()} · {item.date.slice(0, 10)}
                                   </span>
                                   <strong>{item.title}</strong>
                                   <span className="muted">
                                       {state.repositories.find((value) => value.id === item.repositoryId)?.name} ·{' '}
                                       {item.author}
-                                  </span>
-                                  <span className="coverage-label">
-                                      {draft?.selections.some((selection) => selection.activityId === item.id)
-                                          ? 'Included in draft'
-                                          : coveredEntries(state, item).length
-                                            ? 'Covered'
-                                            : item.disposition === 'deferred'
-                                              ? `Deferred until ${item.deferUntil}`
-                                              : item.disposition === 'dismissed'
-                                                ? `Dismissed ${item.reason ?? ''}`
-                                                : 'Uncovered'}
                                   </span>
                               </Button>
                           ))}
@@ -563,6 +540,7 @@ export function App() {
                                 const result = existing ? undefined : await run({ type: 'newDraft', week: targetWeek })
                                 if (!existing && !result) return
                                 setWeek(targetWeek)
+                                setView('week')
                                 setActiveDraft(existing ?? result?.state.drafts.at(-1))
                                 setWritingFocus(true)
                                 setScreen('workspace')
@@ -573,6 +551,8 @@ export function App() {
                         })()
                     }}
                     onActivity={(item) => {
+                        setWeek(weekOf(new Date(item.date), state.settings))
+                        setView('week')
                         void selectActivity(item)
                         setWritingFocus(false)
                         setScreen('workspace')
@@ -627,7 +607,7 @@ export function App() {
                     <Search size={18} />
                 </Button>
                 {[
-                    { id: 'inbox', name: 'Work inbox', icon: Inbox },
+                    { id: 'week', name: 'This week’s work', icon: CalendarDays },
                     { id: 'entries', name: 'Journal library', icon: BookOpen },
                     { id: 'history', name: 'Work history', icon: History }
                 ].map(({ id, name, icon: Icon }) => (
@@ -858,7 +838,7 @@ export function App() {
                     close={() => setCommandsOpen(false)}
                     commands={[
                         ...[
-                            { id: 'inbox', name: 'Open work inbox', hint: 'Uncovered work and carryover' },
+                            { id: 'week', name: 'Open this week’s work', hint: 'Activity for the selected week' },
                             { id: 'entries', name: 'Open journal library', hint: 'Read your published entries' },
                             {
                                 id: 'history',

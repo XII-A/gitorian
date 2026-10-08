@@ -20,7 +20,6 @@ export function rangeActivities(state: State, start: string, end: string) {
             return (
                 day >= start &&
                 day <= end &&
-                item.disposition !== 'dismissed' &&
                 state.repositories.some((repo) => repo.id === item.repositoryId && !repo.removed)
             )
         })
