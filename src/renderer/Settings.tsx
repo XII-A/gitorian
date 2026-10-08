@@ -171,7 +171,7 @@ export function Settings({
                                     </Field>
                                     <div className="row">
                                         <Field>
-                                            Tracking start
+                                            Activity history starts
                                             <Input
                                                 type="date"
                                                 value={repository.trackingStart}

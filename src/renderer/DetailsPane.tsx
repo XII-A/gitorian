@@ -1,8 +1,6 @@
 import { Disclosure } from './components/Disclosure'
-import { Input, Select, Field } from './components/Fields'
-import { useState } from 'react'
+import { Input, Field } from './components/Fields'
 import { GitBranch } from 'lucide-react'
-import { coveredEntries, weekOf } from '../shared/model'
 import type { Activity, Command, Draft, Entry, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { Editor } from './Editor'
@@ -15,22 +13,9 @@ interface DetailsPaneProps {
     draft?: Draft
     reference: boolean
     run: (command: Command) => Promise<Reply | undefined>
-    showEntry: (entry: Entry) => void
     setInsertLink: (link: { url: string; title: string; nonce: number }) => void
 }
-export function DetailsPane({
-    state,
-    activity,
-    entry,
-    draft,
-    reference,
-    run,
-    showEntry,
-    setInsertLink
-}: DetailsPaneProps) {
-    const [deferWeek, setDeferWeek] = useState('')
-    const [reason, setReason] = useState('')
-    const [linkEntry, setLinkEntry] = useState('')
+export function DetailsPane({ state, activity, entry, draft, reference, run, setInsertLink }: DetailsPaneProps) {
     return (
         <section className="pane details">
             <header className="pane-header">
@@ -92,23 +77,6 @@ export function DetailsPane({
                                     Open in GitHub ↗
                                 </Button>
                             )}
-                            {draft && !draft.publishedEntryId && !reference && (
-                                <Button
-                                    size="sm"
-                                    onClick={() =>
-                                        run({
-                                            type: 'select',
-                                            draftId: draft.id,
-                                            activityId: activity.id,
-                                            included: !draft.selections.some((item) => item.activityId === activity.id)
-                                        })
-                                    }
-                                >
-                                    {draft.selections.some((item) => item.activityId === activity.id)
-                                        ? 'Remove from draft'
-                                        : 'Include in draft'}
-                                </Button>
-                            )}
                             {activity.kind === 'pr' && activity.url && draft && !reference && (
                                 <Button
                                     variant="ghost"
@@ -119,99 +87,6 @@ export function DetailsPane({
                                 >
                                     Insert PR link
                                 </Button>
-                            )}
-                        </div>
-                        <div className="coverage">
-                            <h3>Journal coverage</h3>
-                            {coveredEntries(state, activity).map((value) => (
-                                <div key={value.id} className="row">
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() => {
-                                            showEntry(value)
-                                        }}
-                                    >
-                                        {value.title}
-                                    </Button>
-                                    {!reference && (
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() =>
-                                                run({
-                                                    type: 'coverage',
-                                                    activityId: activity.id,
-                                                    entryId: value.id,
-                                                    linked: false
-                                                })
-                                            }
-                                        >
-                                            Unlink
-                                        </Button>
-                                    )}
-                                </div>
-                            ))}
-                            {!coveredEntries(state, activity).length && (
-                                <p className="muted">
-                                    {activity.kind === 'pr' &&
-                                    state.coverage.some((link) => link.activityId === activity.id)
-                                        ? 'Updated work · earlier revisions have journal entries'
-                                        : 'Uncovered work'}
-                                </p>
-                            )}
-                            {activity.kind === 'pr' &&
-                                state.coverage
-                                    .filter(
-                                        (link) => link.activityId === activity.id && link.revision !== activity.revision
-                                    )
-                                    .map((link) => (
-                                        <Button
-                                            key={`${link.entryId}:${link.revision}`}
-                                            variant="ghost"
-                                            onClick={() => {
-                                                const prior = state.entries.find((value) => value.id === link.entryId)
-                                                if (prior) showEntry(prior)
-                                            }}
-                                        >
-                                            Previously:{' '}
-                                            {state.entries.find((value) => value.id === link.entryId)?.title ??
-                                                'Saved entry'}
-                                        </Button>
-                                    ))}
-                            {!reference && state.entries.length > 0 && (
-                                <div className="row">
-                                    <Field>
-                                        Link existing entry
-                                        <Select
-                                            value={linkEntry}
-                                            onChange={(event) => {
-                                                setLinkEntry(event.target.value)
-                                            }}
-                                        >
-                                            <option value="">Choose entry</option>
-                                            {state.entries.map((value) => (
-                                                <option key={value.id} value={value.id}>
-                                                    {value.title}
-                                                </option>
-                                            ))}
-                                        </Select>
-                                    </Field>
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        disabled={!linkEntry}
-                                        onClick={() =>
-                                            run({
-                                                type: 'coverage',
-                                                activityId: activity.id,
-                                                entryId: linkEntry,
-                                                linked: true
-                                            })
-                                        }
-                                    >
-                                        Link
-                                    </Button>
-                                </div>
                             )}
                         </div>
                         <p className="description">{activity.description}</p>
@@ -234,63 +109,7 @@ export function DetailsPane({
                             )}
                         <DiffViewer key={activity.id} text={state.diffs[activity.id] ?? ''} />
                         {!reference && (
-                            <Disclosure className="decisions" title="Inbox decisions & features">
-                                <Field>
-                                    Defer to week
-                                    <Input
-                                        type="date"
-                                        value={deferWeek}
-                                        onChange={(event) => {
-                                            setDeferWeek(event.target.value)
-                                        }}
-                                    />
-                                </Field>
-                                <Button
-                                    variant="secondary"
-                                    disabled={!deferWeek}
-                                    onClick={() =>
-                                        run({
-                                            type: 'disposition',
-                                            activityId: activity.id,
-                                            disposition: 'deferred',
-                                            until: weekOf(new Date(`${deferWeek}T12:00:00`), state.settings)
-                                        })
-                                    }
-                                >
-                                    Defer
-                                </Button>
-                                <Field>
-                                    Dismiss reason (optional)
-                                    <Input
-                                        value={reason}
-                                        onChange={(event) => {
-                                            setReason(event.target.value)
-                                        }}
-                                    />
-                                </Field>
-                                <div className="row">
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() =>
-                                            run({
-                                                type: 'disposition',
-                                                activityId: activity.id,
-                                                disposition: 'dismissed',
-                                                reason
-                                            })
-                                        }
-                                    >
-                                        Dismiss
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() =>
-                                            run({ type: 'disposition', activityId: activity.id, disposition: 'inbox' })
-                                        }
-                                    >
-                                        Return to inbox
-                                    </Button>
-                                </div>
+                            <Disclosure className="decisions" title="Features">
                                 {state.features.map((value) => (
                                     <div key={value.id}>
                                         <Field className="row">
@@ -360,7 +179,7 @@ export function DetailsPane({
                     <div className="empty">
                         <GitBranch size={36} />
                         <h2>Make room for reflection.</h2>
-                        <p>Choose work on the left to inspect changes and see what you’ve already written.</p>
+                        <p>Choose work on the left to inspect changes while you write.</p>
                     </div>
                 )}
             </div>
