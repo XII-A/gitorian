@@ -53,11 +53,35 @@ app.on('browser-window-created', (_, window) => {
             const result = await window.webContents.executeJavaScript(`(async () => {
                 const initial = await window.journal.invoke({ type: 'state' })
                 const opensOnHub = !!document.querySelector('.weekly-hub')
+                const date = new Date(new Date().toLocaleDateString('en-CA', { timeZone: initial.state.settings.timezone }) + 'T12:00:00Z')
+                date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() - initial.state.settings.weekStart + 7) % 7) - 7)
+                const expectedWeek = date.toISOString().slice(0, 10)
+                const chooseLastWeek = async () => {
+                    document.querySelector('.hub-date-controls > div > button').click()
+                    await new Promise(resolve => setTimeout(resolve, 600))
+                    const panel = document.querySelector('[role="dialog"]')
+                    Array.from(panel.querySelectorAll('button')).find(button => button.textContent === 'Last week').click()
+                    await new Promise(resolve => requestAnimationFrame(resolve))
+                    Array.from(panel.querySelectorAll('button')).find(button => button.textContent === 'Apply').click()
+                    await new Promise(resolve => setTimeout(resolve, 300))
+                }
+                await chooseLastWeek()
                 document.querySelector('[aria-label="Open journal"]').click()
                 const deadline = Date.now() + 3000
-                while (!document.querySelector('.hub-writing') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50))
-                const focusedDraft = document.querySelectorAll('.pane').length === 1
-                const autoCreatedDraft = (await window.journal.invoke({ type: 'state' })).state.drafts.length === 1
+                while (!document.querySelector('.workspace') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50))
+                const fullWorkspace = document.querySelectorAll('.pane').length === 3 && !document.querySelector('.hub-writing')
+                const opened = await window.journal.invoke({ type: 'state' })
+                const autoCreatedDraft = opened.state.drafts.length === 1
+                const expectedDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(expectedWeek + 'T12:00:00'))
+                const selectedWeek = document.querySelector('.week-picker [aria-haspopup="dialog"] > span').textContent.trim() === expectedDate && opened.state.drafts.at(-1).week === expectedWeek
+                const weekView = document.querySelector('[aria-label="Workspace navigation"] [aria-pressed="true"]').getAttribute('aria-label') === 'This week’s work'
+                document.querySelector('.app-header button').click()
+                await new Promise(resolve => setTimeout(resolve, 100))
+                await chooseLastWeek()
+                document.querySelector('[aria-label="Open journal"]').click()
+                await new Promise(resolve => setTimeout(resolve, 200))
+                const reopened = await window.journal.invoke({ type: 'state' })
+                const reusedDraft = reopened.state.drafts.length === 1 && reopened.state.drafts[0].id === opened.state.drafts[0].id
                 const created = await window.journal.invoke({ type: 'newDraft', week: '2026-10-05' })
                 const draft = created.state.drafts.at(-1)
                 const body = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Desktop recovery check' }] }] }
@@ -65,7 +89,7 @@ app.on('browser-window-created', (_, window) => {
                 const recovered = await window.journal.invoke({ type: 'state' })
                 await window.journal.invoke({ type: 'popout', kind: 'activity', id: 'reference-check' })
                 return { version: initial.state.version, node: typeof require,
-                    opensOnHub, focusedDraft, autoCreatedDraft,
+                    opensOnHub, fullWorkspace, selectedWeek, weekView, autoCreatedDraft, reusedDraft,
                     panes: document.querySelectorAll('.pane').length,
                     recovered: recovered.state.drafts.at(-1).body.content[0].content[0].text }
             })()`)
@@ -80,11 +104,14 @@ app.on('browser-window-created', (_, window) => {
                 result.version === 1 &&
                 result.node === 'undefined' &&
                 result.opensOnHub &&
-                result.focusedDraft &&
+                result.fullWorkspace &&
+                result.selectedWeek &&
+                result.weekView &&
                 result.autoCreatedDraft &&
+                result.reusedDraft &&
                 reducedMotion &&
                 stablePickerHeight.passed &&
-                result.panes === 1 &&
+                result.panes === 3 &&
                 result.recovered === 'Desktop recovery check' &&
                 referenceResult
             console.info(
@@ -100,8 +127,7 @@ app.on('browser-window-created', (_, window) => {
         } catch (error) {
             console.error(error)
         }
-        process.exitCode = passed ? 0 : 1
-        app.quit()
+        app.exit(passed ? 0 : 1)
     })
 })
 app.on('will-quit', () => {
