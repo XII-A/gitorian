@@ -1,3 +1,4 @@
+import { Disclosure } from './components/Disclosure'
 import { Input, Select, Field } from './components/Fields'
 import { BookOpen } from 'lucide-react'
 import type { Command, Draft, Entry, JournalNode, Reply, State } from '../shared/model'
@@ -5,6 +6,8 @@ import { Editor } from './Editor'
 import { Button } from './components/arc/button/button'
 
 interface DraftPaneProps {
+    sample?: boolean
+    publishAvailable?: boolean
     state: State
     week: string
     draft?: Draft
@@ -20,6 +23,8 @@ interface DraftPaneProps {
     showEntry: (entry: Entry) => void
 }
 export function DraftPane({
+    sample,
+    publishAvailable = true,
     state,
     week,
     draft,
@@ -37,34 +42,36 @@ export function DraftPane({
     return (
         <section className="pane draft-pane">
             <header className="pane-header">
-                <span>Journal</span>
+                <span>Draft</span>
                 <span className="local-label">{draft?.publishedEntryId ? 'Published' : 'Private draft'}</span>
             </header>
             <div className="pane-content">
-                <div className="row between">
-                    <Field>
-                        Draft
-                        <Select
-                            value={draft?.id ?? ''}
-                            onChange={(event) => {
-                                void onChoose(event.target.value)
-                            }}
-                        >
-                            <option value="">Choose draft</option>
-                            {state.drafts
-                                .filter((item) => item.week === week)
-                                .map((item) => (
-                                    <option key={item.id} value={item.id}>
-                                        {item.title}
-                                        {item.publishedEntryId ? ' · published' : ''}
-                                    </option>
-                                ))}
-                        </Select>
-                    </Field>
-                    <Button variant="secondary" size="sm" onClick={onCreate}>
-                        New entry
-                    </Button>
-                </div>
+                <Disclosure className="draft-options" title="Other drafts">
+                    <div className="row between">
+                        <Field>
+                            Draft
+                            <Select
+                                value={draft?.id ?? ''}
+                                onChange={(event) => {
+                                    void onChoose(event.target.value)
+                                }}
+                            >
+                                <option value="">Choose draft</option>
+                                {state.drafts
+                                    .filter((item) => item.week === week)
+                                    .map((item) => (
+                                        <option key={item.id} value={item.id}>
+                                            {item.title}
+                                            {item.publishedEntryId ? ' · published' : ''}
+                                        </option>
+                                    ))}
+                            </Select>
+                        </Field>
+                        <Button variant="secondary" size="sm" onClick={onCreate}>
+                            New entry
+                        </Button>
+                    </div>
+                </Disclosure>
                 {draft ? (
                     <>
                         <label className="sr-only" htmlFor="draft-title">
@@ -86,10 +93,10 @@ export function DraftPane({
                             onChange={onBodyChange}
                             insertLink={insertLink}
                         />
-                        <div className="selected-work">
-                            <h3>
-                                Included work <span className="muted">{draft.selections.length}</span>
-                            </h3>
+                        <Disclosure
+                            className="selected-work"
+                            title={'Included work (' + String(draft.selections.length) + ')'}
+                        >
                             {draft.selections.map((selection) => (
                                 <div className="row" key={selection.activityId}>
                                     <span>
@@ -118,7 +125,7 @@ export function DraftPane({
                             <p className="muted">
                                 Work stays linked to this draft. Coverage is confirmed when you publish.
                             </p>
-                        </div>
+                        </Disclosure>
                         {state.saves
                             .filter((save) => save.draftId === draft.id && save.status !== 'confirmed')
                             .map((save) => (
@@ -139,6 +146,13 @@ export function DraftPane({
                                     )}
                                 </div>
                             ))}
+                        {!publishAvailable && !draft.publishedEntryId && (
+                            <p className="publish-hint">
+                                {sample
+                                    ? 'Publishing is off while using sample data.'
+                                    : 'Connect Notion and choose a destination in Settings to publish.'}
+                            </p>
+                        )}
                         <footer className="draft-footer">
                             <span className="muted" role="status">
                                 {saveStatus}
@@ -153,21 +167,32 @@ export function DraftPane({
                                     View saved entry
                                 </Button>
                             ) : (
-                                <Button loading={busy} onClick={onPublish}>
-                                    Publish to Notion ↗
+                                <Button
+                                    loading={busy}
+                                    disabled={!publishAvailable}
+                                    title={
+                                        sample
+                                            ? 'Publishing is unavailable with sample data'
+                                            : !publishAvailable
+                                              ? 'Connect Notion and choose a destination in Settings'
+                                              : undefined
+                                    }
+                                    onClick={onPublish}
+                                >
+                                    Publish to Notion
                                 </Button>
                             )}
                         </footer>
                     </>
                 ) : (
                     <div className="empty">
-                        <BookOpen size={36} />
+                        <BookOpen size={24} />
                         <h2>What did this week teach you?</h2>
                         <p>
-                            Create an entry when you’re ready. Your writing stays on this machine until you save to
+                            Create an entry when you are ready. Your writing stays on this machine until you save to
                             Notion.
                         </p>
-                        <Button onClick={onCreate}>Create this week’s entry</Button>
+                        <Button onClick={onCreate}>Create an entry</Button>
                     </div>
                 )}
             </div>

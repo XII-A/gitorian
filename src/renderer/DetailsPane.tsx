@@ -34,7 +34,7 @@ export function DetailsPane({
     return (
         <section className="pane details">
             <header className="pane-header">
-                <span>{entry ? 'Journal entry' : 'Inspector'}</span>
+                <span>{entry ? 'Journal entry' : 'Changes'}</span>
                 {(activity || entry) && !reference && (
                     <Button
                         variant="ghost"
@@ -62,11 +62,12 @@ export function DetailsPane({
                     </>
                 ) : activity ? (
                     <>
-                        <p className="eyebrow">
+                        <h2>{activity.title}</h2>
+                        <p className="change-origin">
                             {state.repositories.find((item) => item.id === activity.repositoryId)?.name} /{' '}
                             {activity.kind}
                         </p>
-                        <h2>{activity.title}</h2>
+
                         <p className="muted">
                             {activity.author} · {new Date(activity.date).toLocaleString()}
                             <br />
@@ -82,18 +83,15 @@ export function DetailsPane({
                                 Deleted branches: {activity.deletedBranches.join(', ')} · History retained
                             </p>
                         )}
-                        <div className="row wrap">
-                            {activity.url && (
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => run({ type: 'open', url: activity.url! })}
-                                >
-                                    Open in GitHub ↗
-                                </Button>
-                            )}
+                        <div className="change-selection">
+                            <span>
+                                {draft?.selections.some((item) => item.activityId === activity.id)
+                                    ? 'Included in this draft'
+                                    : 'Excluded from this draft'}
+                            </span>
                             {draft && !draft.publishedEntryId && !reference && (
                                 <Button
+                                    variant="secondary"
                                     size="sm"
                                     onClick={() =>
                                         run({
@@ -109,20 +107,45 @@ export function DetailsPane({
                                         : 'Include in draft'}
                                 </Button>
                             )}
-                            {activity.kind === 'pr' && activity.url && draft && !reference && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                        setInsertLink({ url: activity.url!, title: activity.title, nonce: Date.now() })
-                                    }}
-                                >
-                                    Insert PR link
-                                </Button>
-                            )}
                         </div>
-                        <div className="coverage">
-                            <h3>Journal coverage</h3>
+                        {activity.kind === 'pr' &&
+                            state.diffs[activity.id] !== undefined &&
+                            activity.diffRevision !== activity.revision && (
+                                <p className="save-warning">
+                                    Cached diff from an earlier revision. Current changes are unavailable; refresh to
+                                    retry or open in GitHub.
+                                </p>
+                            )}
+                        <DiffViewer key={activity.id} text={state.diffs[activity.id] ?? ''} />
+                        <Disclosure title="More actions">
+                            <div className="row wrap">
+                                {activity.url && (
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => run({ type: 'open', url: activity.url! })}
+                                    >
+                                        Open in GitHub ↗
+                                    </Button>
+                                )}
+                                {activity.kind === 'pr' && activity.url && draft && !reference && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            setInsertLink({
+                                                url: activity.url!,
+                                                title: activity.title,
+                                                nonce: Date.now()
+                                            })
+                                        }}
+                                    >
+                                        Insert PR link
+                                    </Button>
+                                )}
+                            </div>
+                        </Disclosure>
+                        <Disclosure className="coverage" title="Journal history">
                             {coveredEntries(state, activity).map((value) => (
                                 <div key={value.id} className="row">
                                     <Button
@@ -213,7 +236,7 @@ export function DetailsPane({
                                     </Button>
                                 </div>
                             )}
-                        </div>
+                        </Disclosure>
                         <p className="description">{activity.description}</p>
                         {activity.files.length > 0 && (
                             <Disclosure title={`${activity.files.length} changed files`}>
@@ -224,15 +247,7 @@ export function DetailsPane({
                                 ))}
                             </Disclosure>
                         )}
-                        {activity.kind === 'pr' &&
-                            state.diffs[activity.id] !== undefined &&
-                            activity.diffRevision !== activity.revision && (
-                                <p className="save-warning">
-                                    Cached diff from an earlier revision. Current changes are unavailable; refresh to
-                                    retry or open in GitHub.
-                                </p>
-                            )}
-                        <DiffViewer key={activity.id} text={state.diffs[activity.id] ?? ''} />
+
                         {!reference && (
                             <Disclosure className="decisions" title="Inbox decisions & features">
                                 <Field>
