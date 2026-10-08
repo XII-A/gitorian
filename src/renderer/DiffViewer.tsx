@@ -1,7 +1,6 @@
-import { Select, Field } from './components/Fields'
+import { Input, Select, Field } from './components/Fields'
 import { useMemo, useState } from 'react'
 import { Diff, Hunk, parseDiff } from 'react-diff-view'
-import SegmentedControl from './components/arc/segmented-control/segmented-control'
 
 export function DiffViewer({ text }: { text: string }) {
     const [split, setSplit] = useState(false)
@@ -19,58 +18,39 @@ export function DiffViewer({ text }: { text: string }) {
     return (
         <div className="diff-viewer">
             <div className="row">
-                {files.length > 1 && (
-                    <Field>
-                        Changed file{' '}
-                        <Select
-                            value={selected}
-                            onChange={(event) => {
-                                setSelected(event.target.value)
-                            }}
-                        >
-                            <option value="">All files</option>
-                            {files.map((file) => (
-                                <option key={file.newPath} value={file.newPath}>
-                                    {file.newPath}
-                                </option>
-                            ))}
-                        </Select>
-                    </Field>
-                )}
-                <SegmentedControl
-                    label="Diff view"
-                    value={split ? 'split' : 'unified'}
-                    onValueChange={(value) => setSplit(value === 'split')}
-                    options={[
-                        { value: 'unified', label: 'Unified' },
-                        { value: 'split', label: 'Split' }
-                    ]}
-                />
+                <Field>
+                    Changed file{' '}
+                    <Select
+                        value={selected}
+                        onChange={(event) => {
+                            setSelected(event.target.value)
+                        }}
+                    >
+                        <option value="">All files</option>
+                        {files.map((file) => (
+                            <option key={file.newPath} value={file.newPath}>
+                                {file.newPath}
+                            </option>
+                        ))}
+                    </Select>
+                </Field>
+                <Field className="row">
+                    <Input
+                        type="checkbox"
+                        checked={split}
+                        onChange={(event) => {
+                            setSplit(event.target.checked)
+                        }}
+                    />
+                    Side by side
+                </Field>
             </div>
             {files
                 .filter((file) => !selected || file.newPath === selected)
                 .map((file) => (
                     <section key={`${file.oldPath}:${file.newPath}`} className="file-diff">
                         <h4>
-                            {file.newPath}{' '}
-                            <span className="diff-counts">
-                                <span className="diff-additions">
-                                    +
-                                    {
-                                        file.hunks
-                                            .flatMap((hunk) => hunk.changes)
-                                            .filter((change) => change.type === 'insert').length
-                                    }
-                                </span>
-                                <span className="diff-deletions">
-                                    -
-                                    {
-                                        file.hunks
-                                            .flatMap((hunk) => hunk.changes)
-                                            .filter((change) => change.type === 'delete').length
-                                    }
-                                </span>
-                            </span>
+                            {file.newPath} <span className="muted">{file.type}</span>
                         </h4>
                         {file.hunks.length ? (
                             <Diff viewType={split ? 'split' : 'unified'} diffType={file.type} hunks={file.hunks}>

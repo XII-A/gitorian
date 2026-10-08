@@ -507,6 +507,9 @@
 .hub-workspace .app-header {
     flex-wrap: wrap;
 }
+.hub-writing .workspace-toolbar {
+    display: none;
+}
 .hub-workspace :is(button, input, summary):focus-visible {
     outline: 2px solid var(--foreground);
     outline-offset: 3px;

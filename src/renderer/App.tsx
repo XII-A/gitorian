@@ -1,8 +1,22 @@
 import { Popover, PopoverTrigger, PopoverContent } from './components/arc/popover/popover'
+import { Disclosure } from './components/Disclosure'
 import { Input, Select, Field } from './components/Fields'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen } from 'lucide-react'
-import { inbox, featureActivities, weekOf } from '../shared/model'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Group, Panel, Separator } from 'react-resizable-panels'
+import {
+    ArrowLeft,
+    ArrowRight,
+    BookOpen,
+    RefreshCw,
+    Settings as SettingsIcon,
+    Inbox,
+    History,
+    Search,
+    PanelLeft,
+    SlidersHorizontal,
+    PenLine
+} from 'lucide-react'
+import { coveredEntries, defaultLayout, inbox, featureActivities, shiftWeek, weekOf } from '../shared/model'
 import type { Activity, Command, Draft, Entry, Reply, State } from '../shared/model'
 import { plainText } from '../shared/notion-format'
 import { Button } from './components/arc/button/button'
@@ -12,18 +26,10 @@ import { DetailsPane } from './DetailsPane'
 import { CommandMenu } from './components/CommandMenu'
 import { WeeklyHub } from './WeeklyHub'
 import { journalWeek } from './hub-model'
-import { WorkSelection } from './WorkSelection'
-import { Workspace } from './Workspace'
-import { createSampleJournal } from './workspace-sample'
 
 export function App() {
-    const [sample, setSample] = useState(
-        () => !window.journal || new URLSearchParams(location.search).get('demo') === '1'
-    )
-    const [sampleJournal] = useState(createSampleJournal)
-    const bridge = useRef(sample ? sampleJournal : window.journal)
-    const [switching, setSwitching] = useState(false)
-    const [screen, setScreen] = useState<'hub' | 'workspace'>(sample ? 'workspace' : 'hub')
+    const [screen, setScreen] = useState<'hub' | 'workspace'>('hub')
+    const [writingFocus, setWritingFocus] = useState(false)
     const openingJournal = useRef(false)
     const [state, setState] = useState<State>()
     const [connections, setConnections] = useState<Reply['connections']>({
@@ -35,8 +41,16 @@ export function App() {
     const [week, setWeek] = useState('')
     const [error, setError] = useState('')
     const [busy, setBusy] = useState(false)
+    const [layoutReset, setLayoutReset] = useState(0)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [commandsOpen, setCommandsOpen] = useState(false)
+    const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 900px)').matches)
+    useEffect(() => {
+        const media = window.matchMedia('(max-width: 900px)')
+        const changed = () => setNarrow(media.matches)
+        media.addEventListener('change', changed)
+        return () => media.removeEventListener('change', changed)
+    }, [])
     useEffect(() => {
         const keyboard = (event: KeyboardEvent) => {
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -64,8 +78,7 @@ export function App() {
     const restoredId = useRef<string | undefined>(undefined)
     const saveQueue = useRef(Promise.resolve())
     const [saveStatus, setSaveStatus] = useState('Saved locally')
-    const [selectionBusy, setSelectionBusy] = useState(false)
-    const selectionLock = useRef(false)
+    const [featureName, setFeatureName] = useState('')
     const [insertLink, setInsertLink] = useState<{ url: string; title: string; nonce: number }>()
     const parameters = new URLSearchParams(window.location.search)
     const reference = parameters.get('reference')
@@ -78,9 +91,7 @@ export function App() {
     const run = useCallback(
         async (command: Command): Promise<Reply | undefined> => {
             try {
-                const active = bridge.current
-                const reply = await active.invoke(command)
-                if (active !== bridge.current) return undefined
+                const reply = await window.journal.invoke(command)
                 apply(reply)
                 setError('')
                 return reply
@@ -93,10 +104,7 @@ export function App() {
     )
     useEffect(() => {
         void run({ type: 'state' }).then((reply) => {
-            if (reply) {
-                setWeek(weekOf(new Date(), reply.state.settings))
-                if (bridge.current === sampleJournal) setSelectedId(reply.state.activities[0]?.id ?? '')
-            }
+            if (reply) setWeek(weekOf(new Date(), reply.state.settings))
         })
         const timer = setInterval(() => {
             void run({ type: 'state' })
@@ -104,7 +112,7 @@ export function App() {
         return () => {
             clearInterval(timer)
         }
-    }, [run, sampleJournal])
+    }, [run])
     const setActiveDraft = (value: Draft | undefined) => {
         draftRef.current = value
         setDraft(value)
@@ -112,11 +120,9 @@ export function App() {
     const editDraft = (value: Draft) => {
         setActiveDraft(value)
         setSaveStatus('Saving locally…')
-        const active = bridge.current
         saveQueue.current = saveQueue.current.then(async () => {
             try {
-                const reply = await active.invoke({ type: 'draft', draft: value })
-                if (active !== bridge.current) return
+                const reply = await window.journal.invoke({ type: 'draft', draft: value })
                 apply(reply)
                 setSaveStatus('Saved locally')
             } catch (failure) {
@@ -167,6 +173,7 @@ export function App() {
     const activity = state.activities.find((item) => item.id === selectedId)
     const entry = state.entries.find((item) => item.id === entryId)
     const repository = state.repositories.find((item) => item.id === repositoryId)
+    const feature = state.features.find((item) => item.id === featureId)
     const featureItems = featureId ? featureActivities(state, featureId).map((item) => item.id) : undefined
     const matchingFeatureWork = new Set(
         state.features
@@ -192,8 +199,6 @@ export function App() {
                     matchingFeatureWork.has(item.id))
         )
         .sort((left, right) => right.date.localeCompare(left.date))
-    if (sample && view === 'inbox')
-        items = items.filter((item) => journalWeek(item.date.slice(0, 10), state.settings.weekStart) === week)
     const entries = state.entries.filter((item) =>
         `${item.title} ${plainText(item.body)}`.toLowerCase().includes(search.toLowerCase())
     )
@@ -202,27 +207,12 @@ export function App() {
         setEntryId('')
         await run({ type: 'details', activityId: item.id })
     }
-    const changeSelection = async (activities: Activity[], included: boolean) => {
-        if (selectionLock.current) return
-        selectionLock.current = true
-        setSelectionBusy(true)
-        try {
-            await saveQueue.current
-            const current = draftRef.current
-            if (!current || current.publishedEntryId) return
-            for (const item of activities) {
-                const result = await run({ type: 'select', draftId: current.id, activityId: item.id, included })
-                if (!result) break
-            }
-        } finally {
-            selectionLock.current = false
-            setSelectionBusy(false)
-        }
-    }
     const showEntry = (value: Entry) => {
         setEntryId(value.id)
         setSelectedId('')
     }
+    const changeLayout = (layout: State['settings']['layout']) =>
+        run({ type: 'settings', settings: { ...state.settings, layout } })
     const details = (
         <DetailsPane
             state={state}
@@ -246,123 +236,8 @@ export function App() {
         activity: (
             <section className="pane activity-pane">
                 <header className="pane-header">
-                    <span>{view === 'entries' ? 'Journal library' : 'Work to include'}</span>
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                                Filters
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent align="end">
-                            {' '}
-                            <div className="advanced-work-filters">
-                                <Field>
-                                    Feature
-                                    <Select
-                                        value={featureId}
-                                        onChange={(event) => {
-                                            setFeatureId(event.target.value)
-                                        }}
-                                    >
-                                        <option value="">All features</option>
-                                        {state.features.map((item) => (
-                                            <option key={item.id} value={item.id}>
-                                                {item.name}
-                                                {item.archived ? ' · archived' : ''}
-                                            </option>
-                                        ))}
-                                    </Select>
-                                </Field>
-                                <Field>
-                                    Browse
-                                    <Select
-                                        value={view}
-                                        onChange={(event) => {
-                                            setView(event.target.value)
-                                        }}
-                                    >
-                                        <option value="inbox">Inbox & carryover</option>
-                                        <option value="deferred">Deferred</option>
-                                        <option value="dismissed">Dismissed</option>
-                                        <option value="history">All captured history</option>
-                                        <option value="branch">Branch browser</option>
-                                        <option value="entries">Saved journals</option>
-                                    </Select>
-                                </Field>
-                                {view === 'branch' && (
-                                    <fieldset>
-                                        <legend>Branch comparison</legend>
-                                        <Field>
-                                            Branch
-                                            <Select
-                                                value={branch}
-                                                onChange={(event) => {
-                                                    setBranch(event.target.value)
-                                                }}
-                                            >
-                                                <option value="">Choose branch</option>
-                                                {repository?.branches.map((name) => (
-                                                    <option key={name}>{name}</option>
-                                                ))}
-                                            </Select>
-                                        </Field>
-                                        <Field>
-                                            View
-                                            <Select
-                                                value={historyView}
-                                                onChange={(event) => {
-                                                    setHistoryView(event.target.value as 'introduced' | 'history')
-                                                }}
-                                            >
-                                                <option value="introduced">Introduced relative to base</option>
-                                                <option value="history">Reachable history</option>
-                                            </Select>
-                                        </Field>
-                                        <Field>
-                                            Author filter
-                                            <Input
-                                                value={author}
-                                                onChange={(event) => {
-                                                    setAuthor(event.target.value)
-                                                }}
-                                            />
-                                        </Field>
-                                        <Field>
-                                            From author date
-                                            <Input
-                                                type="date"
-                                                value={since}
-                                                onChange={(event) => {
-                                                    setSince(event.target.value)
-                                                }}
-                                            />
-                                        </Field>
-                                        <Button
-                                            size="sm"
-                                            disabled={!repository || !branch}
-                                            onClick={async () => {
-                                                const result = await run({
-                                                    type: 'history',
-                                                    repositoryId,
-                                                    branch,
-                                                    view: historyView,
-                                                    author,
-                                                    since
-                                                })
-                                                if (result) {
-                                                    setHistoryIds(result.activityIds ?? [])
-                                                    setComparison(result.message ?? '')
-                                                }
-                                            }}
-                                        >
-                                            Browse branch
-                                        </Button>
-                                        <p className="muted">{comparison}</p>
-                                    </fieldset>
-                                )}
-                            </div>
-                        </PopoverContent>
-                    </Popover>
+                    <span>{view === 'entries' ? 'Journal library' : 'Work explorer'}</span>
+                    <span>{view === 'entries' ? entries.length : items.length}</span>
                 </header>
                 <div className="filters">
                     <label className="sr-only" htmlFor="search">
@@ -370,7 +245,7 @@ export function App() {
                     </label>
                     <Input
                         id="search"
-                        placeholder="Search work"
+                        placeholder="Search work & journals…"
                         value={search}
                         onChange={(event) => {
                             setSearch(event.target.value)
@@ -394,35 +269,167 @@ export function App() {
                             ))}
                         </Select>
                     </Field>
-                </div>
-                <div className="work-list-region">
-                    {view === 'entries' ? (
-                        entries.map((value) => (
+                    <Field>
+                        Feature
+                        <Select
+                            value={featureId}
+                            onChange={(event) => {
+                                setFeatureId(event.target.value)
+                                setFeatureName(
+                                    state.features.find((item) => item.id === event.target.value)?.name ?? ''
+                                )
+                            }}
+                        >
+                            <option value="">All features</option>
+                            {state.features.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                    {item.name}
+                                    {item.archived ? ' · archived' : ''}
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
+                    <Field>
+                        Browse
+                        <Select
+                            value={view}
+                            onChange={(event) => {
+                                setView(event.target.value)
+                            }}
+                        >
+                            <option value="inbox">Inbox & carryover</option>
+                            <option value="deferred">Deferred</option>
+                            <option value="dismissed">Dismissed</option>
+                            <option value="history">All captured history</option>
+                            <option value="branch">Branch browser</option>
+                            <option value="entries">Saved journals</option>
+                        </Select>
+                    </Field>
+                    {view === 'branch' && (
+                        <fieldset>
+                            <legend>Branch comparison</legend>
+                            <Field>
+                                Branch
+                                <Select
+                                    value={branch}
+                                    onChange={(event) => {
+                                        setBranch(event.target.value)
+                                    }}
+                                >
+                                    <option value="">Choose branch</option>
+                                    {repository?.branches.map((name) => (
+                                        <option key={name}>{name}</option>
+                                    ))}
+                                </Select>
+                            </Field>
+                            <Field>
+                                View
+                                <Select
+                                    value={historyView}
+                                    onChange={(event) => {
+                                        setHistoryView(event.target.value as 'introduced' | 'history')
+                                    }}
+                                >
+                                    <option value="introduced">Introduced relative to base</option>
+                                    <option value="history">Reachable history</option>
+                                </Select>
+                            </Field>
+                            <Field>
+                                Author filter
+                                <Input
+                                    value={author}
+                                    onChange={(event) => {
+                                        setAuthor(event.target.value)
+                                    }}
+                                />
+                            </Field>
+                            <Field>
+                                From author date
+                                <Input
+                                    type="date"
+                                    value={since}
+                                    onChange={(event) => {
+                                        setSince(event.target.value)
+                                    }}
+                                />
+                            </Field>
                             <Button
-                                variant="ghost"
-                                contentLayout="stack"
-                                className="activity-card"
-                                key={value.id}
-                                onClick={() => {
-                                    showEntry(value)
+                                size="sm"
+                                disabled={!repository || !branch}
+                                onClick={async () => {
+                                    const result = await run({
+                                        type: 'history',
+                                        repositoryId,
+                                        branch,
+                                        view: historyView,
+                                        author,
+                                        since
+                                    })
+                                    if (result) {
+                                        setHistoryIds(result.activityIds ?? [])
+                                        setComparison(result.message ?? '')
+                                    }
                                 }}
                             >
-                                <span className="journal-date">Journal · {value.date.slice(0, 10)}</span>
-                                <strong>{value.title}</strong>
-                                <span className="muted">{plainText(value.body).slice(0, 100)}</span>
+                                Browse branch
                             </Button>
-                        ))
-                    ) : (
-                        <WorkSelection
-                            items={items}
-                            state={state}
-                            draft={draft}
-                            selectedId={selectedId}
-                            pending={selectionBusy}
-                            onInspect={selectActivity}
-                            onSelection={changeSelection}
-                        />
+                            <p className="muted">{comparison}</p>
+                        </fieldset>
                     )}
+                </div>
+                <div className="activity-list">
+                    {view === 'entries'
+                        ? entries.map((value) => (
+                              <Button
+                                  variant="ghost"
+                                  contentLayout="stack"
+                                  className="activity-card"
+                                  key={value.id}
+                                  onClick={() => {
+                                      showEntry(value)
+                                  }}
+                              >
+                                  <span className="eyebrow">JOURNAL · {value.date.slice(0, 10)}</span>
+                                  <strong>{value.title}</strong>
+                                  <span className="muted">{plainText(value.body).slice(0, 100)}</span>
+                              </Button>
+                          ))
+                        : items.map((item) => (
+                              <Button
+                                  variant="ghost"
+                                  contentLayout="stack"
+                                  className={`activity-card ${selectedId === item.id ? 'selected' : ''}`}
+                                  key={item.id}
+                                  onClick={() => {
+                                      void selectActivity(item)
+                                  }}
+                              >
+                                  <span className="eyebrow">
+                                      {item.kind === 'pr' &&
+                                      state.coverage.some((link) => link.activityId === item.id) &&
+                                      !coveredEntries(state, item).length
+                                          ? 'UPDATED WORK'
+                                          : item.kind.toUpperCase()}{' '}
+                                      · {item.date.slice(0, 10)}
+                                  </span>
+                                  <strong>{item.title}</strong>
+                                  <span className="muted">
+                                      {state.repositories.find((value) => value.id === item.repositoryId)?.name} ·{' '}
+                                      {item.author}
+                                  </span>
+                                  <span className="coverage-label">
+                                      {draft?.selections.some((selection) => selection.activityId === item.id)
+                                          ? 'Included in draft'
+                                          : coveredEntries(state, item).length
+                                            ? 'Covered'
+                                            : item.disposition === 'deferred'
+                                              ? `Deferred until ${item.deferUntil}`
+                                              : item.disposition === 'dismissed'
+                                                ? `Dismissed ${item.reason ?? ''}`
+                                                : 'Uncovered'}
+                                  </span>
+                              </Button>
+                          ))}
                     {(view === 'entries' ? !entries.length : !items.length) && (
                         <p className="list-empty">
                             {state.repositories.length
@@ -431,6 +438,66 @@ export function App() {
                         </p>
                     )}
                 </div>
+                <Disclosure className="feature-controls" title="Manage features">
+                    <Field>
+                        Feature name
+                        <Input
+                            value={featureName}
+                            onChange={(event) => {
+                                setFeatureName(event.target.value)
+                            }}
+                        />
+                    </Field>
+                    <div className="row">
+                        <Button
+                            size="sm"
+                            disabled={!featureName}
+                            onClick={() =>
+                                run({ type: 'feature', id: '', name: featureName, archived: false, members: [] })
+                            }
+                        >
+                            Create
+                        </Button>
+                        {feature && (
+                            <>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => run({ type: 'feature', ...feature, name: featureName })}
+                                >
+                                    Rename
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => run({ type: 'feature', ...feature, archived: !feature.archived })}
+                                >
+                                    {feature.archived ? 'Unarchive' : 'Archive'}
+                                </Button>
+                            </>
+                        )}
+                    </div>
+                    {feature?.members.map((member) => (
+                        <div className="row" key={member}>
+                            <span className="path">
+                                {state.activities.find((item) => item.id === member)?.title ?? member}
+                            </span>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                    run({
+                                        type: 'feature',
+                                        ...feature,
+                                        members: feature.members.filter((id) => id !== member)
+                                    })
+                                }
+                            >
+                                Remove
+                            </Button>
+                        </div>
+                    ))}
+                </Disclosure>
             </section>
         ),
         details,
@@ -441,8 +508,6 @@ export function App() {
                 draft={draft}
                 busy={busy}
                 saveStatus={saveStatus}
-                publishAvailable={!sample && connections.notion && !!state.settings.destination}
-                sample={sample}
                 insertLink={insertLink}
                 run={run}
                 showEntry={showEntry}
@@ -475,6 +540,8 @@ export function App() {
             />
         )
     }
+    const layout = state.settings.layout
+    const visible = writingFocus ? ['draft' as const] : layout.order.filter((id) => !layout.hidden.includes(id))
     if (screen === 'hub')
         return (
             <>
@@ -482,9 +549,7 @@ export function App() {
                     state={state}
                     run={run}
                     error={error}
-                    onSettings={() => {
-                        if (!sample) setSettingsOpen(true)
-                    }}
+                    onSettings={() => setSettingsOpen(true)}
                     onWrite={(date) => {
                         if (openingJournal.current) return
                         openingJournal.current = true
@@ -499,6 +564,7 @@ export function App() {
                                 if (!existing && !result) return
                                 setWeek(targetWeek)
                                 setActiveDraft(existing ?? result?.state.drafts.at(-1))
+                                setWritingFocus(false)
                                 setScreen('workspace')
                                 window.scrollTo(0, 0)
                             } finally {
@@ -508,6 +574,7 @@ export function App() {
                     }}
                     onActivity={(item) => {
                         void selectActivity(item)
+                        setWritingFocus(false)
                         setScreen('workspace')
                     }}
                 />
@@ -528,9 +595,7 @@ export function App() {
                             {
                                 name: 'Open settings',
                                 hint: 'Repositories and connections',
-                                action: () => {
-                                    if (!sample) setSettingsOpen(true)
-                                }
+                                action: () => setSettingsOpen(true)
                             },
                             {
                                 name: 'Refresh activity',
@@ -545,119 +610,298 @@ export function App() {
             </>
         )
     return (
-        <Workspace
-            state={state}
-            week={week}
-            panes={panes}
-            includedCount={draft?.selections.length ?? 0}
-            sample={sample}
-            switching={switching}
-            onWeek={(value) => {
-                setWeek(value)
-                if (sample) {
-                    setSelectedId(
-                        state.activities.find(
-                            (item) => journalWeek(item.date.slice(0, 10), state.settings.weekStart) === value
-                        )?.id ?? ''
-                    )
-                    setEntryId('')
-                }
-            }}
-            onBack={() => setScreen('hub')}
-            onSettings={() => {
-                if (!sample) setSettingsOpen(true)
-            }}
-            busy={busy}
-            error={error}
-            onDismissError={() => setError('')}
-            onRefresh={async () => {
-                setBusy(true)
-                await run({ type: 'refresh' })
-                setBusy(false)
-            }}
-            onSample={async (value) => {
-                if (!value && !window.journal) return
-                setSwitching(true)
-                try {
-                    await saveQueue.current
-                    const next = value ? sampleJournal : window.journal
-                    const reply = await next.invoke({ type: 'state' })
-                    bridge.current = next
-                    draftRef.current = undefined
-                    setDraft(undefined)
-                    setInsertLink(undefined)
-                    setSelectedId(
-                        value
-                            ? (reply.state.activities.find(
-                                  (item) => journalWeek(item.date.slice(0, 10), reply.state.settings.weekStart) === week
-                              )?.id ?? '')
-                            : ''
-                    )
-                    setEntryId('')
-                    setRepositoryId('')
-                    setFeatureId('')
-                    setSearch('')
-                    setView('inbox')
-                    setSettingsOpen(false)
-                    setError('')
-                    setSaveStatus('Saved locally')
-                    setSample(value)
-                    apply(reply)
-                    const url = new URL(location.href)
-                    if (value) url.searchParams.set('demo', '1')
-                    else url.searchParams.delete('demo')
-                    history.replaceState({}, '', url)
-                } catch (failure) {
-                    setError(String(failure))
-                } finally {
-                    setSwitching(false)
-                }
-            }}
-            overlays={
-                <>
-                    {settingsOpen && (
-                        <Settings
-                            state={state}
-                            connections={connections}
-                            remotes={remotes}
-                            run={run}
-                            close={() => setSettingsOpen(false)}
-                        />
-                    )}
-                    {commandsOpen && (
-                        <CommandMenu
-                            close={() => setCommandsOpen(false)}
-                            commands={[
-                                { name: 'Open work inbox', hint: 'Review your work', action: () => setView('inbox') },
-                                {
-                                    name: 'Open journal library',
-                                    hint: 'Published entries',
-                                    action: () => setView('entries')
-                                },
-                                {
-                                    name: 'Browse work history',
-                                    hint: 'Earlier commits and pull requests',
-                                    action: () => setView('history')
-                                },
-                                {
-                                    name: 'Open settings',
-                                    hint: 'Repositories and connections',
-                                    action: () => {
-                                        if (!sample) setSettingsOpen(true)
-                                    }
-                                },
-                                {
-                                    name: 'Refresh activity',
-                                    hint: 'Discover new work',
-                                    action: () => {
-                                        void run({ type: 'refresh' })
-                                    }
-                                }
-                            ]}
-                        />
-                    )}
-                </>
-            }
-        />
+        <main className={`app hub-workspace ${writingFocus ? 'hub-writing' : ''}`}>
+            <nav className="app-rail" aria-label="Workspace navigation">
+                <div className="app-mark" aria-label="weekly-j">
+                    <BookOpen size={20} />
+                </div>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Search workspace"
+                    title="Search workspace (Ctrl/Cmd+K)"
+                    onClick={() => {
+                        setCommandsOpen(true)
+                    }}
+                >
+                    <Search size={18} />
+                </Button>
+                {[
+                    { id: 'inbox', name: 'Work inbox', icon: Inbox },
+                    { id: 'entries', name: 'Journal library', icon: BookOpen },
+                    { id: 'history', name: 'Work history', icon: History }
+                ].map(({ id, name, icon: Icon }) => (
+                    <Button
+                        key={id}
+                        variant="ghost"
+                        size="sm"
+                        aria-label={name}
+                        title={name}
+                        aria-pressed={view === id}
+                        onClick={() => {
+                            setView(id)
+                            void changeLayout({
+                                ...layout,
+                                hidden: layout.hidden.filter((pane) => pane !== 'activity')
+                            })
+                        }}
+                    >
+                        <Icon size={18} />
+                    </Button>
+                ))}
+                <div className="rail-spacer" />
+                <Button variant="ghost" size="sm" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+                    <SettingsIcon size={18} />
+                </Button>
+            </nav>
+            <div className="workspace-shell">
+                <header className="app-header">
+                    <Button variant="ghost" size="sm" onClick={() => setScreen('hub')}>
+                        <ArrowLeft size={16} /> Back to week
+                    </Button>
+                    <div className="week-picker">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Previous week"
+                            onClick={() => {
+                                setWeek(shiftWeek(week, -1))
+                            }}
+                        >
+                            <ArrowLeft size={16} />
+                        </Button>
+                        <Field>
+                            Week of{' '}
+                            <Input
+                                type="date"
+                                value={week}
+                                onChange={(event) => {
+                                    if (event.target.value)
+                                        setWeek(weekOf(new Date(`${event.target.value}T12:00:00`), state.settings))
+                                }}
+                            />
+                        </Field>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Next week"
+                            onClick={() => {
+                                setWeek(shiftWeek(week, 1))
+                            }}
+                        >
+                            <ArrowRight size={16} />
+                        </Button>
+                    </div>
+                    <div className="row">
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            loading={busy}
+                            onClick={async () => {
+                                setBusy(true)
+                                await run({ type: 'refresh' })
+                                setBusy(false)
+                            }}
+                        >
+                            <RefreshCw size={14} />
+                            Refresh
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Settings"
+                            onClick={() => {
+                                setSettingsOpen(true)
+                            }}
+                        >
+                            <SettingsIcon size={18} />
+                        </Button>
+                    </div>
+                </header>
+                <div className="workspace-toolbar">
+                    <span className="muted">
+                        {state.lastRefreshed
+                            ? `Last refresh ${new Date(state.lastRefreshed).toLocaleString()}`
+                            : 'Local workspace · Refresh to discover activity'}
+                        {state.refreshError && ' · Refresh incomplete'}
+                    </span>
+                    <div className="row">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                                changeLayout({ ...layout, hidden: ['activity'], sizes: { details: 40, draft: 60 } })
+                            }
+                        >
+                            <PenLine size={14} /> Writing focus
+                        </Button>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                    <SlidersHorizontal size={14} />
+                                    Customize workspace
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="layout-menu-content" align="end">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={async () => {
+                                        if (await changeLayout(structuredClone(defaultLayout)))
+                                            setLayoutReset((value) => value + 1)
+                                    }}
+                                >
+                                    Reset layout
+                                </Button>
+                                {layout.order.map((id, index) => (
+                                    <div className="row" key={id}>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() =>
+                                                changeLayout({
+                                                    ...layout,
+                                                    hidden: layout.hidden.includes(id)
+                                                        ? layout.hidden.filter((item) => item !== id)
+                                                        : visible.length > 1
+                                                          ? [...layout.hidden, id]
+                                                          : layout.hidden
+                                                })
+                                            }
+                                        >
+                                            <PanelLeft size={14} /> {layout.hidden.includes(id) ? 'Show' : 'Hide'} {id}
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            aria-label={`Move ${id} pane left`}
+                                            disabled={index === 0}
+                                            onClick={() => {
+                                                const order = [...layout.order]
+                                                ;[order[index - 1], order[index]] = [order[index], order[index - 1]]
+                                                return changeLayout({ ...layout, order })
+                                            }}
+                                        >
+                                            ←
+                                        </Button>
+                                    </div>
+                                ))}
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+                </div>
+                {(error || state.refreshError) && (
+                    <div className="error-bar" role="alert">
+                        <span>{error || state.refreshError}</span>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                                setError('')
+                                if (state.refreshError) void run({ type: 'refresh' })
+                            }}
+                        >
+                            Retry / dismiss
+                        </Button>
+                    </div>
+                )}
+                <Group
+                    key={`${visible.join(':')}:${layoutReset}`}
+                    orientation={narrow ? 'vertical' : 'horizontal'}
+                    defaultLayout={layout.sizes}
+                    onLayoutChanged={(sizes) => {
+                        if (
+                            !writingFocus &&
+                            Object.keys(sizes).some((id) => Math.abs((layout.sizes[id] ?? 0) - sizes[id]) > 0.5)
+                        )
+                            void changeLayout({ ...layout, sizes: { ...layout.sizes, ...sizes } })
+                    }}
+                    className="workspace"
+                >
+                    {visible.map((id, index) => (
+                        <Fragment key={id}>
+                            {index > 0 && (
+                                <Separator
+                                    className="separator"
+                                    aria-label={`Resize ${visible[index - 1]} and ${id}`}
+                                />
+                            )}
+                            <Panel id={id} minSize={narrow ? 160 : id === 'activity' ? 210 : 280}>
+                                {panes[id]}
+                            </Panel>
+                        </Fragment>
+                    ))}
+                </Group>
+                <footer className="app-statusbar">
+                    <span>
+                        <span className="status-dot" /> Local workspace
+                    </span>
+                    <span>
+                        {connections.notion ? 'Notion connected' : 'Notion offline'} ·{' '}
+                        {state.repositories.filter((item) => !item.removed).length} repositories
+                    </span>
+                </footer>
+            </div>
+            {settingsOpen && (
+                <Settings
+                    state={state}
+                    connections={connections}
+                    remotes={remotes}
+                    run={run}
+                    close={() => {
+                        setSettingsOpen(false)
+                    }}
+                />
+            )}
+            {commandsOpen && (
+                <CommandMenu
+                    close={() => setCommandsOpen(false)}
+                    commands={[
+                        ...[
+                            { id: 'inbox', name: 'Open work inbox', hint: 'Uncovered work and carryover' },
+                            { id: 'entries', name: 'Open journal library', hint: 'Read your published entries' },
+                            {
+                                id: 'history',
+                                name: 'Browse work history',
+                                hint: 'Find earlier commits and pull requests'
+                            }
+                        ].map(({ id, name, hint }) => ({
+                            name,
+                            hint,
+                            action: () => {
+                                setView(id)
+                                void changeLayout({
+                                    ...layout,
+                                    hidden: layout.hidden.filter((pane) => pane !== 'activity')
+                                })
+                            }
+                        })),
+                        {
+                            name: 'Open settings',
+                            hint: 'Repositories, connections, and preferences',
+                            action: () => setSettingsOpen(true)
+                        },
+                        {
+                            name: 'Focus on writing',
+                            hint: 'Make room for your journal',
+                            action: () => {
+                                void changeLayout({
+                                    ...layout,
+                                    hidden: ['activity'],
+                                    sizes: { draft: 65, details: 35 }
+                                })
+                            }
+                        },
+                        {
+                            name: 'Refresh workspace',
+                            hint: 'Discover new activity',
+                            action: () => {
+                                void run({ type: 'refresh' })
+                            }
+                        }
+                    ]}
+                />
+            )}
+        </main>
     )
 }
