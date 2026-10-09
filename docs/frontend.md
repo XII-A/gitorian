@@ -25,7 +25,9 @@ Publishing is rendered into the last main-header slot by `WorkspaceDraft`, so au
 
 Notion connection guidance belongs in the writing footer, keeping the editor clear. Offer the settings action when the connection or publishing destination is missing, while leaving local writing available. Citations update the entry without a main-header success banner.
 
-Keep sample state separate from real commands. The sample switch supports design iteration; sample publishing is simulated. Detached reference windows remain read-only and send citations to the editable main workspace through the existing channel. They have no note form; citation results appear in the inspector footer.
+Keep word count, save status, and the Notion action in one footer row, with the status centered between equal outer columns when space allows. Only writing panes 460px or narrower stack the count and status beside the settings action. Use a pane container query, since the writing pane can be narrow within a wide window.
+
+Keep sample state separate from real commands. The workspace header has no sample-data switch. Retain `workspace-sample.ts` and the explicit `?workspace=true&data=sample&week=2026-10-05` preview URL for design iteration and smoke tests; normal workspace navigation uses real data. Sample publishing is simulated. Detached reference windows remain read-only and send citations to the editable main workspace through the existing channel. They have no note form; citation results appear in the inspector footer.
 
 Use Arc `ScrollArea` for constrained activity, writing, diff, details, related-item, and popup lists. Name each viewport for keyboard users. Native text controls and the whole document retain native scrolling.
 

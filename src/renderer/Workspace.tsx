@@ -6,7 +6,6 @@ import { Button } from './components/arc/button/button'
 import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
 import { Select } from './components/arc/select/select'
 import { Input } from './components/arc/input/input'
-import { Switch } from './components/arc/switch/switch'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
@@ -136,7 +135,7 @@ export function Workspace({
                     break
                 }
                 case 'open':
-                    setNotice('Sample links are examples. Switch to real data to open your work.')
+                    setNotice('Sample links are examples and cannot open real activity.')
                     break
                 default:
                     break
@@ -231,21 +230,6 @@ export function Workspace({
         url.searchParams.set('week', value)
         window.history.replaceState({}, '', url)
     }
-    const changeSource = (value: boolean) => {
-        if (value) setExample(getSample(week))
-        setSample(value)
-        setSelectedId(undefined)
-        setDetached(undefined)
-        setDetailError('')
-        setNotice('')
-        setCitation(undefined)
-        setProject('all')
-        setBranch('all')
-        setKind('all')
-        const url = new URL(window.location.href)
-        url.searchParams.set('data', value ? 'sample' : 'real')
-        window.history.replaceState({}, '', url)
-    }
     const popout = async () => {
         if (!selected) return
         if (navigator.userAgent.includes('Electron/')) {
@@ -332,7 +316,6 @@ export function Workspace({
                     />
                 </div>
                 <div className="ws-utilities">
-                    <Switch label="Sample data" checked={sample} onCheckedChange={changeSource} />
                     <Button
                         variant="ghost"
                         size="sm"
