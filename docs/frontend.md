@@ -40,3 +40,17 @@ Arc `Select` supports a local `variant="ghost"` for filter chips and `contentMin
 The project chip follows PRs & reviews, shows the available project count at rest, and shows the selected project name when filtered. The Filters chip is icon-only and opens deliberate branch/history loading. Feature grouping and filtering are deferred in the writing UI until their design is decided. Existing backend feature data and commands remain intact; do not restore these controls without a new product decision.
 
 Arc `TabsList` supports a local `edgeToEdge` option: the strip spans its pane with square outer corners while individual tabs retain their shared control radius. Related items reuse the activity row styles. Both writing and inspector footers use `--workspace-footer-height` (64px).
+
+## Settings
+
+Keep settings layout in `src/renderer/settings.css`. Preserve the compact 850px by 720px desktop dialog, its control radius, header padding, muted save footer, and vertical Arc tabs. Both navigation and content use Arc `ScrollArea`; the content viewport fills the available height. Avoid adding settings overrides to the legacy desktop stylesheet. Fields use a two-column grid that becomes one column on phones; connection actions share a wrapping row. Keep descriptions to the information needed to make a decision.
+
+Repository setup chooses a parent folder through the native picker and discovers Git working trees recursively. Skip links, dependency folders, and repository internals. Existing repositories are deduplicated by canonical path; resuming tracking preserves their identity and history. Comparison bases come from local and remote refs. Tracking uses an Arc switch and applies with the other repository settings on Save. The locate-folder button has a secondary background. Branch-specific overrides are not exposed in settings; retain existing backend values when saving a repository.
+
+Repositories use independently expandable Arc `ExpandableCard` components, keyed by repository id. Show the repository name and its full folder path in the card summary, with long names and path segments wrapping inside the card. Keep the first card initially expanded and preserve native disclosure keyboard behavior.
+
+Use the Arc searchable `Combobox` for timezones. Its option list lives in a portaled Arc popover with its own named Arc scroll viewport, so opening or selecting a timezone cannot enlarge or scroll the settings pane. Keyboard navigation scrolls the options viewport. The date picker opens beside its trigger in short desktop windows to keep the whole calendar visible. Retain its normal below-trigger behavior on tall windows and phones.
+
+The Combobox uses Motion for its popup animation. Disable the inherited Arc Popover CSS transition and animation on that menu, as on the date picker, so transforms have one animation owner. Use Arc `NumberField` for refresh intervals, bounded to 0–1440 minutes; 0 disables background refresh. Its width follows its grid column through the documented `--number-field-width` token.
+
+The template uses the same Arc rich text editor and journal document conversion as the writing workspace. Its single editor card has an undo/redo header and word count, without an HTML/Markdown output panel. New drafts clone the saved template, so editing a draft cannot change the template or existing entries. Preserve legacy editor support for saved document nodes that Arc cannot represent.

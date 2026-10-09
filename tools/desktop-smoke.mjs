@@ -1,12 +1,33 @@
-import { app, BrowserWindow } from 'electron'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { app, BrowserWindow, dialog } from 'electron'
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const directory = mkdtempSync(join(tmpdir(), 'weekly-j-desktop-'))
 app.setPath('userData', directory)
+const repositoryFolder = join(directory, 'repositories')
+for (const name of ['first-project', 'second-project']) {
+    const path = join(repositoryFolder, name)
+    mkdirSync(path, { recursive: true })
+    for (const args of [
+        ['init', '-b', 'main'],
+        ['config', 'user.name', 'Smoke author'],
+        ['config', 'user.email', 'smoke@example.com'],
+        ['commit', '--allow-empty', '-m', 'Initial work'],
+        ['branch', 'feature']
+    ])
+        execFileSync('git', args, { cwd: path, windowsHide: true, stdio: 'ignore' })
+}
 const pause = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds))
+const waitForElement = async (window, selector) => {
+    for (let attempt = 0; attempt < 50; attempt++) {
+        if (await window.webContents.executeJavaScript(`!!document.querySelector(${JSON.stringify(selector)})`)) return
+        await pause(100)
+    }
+    throw new Error(`Element did not become ready: ${selector}`)
+}
 let checking = false
 app.on('browser-window-created', (_, window) => {
     window.show = () => window.hide()
@@ -20,6 +41,71 @@ app.on('browser-window-created', (_, window) => {
         let passed = false
         try {
             await pause(600)
+            const originalFolderPicker = dialog.showOpenDialog
+            dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [repositoryFolder] })
+            const settingsResult = await window.webContents.executeJavaScript(`(async () => {
+                document.querySelector('[aria-label="Open settings"]').click()
+                await new Promise(resolve => setTimeout(resolve, 150))
+                const settingsScrollArea = !!document.querySelector('.settings-scroll [role="region"][aria-label="Settings content"]')
+                Array.from(document.querySelectorAll('.settings button')).find(button => button.textContent.includes('Add repositories from folder')).click()
+                for (let attempt=0;attempt<30;attempt++) {
+                    await new Promise(resolve => setTimeout(resolve,100))
+                    if ((await window.journal.invoke({type:'state'})).state.repositories.length===2) break
+                }
+                const after=(await window.journal.invoke({type:'state'})).state
+                const folderAddsRepositories = after.repositories.length===2 && after.repositories.every(repo=>repo.branches.includes('feature'))
+                for (let attempt=0;attempt<20;attempt++) {
+                    if (document.querySelector('.settings [role="switch"]')) break
+                    await new Promise(resolve=>setTimeout(resolve,100))
+                }
+                const verticalSettingsTabs = document.querySelector('.settings [role="tablist"]').getAttribute('aria-orientation')==='vertical'
+                const repositoryTrackingSwitch = !!document.querySelector('.settings [role="switch"][aria-label="Track this repository"]') && !document.querySelector('.settings textarea')
+                const repositoryCards = Array.from(document.querySelectorAll('.settings-repositories article'))
+                const repositoryCardPaths = repositoryCards.length===2 && repositoryCards.every((card,index)=>card.querySelector('button').textContent.includes(after.repositories[index].path))
+                repositoryCards[1].querySelector('button').click()
+                await new Promise(resolve=>setTimeout(resolve,100))
+                const repositoriesExpandIndependently = repositoryCards.every(card=>card.dataset.expanded==='true')
+                const selectTab = label => Array.from(document.querySelectorAll('.settings [role="tab"]')).find(tab=>tab.textContent===label).dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}))
+                selectTab('Connections')
+                await new Promise(resolve=>setTimeout(resolve,100))
+                const noDisconnectedAction = !Array.from(document.querySelectorAll('.settings button')).some(button=>button.textContent.includes('Disconnect'))
+                selectTab('Preferences')
+                await new Promise(resolve=>setTimeout(resolve,100))
+                const timezoneSelect = !!document.querySelector('.settings input[role="combobox"]')
+                const refreshField = document.querySelector('.settings [role="spinbutton"]')
+                const previousRefresh = Number(refreshField.getAttribute('aria-valuenow'))
+                document.querySelector('[aria-label="Increase Refresh interval"]').click()
+                await new Promise(resolve=>setTimeout(resolve,100))
+                const refreshNumberField = Number(refreshField.getAttribute('aria-valuenow'))===previousRefresh+1 && refreshField.getAttribute('aria-valuemin')==='0' && refreshField.getAttribute('aria-valuemax')==='1440'
+                const settingsViewport = document.querySelector('.settings-scroll [role="region"]')
+                const beforeMenu = {height:settingsViewport.clientHeight,scroll:settingsViewport.scrollHeight,top:settingsViewport.scrollTop}
+                document.querySelector('.settings input[role="combobox"]').click()
+                await new Promise(resolve=>setTimeout(resolve,100))
+                const timezoneMenu = document.querySelector('[role="listbox"]')
+                const timezoneUsesOwnScrollArea = !!timezoneMenu?.closest('[role="region"][aria-label="Timezone options"]') && !document.querySelector('.settings').contains(timezoneMenu)
+                const timezoneMotionOwnsAnimation = getComputedStyle(timezoneMenu.closest('[data-side]')).transitionDuration==='0s' && getComputedStyle(timezoneMenu.closest('[data-side]')).animationName==='none'
+                Array.from(timezoneMenu.querySelectorAll('[role="option"]')).find(option=>option.textContent==='UTC').click()
+                await new Promise(resolve=>setTimeout(resolve,100))
+                const timezoneKeepsPaneSize = settingsViewport.clientHeight===beforeMenu.height && settingsViewport.scrollHeight===beforeMenu.scroll && settingsViewport.scrollTop===beforeMenu.top && document.querySelector('.settings input[role="combobox"]').getAttribute('aria-expanded')==='false'
+                selectTab('Template')
+                await new Promise(resolve=>setTimeout(resolve,100))
+                const template=document.querySelector('.settings [role="textbox"][aria-label="Entry template"]')
+                const arcTemplateEditor = !!template && !document.querySelector('.settings .editor-toolbar') && !!template.closest('.settings-template') && !!document.querySelector('[aria-label="Undo template edit"]')
+                if (!template) throw new Error('The Arc template editor did not open')
+                template.focus()
+                document.execCommand('insertHTML',false,'<h2>What changed</h2><p>Template reflection.</p>')
+                template.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}))
+                await new Promise(resolve=>setTimeout(resolve,50))
+                Array.from(document.querySelectorAll('.settings-footer button')).find(button=>button.textContent==='Save settings').click()
+                for (let attempt=0;attempt<20;attempt++) {
+                    await new Promise(resolve=>setTimeout(resolve,100))
+                    if (!document.querySelector('.settings')) break
+                }
+                const saved=(await window.journal.invoke({type:'state'})).state
+                const templateSaved = JSON.stringify(saved.settings.template).includes('Template reflection.') && saved.settings.template.content.some(node=>node.type==='heading'&&node.attrs.level===2)
+                return {settingsScrollArea,folderAddsRepositories,verticalSettingsTabs,repositoryTrackingSwitch,repositoryCardPaths,repositoriesExpandIndependently,noDisconnectedAction,refreshNumberField,timezoneSelect,timezoneUsesOwnScrollArea,timezoneMotionOwnsAnimation,timezoneKeepsPaneSize,arcTemplateEditor,templateSaved}
+            })()`)
+            dialog.showOpenDialog = originalFolderPicker
             const result = await window.webContents.executeJavaScript(`(async () => {
                 const before = await window.journal.invoke({type:'state'})
                 const opensOnHub = !!document.querySelector('.hub-topbar')
@@ -35,9 +121,11 @@ app.on('browser-window-created', (_, window) => {
                 Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('Start this week')).click()
                 await new Promise(resolve => setTimeout(resolve, 200))
                 document.querySelector('[aria-label="Journal body"]').focus()
-                return {opensOnHub,workspaceImplemented,noDraftCreated,returnsToHub,node:typeof require,version:before.state.version}
+                const newEntryUsesTemplate=document.querySelector('[aria-label="Journal body"]').textContent.includes('Template reflection.') && !!document.querySelector('[aria-label="Journal body"] h2')
+                return {opensOnHub,workspaceImplemented,noDraftCreated,returnsToHub,newEntryUsesTemplate,node:typeof require,version:before.state.version}
             })().catch(error => ({failure:String(error),stack:error.stack,text:document.body.innerText}))`)
             if ('failure' in result) throw new Error(JSON.stringify(result))
+            Object.assign(result, settingsResult)
             await window.webContents.insertText('The draft survives a restart.')
             await pause(700)
             result.draftSaved = await window.webContents.executeJavaScript(
@@ -45,7 +133,7 @@ app.on('browser-window-created', (_, window) => {
             )
             const base = window.webContents.getURL().split('?')[0]
             await window.loadURL(base + '?workspace=true')
-            await pause(400)
+            await waitForElement(window, '[aria-label="Journal body"]')
             result.draftRecovered = await window.webContents.executeJavaScript(
                 `document.querySelector('[aria-label="Journal body"]').textContent.includes('The draft survives a restart.')`
             )
@@ -59,12 +147,13 @@ app.on('browser-window-created', (_, window) => {
                 localStorage.setItem('weekly-j:recovery:'+(state.restoreId??'local')+':'+draft.week,JSON.stringify(draft))
             })()`)
             await window.loadURL(base + '?workspace=true')
-            await pause(650)
+            await waitForElement(window, '[aria-label="Journal body"]')
+            await pause(250)
             result.interruptedSaveRecovered = await window.webContents.executeJavaScript(
                 `document.querySelector('[aria-label="Journal body"]').textContent.includes('Recovered an interrupted save.')`
             )
             await window.loadURL(base + '?workspace=true&data=sample&week=2026-10-05')
-            await pause(500)
+            await waitForElement(window, '[aria-label="Journal body"]')
             const realDraftsBefore = await window.webContents.executeJavaScript(
                 `(async () => (await window.journal.invoke({type:'state'})).state.drafts.length)()`
             )
@@ -88,6 +177,7 @@ app.on('browser-window-created', (_, window) => {
                 candidate.webContents.getURL().includes('reference=activity')
             )
             if (!reference) throw new Error('The native diff window did not open')
+            await waitForElement(reference, '.ws-inspector-footer button')
             result.nativeDiffWindow = await reference.webContents.executeJavaScript(
                 `!!document.querySelector('.ws-reference') && document.querySelector('.diff').textContent.includes('BASE_DELAY_MS')`
             )

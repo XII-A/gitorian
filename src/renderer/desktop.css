@@ -374,55 +374,6 @@ label:empty {
     padding: 8px 14px;
     font-size: 12px;
 }
-.settings {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    padding: 0;
-    border-radius: var(--radius-control);
-    width: min(850px, 95vw);
-    height: min(720px, 90vh);
-    color: var(--foreground);
-    overflow: hidden;
-}
-.settings::backdrop {
-    background: #08090dbb;
-    backdrop-filter: blur(4px);
-}
-.settings > [data-arc-dialog-header] {
-    grid-column: 1/-1;
-    padding: 16px 22px;
-    border-bottom: 1px solid var(--border);
-}
-.settings > [data-arc-dialog-body] {
-    display: contents;
-}
-.settings h2 {
-    font-size: 17px;
-    letter-spacing: -0.3px;
-}
-.settings-tabs {
-    display: grid;
-    grid-template-columns: 170px minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
-    min-height: 0;
-    overflow: hidden;
-}
-.settings-tabs > div:first-child {
-    margin: 12px 10px;
-}
-.settings-content {
-    padding: 20px 26px;
-    overscroll-behavior: contain;
-    min-height: 0;
-    margin-top: 0;
-}
-.settings footer {
-    grid-column: 1/-1;
-    padding: 12px 22px;
-    border-top: 1px solid var(--border);
-    background: var(--surface-muted);
-}
 .command-menu {
     width: min(520px, 90vw);
     border-radius: var(--radius-control);
@@ -492,12 +443,6 @@ legend {
     }
 }
 @media (max-width: 600px) {
-    .settings {
-        grid-template-columns: 1fr;
-    }
-    .settings-content {
-        min-height: 0;
-    }
     .brand {
         display: none;
     }
@@ -529,9 +474,6 @@ legend {
     .activity-list {
         flex: none;
         overflow: visible;
-    }
-    .settings {
-        height: min(720px, 90vh);
     }
 }
 @media (forced-colors: active) {

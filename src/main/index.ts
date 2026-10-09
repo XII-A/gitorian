@@ -93,13 +93,18 @@ void app.whenReady().then(() => {
                 if (path) await service.addRepository(path)
                 break
             }
+            case 'addRepositories': {
+                const path = await folder()
+                return path ? await service.addRepositories(path) : service.reply()
+            }
             case 'relocate': {
                 const path = await folder()
                 if (path) {
-                    await inspectRepository(path)
+                    const inspected = await inspectRepository(path)
                     const repository = store.state.repositories.find((item) => item.id === command.id)
                     if (!repository) throw new Error('Repository not found')
-                    repository.path = path
+                    repository.path = inspected.path
+                    repository.branches = inspected.branches
                     repository.available = true
                     repository.removed = false
                     store.persist()
@@ -160,6 +165,7 @@ void app.whenReady().then(() => {
                         store.restore(await readFile(result.filePaths[0], 'utf8'))
                         vault.set('github', '')
                         vault.set('notion', '')
+                        return service.reply({ message: 'Backup imported.' })
                     }
                 }
                 break

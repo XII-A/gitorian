@@ -236,6 +236,7 @@ export function inbox(state: State, week: string): Activity[] {
 export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('state') }),
     z.object({ type: z.literal('addRepository') }),
+    z.object({ type: z.literal('addRepositories') }),
     z.object({ type: z.literal('repository'), repository: repositorySchema }),
     z.object({ type: z.literal('relocate'), id: z.string() }),
     z.object({ type: z.literal('refresh') }),

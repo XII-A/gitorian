@@ -78,6 +78,15 @@ export function DatePicker({
     const controlId = id ?? generatedId
     const hintId = description ? `${controlId}-description` : undefined
     const [open, setOpen] = useState(false)
+    const [side, setSide] = useState<'bottom' | 'right'>('bottom')
+    useEffect(() => {
+        // A side placement leaves the whole calendar visible in short desktop windows.
+        const query = window.matchMedia('(max-height: 720px) and (min-width: 768px)')
+        const update = () => setSide(query.matches ? 'right' : 'bottom')
+        update()
+        query.addEventListener('change', update)
+        return () => query.removeEventListener('change', update)
+    }, [])
     const [month, setMonth] = useState(monthStart(value ?? new Date()))
     const rootRef = useRef<HTMLDivElement>(null)
     const triggerRef = useRef<HTMLButtonElement>(null)
@@ -231,6 +240,7 @@ export function DatePicker({
                             <PopoverContent
                                 asChild
                                 forceMount
+                                side={side}
                                 sideOffset={8}
                                 collisionPadding={12}
                                 onOpenAutoFocus={(event) => {

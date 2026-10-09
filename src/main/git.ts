@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
+import { realpath } from 'node:fs/promises'
 import type { Activity, Repository } from '../shared/model'
 
 const execute = promisify(execFile)
@@ -19,8 +20,8 @@ export async function git(path: string, args: string[]): Promise<string> {
 }
 export async function inspectRepository(
     path: string
-): Promise<{ name: string; remotes: string[]; base: string; email: string }> {
-    await git(path, ['rev-parse', '--show-toplevel'])
+): Promise<{ path: string; name: string; remotes: string[]; base: string; email: string; branches: string[] }> {
+    const root = await realpath((await git(path, ['rev-parse', '--show-toplevel'])).trim())
     const remotes = (await git(path, ['remote', '-v']))
         .split('\n')
         .filter((line) => line.endsWith('(fetch)'))
@@ -47,7 +48,11 @@ export async function inspectRepository(
     } catch {
         /* Identity can be configured in the app. */
     }
-    return { name: basename(path), remotes: [...new Set(remotes)], base, email }
+    const branchNames = (await git(root, ['for-each-ref', '--format=%(refname:short)', 'refs/heads', 'refs/remotes']))
+        .trim()
+        .split('\n')
+        .filter((name) => name && !name.endsWith('/HEAD'))
+    return { path: root, name: basename(root), remotes: [...new Set(remotes)], base, email, branches: branchNames }
 }
 export async function branches(repository: Repository): Promise<string[]> {
     return (await git(repository.path, ['for-each-ref', '--format=%(refname:short)', 'refs/heads', 'refs/remotes']))
