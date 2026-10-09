@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { discoverRepositories } from '../src/main/repository-discovery'
 import { workspace } from './fixtures'
-import { initialState, type Repository } from '../src/shared/model'
+import { initialState, type Repository, type RepositoryImportProgress } from '../src/shared/model'
 import { hasUnsavedSettings } from '../src/renderer/settings-model'
 
 it('warns for unsaved preferences, template, destination, repository edits and connection input', () => {
@@ -88,7 +88,18 @@ it('imports nested repositories once, skips dependency folders, and resumes stop
         const discovered = await discoverRepositories(parent)
         expect(discovered.paths).toContain(await realpath(paths[0]))
         expect(discovered.paths).not.toContain(paths[2])
-        const first = await app.service.addRepositories(parent)
+        const progress: RepositoryImportProgress[] = []
+        const first = await app.service.addRepositories(parent, (update) => progress.push(update))
+        expect(progress[0]).toEqual({ stage: 'discovering', scanned: 0, found: 0 })
+        const discovery = progress.filter((update) => update.stage === 'discovering')
+        expect(discovery.at(-1)?.found).toBe(3)
+        expect(discovery.map((update) => update.scanned)).toEqual([...discovery.keys()])
+        expect(progress.filter((update) => update.stage === 'processing')).toEqual([
+            { stage: 'processing', completed: 0, total: 3 },
+            { stage: 'processing', completed: 1, total: 3 },
+            { stage: 'processing', completed: 2, total: 3 },
+            { stage: 'processing', completed: 3, total: 3 }
+        ])
         expect(first.message).toContain('Added 2 repositories.')
         expect(first.message).toContain('1 unreadable or invalid folders skipped.')
         expect(first.state.repositories.map((repo) => repo.name)).toContain('two')

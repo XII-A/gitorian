@@ -5,6 +5,9 @@
     background: oklch(10% 0 0 / 0.46);
     backdrop-filter: blur(7px);
 }
+.overlay[data-backdrop='dim'] {
+    backdrop-filter: none;
+}
 /* Centered with auto margins (like a native modal dialog) so transform stays free for the entrance spring. */
 .content {
     position: fixed;

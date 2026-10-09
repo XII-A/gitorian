@@ -10,10 +10,14 @@ export function repositoryPathKey(path: string): string {
 }
 
 /** Discover working trees without following links or entering repository internals. */
-export async function discoverRepositories(folder: string): Promise<{ paths: string[]; unreadable: string[] }> {
+export async function discoverRepositories(
+    folder: string,
+    onProgress?: (counts: { scanned: number; found: number }) => void
+): Promise<{ paths: string[]; unreadable: string[] }> {
     const pending = [await realpath(folder)]
     const paths: string[] = []
     const unreadable: string[] = []
+    let scanned = 0
     while (pending.length) {
         const path = pending.pop()!
         try {
@@ -31,6 +35,9 @@ export async function discoverRepositories(folder: string): Promise<{ paths: str
                 if (child.isDirectory() && !ignored.has(child.name)) pending.push(join(path, child.name))
         } catch {
             unreadable.push(path)
+        } finally {
+            scanned++
+            onProgress?.({ scanned, found: paths.length })
         }
     }
     return { paths, unreadable }

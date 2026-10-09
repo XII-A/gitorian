@@ -4,7 +4,7 @@ import { commits, branches, commitDetails, inspectRepository, git } from './git'
 import { HttpError } from './http'
 import { discoverRepositories, repositoryPathKey } from './repository-discovery'
 import { weekOf } from '../shared/model'
-import type { Activity, Command, Reply, Repository, Selection, State } from '../shared/model'
+import type { Activity, Command, Reply, Repository, RepositoryImportProgress, Selection, State } from '../shared/model'
 import type { Store } from './store'
 import type { GitHub } from './github'
 import type { Notion } from './notion'
@@ -49,12 +49,17 @@ export class JournalService {
         })
         this.store.persist()
     }
-    async addRepositories(folder: string): Promise<Reply> {
-        const discovered = await discoverRepositories(folder)
+    async addRepositories(folder: string, onProgress?: (progress: RepositoryImportProgress) => void): Promise<Reply> {
+        onProgress?.({ stage: 'discovering', scanned: 0, found: 0 })
+        const discovered = await discoverRepositories(folder, (counts) =>
+            onProgress?.({ stage: 'discovering', ...counts })
+        )
         let added = 0
         let existing = 0
         let restored = 0
         let skipped = discovered.unreadable.length
+        let completed = 0
+        onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
         for (const path of discovered.paths) {
             const tracked = this.store.state.repositories.find(
                 (item) => repositoryPathKey(item.path) === repositoryPathKey(path)
@@ -78,6 +83,8 @@ export class JournalService {
             } catch {
                 skipped++
             }
+            completed++
+            onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
         }
         this.store.persist()
         const messages = [`Added ${added} ${added === 1 ? 'repository' : 'repositories'}.`]

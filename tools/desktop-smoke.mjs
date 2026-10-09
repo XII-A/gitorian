@@ -42,12 +42,19 @@ app.on('browser-window-created', (_, window) => {
         try {
             await pause(600)
             const originalFolderPicker = dialog.showOpenDialog
-            dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [repositoryFolder] })
+            dialog.showOpenDialog = () =>
+                new Promise((resolve) =>
+                    setTimeout(() => resolve({ canceled: false, filePaths: [repositoryFolder] }), 250)
+                )
             const settingsResult = await window.webContents.executeJavaScript(`(async () => {
                 document.querySelector('[aria-label="Open settings"]').click()
                 await new Promise(resolve => setTimeout(resolve, 150))
+                const importProgress=[]
+                const unsubscribeImport=window.journal.onRepositoryImportProgress(update=>importProgress.push(update))
                 const settingsScrollArea = !!document.querySelector('.settings-scroll [role="region"][aria-label="Settings content"]')
                 Array.from(document.querySelectorAll('.settings button')).find(button => button.textContent.includes('Add repositories from folder')).click()
+                await new Promise(resolve=>setTimeout(resolve,80))
+                const importWaitsForSelection=document.querySelector('.settings').textContent.includes('Waiting for folder selection')
                 for (let attempt=0;attempt<30;attempt++) {
                     await new Promise(resolve => setTimeout(resolve,100))
                     if ((await window.journal.invoke({type:'state'})).state.repositories.length===2) break
@@ -55,16 +62,20 @@ app.on('browser-window-created', (_, window) => {
                 const after=(await window.journal.invoke({type:'state'})).state
                 const folderAddsRepositories = after.repositories.length===2 && after.repositories.every(repo=>repo.branches.includes('feature'))
                 for (let attempt=0;attempt<20;attempt++) {
-                    if (document.querySelector('.settings [role="switch"]')) break
+                    if (document.querySelectorAll('.settings-repositories article').length===2) break
                     await new Promise(resolve=>setTimeout(resolve,100))
                 }
                 const verticalSettingsTabs = document.querySelector('.settings [role="tablist"]').getAttribute('aria-orientation')==='vertical'
-                const repositoryTrackingSwitch = !!document.querySelector('.settings [role="switch"][aria-label="Track this repository"]') && !document.querySelector('.settings textarea')
+                const allRepositoryCardsClosed = Array.from(document.querySelectorAll('.settings-repositories article')).every(card=>card.dataset.expanded!=='true')
+                const folderImportProgress = importProgress.some(update=>update.stage==='selecting') && importProgress.some(update=>update.stage==='discovering') && importProgress.some(update=>update.stage==='processing'&&update.completed===2&&update.total===2)
+                unsubscribeImport()
                 const repositoryCards = Array.from(document.querySelectorAll('.settings-repositories article'))
                 const repositoryCardPaths = repositoryCards.length===2 && repositoryCards.every((card,index)=>card.querySelector('button').textContent.includes(after.repositories[index].path))
+                repositoryCards[0].querySelector('button').click()
                 repositoryCards[1].querySelector('button').click()
                 await new Promise(resolve=>setTimeout(resolve,100))
                 const repositoriesExpandIndependently = repositoryCards.every(card=>card.dataset.expanded==='true')
+                const repositoryTrackingSwitch = !!document.querySelector('.settings [role="switch"][aria-label="Track this repository"]') && !document.querySelector('.settings textarea')
                 const selectTab = label => Array.from(document.querySelectorAll('.settings [role="tab"]')).find(tab=>tab.textContent===label).dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}))
                 selectTab('Connections')
                 await new Promise(resolve=>setTimeout(resolve,100))
@@ -82,10 +93,11 @@ app.on('browser-window-created', (_, window) => {
                 const confirmation=document.querySelector('[role="alertdialog"]')
                 const unsavedCloseGuard=!!confirmation && document.activeElement.textContent==='Keep editing'
                 Array.from(confirmation.querySelectorAll('button')).find(button=>button.textContent==='Keep editing').click()
-                for (let attempt=0;attempt<20 && document.querySelector('[role="alertdialog"]');attempt++)
+                  // Hidden smoke windows can retain an invisible exit node until the next paint.
+                  for (let attempt=0;attempt<20 && document.querySelector('[role="alertdialog"][data-state="open"]');attempt++)
                     await new Promise(resolve=>setTimeout(resolve,50))
-                const keepEditingPreservesChanges=!!document.querySelector('.settings') && !document.querySelector('[role="alertdialog"]') && Number(refreshField.getAttribute('aria-valuenow'))===previousRefresh+1
-                if (!keepEditingPreservesChanges) throw new Error(JSON.stringify({settings:!!document.querySelector('.settings'),confirmation:!!document.querySelector('[role="alertdialog"]'),refresh:refreshField.getAttribute('aria-valuenow'),expected:previousRefresh+1}))
+                  const keepEditingPreservesChanges=!!document.querySelector('.settings') && !document.querySelector('[role="alertdialog"][data-state="open"]') && Number(refreshField.getAttribute('aria-valuenow'))===previousRefresh+1
+                  if (!keepEditingPreservesChanges) throw new Error(JSON.stringify({settings:!!document.querySelector('.settings'),confirmation:!!document.querySelector('[role="alertdialog"]'),confirmationState:document.querySelector('[role="alertdialog"]')?.getAttribute('data-state'),opacity:document.querySelector('[role="alertdialog"]')&&getComputedStyle(document.querySelector('[role="alertdialog"]')).opacity,refresh:refreshField.getAttribute('aria-valuenow'),expected:previousRefresh+1}))
                 document.querySelector('.settings [aria-label="Close dialog"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}))
                 await new Promise(resolve=>setTimeout(resolve,150))
                 const unsavedEscapeGuard=!!document.querySelector('[role="alertdialog"]')
@@ -128,12 +140,28 @@ app.on('browser-window-created', (_, window) => {
                 }
                 const saved=(await window.journal.invoke({type:'state'})).state
                 const templateSaved = JSON.stringify(saved.settings.template).includes('Template reflection.') && saved.settings.template.content.some(node=>node.type==='heading'&&node.attrs.level===2)
-                return {settingsScrollArea,folderAddsRepositories,verticalSettingsTabs,repositoryTrackingSwitch,repositoryCardPaths,repositoriesExpandIndependently,noDisconnectedAction,refreshNumberField,timezoneSelect,timezoneUsesOwnScrollArea,timezoneMotionOwnsAnimation,timezoneKeepsPaneSize,arcTemplateEditor,templateSaved,templateTitleHasNoFormattingHint,unsavedCloseGuard,keepEditingPreservesChanges,unsavedEscapeGuard,discardDoesNotSave,cleanSettingsClose}
+                return {settingsScrollArea,folderAddsRepositories,verticalSettingsTabs,repositoryTrackingSwitch,repositoryCardPaths,repositoriesExpandIndependently,allRepositoryCardsClosed,folderImportProgress,importWaitsForSelection,noDisconnectedAction,refreshNumberField,timezoneSelect,timezoneUsesOwnScrollArea,timezoneMotionOwnsAnimation,timezoneKeepsPaneSize,arcTemplateEditor,templateSaved,templateTitleHasNoFormattingHint,unsavedCloseGuard,keepEditingPreservesChanges,unsavedEscapeGuard,discardDoesNotSave,cleanSettingsClose}
             })()`)
             dialog.showOpenDialog = originalFolderPicker
             const result = await window.webContents.executeJavaScript(`(async () => {
                 const before = await window.journal.invoke({type:'state'})
                 const opensOnHub = !!document.querySelector('.hub-topbar')
+                const hubProjectChip=document.querySelector('.hub-filters > :last-child [role="combobox"]')?.textContent.includes('Projects')
+                const hubUsesArcChart=!!document.querySelector('.hub-chart [role="slider"]')
+                document.querySelector('[aria-label="Refresh activity"]').click()
+                for(let attempt=0;attempt<30&&!document.querySelector('.hub-activity');attempt++)
+                    await new Promise(resolve=>setTimeout(resolve,50))
+                let dialogDateFormats=0
+                const originalFormatter=Intl.DateTimeFormat
+                Intl.DateTimeFormat=new Proxy(originalFormatter,{construct(target,args){dialogDateFormats++;return Reflect.construct(target,args)}})
+                document.querySelector('.hub-activity').click()
+                await new Promise(resolve=>setTimeout(resolve,300))
+                Intl.DateTimeFormat=originalFormatter
+                const hubDialogKeepsListIdle=dialogDateFormats<20
+                const hubDialogArcScroll=!!document.querySelector('.hub-detail-dialog [role="region"][aria-label="Activity details"]')
+                const hubDialogDimBackdrop=getComputedStyle(document.querySelector('[data-backdrop="dim"]')).backdropFilter==='none'
+                document.querySelector('.hub-detail-dialog [aria-label="Close dialog"]').click()
+                await new Promise(resolve=>setTimeout(resolve,250))
                 document.querySelector('[aria-label="Open journal"]').click()
                 await new Promise(resolve => setTimeout(resolve, 150))
                 const workspaceImplemented = !!document.querySelector('.ws-frame') && document.querySelector('.writing-workspace').dataset.layout === 'three-panes' && !document.querySelector('.variant-picker')
@@ -147,7 +175,7 @@ app.on('browser-window-created', (_, window) => {
                 await new Promise(resolve => setTimeout(resolve, 200))
                 document.querySelector('[aria-label="Journal body"]').focus()
                 const newEntryUsesTemplate=document.querySelector('[aria-label="Journal body"]').textContent.includes('Template reflection.') && !!document.querySelector('[aria-label="Journal body"] h2')
-                return {opensOnHub,workspaceImplemented,noDraftCreated,returnsToHub,newEntryUsesTemplate,node:typeof require,version:before.state.version}
+                return {opensOnHub,hubProjectChip,hubUsesArcChart,hubDialogKeepsListIdle,hubDialogArcScroll,hubDialogDimBackdrop,workspaceImplemented,noDraftCreated,returnsToHub,newEntryUsesTemplate,node:typeof require,version:before.state.version}
             })().catch(error => ({failure:String(error),stack:error.stack,text:document.body.innerText}))`)
             if ('failure' in result) throw new Error(JSON.stringify(result))
             Object.assign(result, settingsResult)
@@ -187,14 +215,14 @@ app.on('browser-window-created', (_, window) => {
                 const rect = slider.getBoundingClientRect()
                 slider.dispatchEvent(new PointerEvent('pointermove', {bubbles:true,pointerType:'mouse',clientX:rect.left+rect.width*2.5/7,clientY:rect.top+18}))
                 await new Promise(resolve => setTimeout(resolve, 80))
-                const card = document.querySelector('.ws-day-popover[data-state="open"]')
+                const card = document.querySelector('.activity-day-popover[data-state="open"]')
                 if (!card) throw new Error('Chart summary did not open')
                 slider.dispatchEvent(new PointerEvent('pointerout', {bubbles:true,pointerType:'mouse',relatedTarget:null}))
                 await new Promise(resolve => setTimeout(resolve, 40))
                 // Enter from outside the chart, as when crossing the gap to the card.
                 card.dispatchEvent(new PointerEvent('pointerover', {bubbles:true,pointerType:'mouse',relatedTarget:null}))
                 await new Promise(resolve => setTimeout(resolve, 400))
-                return !document.querySelector('.ws-day-popover[data-state="open"]')
+                return !document.querySelector('.activity-day-popover[data-state="open"]')
             })()`)
             await window.webContents.executeJavaScript(`document.querySelector('[aria-label="Pop out diff"]').click()`)
             await pause(600)

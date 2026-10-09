@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import type { Activity, State } from '../shared/model'
+import type { Activity } from '../shared/model'
 import { localDate } from '../shared/model'
 import { offsetDay } from './hub-model'
 import { formatDay } from './workspace-model'
@@ -7,14 +7,17 @@ import { BarChart } from './components/arc/bar-chart/bar-chart'
 import type { BarChartDatum } from './components/arc/bar-chart/bar-chart'
 import { Popover, PopoverAnchor, PopoverContent } from './components/arc/popover/popover'
 import { motionTokens } from './components/arc/lib/motion-tokens'
+import './activity-chart.css'
 
-export function WorkspaceActivityChart({
+export function ActivityChart({
     activities,
-    state,
+    timezone,
+    className,
     week
 }: {
     activities: Activity[]
-    state: State
+    timezone: string
+    className?: string
     week: string
 }) {
     const [day, setDay] = useState<string>()
@@ -24,6 +27,18 @@ export function WorkspaceActivityChart({
     const pointer = useRef(false)
     const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     const chart = useRef<HTMLDivElement>(null)
+    const buckets = useMemo(() => {
+        const result = new Map<string, { commits: number; prs: number; reviews: number }>()
+        for (const activity of activities) {
+            const date = localDate(new Date(activity.date), timezone)
+            const counts = result.get(date) ?? { commits: 0, prs: 0, reviews: 0 }
+            if (activity.kind === 'commit') counts.commits++
+            else if (activity.kind === 'review') counts.reviews++
+            else counts.prs++
+            result.set(date, counts)
+        }
+        return result
+    }, [activities, timezone])
     const data = useMemo(
         () =>
             Array.from({ length: 7 }, (_, index) => {
@@ -32,11 +47,10 @@ export function WorkspaceActivityChart({
                     key: date,
                     label: formatDay(date, { weekday: 'long', month: 'long', day: 'numeric' }),
                     axisLabel: formatDay(date, { weekday: 'short' }),
-                    value: activities.filter((item) => localDate(new Date(item.date), state.settings.timezone) === date)
-                        .length
+                    value: Object.values(buckets.get(date) ?? {}).reduce((sum, count) => sum + count, 0)
                 }
             }),
-        [activities, week, state.settings.timezone]
+        [buckets, week]
     )
     const closeSoon = useCallback(() => {
         clearTimeout(timer.current)
@@ -64,13 +78,12 @@ export function WorkspaceActivityChart({
         clearTimeout(timer.current)
         setOpen(false)
     }, [week])
-    const daily = activities.filter((item) => localDate(new Date(item.date), state.settings.timezone) === day)
-    const commits = daily.filter((item) => item.kind === 'commit').length
-    const reviews = daily.filter((item) => item.kind === 'review').length
+    const counts = (day && buckets.get(day)) || { commits: 0, prs: 0, reviews: 0 }
+    const total = counts.commits + counts.prs + counts.reviews
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <div
-                className="ws-week-chart"
+                className={['activity-chart', className].filter(Boolean).join(' ')}
                 ref={chart}
                 onPointerMoveCapture={(event) => {
                     pointer.current = true
@@ -90,7 +103,11 @@ export function WorkspaceActivityChart({
                 }}
             >
                 <PopoverAnchor asChild>
-                    <span className="ws-day-anchor" aria-hidden="true" style={{ left: position.x, top: position.y }} />
+                    <span
+                        className="activity-day-anchor"
+                        aria-hidden="true"
+                        style={{ left: position.x, top: position.y }}
+                    />
                 </PopoverAnchor>
                 <BarChart
                     data={data}
@@ -106,7 +123,7 @@ export function WorkspaceActivityChart({
                 />
             </div>
             <PopoverContent
-                className="ws-day-popover"
+                className="activity-day-popover"
                 role="region"
                 id={summaryId}
                 align="start"
@@ -116,24 +133,24 @@ export function WorkspaceActivityChart({
                 onOpenAutoFocus={(event) => event.preventDefault()}
                 onCloseAutoFocus={(event) => event.preventDefault()}
             >
-                <div className="ws-day-summary-heading">
+                <div className="activity-day-summary-heading">
                     <h3>{day && formatDay(day, { weekday: 'short', month: 'short', day: 'numeric' })}</h3>
                     <span>
-                        {daily.length} {daily.length === 1 ? 'event' : 'events'}
+                        {total} {total === 1 ? 'event' : 'events'}
                     </span>
                 </div>
                 <dl>
                     <div>
                         <dt>Commits</dt>
-                        <dd>{commits}</dd>
+                        <dd>{counts.commits}</dd>
                     </div>
                     <div>
                         <dt>PRs</dt>
-                        <dd>{daily.length - commits - reviews}</dd>
+                        <dd>{counts.prs}</dd>
                     </div>
                     <div>
                         <dt>Reviews</dt>
-                        <dd>{reviews}</dd>
+                        <dd>{counts.reviews}</dd>
                     </div>
                 </dl>
             </PopoverContent>

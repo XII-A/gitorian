@@ -2,6 +2,10 @@
 
 The hub and writing workspace share Arc's semantic tokens and installed components. Import `components/arc/foundation.css` once in `src/renderer/src.tsx`. Keep page styles in the renderer's page stylesheet; use documented component props and layout classes rather than targeting CSS module internals.
 
+Run development through `npm run dev`, which watches both the desktop backend and preload modules. Shared command-schema changes must rebuild and restart the backend alongside renderer updates; otherwise newly added UI commands can fail with an invalid discriminator from the older running schema. When changing the development launch command, restart an already-running dev session once to pick up the new watcher.
+
+`npm run smoke:dev-reload` exercises this through an isolated Electron IPC fixture: folder import initially fails against the old command schema, then becomes accepted after the shared schema changes and the development backend automatically restarts. `npm run smoke` covers folder selection and actual repository discovery.
+
 ## Corner radii
 
 The radius definitions live in `src/renderer/components/arc/foundation.css`. Use these tokens for new UI and keep their values shared across pages.
@@ -33,6 +37,10 @@ Use Arc `ScrollArea` for constrained activity, writing, diff, details, related-i
 
 Search uses Arc `ExpandingSearch` to navigate weekly activity, including across the active list filters. Selecting a result opens its Details tab. Its local `expandedWidth="container"` option fills the header's available width and follows pane resizing.
 
+The hub and workspace share `ProjectFilter` and `ActivityChart`. The project chip follows the activity-kind chips and uses the same ghost style, project count, selected name, and wider menu. Daily counts are computed once for each activity list rather than formatting every activity date on each pointer movement.
+
+Hub activity details own their selection and request state in `HubActivityDialog`. Load details into that dialog directly so opening it does not rebuild the whole hub activity list. Keep its height stable, header and footer fixed, and content in a named Arc `ScrollArea`. Arc `DialogContent` supports `backdrop="dim"` for large data views to avoid repainting a full-page backdrop blur; other dialogs keep the default blur.
+
 The daily activity preview uses Arc `BarChart` with three local, typed extensions: `compact`, `onActiveChange`, and `onDatumSelect`. Its small Arc popover follows the pointer, or the selected bar when using the keyboard. Show counts for commits, PR activity (including opened and merged events), and reviews; do not list individual activities here. The read-only summary must not intercept pointer events or extend its visibility when hovered outside the chart. Enter, Space, and tap also reveal counts. Keep the reduced-motion behavior and stable date keys.
 
 Arc `Select` supports a local `variant="ghost"` for filter chips and `contentMinWidth` for wider menus, constrained to the viewport. Options can include a numeric `count`, displayed separately from the label with `--space-2` (8px). Filter chips share medium weight and `--leading-body`, so selects align with buttons. Omit the visible label for an icon or inline chip only when it has an accessible name.
@@ -47,7 +55,11 @@ Keep settings layout in `src/renderer/settings.css`. Preserve the compact 850px 
 
 Repository setup chooses a parent folder through the native picker and discovers Git working trees recursively. Skip links, dependency folders, and repository internals. Existing repositories are deduplicated by canonical path; resuming tracking preserves their identity and history. Comparison bases come from local and remote refs. Tracking uses an Arc switch and applies with the other repository settings on Save. The locate-folder button has a secondary background. Branch-specific overrides are not exposed in settings; retain existing backend values when saving a repository.
 
-Repositories use independently expandable Arc `ExpandableCard` components, keyed by repository id. Show the repository name and its full folder path in the card summary, with long names and path segments wrapping inside the card. Keep the first card initially expanded and preserve native disclosure keyboard behavior.
+Repositories use independently expandable Arc `ExpandableCard` components, keyed by repository id. Show the repository name and its full folder path in the card summary, with long names and path segments wrapping inside the card. Keep every card initially closed and preserve native disclosure keyboard behavior. Arc `SearchField` filters repository names and paths without changing the settings being edited.
+
+Folder import reports selection, discovery, and completed/total processing through the preload's `onRepositoryImportProgress` subscription. Unsubscribe when settings unmounts. Animate the button's real progress labels through the Arc button and announce them in the settings footer. Cancelled selection restores the idle action without an error.
+
+Connected GitHub settings show the avatar and username followed by Arc `ConfirmMorph` with `confirmMode="hold"`. Return the real disconnect promise so failure and retry stay in the control. On narrow layouts the question stays available to assistive technology while the visible confirm/cancel controls fit in the settings column.
 
 Use the Arc searchable `Combobox` for timezones. Its option list lives in a portaled Arc popover with its own named Arc scroll viewport, so opening or selecting a timezone cannot enlarge or scroll the settings pane. Keyboard navigation scrolls the options viewport. The date picker opens beside its trigger in short desktop windows to keep the whole calendar visible. Retain its normal below-trigger behavior on tall windows and phones.
 

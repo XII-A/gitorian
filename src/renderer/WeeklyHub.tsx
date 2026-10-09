@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
     ArrowRight,
     BookOpen,
@@ -14,8 +14,9 @@ import { localDate, shiftWeek, weekOf } from '../shared/model'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
-import { Select } from './components/arc/select/select'
-import { Dialog, DialogContent } from './components/arc/dialog/dialog'
+import { ProjectFilter } from './ProjectFilter'
+import { ActivityChart } from './ActivityChart'
+import { HubActivityDialog, type HubActivityDialogHandle } from './HubActivityDialog'
 import landscape from './assets/week-landscape.jpg'
 import './hub.css'
 import { offsetDay, rangeActivities, journalWeek } from './hub-model'
@@ -48,10 +49,8 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
     const end = offsetDay(start, 6)
     const [project, setProject] = useState('all')
     const [tab, setTab] = useState<'all' | 'commit' | 'pr'>('all')
-    const [selected, setSelected] = useState<Activity>()
+    const detailDialog = useRef<HubActivityDialogHandle>(null)
     const [busy, setBusy] = useState(false)
-    const [detailBusy, setDetailBusy] = useState(false)
-    const [detailError, setDetailError] = useState('')
     const items = rangeActivities(state, start, end)
     const commits = items.filter((item) => item.kind === 'commit')
     const prs = items.filter((item) => item.kind !== 'commit')
@@ -62,21 +61,12 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
         (item) => tab === 'all' || (tab === 'commit' ? item.kind === 'commit' : item.kind !== 'commit')
     )
     const period = `${formatDate(start)} – ${formatDate(end, { month: 'short', day: 'numeric', year: 'numeric' })}`
-    const inspect = async (item: Activity) => {
-        setSelected(item)
-        setDetailBusy(true)
-        setDetailError('')
-        const reply = await run({ type: 'details', activityId: item.id })
-        if (!reply)
-            setDetailError('Unable to load the full activity. Close this view and select the activity to try again.')
-        setDetailBusy(false)
-    }
     const row = (item: Activity) => (
         <button
             type="button"
             className={`hub-activity hub-kind-${item.kind}`}
             key={item.id}
-            onClick={() => void inspect(item)}
+            onClick={() => detailDialog.current?.open(item)}
         >
             <span className="hub-git-node">
                 <ActivityIcon item={item} />
@@ -105,7 +95,14 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
     const filters = (
         <div className="hub-filters" role="group" aria-label="Filter activity">
             {(['all', 'commit', 'pr'] as const).map((value) => (
-                <button type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="hub-filter-chip"
+                    key={value}
+                    aria-pressed={tab === value}
+                    onClick={() => setTab(value)}
+                >
                     {value === 'all' ? 'All activity' : value === 'commit' ? 'Commits' : 'Pull requests & reviews'}
                     <span>
                         {
@@ -116,8 +113,9 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
                             ).length
                         }
                     </span>
-                </button>
+                </Button>
             ))}
+            <ProjectFilter repositories={state.repositories} value={project} onValueChange={setProject} />
         </div>
     )
     const empty = (
@@ -161,7 +159,9 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
             setBusy(false)
         }
     }
-    const chart = <ActivityChart items={commits} start={start} timezone={state.settings.timezone} />
+    const chart = (
+        <ActivityChart activities={items} week={start} timezone={state.settings.timezone} className="hub-chart" />
+    )
     const stats = (
         <div className="hub-stats">
             <div>
@@ -261,19 +261,6 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
                         <section id="hub-activity" className="hub-timeline">
                             <div className="hub-section-heading">
                                 <h2>The days behind the work</h2>
-                                <Select
-                                    label="Project"
-                                    aria-label="Filter by project"
-                                    className="hub-project-filter"
-                                    value={project}
-                                    onValueChange={setProject}
-                                    options={[
-                                        { value: 'all', label: 'All projects' },
-                                        ...state.repositories
-                                            .filter((repo) => !repo.removed)
-                                            .map((repo) => ({ value: repo.id, label: repo.name }))
-                                    ]}
-                                />
                             </div>
                             {filters}
                             {visible.length
@@ -333,98 +320,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
             <div className="hub-sr-only" role="status">
                 {visible.length} activities from {period}
             </div>
-            <Dialog
-                open={!!selected}
-                onOpenChange={(open) => {
-                    if (!open) setSelected(undefined)
-                }}
-            >
-                <DialogContent
-                    className="hub-detail-dialog"
-                    title={selected?.title ?? 'Activity details'}
-                    description={
-                        selected
-                            ? `${kindLabel(selected)} in ${state.repositories.find((repo) => repo.id === selected.repositoryId)?.name ?? 'repository'}`
-                            : undefined
-                    }
-                >
-                    {selected && (
-                        <>
-                            <div className="hub-detail-meta">
-                                <span>
-                                    <GitBranch size={14} aria-hidden="true" />
-                                    {selected.branches.join(', ') || 'No branch'}
-                                </span>
-                                <span>
-                                    {formatDate(localDate(new Date(selected.date), state.settings.timezone), {
-                                        weekday: 'long',
-                                        month: 'long',
-                                        day: 'numeric',
-                                        year: 'numeric'
-                                    })}
-                                </span>
-                                <span>{selected.author}</span>
-                            </div>
-                            <p className="hub-detail-description">
-                                {selected.description ||
-                                    'Open the workspace to inspect the diff and add this change to your journal.'}
-                            </p>
-                            {detailBusy && <p role="status">Loading activity details…</p>}
-                            {detailError && <p role="alert">{detailError}</p>}
-                            <h3>Changed files</h3>
-                            <ul className="hub-detail-files">
-                                {(
-                                    state.activities.find((item) => item.id === selected.id)?.files ?? selected.files
-                                ).map((file) => (
-                                    <li key={file.name}>
-                                        <span>{file.name}</span>
-                                        <small>{file.status}</small>
-                                    </li>
-                                ))}
-                            </ul>
-                            <Button onClick={() => onActivity(selected)}>
-                                Open in workspace
-                                <ArrowRight size={15} />
-                            </Button>
-                        </>
-                    )}
-                </DialogContent>
-            </Dialog>
+            <HubActivityDialog ref={detailDialog} state={state} onActivity={onActivity} />
         </main>
-    )
-}
-
-function ActivityChart({ items, start, timezone }: { items: Activity[]; start: string; timezone: string }) {
-    const buckets = Array.from({ length: 7 }, (_, index) => {
-        const day = offsetDay(start, index)
-        const count = items.filter((item) => localDate(new Date(item.date), timezone) === day).length
-        return { day, count }
-    })
-    const maximum = Math.max(1, ...buckets.map((bucket) => bucket.count))
-    return (
-        <div
-            className="hub-chart"
-            role="img"
-            aria-label={`Commit activity: ${buckets.map((bucket) => `${formatDate(bucket.day)}: ${bucket.count} commits`).join('; ')}`}
-        >
-            <div className="hub-chart-bars">
-                {buckets.map((bucket) => (
-                    <div
-                        className="hub-chart-column"
-                        key={bucket.day}
-                        title={`${formatDate(bucket.day)}: ${bucket.count} commits`}
-                    >
-                        <span className="hub-chart-count">{bucket.count || ''}</span>
-                        <div className="hub-chart-track">
-                            <span
-                                style={{ height: `${bucket.count ? Math.max(8, (bucket.count / maximum) * 100) : 3}%` }}
-                                data-empty={!bucket.count}
-                            />
-                        </div>
-                        <small>{formatDate(bucket.day, { weekday: 'narrow' })}</small>
-                    </div>
-                ))}
-            </div>
-        </div>
     )
 }

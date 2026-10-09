@@ -158,6 +158,15 @@
     border-radius: var(--radius-key);
 }
 @media (max-width: 600px) {
+    .settings-disconnect-question {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
     .settings {
         width: 95vw;
         height: min(720px, 90dvh);
@@ -185,4 +194,36 @@
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: var(--space-3);
+}
+.settings-github-account,
+.settings-github-identity {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+}
+.settings-github-account {
+    flex-wrap: wrap;
+    max-width: 100%;
+}
+.settings-github-identity {
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+}
+.settings-github-avatar {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: var(--space-8);
+    height: var(--space-8);
+    background: var(--surface);
+    color: var(--text-secondary);
+    border-radius: var(--radius-pill);
+    flex: none;
+}
+.settings-github-avatar img {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
 }

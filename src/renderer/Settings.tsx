@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { plainText } from '../shared/notion-format'
-import type { Command, Destination, Reply, Repository, State } from '../shared/model'
+import type { Command, Destination, Reply, Repository, RepositoryImportProgress, State } from '../shared/model'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/arc/tabs/tabs'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -12,6 +12,8 @@ import { DatePicker } from './components/arc/date-picker/date-picker'
 import { Switch } from './components/arc/switch/switch'
 import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
 import { NumberField } from './components/arc/number-field/number-field'
+import { SearchField } from './components/arc/search-field/search-field'
+import { ConfirmMorph } from './components/arc/confirm-morph/confirm-morph'
 import { RichTextEditor, type RichTextEditorHandle } from './components/arc/rich-text-editor/rich-text-editor'
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
 import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise'
@@ -42,12 +44,25 @@ export function Settings({
     const [busy, setBusy] = useState('')
     const [section, setSection] = useState('repositories')
     const [confirmClose, setConfirmClose] = useState(false)
+    const [repositorySearch, setRepositorySearch] = useState('')
+    const [importProgress, setImportProgress] = useState<RepositoryImportProgress>()
     const keepEditing = useRef<HTMLButtonElement>(null)
     const previousFocus = useRef<Element | null>(null)
     const templateEditor = useRef<RichTextEditorHandle>(null)
     const [templateHistory, setTemplateHistory] = useState({ canUndo: false, canRedo: false })
     const templateWords = plainText(settings.template).trim().split(/\s+/).filter(Boolean).length
     const zones = useMemo(() => timezoneOptions(state.settings.timezone), [state.settings.timezone])
+    const matchingRepositories = repositories.filter((repository) =>
+        `${repository.name} ${repository.path}`.toLowerCase().includes(repositorySearch.trim().toLowerCase())
+    )
+    const importLabel = !importProgress
+        ? 'Add repositories from folder'
+        : importProgress.stage === 'selecting'
+          ? 'Waiting for folder selection…'
+          : importProgress.stage === 'discovering'
+            ? `Finding repositories… ${importProgress.found} found`
+            : `Processing repositories ${importProgress.completed}/${importProgress.total}`
+    useEffect(() => window.journal.onRepositoryImportProgress?.(setImportProgress), [])
     const requestClose = () => {
         if (busy) return
         if (hasUnsavedSettings(settings, repositories, state, token)) setConfirmClose(true)
@@ -274,26 +289,43 @@ export function Settings({
                                     loading={busy === 'repositories'}
                                     onClick={() =>
                                         action('repositories', async () => {
-                                            const result = await invoke({ type: 'addRepositories' })
-                                            mergeRepositories(result.state.repositories)
-                                            setStatus(result.message ?? '')
+                                            setImportProgress({ stage: 'selecting' })
+                                            try {
+                                                const result = await invoke({ type: 'addRepositories' })
+                                                mergeRepositories(result.state.repositories)
+                                                setStatus(result.message ?? '')
+                                            } finally {
+                                                setImportProgress(undefined)
+                                            }
                                         })
                                     }
                                 >
-                                    Add repositories from folder
+                                    {importLabel}
                                 </Button>
                             </div>
                             {!repositories.length && (
                                 <p className="settings-hint">Choose the folder containing your Git repositories.</p>
                             )}
                             {!!repositories.length && (
+                                <SearchField
+                                    label="Search repositories"
+                                    placeholder="Repository name or folder path"
+                                    value={repositorySearch}
+                                    onValueChange={setRepositorySearch}
+                                />
+                            )}
+                            {!!repositories.length && !matchingRepositories.length && (
+                                <p className="settings-hint" role="status">
+                                    No matching repositories.
+                                </p>
+                            )}
+                            {!!matchingRepositories.length && (
                                 <div className="settings-repositories">
-                                    {repositories.map((repository, index) => (
+                                    {matchingRepositories.map((repository) => (
                                         <ExpandableCard
                                             key={repository.id}
                                             title={repository.name}
                                             description={repository.path || 'Folder not located'}
-                                            defaultExpanded={index === 0}
                                         >
                                             {repositoryFields(repository)}
                                         </ExpandableCard>
@@ -305,9 +337,55 @@ export function Settings({
                             <section className="settings-section" aria-label="GitHub connection">
                                 <div className="settings-section-heading">
                                     <h3>GitHub</h3>
-                                    <span className="settings-connection-status">
-                                        {connections.github ? settings.githubLogin || 'Connected' : 'Not connected'}
-                                    </span>
+                                    {connections.github ? (
+                                        <div className="settings-github-account">
+                                            <span className="settings-github-identity">
+                                                {settings.githubLogin && (
+                                                    <span className="settings-github-avatar" aria-hidden="true">
+                                                        {settings.githubLogin.slice(0, 1).toUpperCase()}
+                                                        <img
+                                                            src={`https://github.com/${encodeURIComponent(settings.githubLogin)}.png?size=64`}
+                                                            width={32}
+                                                            height={32}
+                                                            alt=""
+                                                            onError={(event) => {
+                                                                event.currentTarget.hidden = true
+                                                            }}
+                                                        />
+                                                    </span>
+                                                )}
+                                                <span>{settings.githubLogin || 'Connected'}</span>
+                                            </span>
+                                            <ConfirmMorph
+                                                label="Disconnect"
+                                                prompt={
+                                                    <span className="settings-disconnect-question">
+                                                        Disconnect GitHub?
+                                                    </span>
+                                                }
+                                                confirmLabel="Disconnect"
+                                                confirmMode="hold"
+                                                pendingLabel="Disconnecting"
+                                                doneLabel="Disconnected"
+                                                errorLabel="Could not disconnect"
+                                                tone="neutral"
+                                                disabled={!!busy}
+                                                onConfirm={async () => {
+                                                    setBusy('disconnect-github')
+                                                    setError('')
+                                                    try {
+                                                        await invoke({ type: 'disconnect', service: 'github' })
+                                                        setSettings((current) => ({ ...current, githubLogin: '' }))
+                                                        setStatus('GitHub disconnected.')
+                                                    } finally {
+                                                        setBusy('')
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <span className="settings-connection-status">Not connected</span>
+                                    )}
                                 </div>
                                 {!connections.github && (
                                     <>
@@ -346,22 +424,6 @@ export function Settings({
                                         </div>
                                         <p className="settings-hint">Enable device flow in your GitHub OAuth app.</p>
                                     </>
-                                )}
-                                {connections.github && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        disabled={!!busy}
-                                        onClick={() =>
-                                            action('disconnect-github', async () => {
-                                                await invoke({ type: 'disconnect', service: 'github' })
-                                                setSettings((current) => ({ ...current, githubLogin: '' }))
-                                                setStatus('GitHub disconnected.')
-                                            })
-                                        }
-                                    >
-                                        Disconnect GitHub
-                                    </Button>
                                 )}
                                 {device && (
                                     <div className="settings-device">
@@ -632,7 +694,7 @@ export function Settings({
                         {error ? (
                             <p role="alert">{error}</p>
                         ) : (
-                            <p role="status">{status || 'Changes apply when saved.'}</p>
+                            <p role="status">{importProgress ? importLabel : status || 'Changes apply when saved.'}</p>
                         )}
                     </div>
                     <Button disabled={!!busy || !!device} loading={busy === 'save'} onClick={save}>

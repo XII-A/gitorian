@@ -291,4 +291,9 @@ export interface Reply {
 }
 export interface DesktopBridge {
     invoke: (command: Command) => Promise<Reply>
+    onRepositoryImportProgress?: (listener: (progress: RepositoryImportProgress) => void) => () => void
 }
+export type RepositoryImportProgress =
+    | { stage: 'selecting' }
+    | { stage: 'discovering'; scanned: number; found: number }
+    | { stage: 'processing'; completed: number; total: number }

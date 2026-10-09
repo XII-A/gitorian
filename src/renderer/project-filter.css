@@ -1,0 +1,16 @@
+.project-filter {
+    --radius-control: var(--radius-pill);
+    max-width: 100%;
+}
+.project-chip {
+    min-height: var(--control-height-sm);
+    height: var(--control-height-sm);
+    width: auto;
+    max-width: 100%;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    line-height: var(--leading-body);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { readFile, writeFile } from 'node:fs/promises'
 import { Effect } from 'effect'
 import { commandSchema } from '../shared/model'
+import type { RepositoryImportProgress } from '../shared/model'
 import { Store } from './store'
 import { Vault } from './vault'
 import { Http } from './http'
@@ -94,8 +95,19 @@ void app.whenReady().then(() => {
                 break
             }
             case 'addRepositories': {
+                let lastStage = ''
+                let lastSent = 0
+                const progress = (update: RepositoryImportProgress) => {
+                    const finished = update.stage === 'processing' && update.completed === update.total
+                    if (update.stage !== lastStage || finished || Date.now() - lastSent >= 50) {
+                        lastStage = update.stage
+                        lastSent = Date.now()
+                        if (!event.sender.isDestroyed()) event.sender.send('journal:repository-import', update)
+                    }
+                }
+                progress({ stage: 'selecting' })
                 const path = await folder()
-                return path ? await service.addRepositories(path) : service.reply()
+                return path ? await service.addRepositories(path, progress) : service.reply()
             }
             case 'relocate': {
                 const path = await folder()

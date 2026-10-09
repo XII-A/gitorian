@@ -16,7 +16,8 @@ import { sampleState } from './workspace-sample'
 import { activityLink, dateKey, dateValue, filterWorkspaceActivity, formatDay } from './workspace-model'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
-import { WorkspaceActivityChart } from './WorkspaceActivityChart'
+import { ActivityChart } from './ActivityChart'
+import { ProjectFilter } from './ProjectFilter'
 import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
 import landscape from './assets/week-landscape.jpg'
 import './workspace.css'
@@ -390,7 +391,12 @@ export function Workspace({
                             }}
                         />
                     </div>
-                    <WorkspaceActivityChart activities={items} state={state} week={week} />
+                    <ActivityChart
+                        activities={items}
+                        timezone={state.settings.timezone}
+                        week={week}
+                        className="ws-week-chart"
+                    />
                     <div className="ws-activity-filters" role="group" aria-label="Filter activity">
                         {(['all', 'commit', 'pr'] as const).map((value) => (
                             <Button
@@ -416,30 +422,14 @@ export function Workspace({
                                 </span>
                             </Button>
                         ))}
-                        <div className="ws-project-filter">
-                            <Select
-                                label=""
-                                aria-label="Filter by project"
-                                className="ws-filter-chip ws-project-chip"
-                                variant="ghost"
-                                contentMinWidth={240}
-                                value={project}
-                                onValueChange={(value) => {
-                                    setProject(value)
-                                    setBranch('all')
-                                }}
-                                options={[
-                                    {
-                                        value: 'all',
-                                        label: 'Projects',
-                                        count: state.repositories.filter((repo) => !repo.removed).length
-                                    },
-                                    ...state.repositories
-                                        .filter((repo) => !repo.removed)
-                                        .map((repo) => ({ value: repo.id, label: repo.name }))
-                                ]}
-                            />
-                        </div>
+                        <ProjectFilter
+                            repositories={state.repositories}
+                            value={project}
+                            onValueChange={(value) => {
+                                setProject(value)
+                                setBranch('all')
+                            }}
+                        />
                         <Button
                             variant="ghost"
                             size="sm"

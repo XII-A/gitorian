@@ -6,7 +6,7 @@
     "main": "out/main/index.js",
     "type": "module",
     "scripts": {
-        "dev": "electron-vite dev",
+        "dev": "electron-vite dev --watch",
         "build": "npm run typecheck && electron-vite build",
         "start": "electron-vite preview",
         "typecheck": "tsc --noEmit",
@@ -18,7 +18,8 @@
         "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
         "package": "npm run build && electron-builder",
         "package:dir": "npm run build && electron-builder --dir",
-        "smoke": "electron tools/desktop-smoke.mjs"
+        "smoke": "electron tools/desktop-smoke.mjs",
+        "smoke:dev-reload": "node tools/dev-reload-smoke.mjs"
     },
     "build": {
         "appId": "io.github.xiia.weeklyj",
