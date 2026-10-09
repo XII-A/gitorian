@@ -80,7 +80,7 @@
 }
 .editor code {
     padding: 0.12em 0.38em;
-    border-radius: 6px;
+    border-radius: var(--radius-key);
     background: var(--surface-muted);
     font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
     font-size: 0.86em;
@@ -127,7 +127,7 @@
     padding: 12px 14px;
     overflow-x: auto;
     border: 1px solid var(--border-subtle);
-    border-radius: 14px;
+    border-radius: var(--radius-control);
     background: var(--surface-muted);
     font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
     font-size: var(--text-sm);
@@ -163,7 +163,7 @@
     translate: -50% -100%;
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: var(--radius-panel);
     background: var(--surface-raised);
     box-shadow: var(--shadow-floating);
 }
@@ -213,7 +213,7 @@
     place-items: center;
     padding: 0;
     border: 0;
-    border-radius: 11px;
+    border-radius: var(--radius-control);
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
@@ -268,7 +268,7 @@
     place-items: center;
     padding: 0;
     border: 0;
-    border-radius: 11px;
+    border-radius: var(--radius-control);
     background: var(--surface-muted);
     color: var(--text-muted);
     cursor: pointer;
@@ -291,17 +291,20 @@
     z-index: 40;
     width: 240px;
     max-width: calc(100% - 8px);
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: none;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: 18px;
+    border-radius: var(--radius-panel);
     background: var(--surface-raised);
     box-shadow: var(--shadow-floating);
 }
 .slash[data-above] {
     translate: 0 -100%;
+}
+.slashScroll {
+    height: 100%;
+    width: 100%;
 }
 .slashBody {
     padding: 6px;
@@ -318,18 +321,18 @@
     top: 0;
     right: 0;
     left: 0;
-    border-radius: 12px;
+    border-radius: calc(var(--radius-panel) - 6px);
     background: color-mix(in oklab, var(--foreground) 6.5%, transparent);
     pointer-events: none;
 }
 .slashOption {
     position: relative;
     display: flex;
-    height: 34px;
+    height: var(--control-height-md);
     align-items: center;
     gap: 10px;
     padding: 0 10px;
-    border-radius: 12px;
+    border-radius: calc(var(--radius-panel) - 6px);
     color: var(--text-secondary);
     cursor: pointer;
     font-size: var(--text-sm);

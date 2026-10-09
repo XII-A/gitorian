@@ -49,6 +49,7 @@ import { TextStrikethroughIcon as Strikethrough } from '@phosphor-icons/react/di
 import { LinkBreakIcon as Unlink } from '@phosphor-icons/react/dist/csr/LinkBreak'
 import { motionTokens } from '../lib/motion-tokens'
 import styles from './rich-text-editor.module.css'
+import { ScrollArea } from '../scroll-area/scroll-area'
 
 /* ------------------------------------------------------------------------------------------------
  * Markdown and HTML. Small, dependency free converters for the subset the editor writes.
@@ -2127,14 +2128,6 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     useLayoutEffect(() => {
         const row = listRef.current?.querySelector<HTMLElement>(`[data-index="${slashIndex}"]`)
         if (!row) return
-        if (reduced || !highlightPlaced.current || hh.get() === 0) {
-            hy.jump(row.offsetTop)
-            hh.jump(row.offsetHeight)
-            highlightPlaced.current = true
-            return
-        }
-        animate(hy, row.offsetTop, GLIDE)
-        animate(hh, row.offsetHeight, GLIDE)
         // A short panel scrolls to keep the active row in view.
         const panel = slashPanel.current
         if (panel) {
@@ -2144,6 +2137,14 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             else if (bottom + 6 > panel.scrollTop + panel.clientHeight)
                 panel.scrollTop = bottom + 6 - panel.clientHeight
         }
+        if (reduced || !highlightPlaced.current || hh.get() === 0) {
+            hy.jump(row.offsetTop)
+            hh.jump(row.offsetHeight)
+            highlightPlaced.current = true
+            return
+        }
+        animate(hy, row.offsetTop, GLIDE)
+        animate(hh, row.offsetHeight, GLIDE)
     }, [hh, hy, reduced, slashIndex, slashResults, slashOpen])
     useLayoutEffect(() => {
         // The highlight keeps its row while the menu fades out; the next open places it fresh.
@@ -2393,7 +2394,6 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 {slashOpen && slash && (
                     <motion.div
                         key={`${slash.offset}-${slash.y}`}
-                        ref={slashPanel}
                         className={styles.slash}
                         data-above={slash.above || undefined}
                         style={{
@@ -2421,45 +2421,52 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                         }
                         onMouseDown={(event) => event.preventDefault()}
                     >
-                        <div ref={panelBody} className={styles.slashBody}>
-                            <ul
-                                ref={listRef}
-                                id={`${uid}-slash`}
-                                role="listbox"
-                                aria-label="Blocks"
-                                className={styles.slashList}
-                            >
-                                <motion.li
-                                    aria-hidden="true"
-                                    className={styles.slashHighlight}
-                                    style={{ y: hy, height: hh }}
-                                />
-                                {slashResults.map((item, index) => (
-                                    <li
-                                        key={item.type}
-                                        id={optionId(index)}
-                                        role="option"
-                                        aria-selected={index === slashIndex}
-                                        data-index={index}
-                                        className={styles.slashOption}
-                                        onPointerMove={() => {
-                                            if (index !== slashIndex) setSlashActive(index)
-                                        }}
-                                        onClick={() => chooseSlash(item)}
-                                        onKeyDown={(event) => {
-                                            if (event.key === 'Enter' || event.key === ' ') {
-                                                event.preventDefault()
-                                                chooseSlash(item)
-                                            }
-                                        }}
-                                    >
-                                        <span className={styles.slashIcon}>{item.icon}</span>
-                                        <span className={styles.slashLabel}>{item.label}</span>
-                                        {item.hint && <kbd className={styles.slashHint}>{item.hint}</kbd>}
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
+                        <ScrollArea
+                            className={styles.slashScroll}
+                            viewportRef={slashPanel}
+                            label="Formatting options"
+                            fade={8}
+                        >
+                            <div ref={panelBody} className={styles.slashBody}>
+                                <ul
+                                    ref={listRef}
+                                    id={`${uid}-slash`}
+                                    role="listbox"
+                                    aria-label="Blocks"
+                                    className={styles.slashList}
+                                >
+                                    <motion.li
+                                        aria-hidden="true"
+                                        className={styles.slashHighlight}
+                                        style={{ y: hy, height: hh }}
+                                    />
+                                    {slashResults.map((item, index) => (
+                                        <li
+                                            key={item.type}
+                                            id={optionId(index)}
+                                            role="option"
+                                            aria-selected={index === slashIndex}
+                                            data-index={index}
+                                            className={styles.slashOption}
+                                            onPointerMove={() => {
+                                                if (index !== slashIndex) setSlashActive(index)
+                                            }}
+                                            onClick={() => chooseSlash(item)}
+                                            onKeyDown={(event) => {
+                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                    event.preventDefault()
+                                                    chooseSlash(item)
+                                                }
+                                            }}
+                                        >
+                                            <span className={styles.slashIcon}>{item.icon}</span>
+                                            <span className={styles.slashLabel}>{item.label}</span>
+                                            {item.hint && <kbd className={styles.slashHint}>{item.hint}</kbd>}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </ScrollArea>
                     </motion.div>
                 )}
             </AnimatePresence>

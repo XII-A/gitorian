@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Diff, Hunk, parseDiff } from 'react-diff-view'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { Select } from './components/arc/select/select'
+import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 
 export function DiffViewer({ text, initialSplit = false }: { text: string; initialSplit?: boolean }) {
     const [mode, setMode] = useState(initialSplit ? 'split' : 'unified')
@@ -21,7 +22,12 @@ export function DiffViewer({ text, initialSplit = false }: { text: string; initi
                 <span>Reviews and metadata changes may not contain code changes.</span>
             </div>
         )
-    if (!files.length) return <pre className="diff-fallback">{text.slice(0, 8000)}</pre>
+    if (!files.length)
+        return (
+            <ScrollArea className="ws-diff-scroll" orientation="both" label="Text diff" fade={0}>
+                <pre className="diff-fallback">{text.slice(0, 8000)}</pre>
+            </ScrollArea>
+        )
     const active =
         files.find((file) => (file.newPath === '/dev/null' ? file.oldPath : file.newPath) === selected) ?? files[0]
     const path = active.newPath === '/dev/null' ? active.oldPath : active.newPath
@@ -55,8 +61,12 @@ export function DiffViewer({ text, initialSplit = false }: { text: string; initi
                         {files.length} {files.length === 1 ? 'file' : 'files'}
                     </span>
                 </div>
-                {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- The scrollable code region needs a tab stop for keyboard scrolling. */}
-                <div className="ws-diff-scroll" tabIndex={0} role="region" aria-label={`Scrollable diff for ${path}`}>
+                <ScrollArea
+                    className="ws-diff-scroll"
+                    orientation="both"
+                    label={`Scrollable diff for ${path}`}
+                    fade={0}
+                >
                     {active.hunks.length ? (
                         <Diff
                             viewType={mode === 'split' ? 'split' : 'unified'}
@@ -68,7 +78,7 @@ export function DiffViewer({ text, initialSplit = false }: { text: string; initi
                     ) : (
                         <p>Binary file or metadata change. No text diff.</p>
                     )}
-                </div>
+                </ScrollArea>
             </section>
         </div>
     )

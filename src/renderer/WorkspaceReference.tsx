@@ -5,6 +5,7 @@ import { sampleState } from './workspace-sample'
 import { Button } from './components/arc/button/button'
 import { Input } from './components/arc/input/input'
 import { Editor } from './Editor'
+import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import './workspace.css'
 
 export function WorkspaceReference({
@@ -95,18 +96,20 @@ export function WorkspaceReference({
     return (
         <main className="ws-reference" aria-label="Detached reference window">
             {kind === 'entry' && entry ? (
-                <section className="ws-reference-entry">
-                    <header>
-                        <h1>{entry.title}</h1>
-                        <Button variant="secondary" size="sm" onClick={dock}>
-                            Back to workspace
+                <ScrollArea className="ws-reference-entry-scroll" label="Published journal entry" fade={20}>
+                    <section className="ws-reference-entry">
+                        <header>
+                            <h1>{entry.title}</h1>
+                            <Button variant="secondary" size="sm" onClick={dock}>
+                                Back to workspace
+                            </Button>
+                        </header>
+                        <Editor value={entry.body} readOnly />
+                        <Button variant="secondary" size="sm" onClick={() => run({ type: 'open', url: entry.url })}>
+                            Open in Notion
                         </Button>
-                    </header>
-                    <Editor value={entry.body} readOnly />
-                    <Button variant="secondary" size="sm" onClick={() => run({ type: 'open', url: entry.url })}>
-                        Open in Notion
-                    </Button>
-                </section>
+                    </section>
+                </ScrollArea>
             ) : activity ? (
                 <>
                     <WorkspaceInspector

@@ -70,10 +70,14 @@
     --space-16: 4rem;
     --space-20: 5rem;
     --space-24: 6rem;
+    /* Shared frontend radius contract. Hub and workspace inherit these; see docs/frontend.md.
+       Do not override page radii. Only compact filter controls opt into --radius-pill. */
     --radius-control: 1.125rem;
     --radius-panel: 1.625rem;
     --radius-surface: 2.125rem;
     --radius-pill: 9999px;
+    --radius-inset: 0.75rem;
+    --radius-key: 0.25rem;
     --control-height-sm: 2.25rem;
     --control-height-md: 2.75rem;
     --control-height-lg: 3.125rem;

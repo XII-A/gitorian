@@ -1,3 +1,4 @@
+import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { useEffect, useId, useRef, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor as TiptapEditor } from '@tiptap/react'
@@ -209,24 +210,31 @@ export function Editor({
                     aria-label="Formatting blocks"
                     style={{ left: menu.x, top: menu.y }}
                 >
-                    {filtered.length ? (
-                        filtered.map((block, index) => (
-                            <button
-                                type="button"
-                                key={block.id}
-                                role="option"
-                                id={`${id}-block-${index}`}
-                                aria-selected={active === index}
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => apply(editor, block.id)}
-                            >
-                                <span>{block.label}</span>
-                                <small>{block.hint}</small>
-                            </button>
-                        ))
-                    ) : (
-                        <p>No matching formats</p>
-                    )}
+                    <ScrollArea
+                        className="ws-block-options"
+                        label="Formatting options"
+                        maxHeight="min(320px, 50dvh)"
+                        fade={8}
+                    >
+                        {filtered.length ? (
+                            filtered.map((block, index) => (
+                                <button
+                                    type="button"
+                                    key={block.id}
+                                    role="option"
+                                    id={`${id}-block-${index}`}
+                                    aria-selected={active === index}
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => apply(editor, block.id)}
+                                >
+                                    <span>{block.label}</span>
+                                    <small>{block.hint}</small>
+                                </button>
+                            ))
+                        ) : (
+                            <p>No matching formats</p>
+                        )}
+                    </ScrollArea>
                 </div>
             )}
         </div>

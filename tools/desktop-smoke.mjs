@@ -105,6 +105,29 @@ app.on('browser-window-created', (_, window) => {
             result.dockedBack =
                 reference.isDestroyed() &&
                 (await window.webContents.executeJavaScript(`!!document.querySelector('[aria-label="Pop out diff"]')`))
+            Object.assign(
+                result,
+                await window.webContents.executeJavaScript(`(() => {
+                const frame = document.querySelector('.ws-frame').getBoundingClientRect()
+                const buttons = Array.from(document.querySelectorAll('.ws-topbar button'))
+                return {
+                    fillsViewport: frame.left === 0 && Math.abs(frame.right - innerWidth) < 1 && Math.abs(frame.bottom - innerHeight) < 1,
+                    cleanWritingSurface: !document.querySelector('.ws-writing-bar') && !document.querySelector('.ws-review-footer'),
+                    publishIsLastHeaderAction: buttons.at(-1) === document.querySelector('.ws-publish button'),
+                    keyboardScrollablePanes: ['.ws-activity-scroll','.ws-paper-scroll','.ws-diff-scroll'].every(selector => document.querySelector(selector+' [role="region"]')?.tabIndex === 0)
+                }
+            })()`)
+            )
+            await window.webContents.executeJavaScript(`document.querySelector('.ws-publish button').click()`)
+            await pause(200)
+            result.headerPublishesSample = await window.webContents.executeJavaScript(
+                `document.querySelector('.ws-publish button').textContent.includes('Start another entry') && document.querySelector('.ws-writing-footer').textContent.includes('Nothing was sent to Notion')`
+            )
+            await window.webContents.executeJavaScript(`document.querySelector('.ws-publish button').click()`)
+            await pause(200)
+            result.newEntryAfterPublishing = await window.webContents.executeJavaScript(
+                `document.querySelector('[aria-label="Entry title"]').value === '' && document.querySelector('[aria-label="Journal body"]').getAttribute('contenteditable') === 'true'`
+            )
             passed = Object.entries(result).every(([key, value]) =>
                 key === 'node' ? value === 'undefined' : key === 'version' ? value === 1 : value === true
             )

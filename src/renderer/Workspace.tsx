@@ -15,7 +15,9 @@ import type { Citation } from './WorkspaceDraft'
 import { WorkspaceInspector } from './WorkspaceInspector'
 import { sampleState } from './workspace-sample'
 import { activityLink, dateKey, dateValue, filterWorkspaceActivity, formatDay } from './workspace-model'
-import { Editor } from './Editor'
+import { ScrollArea } from './components/arc/scroll-area/scroll-area'
+import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
+import { WorkspaceActivityChart } from './WorkspaceActivityChart'
 import landscape from './assets/week-landscape.jpg'
 import './workspace.css'
 
@@ -45,7 +47,9 @@ export function Workspace({
     const [feature, setFeature] = useState('all')
     const [branch, setBranch] = useState('all')
     const [kind, setKind] = useState('all')
-    const [search, setSearch] = useState('')
+    const [searchExpanded, setSearchExpanded] = useState(false)
+    const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('diff')
+    const [publishTarget, setPublishTarget] = useState<HTMLElement | null>(null)
     const [selectedId, setSelectedId] = useState(initialActivity)
     const [detailBusy, setDetailBusy] = useState(false)
     const [detailError, setDetailError] = useState('')
@@ -55,9 +59,6 @@ export function Workspace({
     const [historyMode, setHistoryMode] = useState('introduced')
     const [author, setAuthor] = useState('')
     const [historyBusy, setHistoryBusy] = useState(false)
-    const [journalOpen, setJournalOpen] = useState(false)
-    const [entryId, setEntryId] = useState('')
-    const [requestedDraft, setRequestedDraft] = useState<{ id: string; nonce: number }>()
     const [canCite, setCanCite] = useState(false)
     const [citation, setCitation] = useState<Citation>()
     const [notice, setNotice] = useState('')
@@ -162,9 +163,10 @@ export function Workspace({
         [realRun, sample, week]
     )
     const inspect = useCallback(
-        async (item: Activity) => {
+        async (item: Activity, tab: 'diff' | 'details' = 'diff') => {
             const id = ++requestId.current
             setSelectedId(item.id)
+            setInspectionTab(tab)
             setDetailError('')
             if (sample) return
             setDetailBusy(true)
@@ -186,10 +188,10 @@ export function Workspace({
         }
     }, [initialActivity, realState.activities, inspect])
     const selected = state.activities.find((item) => item.id === selectedId)
-    const items = rangeActivities(state, week, offsetDay(week, 6))
+    const items = useMemo(() => rangeActivities(state, week, offsetDay(week, 6)), [state, week])
     const visible = useMemo(
-        () => filterWorkspaceActivity(state, week, { project, feature, branch, kind, search }),
-        [state, week, project, feature, branch, kind, search]
+        () => filterWorkspaceActivity(state, week, { project, feature, branch, kind, search: '' }),
+        [state, week, project, feature, branch, kind]
     )
     const currentWeek = weekOf(new Date(), state.settings)
     const cite = useCallback(
@@ -240,7 +242,6 @@ export function Workspace({
         setDetailError('')
         setNotice('')
         setCitation(undefined)
-        setRequestedDraft(undefined)
         const url = new URL(window.location.href)
         url.searchParams.set('week', value)
         window.history.replaceState({}, '', url)
@@ -253,11 +254,9 @@ export function Workspace({
         setDetailError('')
         setNotice('')
         setCitation(undefined)
-        setRequestedDraft(undefined)
         setProject('all')
         setFeature('all')
         setBranch('all')
-        setSearch('')
         setKind('all')
         const url = new URL(window.location.href)
         url.searchParams.set('data', value ? 'sample' : 'real')
@@ -311,6 +310,7 @@ export function Workspace({
                 loading={detailBusy}
                 error={detailError}
                 canCite={canCite}
+                initialTab={inspectionTab}
                 onCite={() => cite(selected)}
                 onInspect={(item) => void inspect(item)}
                 onPopout={popout}
@@ -354,15 +354,6 @@ export function Workspace({
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setJournalOpen(true)}
-                        aria-label="Browse journal entries"
-                        title="Browse journal entries"
-                    >
-                        <WorkspaceIcon name="book" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="sm"
                         onClick={refresh}
                         loading={refreshing}
                         aria-label="Refresh activity"
@@ -380,8 +371,17 @@ export function Workspace({
                     >
                         <WorkspaceIcon name="focus" />
                     </Button>
+                    <div className="ws-publish" ref={setPublishTarget} />
                 </div>
             </nav>
+            {notice && (
+                <div className="ws-action-notice" role="status">
+                    <span>{notice}</span>
+                    <Button variant="ghost" size="sm" aria-label="Dismiss notification" onClick={() => setNotice('')}>
+                        <WorkspaceIcon name="close" />
+                    </Button>
+                </div>
+            )}
             {!sample && (error || state.refreshError) && (
                 <div className="ws-error-bar" role="alert">
                     <span>Could not update your journal. Your saved writing is still available.</span>
@@ -392,90 +392,132 @@ export function Workspace({
             )}
             <div className="ws-frame" data-inspecting={!!inspector}>
                 <aside className="ws-activity" aria-label="Weekly activity">
-                    <div className="ws-activity-intro">
-                        <div>
+                    <div className="ws-activity-intro" data-searching={searchExpanded}>
+                        <div className="ws-activity-label">
                             <h2>Activity</h2>
                             <span>
                                 {items.length} events · {new Set(items.map((item) => item.repositoryId)).size} projects
                             </span>
                         </div>
-                        <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
-                            <WorkspaceIcon name="branch" />
-                            Browse
-                        </Button>
-                    </div>
-                    <div className="ws-week-strip" aria-label="Daily activity">
-                        {Array.from({ length: 7 }, (_, index) => {
-                            const day = offsetDay(week, index)
-                            const count = items.filter(
-                                (item) => localDate(new Date(item.date), state.settings.timezone) === day
-                            ).length
-                            return (
-                                <div key={day} title={`${formatDay(day)}: ${count} activities`}>
-                                    <span className="ws-day-track">
-                                        <span
-                                            style={{
-                                                height: `${count ? Math.max(12, Math.min(100, count * 11)) : 4}%`
-                                            }}
-                                            data-empty={!count}
-                                        />
-                                    </span>
-                                    <small>{formatDay(day, { weekday: 'short' })}</small>
-                                </div>
-                            )
-                        })}
-                    </div>
-                    <div className="ws-activity-filters">
-                        <Select
-                            label=""
-                            aria-label="Filter by project"
-                            value={project}
-                            onValueChange={(value) => {
-                                setProject(value)
-                                setBranch('all')
-                            }}
-                            options={[
-                                { value: 'all', label: 'All projects' },
-                                ...state.repositories
-                                    .filter((repo) => !repo.removed)
-                                    .map((repo) => ({ value: repo.id, label: repo.name }))
-                            ]}
-                        />
-                        <Input
-                            label=""
-                            aria-label="Search activity"
+                        <ExpandingSearch
+                            className="ws-activity-search"
+                            label="Search activity"
                             placeholder="Find a change…"
-                            value={search}
-                            onChange={(event) => setSearch(event.target.value)}
+                            expandedWidth={420}
+                            onExpandedChange={setSearchExpanded}
+                            items={items.map((item) => ({
+                                id: item.id,
+                                title: item.title,
+                                group: state.repositories.find((repo) => repo.id === item.repositoryId)?.name,
+                                meta: `${formatDay(localDate(new Date(item.date), state.settings.timezone))} · ${item.sha?.slice(0, 7) ?? item.kind}`,
+                                keywords: [item.sha ?? '', item.description, ...item.branches],
+                                icon: <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'pr'} />
+                            }))}
+                            suggestions={items.slice(0, 4).map((item) => ({
+                                id: item.id,
+                                title: item.title,
+                                meta: state.repositories.find((repo) => repo.id === item.repositoryId)?.name
+                            }))}
+                            suggestionsLabel="This week"
+                            onSelect={(result) => {
+                                const item = items.find((activity) => activity.id === result.id)
+                                if (item) void inspect(item, 'details')
+                            }}
                         />
+                    </div>
+                    <WorkspaceActivityChart
+                        activities={items}
+                        state={state}
+                        week={week}
+                        onInspect={(item) => void inspect(item)}
+                    />
+                    <div className="ws-activity-filters" role="group" aria-label="Filter activity">
+                        {(['all', 'commit', 'pr'] as const).map((value) => (
+                            <Button
+                                key={value}
+                                variant="ghost"
+                                size="sm"
+                                className="ws-filter-chip"
+                                aria-pressed={kind === value}
+                                onClick={() => setKind(value)}
+                            >
+                                {value === 'all' ? 'All' : value === 'commit' ? 'Commits' : 'PRs & reviews'}
+                                <span>
+                                    {
+                                        items.filter(
+                                            (item) =>
+                                                (project === 'all' || item.repositoryId === project) &&
+                                                (value === 'all' ||
+                                                    (value === 'commit'
+                                                        ? item.kind === 'commit'
+                                                        : item.kind !== 'commit'))
+                                        ).length
+                                    }
+                                </span>
+                            </Button>
+                        ))}
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="ws-filter-chip"
+                            onClick={() => setHistoryOpen(true)}
+                            aria-label="More activity filters"
+                            aria-pressed={feature !== 'all' || branch !== 'all'}
+                        >
+                            <WorkspaceIcon name="branch" width="14" height="14" />
+                            Filters
+                        </Button>
+                        <div className="ws-project-filter">
+                            <Select
+                                label=""
+                                aria-label="Filter by project"
+                                className="ws-filter-chip ws-project-chip"
+                                value={project}
+                                onValueChange={(value) => {
+                                    setProject(value)
+                                    setBranch('all')
+                                }}
+                                options={[
+                                    { value: 'all', label: 'All projects' },
+                                    ...state.repositories
+                                        .filter((repo) => !repo.removed)
+                                        .map((repo) => ({ value: repo.id, label: repo.name }))
+                                ]}
+                            />
+                        </div>
                     </div>
                     {(feature !== 'all' || branch !== 'all') && (
                         <div className="ws-extra-filters">
                             {feature !== 'all' && (
-                                <Button variant="ghost" size="sm" onClick={() => setFeature('all')}>
-                                    Clear feature: {state.features.find((item) => item.id === feature)?.name}
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="ws-filter-chip"
+                                    onClick={() => setFeature('all')}
+                                >
+                                    Clear {state.features.find((item) => item.id === feature)?.name}
+                                    <WorkspaceIcon name="close" width="14" height="14" />
                                 </Button>
                             )}
                             {branch !== 'all' && (
-                                <Button variant="ghost" size="sm" onClick={() => setBranch('all')}>
-                                    Clear branch: {branch}
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="ws-filter-chip"
+                                    onClick={() => setBranch('all')}
+                                >
+                                    Clear {branch}
+                                    <WorkspaceIcon name="close" width="14" height="14" />
                                 </Button>
                             )}
                         </div>
                     )}
-                    <div className="ws-kind-filter">
-                        <SegmentedControl
-                            label="Activity type"
-                            value={kind}
-                            onValueChange={setKind}
-                            options={[
-                                { value: 'all', label: 'All activity' },
-                                { value: 'commit', label: 'Commits' },
-                                { value: 'pr', label: 'PRs & reviews' }
-                            ]}
-                        />
-                    </div>
-                    <div className="ws-activity-scroll">
+                    <ScrollArea
+                        className="ws-activity-scroll"
+                        viewportClassName="ws-activity-viewport"
+                        label="Weekly activity list"
+                        fade={16}
+                    >
                         {visible.length ? (
                             [
                                 ...new Set(
@@ -544,7 +586,7 @@ export function Workspace({
                                 <h3>{items.length ? 'No matching changes' : 'A quiet week so far.'}</h3>
                                 <p>
                                     {items.length
-                                        ? 'Try another project, feature, or search.'
+                                        ? 'Choose another project or clear the activity filters.'
                                         : 'Choose another week or refresh your repositories. You can write at any time.'}
                                 </p>
                                 <Button
@@ -555,7 +597,6 @@ export function Workspace({
                                         setFeature('all')
                                         setBranch('all')
                                         setKind('all')
-                                        setSearch('')
                                         if (!items.length) void refresh()
                                     }}
                                 >
@@ -563,7 +604,7 @@ export function Workspace({
                                 </Button>
                             </div>
                         )}
-                    </div>
+                    </ScrollArea>
                     {detached && (
                         <div className="ws-detached-status">
                             <WorkspaceIcon name="popout" />
@@ -604,20 +645,12 @@ export function Workspace({
                         sample={sample}
                         run={run}
                         citation={citation}
-                        requestedDraft={requestedDraft}
+                        publishTarget={publishTarget}
                         onReady={setCanCite}
                         onSettings={onSettings}
                     />
                 </div>
                 {inspector}
-            </div>
-            <div className="ws-review-footer">
-                <span>
-                    {sample
-                        ? 'Sample workspace. Your real journal is untouched.'
-                        : 'A place to connect the work and the words.'}
-                </span>
-                <span role="status">{notice || 'Select a change to take a closer look.'}</span>
             </div>
             <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
                 <DialogContent
@@ -625,106 +658,65 @@ export function Workspace({
                     description="Bring branch work into view. The activity list keeps the selected week."
                     className="ws-dialog"
                 >
-                    {state.features.length > 0 && (
+                    <ScrollArea className="ws-dialog-fields" label="Branch and feature filters" fade={16}>
+                        {state.features.length > 0 && (
+                            <Select
+                                label="Feature filter"
+                                value={feature}
+                                onValueChange={setFeature}
+                                options={[
+                                    { value: 'all', label: 'All features' },
+                                    ...state.features.map((item) => ({ value: item.id, label: item.name }))
+                                ]}
+                            />
+                        )}
                         <Select
-                            label="Feature filter"
-                            value={feature}
-                            onValueChange={setFeature}
+                            label="Project"
+                            value={project}
+                            onValueChange={(value) => {
+                                setProject(value)
+                                setBranch('all')
+                            }}
                             options={[
-                                { value: 'all', label: 'All features' },
-                                ...state.features.map((item) => ({ value: item.id, label: item.name }))
+                                { value: 'all', label: 'Choose a project' },
+                                ...state.repositories
+                                    .filter((repo) => !repo.removed)
+                                    .map((repo) => ({ value: repo.id, label: repo.name }))
                             ]}
                         />
-                    )}
-                    <Select
-                        label="Project"
-                        value={project}
-                        onValueChange={(value) => {
-                            setProject(value)
-                            setBranch('all')
-                        }}
-                        options={[
-                            { value: 'all', label: 'Choose a project' },
-                            ...state.repositories
-                                .filter((repo) => !repo.removed)
-                                .map((repo) => ({ value: repo.id, label: repo.name }))
-                        ]}
-                    />
-                    <Select
-                        label="Branch"
-                        value={branch}
-                        onValueChange={setBranch}
-                        options={[
-                            { value: 'all', label: 'Choose a branch' },
-                            ...(state.repositories.find((repo) => repo.id === project)?.branches ?? []).map((name) => ({
-                                value: name,
-                                label: name
-                            }))
-                        ]}
-                    />
-                    <SegmentedControl
-                        label="Branch view"
-                        value={historyMode}
-                        onValueChange={setHistoryMode}
-                        options={[
-                            { value: 'introduced', label: 'Introduced on branch' },
-                            { value: 'history', label: 'Full history' }
-                        ]}
-                    />
-                    <Input
-                        label="Author"
-                        placeholder="All authors"
-                        value={author}
-                        onChange={(event) => setAuthor(event.target.value)}
-                    />
-                    <Button loading={historyBusy} disabled={project === 'all' || branch === 'all'} onClick={browse}>
-                        Load branch history
-                    </Button>
-                </DialogContent>
-            </Dialog>
-            <Dialog open={journalOpen} onOpenChange={setJournalOpen}>
-                <DialogContent
-                    title="Your journal"
-                    description="Browse saved entries and return to a draft’s week."
-                    className="ws-dialog ws-journal-dialog"
-                >
-                    <h3>Local drafts</h3>
-                    <div className="ws-journal-list">
-                        {state.drafts.map((draft) => (
-                            <button
-                                type="button"
-                                key={draft.id}
-                                onClick={() => {
-                                    changeWeek(draft.week)
-                                    setRequestedDraft({ id: draft.id, nonce: Date.now() })
-                                    setJournalOpen(false)
-                                }}
-                            >
-                                <span>{draft.title || 'Untitled entry'}</span>
-                                <small>
-                                    {formatDay(draft.week)} · {draft.publishedEntryId ? 'Published' : 'Draft'}
-                                </small>
-                            </button>
-                        ))}
-                    </div>
-                    <h3>Published entries</h3>
-                    <Select
-                        label="Published entry"
-                        value={entryId}
-                        onValueChange={setEntryId}
-                        options={[
-                            { value: '', label: 'Choose an entry' },
-                            ...state.entries.map((entry) => ({ value: entry.id, label: entry.title }))
-                        ]}
-                    />
-                    {state.entries.find((entry) => entry.id === entryId) && (
-                        <Editor
-                            key={entryId}
-                            value={state.entries.find((entry) => entry.id === entryId)!.body}
-                            readOnly
+                        <Select
+                            label="Branch"
+                            value={branch}
+                            onValueChange={setBranch}
+                            options={[
+                                { value: 'all', label: 'Choose a branch' },
+                                ...(state.repositories.find((repo) => repo.id === project)?.branches ?? []).map(
+                                    (name) => ({
+                                        value: name,
+                                        label: name
+                                    })
+                                )
+                            ]}
                         />
-                    )}
-                    {!state.entries.length && <p>Your published entries will appear here.</p>}
+                        <SegmentedControl
+                            label="Branch view"
+                            value={historyMode}
+                            onValueChange={setHistoryMode}
+                            options={[
+                                { value: 'introduced', label: 'Introduced on branch' },
+                                { value: 'history', label: 'Full history' }
+                            ]}
+                        />
+                        <Input
+                            label="Author"
+                            placeholder="All authors"
+                            value={author}
+                            onChange={(event) => setAuthor(event.target.value)}
+                        />
+                        <Button loading={historyBusy} disabled={project === 'all' || branch === 'all'} onClick={browse}>
+                            Load branch history
+                        </Button>
+                    </ScrollArea>
                 </DialogContent>
             </Dialog>
         </main>

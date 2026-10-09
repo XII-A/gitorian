@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { Command, Draft, JournalNode, Reply, State } from '../shared/model'
 import { draftSchema } from '../shared/model'
 import { plainText } from '../shared/notion-format'
@@ -6,7 +7,7 @@ import { Editor } from './Editor'
 import { RichTextEditor } from './components/arc/rich-text-editor/rich-text-editor'
 import type { RichTextEditorHandle } from './components/arc/rich-text-editor/rich-text-editor'
 import { Button } from './components/arc/button/button'
-import { Select } from './components/arc/select/select'
+import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
 import { journalFromHTML, journalHTML, needsLegacyEditor } from './workspace-model'
 
@@ -22,12 +23,12 @@ interface Props {
     sample: boolean
     run: (command: Command) => Promise<Reply | undefined>
     citation?: Citation
-    requestedDraft?: { id: string; nonce: number }
+    publishTarget: HTMLElement | null
     onReady: (ready: boolean) => void
     onSettings: () => void
 }
 
-export function WorkspaceDraft({ state, week, sample, run, citation, requestedDraft, onReady, onSettings }: Props) {
+export function WorkspaceDraft({ state, week, sample, run, citation, publishTarget, onReady, onSettings }: Props) {
     const [draft, setDraft] = useState<Draft>()
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState(false)
@@ -38,9 +39,8 @@ export function WorkspaceDraft({ state, week, sample, run, citation, requestedDr
     const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     const pending = useRef<Promise<boolean> | undefined>(undefined)
     const mounted = useRef(true)
-    const openedRequest = useRef<number | undefined>(undefined)
     const drafts = state.drafts.filter((item) => item.week === week)
-    const ready = !!draft && !draft.publishedEntryId
+    const ready = !!draft && !draft.publishedEntryId && !busy
     const storageKey = `weekly-j:recovery:${sample ? 'sample' : (state.restoreId ?? 'local')}:${week}`
     const persist = useCallback(async (): Promise<boolean> => {
         while (pending.current) {
@@ -106,21 +106,11 @@ export function WorkspaceDraft({ state, week, sample, run, citation, requestedDr
         [persist, storageKey, sample]
     )
     useEffect(() => {
-        const requested = drafts.find((item) => item.id === requestedDraft?.id)
-        const first = requested ?? drafts[0]
+        const first = drafts.filter((item) => !item.publishedEntryId).at(-1)
         if (!latest.current && first) {
-            openedRequest.current = requestedDraft?.nonce
             choose(first)
-        } else if (requested && requestedDraft && openedRequest.current !== requestedDraft.nonce) {
-            openedRequest.current = requestedDraft.nonce
-            void (async () => {
-                if (await persist()) {
-                    dirty.current = false
-                    choose(requested)
-                }
-            })()
         }
-    }, [drafts, choose, persist, requestedDraft])
+    }, [drafts, choose])
     useEffect(() => {
         onReady(ready)
         return () => onReady(false)
@@ -231,64 +221,38 @@ export function WorkspaceDraft({ state, week, sample, run, citation, requestedDr
     const legacy = draft ? needsLegacyEditor(draft.body) : false
     return (
         <section className="ws-writing" aria-label="Weekly journal">
-            <header className="ws-writing-bar">
-                <div className="ws-draft-controls">
-                    <span className="ws-draft-state">
-                        {draft?.publishedEntryId ? 'Published entry' : 'Private draft'}
-                    </span>
-                    {drafts.length > 1 && (
-                        <Select
-                            label="Entry"
-                            aria-label="Choose draft"
-                            value={draft?.id ?? ''}
-                            options={drafts.map((item) => ({ value: item.id, label: item.title || 'Untitled entry' }))}
-                            onValueChange={(id) => {
-                                void (async () => {
-                                    if (await persist()) {
-                                        dirty.current = false
-                                        const item = drafts.find((value) => value.id === id)
-                                        if (item) choose(item)
-                                    }
-                                })()
-                            }}
-                        />
-                    )}
-                </div>
-                {draft && (
-                    <div className="ws-writing-actions">
-                        <Button variant="ghost" size="sm" onClick={create} disabled={busy}>
-                            New entry
+            {publishTarget &&
+                createPortal(
+                    draft?.publishedEntryId ? (
+                        <Button size="sm" onClick={create} loading={busy}>
+                            Start another entry
                         </Button>
-                        {draft.publishedEntryId ? (
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => {
-                                    const entry = state.entries.find((item) => item.id === draft.publishedEntryId)
-                                    if (entry && !sample) return run({ type: 'open', url: entry.url })
-                                }}
-                            >
-                                View published entry
-                            </Button>
-                        ) : (
-                            <Button
-                                size="sm"
-                                loading={busy}
-                                disabled={uncertain || (!sample && !state.settings.destination)}
-                                onClick={publish}
-                            >
-                                {sample ? 'Publish sample' : 'Publish to Notion'}
-                            </Button>
-                        )}
-                    </div>
+                    ) : (
+                        <Button
+                            size="sm"
+                            loading={busy}
+                            disabled={!draft || uncertain || (!sample && !state.settings.destination)}
+                            title={
+                                !draft
+                                    ? 'Start an entry before publishing'
+                                    : uncertain
+                                      ? 'Verify the previous Notion save before publishing again'
+                                      : !sample && !state.settings.destination
+                                        ? 'Connect Notion in settings to publish'
+                                        : undefined
+                            }
+                            onClick={publish}
+                        >
+                            {sample ? 'Publish sample' : 'Publish to Notion'}
+                        </Button>
+                    ),
+                    publishTarget
                 )}
-            </header>
-            <div className="ws-paper-scroll">
+            <ScrollArea className="ws-paper-scroll" label="Entry writing space" fade={20}>
                 <div className="ws-paper">
                     {draft ? (
                         <>
-                            <h1 className="ws-title">
-                                <span className="ws-sr-only">{draft.title || 'Untitled weekly entry'}</span>
+                            <h1 className="ws-title" aria-label={draft.title || 'Untitled weekly entry'}>
                                 <textarea
                                     aria-label="Entry title"
                                     value={draft.title}
@@ -362,7 +326,7 @@ export function WorkspaceDraft({ state, week, sample, run, citation, requestedDr
                         </div>
                     )}
                 </div>
-            </div>
+            </ScrollArea>
             <footer className="ws-writing-footer">
                 <span>
                     {draft
