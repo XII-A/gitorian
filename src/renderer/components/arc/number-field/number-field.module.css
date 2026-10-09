@@ -221,10 +221,8 @@
     grid-area: 1 / 1;
 }
 .display[data-hidden] {
-    position: absolute;
-    top: 0;
-    left: 0;
-    visibility: hidden;
+    /* Animated glyphs set their own visibility, so hide the entire counter while editing. */
+    display: none;
 }
 .mirror {
     grid-area: 1 / 1;

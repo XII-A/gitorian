@@ -77,6 +77,30 @@ app.on('browser-window-created', (_, window) => {
                 document.querySelector('[aria-label="Increase Refresh interval"]').click()
                 await new Promise(resolve=>setTimeout(resolve,100))
                 const refreshNumberField = Number(refreshField.getAttribute('aria-valuenow'))===previousRefresh+1 && refreshField.getAttribute('aria-valuemin')==='0' && refreshField.getAttribute('aria-valuemax')==='1440'
+                document.querySelector('.settings [aria-label="Close dialog"]').click()
+                await new Promise(resolve=>setTimeout(resolve,150))
+                const confirmation=document.querySelector('[role="alertdialog"]')
+                const unsavedCloseGuard=!!confirmation && document.activeElement.textContent==='Keep editing'
+                Array.from(confirmation.querySelectorAll('button')).find(button=>button.textContent==='Keep editing').click()
+                for (let attempt=0;attempt<20 && document.querySelector('[role="alertdialog"]');attempt++)
+                    await new Promise(resolve=>setTimeout(resolve,50))
+                const keepEditingPreservesChanges=!!document.querySelector('.settings') && !document.querySelector('[role="alertdialog"]') && Number(refreshField.getAttribute('aria-valuenow'))===previousRefresh+1
+                if (!keepEditingPreservesChanges) throw new Error(JSON.stringify({settings:!!document.querySelector('.settings'),confirmation:!!document.querySelector('[role="alertdialog"]'),refresh:refreshField.getAttribute('aria-valuenow'),expected:previousRefresh+1}))
+                document.querySelector('.settings [aria-label="Close dialog"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}))
+                await new Promise(resolve=>setTimeout(resolve,150))
+                const unsavedEscapeGuard=!!document.querySelector('[role="alertdialog"]')
+                Array.from(document.querySelector('[role="alertdialog"]').querySelectorAll('button')).find(button=>button.textContent==='Discard changes').click()
+                await new Promise(resolve=>setTimeout(resolve,200))
+                const discardDoesNotSave=!document.querySelector('.settings') && (await window.journal.invoke({type:'state'})).state.settings.refreshMinutes===previousRefresh
+                document.querySelector('[aria-label="Open settings"]').click()
+                await new Promise(resolve=>setTimeout(resolve,100))
+                document.querySelector('.settings [aria-label="Close dialog"]').click()
+                await new Promise(resolve=>setTimeout(resolve,200))
+                const cleanSettingsClose=!document.querySelector('.settings') && !document.querySelector('[role="alertdialog"]')
+                document.querySelector('[aria-label="Open settings"]').click()
+                await new Promise(resolve=>setTimeout(resolve,100))
+                selectTab('Preferences')
+                await new Promise(resolve=>setTimeout(resolve,100))
                 const settingsViewport = document.querySelector('.settings-scroll [role="region"]')
                 const beforeMenu = {height:settingsViewport.clientHeight,scroll:settingsViewport.scrollHeight,top:settingsViewport.scrollTop}
                 document.querySelector('.settings input[role="combobox"]').click()
@@ -91,6 +115,7 @@ app.on('browser-window-created', (_, window) => {
                 await new Promise(resolve=>setTimeout(resolve,100))
                 const template=document.querySelector('.settings [role="textbox"][aria-label="Entry template"]')
                 const arcTemplateEditor = !!template && !document.querySelector('.settings .editor-toolbar') && !!template.closest('.settings-template') && !!document.querySelector('[aria-label="Undo template edit"]')
+                const templateTitleHasNoFormattingHint=!document.querySelector('.settings-section-heading kbd')
                 if (!template) throw new Error('The Arc template editor did not open')
                 template.focus()
                 document.execCommand('insertHTML',false,'<h2>What changed</h2><p>Template reflection.</p>')
@@ -103,7 +128,7 @@ app.on('browser-window-created', (_, window) => {
                 }
                 const saved=(await window.journal.invoke({type:'state'})).state
                 const templateSaved = JSON.stringify(saved.settings.template).includes('Template reflection.') && saved.settings.template.content.some(node=>node.type==='heading'&&node.attrs.level===2)
-                return {settingsScrollArea,folderAddsRepositories,verticalSettingsTabs,repositoryTrackingSwitch,repositoryCardPaths,repositoriesExpandIndependently,noDisconnectedAction,refreshNumberField,timezoneSelect,timezoneUsesOwnScrollArea,timezoneMotionOwnsAnimation,timezoneKeepsPaneSize,arcTemplateEditor,templateSaved}
+                return {settingsScrollArea,folderAddsRepositories,verticalSettingsTabs,repositoryTrackingSwitch,repositoryCardPaths,repositoriesExpandIndependently,noDisconnectedAction,refreshNumberField,timezoneSelect,timezoneUsesOwnScrollArea,timezoneMotionOwnsAnimation,timezoneKeepsPaneSize,arcTemplateEditor,templateSaved,templateTitleHasNoFormattingHint,unsavedCloseGuard,keepEditingPreservesChanges,unsavedEscapeGuard,discardDoesNotSave,cleanSettingsClose}
             })()`)
             dialog.showOpenDialog = originalFolderPicker
             const result = await window.webContents.executeJavaScript(`(async () => {

@@ -180,3 +180,9 @@
         min-height: var(--control-height-md);
     }
 }
+.settings-discard-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+}

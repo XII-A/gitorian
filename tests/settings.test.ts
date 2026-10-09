@@ -6,6 +6,71 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { discoverRepositories } from '../src/main/repository-discovery'
 import { workspace } from './fixtures'
+import { initialState, type Repository } from '../src/shared/model'
+import { hasUnsavedSettings } from '../src/renderer/settings-model'
+
+it('warns for unsaved preferences, template, destination, repository edits and connection input', () => {
+    const saved = initialState()
+    const repository: Repository = {
+        id: 'repo',
+        name: 'Project',
+        path: 'project',
+        remote: '',
+        base: 'main',
+        trackingStart: '2026-10-05',
+        emails: ['me@example.com'],
+        available: true,
+        removed: false,
+        branchBases: {},
+        branches: ['main']
+    }
+    saved.repositories = [repository]
+    const dirty = (settings = saved.settings, repos = saved.repositories, token = '') =>
+        hasUnsavedSettings(settings, repos, saved, token)
+    expect(dirty()).toBe(false)
+    for (const patch of [
+        { timezone: 'UTC' === saved.settings.timezone ? 'Europe/Istanbul' : 'UTC' },
+        { refreshMinutes: saved.settings.refreshMinutes + 1 },
+        { weekStart: (saved.settings.weekStart + 1) % 7 },
+        { githubClientId: 'new-client' },
+        {
+            template: {
+                type: 'doc',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'New template' }] }]
+            }
+        },
+        { destination: { kind: 'page' as const, id: 'new-page', titleProperty: 'Name', dateProperty: '' } }
+    ])
+        expect(dirty({ ...saved.settings, ...patch })).toBe(true)
+    for (const patch of [
+        { base: 'develop' },
+        { remote: 'https://github.com/example/project' },
+        { trackingStart: '2026-10-06' },
+        { emails: ['other@example.com'] },
+        { removed: true }
+    ])
+        expect(dirty(saved.settings, [{ ...repository, ...patch }])).toBe(true)
+    expect(dirty(saved.settings, saved.repositories, 'unsubmitted-token')).toBe(true)
+    expect(dirty()).toBe(false)
+})
+
+it('compares against the latest saved settings and ignores refreshed metadata and object key order', () => {
+    const saved = initialState()
+    const template = { type: 'doc', content: [{ type: 'heading', attrs: { level: 2, id: 'heading' } }] }
+    saved.settings.template = template
+    const local = { ...saved.settings, refreshMinutes: saved.settings.refreshMinutes + 1 }
+    expect(hasUnsavedSettings(local, [], saved, '')).toBe(true)
+    saved.settings = { ...local, githubLogin: 'signed-in', layout: { ...local.layout, hidden: ['details'] } }
+    expect(hasUnsavedSettings(local, [], saved, '')).toBe(false)
+    expect(
+        hasUnsavedSettings(
+            { ...local, template: { content: [{ attrs: { id: 'heading', level: 2 }, type: 'heading' }], type: 'doc' } },
+            [],
+            saved,
+            ''
+        )
+    ).toBe(false)
+})
 
 const execute = promisify(execFile)
 it('imports nested repositories once, skips dependency folders, and resumes stopped tracking', async () => {

@@ -17,7 +17,7 @@ import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowC
 import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise'
 import { Editor } from './Editor'
 import { dateKey, dateValue, journalFromHTML, journalHTML, needsLegacyEditor } from './workspace-model'
-import { timezoneOptions } from './settings-model'
+import { hasUnsavedSettings, timezoneOptions } from './settings-model'
 import './settings.css'
 
 export function Settings({
@@ -41,11 +41,18 @@ export function Settings({
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState('')
     const [section, setSection] = useState('repositories')
+    const [confirmClose, setConfirmClose] = useState(false)
+    const keepEditing = useRef<HTMLButtonElement>(null)
     const previousFocus = useRef<Element | null>(null)
     const templateEditor = useRef<RichTextEditorHandle>(null)
     const [templateHistory, setTemplateHistory] = useState({ canUndo: false, canRedo: false })
     const templateWords = plainText(settings.template).trim().split(/\s+/).filter(Boolean).length
     const zones = useMemo(() => timezoneOptions(state.settings.timezone), [state.settings.timezone])
+    const requestClose = () => {
+        if (busy) return
+        if (hasUnsavedSettings(settings, repositories, state, token)) setConfirmClose(true)
+        else close()
+    }
     const invoke = async (command: Command) => {
         const result = await window.journal.invoke(command)
         await run({ type: 'state' })
@@ -226,7 +233,7 @@ export function Settings({
         <Dialog
             open
             onOpenChange={(open) => {
-                if (!open) close()
+                if (!open) requestClose()
             }}
         >
             <DialogContent
@@ -516,9 +523,6 @@ export function Settings({
                             <section className="settings-section" aria-label="Entry template">
                                 <div className="settings-section-heading">
                                     <h3>Entry template</h3>
-                                    <span className="settings-hint">
-                                        <kbd>/</kbd> for formatting
-                                    </span>
                                 </div>
                                 <p className="settings-hint">Used for new entries. Existing writing stays as it is.</p>
                                 <div className="settings-template">
@@ -636,6 +640,26 @@ export function Settings({
                     </Button>
                 </footer>
             </DialogContent>
+            <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
+                <DialogContent
+                    role="alertdialog"
+                    title="Discard unsaved changes?"
+                    description="Your settings changes will be lost."
+                    onOpenAutoFocus={(event) => {
+                        event.preventDefault()
+                        keepEditing.current?.focus()
+                    }}
+                >
+                    <div className="settings-discard-actions">
+                        <Button ref={keepEditing} variant="secondary" onClick={() => setConfirmClose(false)}>
+                            Keep editing
+                        </Button>
+                        <Button variant="danger" onClick={close}>
+                            Discard changes
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </Dialog>
     )
 }
