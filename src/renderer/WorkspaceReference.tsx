@@ -3,7 +3,6 @@ import type { Activity, Command, Reply, State } from '../shared/model'
 import { WorkspaceInspector } from './WorkspaceInspector'
 import { sampleState } from './workspace-sample'
 import { Button } from './components/arc/button/button'
-import { Input } from './components/arc/input/input'
 import { Editor } from './Editor'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import './workspace.css'
@@ -25,7 +24,6 @@ export function WorkspaceReference({
     const [selectedId, setSelectedId] = useState(id)
     const activity = source.activities.find((item) => item.id === selectedId)
     const entry = source.entries.find((item) => item.id === id)
-    const [note, setNote] = useState('')
     const [status, setStatus] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
@@ -48,7 +46,6 @@ export function WorkspaceReference({
                         ? 'Added to your entry.'
                         : 'Open an editable draft for this week in the workspace, then try again.'
                 )
-                if ('accepted' in data && data.accepted) setNote('')
             }
         }
         const dock = () => bus.postMessage({ type: 'dock', activityId: id })
@@ -79,7 +76,7 @@ export function WorkspaceReference({
             void inspect(activity)
         }
     }, [activity, inspect])
-    const cite = (withNote = false) => {
+    const cite = () => {
         if (!activity) return
         setStatus('Sending to your workspace…')
         clearTimeout(citationTimer.current)
@@ -87,7 +84,7 @@ export function WorkspaceReference({
             () => setStatus('No response from the workspace. Open your draft for this week, then try again.'),
             4000
         )
-        channel.current?.postMessage({ type: 'cite', activityId: activity.id, ...(withNote ? { note } : {}) })
+        channel.current?.postMessage({ type: 'cite', activityId: activity.id })
     }
     const dock = () => {
         channel.current?.postMessage({ type: 'dock', activityId: id })
@@ -128,30 +125,11 @@ export function WorkspaceReference({
                         loading={loading}
                         error={error}
                         canCite
+                        citationStatus={status}
                         onCite={() => cite()}
                         onClose={dock}
                         onInspect={(item) => void inspect(item)}
                     />
-                    <form
-                        className="ws-reference-note"
-                        onSubmit={(event) => {
-                            event.preventDefault()
-                            cite(true)
-                        }}
-                    >
-                        <Input
-                            label="Note for your entry"
-                            placeholder="What did this change teach you?"
-                            value={note}
-                            onChange={(event) => setNote(event.target.value)}
-                        />
-                        <Button variant="secondary" type="submit" disabled={!note.trim()}>
-                            Add note
-                        </Button>
-                        <span role="status">
-                            {status || 'Write here. Your note is added to the draft in your workspace.'}
-                        </span>
-                    </form>
                 </>
             ) : (
                 <div className="ws-activity-empty">

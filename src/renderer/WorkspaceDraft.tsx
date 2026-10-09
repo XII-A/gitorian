@@ -15,7 +15,6 @@ export interface Citation {
     id: number
     title: string
     url?: string
-    note?: string
 }
 interface Props {
     state: State
@@ -156,8 +155,7 @@ export function WorkspaceDraft({ state, week, sample, run, citation, publishTarg
                     type: 'text',
                     text: citation.title,
                     ...(citation.url ? { marks: [{ type: 'link', attrs: { href: citation.url } }] } : {})
-                },
-                ...(citation.note ? [{ type: 'text', text: `: ${citation.note}` }] : [])
+                }
             ]
         }
         const body: JournalNode = { type: 'doc', content: [...(latest.current.body.content ?? []), content] }

@@ -38,8 +38,8 @@ export interface ExpandingSearchProps {
     placeholder?: string
     onSelect?: (item: ExpandingSearchItem) => void
     onExpandedChange?: (expanded: boolean) => void
-    /** The widest the field grows. It never grows past its container. */
-    expandedWidth?: number
+    /** The widest the field grows. Use 'container' to fill the available width. */
+    expandedWidth?: number | 'container'
     maxResults?: number
     /** The edge the button sits on; the field grows away from it. */
     anchor?: 'start' | 'end'
@@ -332,7 +332,10 @@ export function ExpandingSearch({
     const [query, setQuery] = useState('')
     const [active, setActive] = useState(-1)
     const open = useRef(false)
-    const size = useRef({ collapsed: FALLBACK_SIZE, expanded: expandedWidth })
+    const size = useRef({
+        collapsed: FALLBACK_SIZE,
+        expanded: typeof expandedWidth === 'number' ? expandedWidth : FALLBACK_SIZE
+    })
     const width = useMotionValue(FALLBACK_SIZE)
     /** True while the last highlight move came from the keyboard, so only keyboard moves scroll the list. */
     const keyboard = useRef(false)
@@ -354,7 +357,10 @@ export function ExpandingSearch({
         if (!root || !shell) return
         const measure = () => {
             const collapsed = shell.offsetHeight || FALLBACK_SIZE
-            const full = Math.max(collapsed, Math.min(expandedWidth, root.clientWidth))
+            const full = Math.max(
+                collapsed,
+                expandedWidth === 'container' ? root.clientWidth : Math.min(expandedWidth, root.clientWidth)
+            )
             size.current = { collapsed, expanded: full }
             root.style.setProperty('--es-width', `${full}px`)
             const goal = open.current ? full : collapsed

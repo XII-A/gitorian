@@ -64,6 +64,8 @@ export interface BarChartProps {
     onActiveChange?: (datum: BarChartDatum | null) => void
     /** Enter, Space, or a tap requests an interactive view of this day. */
     onDatumSelect?: (datum: BarChartDatum) => void
+    /** Associates the keyboard scrubber with an external count summary. */
+    'aria-describedby'?: string
 }
 
 const { spring, duration, ease, blur, stagger } = motionTokens
@@ -455,7 +457,8 @@ export function BarChart({
     formatValue = (value) => grouped.format(value),
     compact = false,
     onActiveChange,
-    onDatumSelect
+    onDatumSelect,
+    'aria-describedby': describedBy
 }: BarChartProps) {
     const reduced = useReducedMotionSafe()
     const figure = useRef<HTMLElement>(null)
@@ -797,6 +800,7 @@ export function BarChart({
                     aria-valuemax={Math.max(1, data.length)}
                     aria-valuenow={(index ?? last) + 1}
                     aria-valuetext={valueText}
+                    aria-describedby={describedBy}
                     onPointerDown={onPointerDown}
                     onPointerMove={onPointerMove}
                     onPointerUp={release}

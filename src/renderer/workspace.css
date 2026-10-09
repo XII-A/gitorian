@@ -6,6 +6,7 @@
 }
 .writing-workspace,
 .ws-reference {
+    --workspace-footer-height: 64px;
     --font-body: var(--font-display);
     --diff-background-color: var(--surface);
     --diff-text-color: var(--foreground);
@@ -289,6 +290,7 @@
     color: var(--text-secondary);
     font-size: var(--text-xs);
     flex: none;
+    height: var(--workspace-footer-height);
     font-variant-numeric: tabular-nums;
 }
 .ws-writing-footer > span {
@@ -363,7 +365,6 @@
 }
 .ws-inspector-tabs > div:first-child {
     flex: none;
-    padding-inline: var(--space-4);
 }
 .ws-inspector-tabs > [role='tabpanel'] {
     display: flex;
@@ -445,14 +446,14 @@
     padding: var(--space-3) var(--space-4);
     border-top: 1px solid var(--border);
     flex: none;
+    height: var(--workspace-footer-height);
 }
 .ws-inspector-footer > span {
     color: var(--text-secondary);
     font-size: var(--text-xs);
 }
 .ws-diff-empty,
-.ws-details-content,
-.ws-related-list {
+.ws-details-content {
     padding: var(--space-6);
 }
 .ws-diff-empty span,
@@ -503,25 +504,10 @@
     display: grid;
     gap: var(--space-3);
 }
-.ws-related-list button {
-    display: flex;
-    width: 100%;
-    gap: var(--space-3);
-    text-align: left;
+.ws-related-list {
+    margin: 0;
     padding: var(--space-3);
-    border: 0;
-    border-bottom: 1px solid var(--border);
-    background: transparent;
-    color: var(--foreground);
-}
-.ws-related-list small {
-    display: block;
-    margin-top: var(--space-1);
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
-}
-.ws-related-list button:hover {
-    background: var(--surface-muted);
+    list-style: none;
 }
 .ws-detached-status {
     display: flex;
@@ -642,19 +628,6 @@
     justify-content: space-between;
     gap: var(--space-4);
     padding: var(--space-3) var(--space-6);
-    color: var(--text-secondary);
-    font-size: var(--text-xs);
-}
-.ws-reference-note {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end;
-    gap: var(--space-3);
-    padding: var(--space-4) var(--space-6);
-    border-top: 1px solid var(--border);
-}
-.ws-reference-note > span {
-    grid-column: 1 / -1;
     color: var(--text-secondary);
     font-size: var(--text-xs);
 }
@@ -784,9 +757,6 @@
         flex-basis: 100%;
         max-width: none;
     }
-    .ws-reference-note {
-        padding: var(--space-3);
-    }
     .ws-reference-meta {
         flex-wrap: wrap;
     }
@@ -836,6 +806,7 @@
     visibility: hidden;
 }
 .ws-week-chart {
+    position: relative;
     padding: 0 var(--space-6) var(--space-4);
     flex: none;
 }
@@ -871,6 +842,10 @@
     height: var(--control-height-sm);
     width: auto;
     max-width: 100%;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
 }
 .ws-action-notice {
     display: flex;
@@ -882,68 +857,48 @@
     font-size: var(--text-xs);
 }
 .ws-day-popover {
-    width: 340px;
+    width: 200px;
     padding: var(--space-3);
 }
-.ws-day-popover header {
+.ws-day-summary-heading {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: var(--space-3);
-    padding: var(--space-2) var(--space-3) var(--space-3);
+    padding-bottom: var(--space-2);
 }
 .ws-day-popover h3 {
     font-size: var(--text-sm);
     font-weight: 500;
     margin: 0;
 }
-.ws-day-popover header > span {
+.ws-day-summary-heading > span {
     font-size: var(--text-xs);
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
 }
-.ws-day-popover ul {
+.ws-day-popover dl {
     margin: 0;
     padding: 0;
-    list-style: none;
-}
-.ws-day-popover li > button {
-    display: flex;
-    gap: var(--space-3);
-    align-items: flex-start;
-    width: 100%;
-    min-height: 44px;
-    padding: var(--space-3);
-    border: 0;
-    border-radius: var(--radius-inset);
-    background: transparent;
-    color: var(--foreground);
-    text-align: left;
-    cursor: pointer;
-}
-.ws-day-popover li > button:hover {
-    background: var(--surface-muted);
-}
-.ws-day-popover li > button > svg {
-    flex: none;
-    margin-top: var(--space-1);
-    color: var(--text-secondary);
-}
-.ws-day-popover li > button > span {
-    min-width: 0;
-    overflow-wrap: anywhere;
-    font-size: var(--text-sm);
-}
-.ws-day-popover small {
-    display: block;
-    margin-top: var(--space-1);
-    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
     font-size: var(--text-xs);
 }
-.ws-day-popover p {
-    padding: var(--space-3);
+.ws-day-popover dl > div {
+    display: flex;
+    justify-content: space-between;
+    padding-block: var(--space-1);
+}
+.ws-day-popover dt {
     color: var(--text-secondary);
-    font-size: var(--text-sm);
+}
+.ws-day-popover dd {
+    margin: 0;
+}
+.ws-day-anchor {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
 }
 .ws-dialog-fields {
     max-height: 65dvh;

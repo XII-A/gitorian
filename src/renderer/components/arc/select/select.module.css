@@ -50,6 +50,15 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+.trigger[data-variant='ghost'] {
+    border-color: transparent;
+    background: transparent;
+}
+.trigger[data-variant='ghost']:hover:not([data-disabled]),
+.trigger[data-variant='ghost'][data-state='open'] {
+    border-color: transparent;
+    background: var(--surface-muted);
+}
 .valueText {
     display: grid;
     flex: 1;

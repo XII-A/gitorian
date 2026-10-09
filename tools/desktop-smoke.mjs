@@ -84,16 +84,8 @@ app.on('browser-window-created', (_, window) => {
             result.secondWindowCitation = await window.webContents.executeJavaScript(
                 `document.querySelector('[aria-label="Journal body"]').textContent.includes('Retry failed sync batches with backoff')`
             )
-            await reference.webContents.executeJavaScript(
-                `document.querySelector('[aria-label="Note for your entry"]')?.focus() ?? document.querySelector('input').focus()`
-            )
-            await reference.webContents.insertText('Different failures need different answers.')
-            await reference.webContents.executeJavaScript(
-                `Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('Add note')).click()`
-            )
-            await pause(400)
-            result.secondWindowNote = await window.webContents.executeJavaScript(
-                `document.querySelector('[aria-label="Journal body"]').textContent.includes('Different failures need different answers.')`
+            result.noReferenceNotes = await reference.webContents.executeJavaScript(
+                `!document.querySelector('.ws-reference-note') && !Array.from(document.querySelectorAll('button')).some(button => button.textContent.includes('Add note')) && document.querySelector('[role="status"]').textContent.includes('Added to your entry.')`
             )
             result.sampleIsolated = await window.webContents.executeJavaScript(
                 `(async () => (await window.journal.invoke({type:'state'})).state.drafts.length === ${realDraftsBefore})()`
@@ -114,6 +106,7 @@ app.on('browser-window-created', (_, window) => {
                     fillsViewport: frame.left === 0 && Math.abs(frame.right - innerWidth) < 1 && Math.abs(frame.bottom - innerHeight) < 1,
                     cleanWritingSurface: !document.querySelector('.ws-writing-bar') && !document.querySelector('.ws-review-footer'),
                     publishIsLastHeaderAction: buttons.at(-1) === document.querySelector('.ws-publish button'),
+                    matchingPaneFooters: document.querySelector('.ws-writing-footer').getBoundingClientRect().height === document.querySelector('.ws-inspector-footer').getBoundingClientRect().height,
                     keyboardScrollablePanes: ['.ws-activity-scroll','.ws-paper-scroll','.ws-diff-scroll'].every(selector => document.querySelector(selector+' [role="region"]')?.tabIndex === 0)
                 }
             })()`)

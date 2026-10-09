@@ -195,13 +195,13 @@ export function Workspace({
     )
     const currentWeek = weekOf(new Date(), state.settings)
     const cite = useCallback(
-        (activity: Activity, note?: string) => {
+        (activity: Activity) => {
             if (!canCite) {
                 setNotice('Open or create an editable draft to add a citation.')
                 return
             }
-            setCitation({ id: Date.now(), title: activity.title, url: activityLink(activity, state), note })
-            setNotice(note ? 'Note added to your entry.' : 'Citation added to your entry.')
+            setCitation({ id: Date.now(), title: activity.title, url: activityLink(activity, state) })
+            setNotice('Citation added to your entry.')
         },
         [canCite, state]
     )
@@ -217,11 +217,7 @@ export function Workspace({
             if (data.type === 'cite') {
                 const accepted =
                     canCite && rangeActivities(state, week, offsetDay(week, 6)).some((item) => item.id === activity.id)
-                if (accepted)
-                    cite(
-                        activity,
-                        'note' in data && typeof data.note === 'string' ? data.note.slice(0, 10000) : undefined
-                    )
+                if (accepted) cite(activity)
                 bus.postMessage({ type: 'citation-result', activityId: activity.id, accepted })
             }
             if (data.type === 'dock') {
@@ -403,7 +399,7 @@ export function Workspace({
                             className="ws-activity-search"
                             label="Search activity"
                             placeholder="Find a change…"
-                            expandedWidth={420}
+                            expandedWidth="container"
                             onExpandedChange={setSearchExpanded}
                             items={items.map((item) => ({
                                 id: item.id,
@@ -425,12 +421,7 @@ export function Workspace({
                             }}
                         />
                     </div>
-                    <WorkspaceActivityChart
-                        activities={items}
-                        state={state}
-                        week={week}
-                        onInspect={(item) => void inspect(item)}
-                    />
+                    <WorkspaceActivityChart activities={items} state={state} week={week} />
                     <div className="ws-activity-filters" role="group" aria-label="Filter activity">
                         {(['all', 'commit', 'pr'] as const).map((value) => (
                             <Button
@@ -456,6 +447,29 @@ export function Workspace({
                                 </span>
                             </Button>
                         ))}
+                        <div className="ws-project-filter">
+                            <Select
+                                label=""
+                                aria-label="Filter by project"
+                                className="ws-filter-chip ws-project-chip"
+                                variant="ghost"
+                                contentMinWidth={240}
+                                value={project}
+                                onValueChange={(value) => {
+                                    setProject(value)
+                                    setBranch('all')
+                                }}
+                                options={[
+                                    {
+                                        value: 'all',
+                                        label: `Projects ${state.repositories.filter((repo) => !repo.removed).length}`
+                                    },
+                                    ...state.repositories
+                                        .filter((repo) => !repo.removed)
+                                        .map((repo) => ({ value: repo.id, label: repo.name }))
+                                ]}
+                            />
+                        </div>
                         <Button
                             variant="ghost"
                             size="sm"
@@ -467,24 +481,6 @@ export function Workspace({
                             <WorkspaceIcon name="branch" width="14" height="14" />
                             Filters
                         </Button>
-                        <div className="ws-project-filter">
-                            <Select
-                                label=""
-                                aria-label="Filter by project"
-                                className="ws-filter-chip ws-project-chip"
-                                value={project}
-                                onValueChange={(value) => {
-                                    setProject(value)
-                                    setBranch('all')
-                                }}
-                                options={[
-                                    { value: 'all', label: 'All projects' },
-                                    ...state.repositories
-                                        .filter((repo) => !repo.removed)
-                                        .map((repo) => ({ value: repo.id, label: repo.name }))
-                                ]}
-                            />
-                        </div>
                     </div>
                     {(feature !== 'all' || branch !== 'all') && (
                         <div className="ws-extra-filters">

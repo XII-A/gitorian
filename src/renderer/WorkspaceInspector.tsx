@@ -17,6 +17,7 @@ interface Props {
     reference?: boolean
     canCite?: boolean
     initialTab?: 'diff' | 'details'
+    citationStatus?: string
     onCite: () => void
     onPopout?: () => void
     onClose?: () => void
@@ -31,6 +32,7 @@ export function WorkspaceInspector({
     reference,
     canCite,
     initialTab = 'diff',
+    citationStatus,
     onCite,
     onPopout,
     onClose,
@@ -117,7 +119,7 @@ export function WorkspaceInspector({
                     </p>
                 )}
             <Tabs value={tab} onValueChange={setTab} className="ws-inspector-tabs">
-                <TabsList aria-label="Activity information">
+                <TabsList aria-label="Activity information" edgeToEdge>
                     <TabsTrigger value="diff">Diff</TabsTrigger>
                     <TabsTrigger value="details">Details</TabsTrigger>
                     <TabsTrigger value="related">Related · {related.length}</TabsTrigger>
@@ -192,33 +194,41 @@ export function WorkspaceInspector({
                 </TabsContent>
                 <TabsContent value="related">
                     <ScrollArea className="ws-inspector-scroll" label="Related activity" fade={16}>
-                        <div className="ws-related-list">
+                        <ul className="ws-related-list">
                             {related.length ? (
                                 related.map((item) => (
-                                    <button type="button" key={item.id} onClick={() => onInspect?.(item)}>
-                                        <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'pr'} />
-                                        <span>
-                                            {item.title}
-                                            <small>
-                                                {item.kind} · {item.sha?.slice(0, 7) ?? item.prId?.split('/').at(-1)}
-                                            </small>
-                                        </span>
-                                    </button>
+                                    <li key={item.id}>
+                                        <button
+                                            type="button"
+                                            className="ws-activity-row"
+                                            onClick={() => onInspect?.(item)}
+                                        >
+                                            <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'pr'} />
+                                            <span className="ws-row-copy">
+                                                <span>{item.title}</span>
+                                                <small>
+                                                    {item.kind} ·{' '}
+                                                    {item.sha?.slice(0, 7) ?? item.prId?.split('/').at(-1)}
+                                                </small>
+                                            </span>
+                                        </button>
+                                    </li>
                                 ))
                             ) : (
-                                <p>No related activity has been captured for this branch.</p>
+                                <li>No related activity has been captured for this branch.</li>
                             )}
-                        </div>
+                        </ul>
                     </ScrollArea>
                 </TabsContent>
             </Tabs>
             <footer className="ws-inspector-footer">
-                <span>
-                    {canCite
-                        ? 'Keep a little context in your entry.'
-                        : reference
-                          ? 'Citations go to your open draft.'
-                          : 'Start a draft to cite this change.'}
+                <span role="status">
+                    {citationStatus ||
+                        (canCite
+                            ? 'Keep a little context in your entry.'
+                            : reference
+                              ? 'Citations go to your open draft.'
+                              : 'Start a draft to cite this change.')}
                 </span>
                 <Button variant="secondary" size="sm" disabled={!canCite} onClick={onCite}>
                     Cite in entry

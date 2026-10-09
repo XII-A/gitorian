@@ -73,7 +73,14 @@ export function Tabs({
     )
 }
 
-export function TabsList({ className, ...props }: ComponentPropsWithoutRef<typeof TabsPrimitive.List>) {
+export function TabsList({
+    className,
+    edgeToEdge,
+    ...props
+}: ComponentPropsWithoutRef<typeof TabsPrimitive.List> & {
+    /** A square strip spanning the full pane; individual tabs retain their radii. */
+    edgeToEdge?: boolean
+}) {
     const { active, orientation } = useContext(TabsContext)
     const reduced = useReducedMotion()
     const shell = useRef<HTMLDivElement>(null)
@@ -137,7 +144,10 @@ export function TabsList({ className, ...props }: ComponentPropsWithoutRef<typeo
         })
     if (orientation === 'vertical')
         return (
-            <div className={[styles.listShell, styles.verticalShell].join(' ')}>
+            <div
+                className={[styles.listShell, styles.verticalShell].join(' ')}
+                data-edge-to-edge={edgeToEdge || undefined}
+            >
                 <TabsPrimitive.List {...props} className={[styles.list, className].filter(Boolean).join(' ')} />
             </div>
         )
@@ -145,6 +155,7 @@ export function TabsList({ className, ...props }: ComponentPropsWithoutRef<typeo
         <div
             ref={shell}
             className={styles.listShell}
+            data-edge-to-edge={edgeToEdge || undefined}
             data-overflow={edges.overflow}
             data-left={edges.left}
             data-right={edges.right}

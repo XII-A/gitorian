@@ -15,6 +15,10 @@ export interface SelectProps extends Omit<ComponentPropsWithoutRef<typeof Select
     placeholder?: string
     id?: string
     className?: string
+    /** Ghost controls blend into toolbars and filter rows. */
+    variant?: 'default' | 'ghost'
+    /** Minimum menu width in pixels, still constrained to the viewport. */
+    contentMinWidth?: number
     options: { value: string; label: string; disabled?: boolean }[]
     'aria-labelledby'?: string
     'aria-label'?: string
@@ -55,6 +59,8 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
         options,
         id,
         className,
+        variant = 'default',
+        contentMinWidth,
         disabled,
         onValueChange,
         ...rootProps
@@ -94,6 +100,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                     aria-label={rootProps['aria-label']}
                     aria-describedby={hintId}
                     className={[styles.trigger, className].filter(Boolean).join(' ')}
+                    data-variant={variant}
                 >
                     {/* Radix keeps the real value for assistive tech; the visible copy below animates between values. */}
                     <span className={styles.srOnly}>
@@ -124,6 +131,11 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                         position="popper"
                         sideOffset={4}
                         collisionPadding={12}
+                        style={
+                            contentMinWidth === undefined
+                                ? undefined
+                                : { minWidth: `max(var(--radix-select-trigger-width), ${contentMinWidth}px)` }
+                        }
                     >
                         <SelectPrimitive.ScrollUpButton className={styles.scrollButton}>
                             <ChevronUp size={16} strokeWidth={1.75} aria-hidden="true" />

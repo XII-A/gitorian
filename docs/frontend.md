@@ -23,8 +23,14 @@ The workspace has one layout: activity, writing, and inspector. It fills the vie
 
 Publishing is rendered into the last main-header slot by `WorkspaceDraft`, so autosave, publishing, and their pending state share one owner. Opening the workspace resumes its latest unfinished draft for that week, or offers to start a new entry if there is none. Published entries are not opened for editing. Creating another entry never overwrites a published entry.
 
-Keep sample state separate from real commands. The sample switch supports design iteration; sample publishing is simulated. Detached reference windows remain read-only and send citations or notes to the editable main workspace through the existing channel.
+Keep sample state separate from real commands. The sample switch supports design iteration; sample publishing is simulated. Detached reference windows remain read-only and send citations to the editable main workspace through the existing channel. They have no note form; citation results appear in the inspector footer.
 
 Use Arc `ScrollArea` for constrained activity, writing, diff, details, related-item, and popup lists. Name each viewport for keyboard users. Native text controls and the whole document retain native scrolling.
 
-Search uses Arc `ExpandingSearch` to navigate weekly activity, including across the active list filters. Selecting a result opens its Details tab. The daily activity preview uses Arc `BarChart` with three local, typed extensions: `compact`, `onActiveChange`, and `onDatumSelect`. Its Arc popover opens on hover or keyboard scrubbing; Enter, Space, or tap makes the preview interactive. Keep the reduced-motion behavior and stable date keys.
+Search uses Arc `ExpandingSearch` to navigate weekly activity, including across the active list filters. Selecting a result opens its Details tab. Its local `expandedWidth="container"` option fills the header's available width and follows pane resizing.
+
+The daily activity preview uses Arc `BarChart` with three local, typed extensions: `compact`, `onActiveChange`, and `onDatumSelect`. Its small Arc popover follows the pointer, or the selected bar when using the keyboard. Show counts for commits, PR activity (including opened and merged events), and reviews; do not list individual activities here. Enter, Space, and tap also reveal counts. Keep the reduced-motion behavior and stable date keys.
+
+Arc `Select` supports a local `variant="ghost"` for filter chips and `contentMinWidth` for wider menus, constrained to the viewport. The project chip follows PRs & reviews, shows the available project count at rest, and shows the selected project name when filtered. Filters remains the entry point for feature filtering and deliberate branch/history loading, which are retained in v1.
+
+Arc `TabsList` supports a local `edgeToEdge` option: the strip spans its pane with square outer corners while individual tabs retain their shared control radius. Related items reuse the activity row styles. Both writing and inspector footers use `--workspace-footer-height` (64px).
