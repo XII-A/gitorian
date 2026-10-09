@@ -24,6 +24,7 @@ import './workspace.css'
 
 interface Props {
     state: State
+    notionConnected: boolean
     run: (command: Command) => Promise<Reply | undefined>
     error: string
     initialWeek: string
@@ -33,6 +34,7 @@ interface Props {
 }
 export function Workspace({
     state: realState,
+    notionConnected,
     run: realRun,
     error,
     initialWeek,
@@ -189,7 +191,6 @@ export function Workspace({
                 return
             }
             setCitation({ id: Date.now(), title: activity.title, url: activityLink(activity, state) })
-            setNotice('Citation added to your entry.')
         },
         [canCite, state]
     )
@@ -611,6 +612,7 @@ export function Workspace({
                         state={state}
                         week={week}
                         sample={sample}
+                        notionConnected={notionConnected}
                         run={run}
                         citation={citation}
                         publishTarget={publishTarget}

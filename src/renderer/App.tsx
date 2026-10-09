@@ -110,6 +110,7 @@ export function App() {
             ) : screen === 'workspace' && reply ? (
                 <Workspace
                     state={reply.state}
+                    notionConnected={reply.connections.notion}
                     run={run}
                     error={error}
                     initialWeek={workspaceWeek || weekOf(new Date(), reply.state.settings)}

@@ -115,8 +115,6 @@ export function WorkspaceActivityChart({
                 aria-label={day ? `Activity on ${formatDay(day)}` : 'Daily activity counts'}
                 onOpenAutoFocus={(event) => event.preventDefault()}
                 onCloseAutoFocus={(event) => event.preventDefault()}
-                onPointerEnter={() => clearTimeout(timer.current)}
-                onPointerLeave={closeSoon}
             >
                 <div className="ws-day-summary-heading">
                     <h3>{day && formatDay(day, { weekday: 'short', month: 'short', day: 'numeric' })}</h3>

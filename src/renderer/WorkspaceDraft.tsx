@@ -20,6 +20,7 @@ interface Props {
     state: State
     week: string
     sample: boolean
+    notionConnected: boolean
     run: (command: Command) => Promise<Reply | undefined>
     citation?: Citation
     publishTarget: HTMLElement | null
@@ -27,7 +28,17 @@ interface Props {
     onSettings: () => void
 }
 
-export function WorkspaceDraft({ state, week, sample, run, citation, publishTarget, onReady, onSettings }: Props) {
+export function WorkspaceDraft({
+    state,
+    week,
+    sample,
+    notionConnected,
+    run,
+    citation,
+    publishTarget,
+    onReady,
+    onSettings
+}: Props) {
     const [draft, setDraft] = useState<Draft>()
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState(false)
@@ -217,6 +228,7 @@ export function WorkspaceDraft({ state, week, sample, run, citation, publishTarg
     const unresolved = state.saves.filter((save) => save.draftId === draft?.id && save.status !== 'confirmed')
     const uncertain = unresolved.some((save) => ['unknown', 'pending'].includes(save.status))
     const legacy = draft ? needsLegacyEditor(draft.body) : false
+    const needsNotion = !sample && (!notionConnected || !state.settings.destination) && !draft?.publishedEntryId
     return (
         <section className="ws-writing" aria-label="Weekly journal">
             {publishTarget &&
@@ -229,13 +241,13 @@ export function WorkspaceDraft({ state, week, sample, run, citation, publishTarg
                         <Button
                             size="sm"
                             loading={busy}
-                            disabled={!draft || uncertain || (!sample && !state.settings.destination)}
+                            disabled={!draft || uncertain || needsNotion}
                             title={
                                 !draft
                                     ? 'Start an entry before publishing'
                                     : uncertain
                                       ? 'Verify the previous Notion save before publishing again'
-                                      : !sample && !state.settings.destination
+                                      : needsNotion
                                         ? 'Connect Notion in settings to publish'
                                         : undefined
                             }
@@ -279,15 +291,6 @@ export function WorkspaceDraft({ state, week, sample, run, citation, publishTarg
                                     onChange={(value) => editBody(journalFromHTML(value.html))}
                                 />
                             )}
-                            {!sample && !state.settings.destination && !draft.publishedEntryId && (
-                                <p className="ws-quiet-help">
-                                    Your writing stays here.{' '}
-                                    <button type="button" onClick={onSettings}>
-                                        Connect Notion in settings
-                                    </button>{' '}
-                                    when you’re ready to publish.
-                                </p>
-                            )}
                             {unresolved.map((save) => (
                                 <div className="ws-inline-error" role="alert" key={save.id}>
                                     <p>
@@ -325,24 +328,28 @@ export function WorkspaceDraft({ state, week, sample, run, citation, publishTarg
                     )}
                 </div>
             </ScrollArea>
-            <footer className="ws-writing-footer">
+            <footer className={`ws-writing-footer${needsNotion ? ' ws-needs-notion' : ''}`}>
                 <span>
-                    {draft
-                        ? `${plainText(draft.body).trim().split(/\s+/).filter(Boolean).length} words`
-                        : 'Your writing stays on this device'}
+                    {draft ? `${plainText(draft.body).trim().split(/\s+/).filter(Boolean).length} words` : '0 words'}
                 </span>
                 <span role="status">
                     <WorkspaceIcon name="check" width="14" height="14" />
                     {status || 'Ready when you are'}
                 </span>
                 {dirty.current && status.startsWith('Could not') && (
-                    <Button variant="ghost" size="sm" onClick={persist}>
+                    <Button className="ws-retry-saving" variant="ghost" size="sm" onClick={persist}>
                         Retry saving
                     </Button>
                 )}
-                <span className="ws-slash-hint">
-                    <kbd>/</kbd> for formatting
-                </span>
+                {needsNotion ? (
+                    <Button className="ws-notion-connect" variant="ghost" size="sm" onClick={onSettings}>
+                        Connect Notion in settings
+                    </Button>
+                ) : (
+                    <span className="ws-slash-hint">
+                        <kbd>/</kbd> for formatting
+                    </span>
+                )}
             </footer>
         </section>
     )

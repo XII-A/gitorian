@@ -297,18 +297,30 @@
     border-radius: var(--radius-key);
     background: var(--surface-muted);
 }
-.ws-quiet-help {
-    margin-top: var(--space-12);
-    color: var(--text-secondary);
+.ws-writing-footer.ws-needs-notion {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--space-2);
+    row-gap: var(--space-1);
+    padding-block: var(--space-2);
+}
+.ws-needs-notion > [role='status'] {
+    grid-column: 1;
+    grid-row: 2;
+}
+.ws-notion-connect {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    min-height: var(--control-height-md);
     font-size: var(--text-xs);
 }
-.ws-quiet-help button {
-    padding: 0;
-    border: 0;
-    color: var(--foreground);
-    background: none;
-    text-decoration: underline;
-    text-underline-offset: 3px;
+.ws-needs-notion > .ws-retry-saving {
+    grid-column: 1;
+    justify-self: start;
+}
+.ws-needs-notion:has(.ws-retry-saving) {
+    height: auto;
+    min-height: var(--workspace-footer-height);
 }
 .ws-new-entry {
     padding-block: var(--space-16);
@@ -864,6 +876,8 @@
 .ws-day-popover {
     width: 200px;
     padding: var(--space-3);
+    /* This read-only summary must not capture hover outside the chart. */
+    pointer-events: none;
 }
 .ws-day-summary-heading {
     display: flex;

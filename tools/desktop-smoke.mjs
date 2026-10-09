@@ -49,6 +49,9 @@ app.on('browser-window-created', (_, window) => {
             result.draftRecovered = await window.webContents.executeJavaScript(
                 `document.querySelector('[aria-label="Journal body"]').textContent.includes('The draft survives a restart.')`
             )
+            result.disconnectedWritingReady = await window.webContents.executeJavaScript(
+                `document.querySelector('[aria-label="Journal body"]').getAttribute('contenteditable') === 'true' && !document.querySelector('.ws-paper').textContent.includes('Your writing stays here.') && document.querySelector('.ws-writing-footer').textContent.includes('Connect Notion in settings') && document.querySelector('.ws-publish button').disabled`
+            )
             // A newer recovery copy must win over an older backend draft, then persist.
             await window.webContents.executeJavaScript(`(async () => {
                 const state = (await window.journal.invoke({type:'state'})).state
@@ -65,6 +68,20 @@ app.on('browser-window-created', (_, window) => {
             const realDraftsBefore = await window.webContents.executeJavaScript(
                 `(async () => (await window.journal.invoke({type:'state'})).state.drafts.length)()`
             )
+            result.summaryDismissesOutsideChart = await window.webContents.executeJavaScript(`(async () => {
+                const slider = document.querySelector('.ws-week-chart [role="slider"]')
+                const rect = slider.getBoundingClientRect()
+                slider.dispatchEvent(new PointerEvent('pointermove', {bubbles:true,pointerType:'mouse',clientX:rect.left+rect.width*2.5/7,clientY:rect.top+18}))
+                await new Promise(resolve => setTimeout(resolve, 80))
+                const card = document.querySelector('.ws-day-popover[data-state="open"]')
+                if (!card) throw new Error('Chart summary did not open')
+                slider.dispatchEvent(new PointerEvent('pointerout', {bubbles:true,pointerType:'mouse',relatedTarget:null}))
+                await new Promise(resolve => setTimeout(resolve, 40))
+                // Enter from outside the chart, as when crossing the gap to the card.
+                card.dispatchEvent(new PointerEvent('pointerover', {bubbles:true,pointerType:'mouse',relatedTarget:null}))
+                await new Promise(resolve => setTimeout(resolve, 400))
+                return !document.querySelector('.ws-day-popover[data-state="open"]')
+            })()`)
             await window.webContents.executeJavaScript(`document.querySelector('[aria-label="Pop out diff"]').click()`)
             await pause(600)
             const reference = BrowserWindow.getAllWindows().find((candidate) =>
@@ -83,6 +100,9 @@ app.on('browser-window-created', (_, window) => {
             await pause(400)
             result.secondWindowCitation = await window.webContents.executeJavaScript(
                 `document.querySelector('[aria-label="Journal body"]').textContent.includes('Retry failed sync batches with backoff')`
+            )
+            result.citationWithoutHeaderNotice = await window.webContents.executeJavaScript(
+                `!document.querySelector('.ws-action-notice')`
             )
             result.noReferenceNotes = await reference.webContents.executeJavaScript(
                 `!document.querySelector('.ws-reference-note') && !Array.from(document.querySelectorAll('button')).some(button => button.textContent.includes('Add note')) && document.querySelector('[role="status"]').textContent.includes('Added to your entry.')`
