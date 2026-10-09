@@ -100,7 +100,7 @@ describe('writing workspace document compatibility', () => {
 })
 describe('weekly activity and sample references', () => {
     const state = sampleState('2026-10-05')
-    const filters = { project: 'all', feature: 'all', branch: 'all', kind: 'all', search: '' }
+    const filters = { project: 'all', branch: 'all', kind: 'all', search: '' }
     it('uses valid, isolated sample data with actual multi-file patches', () => {
         expect(stateSchema.safeParse(state).success).toBe(true)
         expect(state.activities).toHaveLength(23)
@@ -111,13 +111,12 @@ describe('weekly activity and sample references', () => {
         ])
         expect(state.activities.every((activity) => activity.id.startsWith('sample:2026-10-05:'))).toBe(true)
     })
-    it('combines feature, branch, project and search while keeping work inside its week', () => {
+    it('combines branch, project and search while keeping work inside its week', () => {
         expect(filterWorkspaceActivity(state, '2026-10-05', filters)).toHaveLength(23)
         expect(filterWorkspaceActivity(state, '2026-10-12', filters)).toHaveLength(0)
         const found = filterWorkspaceActivity(state, '2026-10-05', {
             ...filters,
             project: 'sample-repo-0',
-            feature: 'sample-offline',
             branch: 'feat/offline-queue',
             kind: 'commit',
             search: 'backoff'

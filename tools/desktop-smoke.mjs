@@ -27,7 +27,7 @@ app.on('browser-window-created', (_, window) => {
                 await new Promise(resolve => setTimeout(resolve, 150))
                 const workspaceImplemented = !!document.querySelector('.ws-frame') && document.querySelector('.writing-workspace').dataset.layout === 'three-panes' && !document.querySelector('.variant-picker')
                 const noDraftCreated = (await window.journal.invoke({type:'state'})).state.drafts.length === before.state.drafts.length
-                document.querySelector('[aria-label="Back to weekly hub"]').click()
+                document.querySelector('[aria-label="Journal breadcrumb"] button[data-label="Journal"]').click()
                 await new Promise(resolve => setTimeout(resolve, 100))
                 const returnsToHub = !!document.querySelector('.hub-topbar')
                 document.querySelector('[aria-label="Open journal"]').click()
@@ -107,6 +107,9 @@ app.on('browser-window-created', (_, window) => {
                     cleanWritingSurface: !document.querySelector('.ws-writing-bar') && !document.querySelector('.ws-review-footer'),
                     publishIsLastHeaderAction: buttons.at(-1) === document.querySelector('.ws-publish button'),
                     matchingPaneFooters: document.querySelector('.ws-writing-footer').getBoundingClientRect().height === document.querySelector('.ws-inspector-footer').getBoundingClientRect().height,
+                    // The hidden smoke window pauses Motion; inspect the date mount while the visible preview verifies the trigger.
+                    centeredDatePicker: Math.abs((document.querySelector('.ws-date').getBoundingClientRect().left + document.querySelector('.ws-date').getBoundingClientRect().right) / 2 - innerWidth / 2) < 1,
+                    compactHeader: document.querySelector('.ws-topbar').getBoundingClientRect().height <= 60,
                     keyboardScrollablePanes: ['.ws-activity-scroll','.ws-paper-scroll','.ws-diff-scroll'].every(selector => document.querySelector(selector+' [role="region"]')?.tabIndex === 0)
                 }
             })()`)

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/arc/tabs/tabs'
-import { Checkbox } from './components/arc/checkbox/checkbox'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
 import { DiffViewer } from './DiffViewer'
@@ -167,27 +166,6 @@ export function WorkspaceInspector({
                                     Open in GitHub
                                     <WorkspaceIcon name="popout" />
                                 </Button>
-                            )}
-                            {!reference && state.features.length > 0 && (
-                                <div className="ws-features">
-                                    <h3>Features</h3>
-                                    {state.features.map((feature) => (
-                                        <Checkbox
-                                            key={feature.id}
-                                            label={`${feature.name}${feature.archived ? ' (archived)' : ''}`}
-                                            checked={feature.members.includes(activity.id)}
-                                            onCheckedChange={(checked) => {
-                                                void run({
-                                                    type: 'feature',
-                                                    ...feature,
-                                                    members: checked
-                                                        ? [...feature.members, activity.id]
-                                                        : feature.members.filter((member) => member !== activity.id)
-                                                })
-                                            }}
-                                        />
-                                    ))}
-                                </div>
                             )}
                         </div>
                     </ScrollArea>

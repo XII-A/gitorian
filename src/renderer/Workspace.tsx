@@ -18,6 +18,7 @@ import { activityLink, dateKey, dateValue, filterWorkspaceActivity, formatDay } 
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
 import { WorkspaceActivityChart } from './WorkspaceActivityChart'
+import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
 import landscape from './assets/week-landscape.jpg'
 import './workspace.css'
 
@@ -44,7 +45,6 @@ export function Workspace({
     const [example, setExample] = useState<State>()
     const examples = useRef(new Map<string, State>())
     const [project, setProject] = useState('all')
-    const [feature, setFeature] = useState('all')
     const [branch, setBranch] = useState('all')
     const [kind, setKind] = useState('all')
     const [searchExpanded, setSearchExpanded] = useState(false)
@@ -133,18 +133,6 @@ export function Workspace({
                     }
                     break
                 }
-                case 'feature':
-                    next.features = next.features.map((item) =>
-                        item.id === command.id
-                            ? {
-                                  id: command.id,
-                                  name: command.name,
-                                  archived: command.archived,
-                                  members: command.members
-                              }
-                            : item
-                    )
-                    break
                 case 'open':
                     setNotice('Sample links are examples. Switch to real data to open your work.')
                     break
@@ -190,8 +178,8 @@ export function Workspace({
     const selected = state.activities.find((item) => item.id === selectedId)
     const items = useMemo(() => rangeActivities(state, week, offsetDay(week, 6)), [state, week])
     const visible = useMemo(
-        () => filterWorkspaceActivity(state, week, { project, feature, branch, kind, search: '' }),
-        [state, week, project, feature, branch, kind]
+        () => filterWorkspaceActivity(state, week, { project, branch, kind, search: '' }),
+        [state, week, project, branch, kind]
     )
     const currentWeek = weekOf(new Date(), state.settings)
     const cite = useCallback(
@@ -251,7 +239,6 @@ export function Workspace({
         setNotice('')
         setCitation(undefined)
         setProject('all')
-        setFeature('all')
         setBranch('all')
         setKind('all')
         const url = new URL(window.location.href)
@@ -318,14 +305,12 @@ export function Workspace({
             <div className="ws-atmosphere" aria-hidden="true">
                 <img src={landscape} alt="" />
             </div>
-            <nav className="ws-topbar" aria-label="Date range and journal controls">
+            <header className="ws-topbar" aria-label="Date range and journal controls">
                 <div className="ws-heading">
-                    <Button variant="ghost" size="sm" aria-label="Back to weekly hub" onClick={() => onBack(week)}>
-                        <WorkspaceIcon name="back" />
-                    </Button>
-                    <span>Journal</span>
-                    <span className="ws-breadcrumb">/</span>
-                    <span className="ws-breadcrumb">Weekly entry</span>
+                    <Breadcrumb
+                        ariaLabel="Journal breadcrumb"
+                        items={[{ label: 'Journal', onClick: () => onBack(week) }, { label: 'Weekly entry' }]}
+                    />
                 </div>
                 <div className="ws-date">
                     <DateRangePicker
@@ -369,7 +354,7 @@ export function Workspace({
                     </Button>
                     <div className="ws-publish" ref={setPublishTarget} />
                 </div>
-            </nav>
+            </header>
             {notice && (
                 <div className="ws-action-notice" role="status">
                     <span>{notice}</span>
@@ -462,7 +447,8 @@ export function Workspace({
                                 options={[
                                     {
                                         value: 'all',
-                                        label: `Projects ${state.repositories.filter((repo) => !repo.removed).length}`
+                                        label: 'Projects',
+                                        count: state.repositories.filter((repo) => !repo.removed).length
                                     },
                                     ...state.repositories
                                         .filter((repo) => !repo.removed)
@@ -473,39 +459,26 @@ export function Workspace({
                         <Button
                             variant="ghost"
                             size="sm"
-                            className="ws-filter-chip"
+                            className="ws-filter-chip ws-history-chip"
                             onClick={() => setHistoryOpen(true)}
                             aria-label="More activity filters"
-                            aria-pressed={feature !== 'all' || branch !== 'all'}
+                            title="Browse branch history"
+                            aria-pressed={branch !== 'all'}
                         >
                             <WorkspaceIcon name="branch" width="14" height="14" />
-                            Filters
                         </Button>
                     </div>
-                    {(feature !== 'all' || branch !== 'all') && (
+                    {branch !== 'all' && (
                         <div className="ws-extra-filters">
-                            {feature !== 'all' && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="ws-filter-chip"
-                                    onClick={() => setFeature('all')}
-                                >
-                                    Clear {state.features.find((item) => item.id === feature)?.name}
-                                    <WorkspaceIcon name="close" width="14" height="14" />
-                                </Button>
-                            )}
-                            {branch !== 'all' && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="ws-filter-chip"
-                                    onClick={() => setBranch('all')}
-                                >
-                                    Clear {branch}
-                                    <WorkspaceIcon name="close" width="14" height="14" />
-                                </Button>
-                            )}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="ws-filter-chip"
+                                onClick={() => setBranch('all')}
+                            >
+                                Clear {branch}
+                                <WorkspaceIcon name="close" width="14" height="14" />
+                            </Button>
                         </div>
                     )}
                     <ScrollArea
@@ -590,7 +563,6 @@ export function Workspace({
                                     size="sm"
                                     onClick={() => {
                                         setProject('all')
-                                        setFeature('all')
                                         setBranch('all')
                                         setKind('all')
                                         if (!items.length) void refresh()
@@ -654,18 +626,7 @@ export function Workspace({
                     description="Bring branch work into view. The activity list keeps the selected week."
                     className="ws-dialog"
                 >
-                    <ScrollArea className="ws-dialog-fields" label="Branch and feature filters" fade={16}>
-                        {state.features.length > 0 && (
-                            <Select
-                                label="Feature filter"
-                                value={feature}
-                                onValueChange={setFeature}
-                                options={[
-                                    { value: 'all', label: 'All features' },
-                                    ...state.features.map((item) => ({ value: item.id, label: item.name }))
-                                ]}
-                            />
-                        )}
+                    <ScrollArea className="ws-dialog-fields" label="Branch history filters" fade={16}>
                         <Select
                             label="Project"
                             value={project}
