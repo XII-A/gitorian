@@ -20,7 +20,7 @@ const referenceWindows = new Set<number>()
 function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
     const window = new BrowserWindow({
         title: 'weekly-j',
-        width: reference ? 900 : 1560,
+        width: reference ? 1400 : 1560,
         height: 1000,
         minWidth: reference ? 600 : 1000,
         minHeight: 640,

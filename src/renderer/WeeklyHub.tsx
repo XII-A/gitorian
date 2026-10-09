@@ -33,6 +33,7 @@ const ActivityIcon = ({ item }: { item: Activity }) => {
 }
 
 interface Props {
+    initialWeek?: string
     state: State
     run: (command: Command) => Promise<Reply | undefined>
     error: string
@@ -41,9 +42,9 @@ interface Props {
     onActivity: (activity: Activity) => void
 }
 
-export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity }: Props) {
+export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, initialWeek }: Props) {
     const currentWeek = weekOf(new Date(), state.settings)
-    const [start, setStart] = useState(currentWeek)
+    const [start, setStart] = useState(initialWeek || currentWeek)
     const end = offsetDay(start, 6)
     const [project, setProject] = useState('all')
     const [tab, setTab] = useState<'all' | 'commit' | 'pr'>('all')
