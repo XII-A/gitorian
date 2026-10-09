@@ -10,7 +10,10 @@
         "skipLibCheck": true,
         "resolveJsonModule": true,
         "types": ["node", "vite/client"],
-        "noEmit": true
+        "noEmit": true,
+        "paths": {
+            "@/*": ["./src/renderer/*"]
+        }
     },
     "include": ["src", "tests", "*.ts", "tools"]
 }
