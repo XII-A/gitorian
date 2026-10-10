@@ -1,3 +1,7 @@
+import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
+import { Alert } from './components/arc/alert/alert'
+import { readableError } from './background-work'
+import { activityUpdating, actionableSources } from './background-work'
 import { useRef, useState } from 'react'
 import { BookOpen, Check, GitBranch, GitCommitHorizontal, RefreshCw, Settings2 } from 'lucide-react'
 import { localDate, shiftWeek, weekOf } from '../shared/model'
@@ -25,11 +29,12 @@ interface Props {
     run: (command: Command) => Promise<Reply | undefined>
     error: string
     onWrite: (date: string) => void
+    onSources: () => void
     onSettings: () => void
     onActivity: (activity: Activity) => void
 }
 
-export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, initialWeek }: Props) {
+export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, onActivity, initialWeek }: Props) {
     const currentWeek = weekOf(new Date(), state.settings)
     const [start, setStart] = useState(initialWeek || currentWeek)
     const end = offsetDay(start, 6)
@@ -187,13 +192,25 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
                     <Button
                         variant="ghost"
                         size="sm"
-                        loading={busy}
+                        loading={busy || activityUpdating(state)}
                         onClick={() => void refresh()}
                         aria-label="Refresh activity"
                         title="Refresh activity"
                     >
                         <RefreshCw size={16} />
                     </Button>
+                    {actionableSources(state).length > 0 && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            data-source-status
+                            onClick={onSources}
+                            aria-label="Activity sources"
+                            title="Activity sources"
+                        >
+                            <StackIcon size={18} weight="bold" aria-hidden="true" />
+                        </Button>
+                    )}
                     <Button variant="ghost" size="sm" onClick={onSettings} aria-label="Open settings" title="Settings">
                         <Settings2 size={17} />
                     </Button>
@@ -201,12 +218,17 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
             </nav>
             <div className="hub-content" id="hub-content">
                 {error && (
-                    <div className="hub-error" role="alert">
-                        <p>{error}</p>
-                        <Button variant="secondary" size="sm" loading={busy} onClick={() => void refresh()}>
+                    <Alert tone="danger" title="Activity could not be refreshed">
+                        <p>{readableError(error)}</p>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            loading={busy || activityUpdating(state)}
+                            onClick={() => void refresh()}
+                        >
                             Refresh activity
                         </Button>
-                    </div>
+                    </Alert>
                 )}
                 <header className="hub-hero">
                     <p className="hub-period">{period}</p>
@@ -279,7 +301,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
                     <span>
                         <Check size={13} aria-hidden="true" />
                         {state.lastRefreshed
-                            ? `Updated ${new Date(state.lastRefreshed).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                            ? `Updated ${new Date(state.lastRefreshed).toLocaleTimeString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
                             : 'Your local journal'}
                     </span>
                     <span>No rush. It’s your story.</span>

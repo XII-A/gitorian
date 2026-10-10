@@ -1,3 +1,4 @@
+import { activityUpdating } from './background-work'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Command, Reply } from '../shared/model'
 import { WeeklyHub } from './WeeklyHub'
@@ -10,9 +11,20 @@ import { localDate, weekOf } from '../shared/model'
 import type { Activity } from '../shared/model'
 import { journalWeek } from './hub-model'
 import { AcquisitionStatus } from './AcquisitionStatus'
+import { BackgroundNotifications } from './BackgroundNotifications'
+import { ToastStack, ToastStackProvider } from './components/arc/toast-stack/toast-stack'
 import { unchangedStateReply } from './activity-cache'
 
 export function App() {
+    return (
+        <ToastStackProvider>
+            <JournalApp />
+            <ToastStack className="journal-notifications" />
+        </ToastStackProvider>
+    )
+}
+
+function JournalApp() {
     const [screen, setScreen] = useState<'hub' | 'workspace'>('hub')
     const [reply, setReply] = useState<Reply>()
     const [remotes, setRemotes] = useState<Record<string, string[]>>({})
@@ -22,7 +34,7 @@ export function App() {
     const [workspaceWeek, setWorkspaceWeek] = useState('')
     const [workspaceActivity, setWorkspaceActivity] = useState<string>()
     const [reference, setReference] = useState<{ kind: string; id: string }>()
-    const [dismissedImport, setDismissedImport] = useState('')
+    const [sourcesOpen, setSourcesOpen] = useState(false)
     const polling = useRef(false)
     const currentReply = useRef(reply)
     currentReply.current = reply
@@ -69,11 +81,7 @@ export function App() {
         const timer = setInterval(() => {
             if (polling.current) return
             const state = currentReply.current?.state
-            const active =
-                state?.repositoryImport?.status === 'running' ||
-                Object.values(state?.acquisition ?? {}).some(
-                    (status) => status.status === 'running' || status.windowEnd
-                )
+            const active = state?.repositoryImport?.status === 'running' || (!!state && activityUpdating(state))
             if (!active && Date.now() - lastPoll < 15000) return
             lastPoll = Date.now()
             polling.current = true
@@ -139,36 +147,26 @@ export function App() {
     }
     return (
         <>
-            <div>
-                {reply && !reference && <AcquisitionStatus state={reply.state} run={run} />}
-                {!reference &&
-                    reply?.state.repositoryImport &&
-                    (reply.state.repositoryImport.status === 'running' ||
-                        dismissedImport !== reply.state.repositoryImport.message) && (
-                        <div className="acquisition-notice" role="status">
-                            {reply.state.repositoryImport.status === 'running'
-                                ? `Importing repositories ${reply.state.repositoryImport.completed}/${reply.state.repositoryImport.total || '…'}. You can keep writing.`
-                                : reply.state.repositoryImport.message}
-                            {reply.state.repositoryImport.status === 'running' ? (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => run({ type: 'stopWork', source: 'repositories' })}
-                                >
-                                    Stop import
-                                </Button>
-                            ) : (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setDismissedImport(reply.state.repositoryImport?.message ?? '')}
-                                >
-                                    Dismiss
-                                </Button>
-                            )}
-                        </div>
-                    )}
-            </div>
+            {reply && !reference && (
+                <>
+                    <AcquisitionStatus
+                        state={reply.state}
+                        run={run}
+                        open={sourcesOpen}
+                        onOpenChange={setSourcesOpen}
+                        onSettings={() => {
+                            setSourcesOpen(false)
+                            setSettingsOpen(true)
+                        }}
+                    />
+                    <BackgroundNotifications
+                        state={reply.state}
+                        run={run}
+                        settingsOpen={settingsOpen}
+                        onSources={() => setSourcesOpen(true)}
+                    />
+                </>
+            )}
             {reference && reply ? (
                 <WorkspaceReference state={reply.state} run={run} kind={reference.kind} id={reference.id} />
             ) : screen === 'workspace' && reply ? (
@@ -180,6 +178,7 @@ export function App() {
                     initialWeek={workspaceWeek || weekOf(new Date(), reply.state.settings)}
                     initialActivity={workspaceActivity}
                     onBack={backToHub}
+                    onSources={() => setSourcesOpen(true)}
                     onSettings={() => setSettingsOpen(true)}
                 />
             ) : reply && !reference ? (
@@ -188,6 +187,7 @@ export function App() {
                     state={reply.state}
                     run={run}
                     error={error}
+                    onSources={() => setSourcesOpen(true)}
                     onSettings={() => setSettingsOpen(true)}
                     onWrite={openWorkspace}
                     onActivity={openActivity}

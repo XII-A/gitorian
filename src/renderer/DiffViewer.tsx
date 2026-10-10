@@ -1,3 +1,4 @@
+import { Button } from './components/arc/button/button'
 import { useEffect, useMemo, useState } from 'react'
 import { Diff, Hunk } from 'react-diff-view'
 import { cachedDiff, loadDiff } from './diff-loader'
@@ -5,7 +6,15 @@ import SegmentedControl from './components/arc/segmented-control/segmented-contr
 import { ChangedFilePicker } from './ChangedFilePicker'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 
-export function DiffViewer({ text, initialSplit = false }: { text: string; initialSplit?: boolean }) {
+export function DiffViewer({
+    text,
+    initialSplit = false,
+    onOpenSource
+}: {
+    text: string
+    initialSplit?: boolean
+    onOpenSource?: () => void
+}) {
     const [mode, setMode] = useState(initialSplit ? 'split' : 'unified')
     const [selected, setSelected] = useState('')
     const [parsed, setParsed] = useState<{ text: string; files: Awaited<ReturnType<typeof loadDiff>> }>()
@@ -25,6 +34,25 @@ export function DiffViewer({ text, initialSplit = false }: { text: string; initi
         () => files.map((file) => (file.newPath === '/dev/null' ? file.oldPath : file.newPath)),
         [files]
     )
+    const unavailable =
+        text.length > 2_000_000 || /^(Diff is too large\.|GitHub could not provide this diff)/.test(text)
+    const sourceAction = onOpenSource && (
+        <Button variant="secondary" size="sm" onClick={onOpenSource}>
+            Open on GitHub
+        </Button>
+    )
+    if (unavailable)
+        return (
+            <div className="ws-diff-empty">
+                <p>
+                    {text.includes('406')
+                        ? 'GitHub could not provide these changes.'
+                        : 'These changes are too large to display here.'}
+                </p>
+                <span>The activity is retained in your journal.</span>
+                {sourceAction}
+            </div>
+        )
     if (!text)
         return (
             <div className="ws-diff-empty">
@@ -70,10 +98,11 @@ export function DiffViewer({ text, initialSplit = false }: { text: string; initi
                     fade={0}
                 >
                     {active.hunks.reduce((total, hunk) => total + hunk.changes.length, 0) > 4000 ? (
-                        <p>
-                            This file has more than 4,000 diff lines. Open it in GitHub or your Git tool to view the
-                            full changes.
-                        </p>
+                        <div className="ws-diff-empty">
+                            <p>This file has more than 4,000 diff lines.</p>
+                            <span>View the full changes at the source.</span>
+                            {sourceAction}
+                        </div>
                     ) : active.hunks.length ? (
                         <Diff
                             viewType={mode === 'split' ? 'split' : 'unified'}

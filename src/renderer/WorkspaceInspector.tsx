@@ -1,3 +1,6 @@
+import { EmptyState } from './components/arc/empty-state/empty-state'
+import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
+import { readableError } from './background-work'
 import { useEffect, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
@@ -95,30 +98,6 @@ export function WorkspaceInspector({
                     <span>{activity.author}</span>
                 </div>
             )}
-            {loading && (
-                <div className="ws-skeleton" role="status">
-                    <span />
-                    <span />
-                    <span />
-                    <p>Loading changes…</p>
-                </div>
-            )}
-            {error && (
-                <div className="ws-inline-error" role="alert">
-                    <p>{error}</p>
-                    <Button variant="secondary" size="sm" onClick={() => onInspect?.(activity)}>
-                        Retry loading diff
-                    </Button>
-                </div>
-            )}
-            {activity.kind === 'pr' &&
-                state.diffs[activity.id] !== undefined &&
-                activity.diffRevision !== activity.revision && (
-                    <p className="ws-inline-error">
-                        This is a cached diff from an earlier revision. Reload the activity or open GitHub for current
-                        changes.
-                    </p>
-                )}
             <Tabs
                 value={tab}
                 onValueChange={(value) => {
@@ -138,7 +117,86 @@ export function WorkspaceInspector({
                     <TabsTrigger value="related">Related · {related.length}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="diff">
-                    <DiffViewer key={activity.id} text={state.diffs[activity.id] ?? ''} initialSplit={reference} />
+                    {state.diffs[activity.id] === undefined && (loading || error) ? (
+                        loading ? (
+                            <div className="ws-diff-loading" role="status">
+                                Loading changes...
+                            </div>
+                        ) : (
+                            <ScrollArea
+                                className="ws-diff-state"
+                                viewportClassName="ws-diff-state-viewport"
+                                label="Diff status"
+                                fade={0}
+                            >
+                                <div role="status">
+                                    <EmptyState
+                                        iconVariant="plain"
+                                        icon={
+                                            <WarningCircleIcon size={32} weight="bold" className="ws-diff-error-icon" />
+                                        }
+                                        title="Changes couldn't be loaded"
+                                        description={readableError(error!)}
+                                        action={
+                                            <>
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    onClick={() => onInspect?.(activity, 'diff')}
+                                                >
+                                                    Retry
+                                                </Button>
+                                                {url && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => run({ type: 'open', url })}
+                                                    >
+                                                        Open on GitHub
+                                                    </Button>
+                                                )}
+                                            </>
+                                        }
+                                    />
+                                </div>
+                            </ScrollArea>
+                        )
+                    ) : state.diffs[activity.id] === undefined ? (
+                        <div className="ws-diff-loading" role="status">
+                            Changes have not been loaded.
+                        </div>
+                    ) : (
+                        <>
+                            {loading && (
+                                <p className="ws-diff-notice" role="status">
+                                    Refreshing changes...
+                                </p>
+                            )}
+                            {error && !loading && (
+                                <div className="ws-diff-notice" role="status">
+                                    <p>Changes could not be refreshed. Showing cached changes.</p>
+                                    <Button variant="ghost" size="sm" onClick={() => onInspect?.(activity, 'diff')}>
+                                        Retry
+                                    </Button>
+                                </div>
+                            )}
+                            {activity.kind === 'pr' && activity.diffRevision !== activity.revision && !error && (
+                                <p className="ws-diff-notice">Showing changes from an earlier revision.</p>
+                            )}
+                            <DiffViewer
+                                key={activity.id}
+                                text={state.diffs[activity.id]}
+                                onOpenSource={
+                                    url
+                                        ? () => {
+                                              void run({ type: 'open', url })
+                                          }
+                                        : undefined
+                                }
+                                initialSplit={reference}
+                            />
+                        </>
+                    )}
                 </TabsContent>
                 <TabsContent value="details">
                     <ScrollArea className="ws-inspector-scroll" label="Activity details" fade={16}>

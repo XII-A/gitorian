@@ -60,6 +60,9 @@ export class JournalService {
         if (this.importing) return this.reply({ message: 'A repository import is already running.' })
         this.importing = true
         this.importStopped = false
+        const importId = randomUUID()
+        this.store.state.repositoryImport = { id: importId, status: 'running', completed: 0, total: 0 }
+        this.store.persist()
         try {
             onProgress?.({ stage: 'discovering', scanned: 0, found: 0 })
             const discovered = await discoverRepositories(folder, (counts) =>
@@ -68,10 +71,19 @@ export class JournalService {
             let added = 0
             let existing = 0
             let restored = 0
+            const skippedItems = discovered.unreadable.map((path) => ({
+                path,
+                reason: 'Folder could not be read. Check its permissions.'
+            }))
             let skipped = discovered.unreadable.length
             let completed = 0
             onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
-            this.store.state.repositoryImport = { status: 'running', completed, total: discovered.paths.length }
+            this.store.state.repositoryImport = {
+                id: importId,
+                status: 'running',
+                completed,
+                total: discovered.paths.length
+            }
             this.store.persist()
             await forEachConcurrent(discovered.paths, 2, async (path) => {
                 if (this.importStopped) return
@@ -95,11 +107,17 @@ export class JournalService {
                         await this.addRepository(path, false)
                         added++
                     }
-                } catch {
+                } catch (error) {
+                    skippedItems.push({ path, reason: error instanceof Error ? error.message : String(error) })
                     skipped++
                 }
                 completed++
-                this.store.state.repositoryImport = { status: 'running', completed, total: discovered.paths.length }
+                this.store.state.repositoryImport = {
+                    id: importId,
+                    status: 'running',
+                    completed,
+                    total: discovered.paths.length
+                }
                 if (completed % 4 === 0) this.store.persist()
                 onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
             })
@@ -110,6 +128,9 @@ export class JournalService {
             if (skipped) messages.push(`${skipped} unreadable or invalid folders skipped.`)
             if (this.importStopped) messages.push('Import stopped. Add the folder again to continue.')
             this.store.state.repositoryImport = {
+                id: importId,
+                skipped,
+                skippedItems,
                 status: this.importStopped ? 'cancelled' : 'done',
                 completed,
                 total: discovered.paths.length,
@@ -127,7 +148,7 @@ export class JournalService {
             for (const [key, status] of Object.entries(this.store.state.acquisition ?? {})) {
                 if (key.startsWith(`${source}:`) && (!repositoryId || key === `${source}:${repositoryId}`)) {
                     status.status = 'cancelled'
-                    status.error = 'Paused by you. Completed work is kept; retry this source to continue.'
+                    status.error = undefined
                 }
             }
         this.store.persist()
@@ -273,7 +294,7 @@ export class JournalService {
         } catch (error) {
             if (!this.isStopped(status))
                 status.status = error instanceof HttpError && error.retryAt ? 'paused' : 'error'
-            status.error = error instanceof Error ? error.message : String(error)
+            status.error = this.isStopped(status) ? undefined : error instanceof Error ? error.message : String(error)
             status.retryAt =
                 error instanceof HttpError && error.retryAt ? new Date(error.retryAt).toISOString() : undefined
         }
@@ -492,7 +513,7 @@ export class JournalService {
             })
         ])
         const errors = Object.entries(state.acquisition ?? {})
-            .filter(([, status]) => status.error)
+            .filter(([, status]) => status.status !== 'cancelled' && status.error)
             .map(([key, status]) => `${key}: ${status.error}`)
         state.refreshError = errors.length ? errors.join('\n') : undefined
         if (!errors.length && !Object.values(state.acquisition ?? {}).some((status) => status.windowEnd))

@@ -268,6 +268,7 @@ it('a user pause survives scheduled refresh and explicit retry resumes it', asyn
         app.remote.github = true
         await app.service.refresh()
         app.service.stopWork('github', app.repository.id)
+        expect(app.store.state.acquisition?.[`github:${app.repository.id}`].error).toBeUndefined()
         const start = app.remote.requests.length
         await app.service.refresh({ repositoryId: app.repository.id, source: 'github' })
         expect(app.remote.requests).toHaveLength(start)

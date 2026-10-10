@@ -6,6 +6,18 @@ Run development through `npm run dev`, which watches both the desktop backend an
 
 `npm run smoke:dev-reload` exercises this through an isolated Electron IPC fixture: folder import initially fails against the old command schema, then becomes accepted after the shared schema changes and the development backend automatically restarts. `npm run smoke` covers folder selection and actual repository discovery.
 
+## Disclosure and feedback
+
+Do not use native `<details>` or `<summary>` elements anywhere in renderer UI. Their browser-default marker and presentation do not follow Arc. Use the installed Arc `Accordion` (or the shared `Disclosure` wrapper) for expandable sections, `Popover` for optional content opened by an icon, and `Tooltip` only for short, nonessential hints. Do not imitate these components with custom disclosure markup.
+
+Keep raw HTTP, Git, and exception diagnostics out of user-facing error states. Show what failed, a useful explanation, and the relevant recovery action. Import results may list affected folder paths and understandable reasons; internal error payloads do not need a disclosure or tooltip.
+
+A diff load failure belongs inside the Diff tab as a centered, borderless Arc `EmptyState`: a plain error icon, title, optional explanation, and recovery actions. Do not add an Alert card above the tabs or wrap the state in another bordered panel. Loading, failure, unavailable evidence, confirmed empty changes, and loaded changes are mutually exclusive. Show an empty-diff message only after a successful response confirms empty changes. Preserve cached changes on refresh failure with a compact notice inside the tab. Details and Related stay usable.
+
+The local Arc `EmptyState.iconVariant="plain"` extension removes the icon frame for pane states; the default remains `"framed"`. Keep layout styles on the pane wrapper rather than overriding component internals.
+
+Background source warnings use a short one-line toast title and a `Review` action. The notification viewport may be wider on desktop but must stay within the viewport on phones. The local toast-stack responsive breakpoint moves actions below the copy at 24rem or narrower, keeping source-warning titles on one line on phones. Never truncate the title or force overflowing text to stay on one line.
+
 ## Corner radii
 
 The radius definitions live in `src/renderer/components/arc/foundation.css`. Use these tokens for new UI and keep their values shared across pages.
@@ -73,7 +85,7 @@ Repository setup chooses a parent folder through the native picker and discovers
 
 Repositories use independently expandable Arc `ExpandableCard` components, keyed by repository id. Show the repository name and its full folder path in the card summary, with long names and path segments wrapping inside the card. Keep every card initially closed and preserve native disclosure keyboard behavior. Arc `SearchField` filters repository names and paths without changing the settings being edited. Its local `hideLabel` option keeps the search name accessible without displaying a heading above the input.
 
-Folder import reports selection, discovery, and completed/total processing through the preload's `onRepositoryImportProgress` subscription. Unsubscribe when settings unmounts. Animate the button's real progress labels through the Arc button and announce them in the settings footer. Use `aria-busy` rather than the button's `loading` prop here: its loading presentation hides the text behind a spinner. Cancelled selection restores the idle action without an error.
+Folder import reports selection, discovery, and completed/total processing through the preload's `onRepositoryImportProgress` subscription. Unsubscribe when settings unmounts. Animate and announce the button's real progress labels through the Arc button. Do not duplicate progress in the settings footer. Use `aria-busy` rather than the button's `loading` prop here: its loading presentation hides the text behind a spinner. Cancelled selection restores the idle action without an error.
 
 Connected GitHub settings show the avatar and username followed by Arc `ConfirmMorph` with `confirmMode="hold"` and `tone="danger"`. Return the real disconnect promise so failure and retry stay in the control. On narrow layouts the question stays available to assistive technology while the visible confirm/cancel controls fit in the settings column.
 

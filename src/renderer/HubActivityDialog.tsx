@@ -1,3 +1,5 @@
+import { Alert } from './components/arc/alert/alert'
+import { readableError } from './background-work'
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { ArrowRight, GitBranch } from 'lucide-react'
 import { localDate, type Activity, type State } from '../shared/model'
@@ -132,8 +134,8 @@ export function HubActivityDialog({
                             {busy ? (
                                 <p role="status">Loading activity details…</p>
                             ) : error ? (
-                                <div role="alert">
-                                    <p>{error}</p>
+                                <Alert tone="danger" title="Activity details could not be loaded">
+                                    <p>{readableError(error)}</p>
                                     <Button
                                         variant="secondary"
                                         size="sm"
@@ -141,7 +143,7 @@ export function HubActivityDialog({
                                     >
                                         Retry details
                                     </Button>
-                                </div>
+                                </Alert>
                             ) : (
                                 <>
                                     <h3>Changed files</h3>

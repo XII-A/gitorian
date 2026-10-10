@@ -141,6 +141,7 @@ void app.whenReady().then(() => {
                     })
                     .catch((error: unknown) => {
                         store.state.repositoryImport = {
+                            id: store.state.repositoryImport?.id,
                             status: 'error',
                             completed: 0,
                             total: 0,

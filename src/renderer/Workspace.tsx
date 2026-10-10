@@ -1,3 +1,7 @@
+import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
+import { Alert } from './components/arc/alert/alert'
+import { readableError } from './background-work'
+import { activityUpdating, actionableSources } from './background-work'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { localDate, shiftWeek, weekOf, stateSchema } from '../shared/model'
@@ -33,6 +37,7 @@ interface Props {
     initialWeek: string
     initialActivity?: string
     onBack: (week: string) => void
+    onSources: () => void
     onSettings: () => void
 }
 export function Workspace({
@@ -43,6 +48,7 @@ export function Workspace({
     initialWeek,
     initialActivity,
     onBack,
+    onSources,
     onSettings
 }: Props) {
     const [week, setWeek] = useState(initialWeek)
@@ -327,11 +333,23 @@ export function Workspace({
                     />
                 </div>
                 <div className="ws-utilities">
+                    {actionableSources(state).length > 0 && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            data-source-status
+                            onClick={onSources}
+                            aria-label="Activity sources"
+                            title="Activity sources"
+                        >
+                            <StackIcon size={18} weight="bold" aria-hidden="true" />
+                        </Button>
+                    )}
                     <Button
                         variant="ghost"
                         size="sm"
                         onClick={refresh}
-                        loading={refreshing}
+                        loading={refreshing || activityUpdating(state)}
                         aria-label="Refresh activity"
                         title="Refresh activity"
                     >
@@ -359,12 +377,12 @@ export function Workspace({
                 </div>
             )}
             {!sample && error && (
-                <div className="ws-error-bar" role="alert">
-                    <span>{error}</span>
+                <Alert tone="danger" title="Activity could not be refreshed">
+                    <p>{readableError(error)}</p>
                     <Button variant="secondary" size="sm" onClick={refresh}>
                         Retry refresh
                     </Button>
-                </div>
+                </Alert>
             )}
             <div className="ws-frame" data-inspecting={!!inspector}>
                 <aside className="ws-activity" aria-label="Weekly activity">

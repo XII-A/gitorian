@@ -160,6 +160,9 @@ export const stateSchema = z.object({
         .optional(),
     repositoryImport: z
         .object({
+            id: z.string().optional(),
+            skipped: z.number().optional(),
+            skippedItems: z.array(z.object({ path: z.string(), reason: z.string() })).optional(),
             status: z.enum(['running', 'done', 'error', 'cancelled']),
             completed: z.number(),
             total: z.number(),

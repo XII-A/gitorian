@@ -107,7 +107,17 @@ export function DetailsPane({ state, activity, entry, draft, reference, run, set
                                     retry or open in GitHub.
                                 </p>
                             )}
-                        <DiffViewer key={activity.id} text={state.diffs[activity.id] ?? ''} />
+                        <DiffViewer
+                            key={activity.id}
+                            text={state.diffs[activity.id] ?? ''}
+                            onOpenSource={
+                                activity.url
+                                    ? () => {
+                                          void run({ type: 'open', url: activity.url! })
+                                      }
+                                    : undefined
+                            }
+                        />
                         {!reference && (
                             <Disclosure className="decisions" title="Features">
                                 {state.features.map((value) => (
