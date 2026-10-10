@@ -1,0 +1,131 @@
+.activity-row-list {
+    container: activity-list / inline-size;
+}
+.activity-row {
+    --activity-node-size: 26px;
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--activity-node-size) minmax(0, 1fr) max-content 14px;
+    align-items: flex-start;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: 70px;
+    padding: var(--space-3) var(--space-4);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--foreground);
+    font: 400 var(--text-sm)/var(--leading-body) var(--font-body);
+    text-align: start;
+    cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.activity-row[data-connected]::before {
+    content: '';
+    position: absolute;
+    top: calc(var(--space-3) + var(--activity-node-size));
+    bottom: calc(-1 * var(--space-3));
+    left: calc(var(--space-4) + var(--activity-node-size) / 2);
+    width: 1px;
+    background: var(--border-subtle);
+    pointer-events: none;
+}
+.activity-row-node {
+    display: grid;
+    place-items: center;
+    width: var(--activity-node-size);
+    height: var(--activity-node-size);
+    flex: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    color: var(--text-secondary);
+}
+.activity-row[data-kind='merged'] .activity-row-node {
+    color: var(--success);
+    border-color: color-mix(in oklab, var(--success) 30%, var(--border));
+}
+.activity-row-content {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding-top: var(--space-1);
+}
+.activity-row-title {
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+.activity-row-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+}
+.activity-row-meta > span {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.activity-row-meta svg {
+    flex: none;
+}
+.activity-row-trailing {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
+    padding-top: var(--space-1);
+}
+.activity-row:not([data-kind='merged']) .activity-row-status {
+    --badge-background: transparent;
+}
+.activity-row[data-kind='opened'] .activity-row-status {
+    --badge-foreground: var(--foreground);
+}
+.activity-row-reference {
+    color: var(--text-muted);
+    font-family: ui-monospace, monospace;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+}
+.activity-row-arrow {
+    flex: none;
+    align-self: center;
+    color: var(--text-secondary);
+}
+@container activity-list (max-width: 340px) {
+    .activity-row {
+        grid-template-columns: var(--activity-node-size) minmax(0, 1fr) 14px;
+        gap: var(--space-2);
+    }
+    .activity-row-trailing {
+        grid-column: 2;
+        grid-row: 2;
+        flex-direction: row;
+        align-items: center;
+        gap: var(--space-2);
+        padding-top: 0;
+    }
+    .activity-row-arrow {
+        grid-column: 3;
+        grid-row: 1;
+    }
+}
+.activity-row[aria-pressed='true'] {
+    background: var(--surface-muted);
+}
+@media (hover: hover) and (pointer: fine) {
+    .activity-row:hover {
+        background: var(--surface-muted);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .activity-row {
+        transition-duration: 0ms;
+    }
+}

@@ -17,6 +17,7 @@ import { activityLink, dateKey, dateValue, filterWorkspaceActivity, formatDay } 
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
 import { ActivityChart } from './ActivityChart'
+import { ActivityRow } from './ActivityRow'
 import { ProjectFilter } from './ProjectFilter'
 import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
 import landscape from './assets/week-landscape.jpg'
@@ -472,16 +473,22 @@ export function Workspace({
                                         <h3>{formatDay(day, { weekday: 'long' })}</h3>
                                         <span>{formatDay(day)}</span>
                                     </header>
-                                    <ul>
+                                    <ul className="activity-row-list">
                                         {visible
                                             .filter(
                                                 (item) =>
                                                     localDate(new Date(item.date), state.settings.timezone) === day
                                             )
-                                            .map((item) => (
+                                            .map((item, index, dayItems) => (
                                                 <li key={item.id}>
-                                                    <button
-                                                        type="button"
+                                                    <ActivityRow
+                                                        activity={item}
+                                                        repositoryName={
+                                                            state.repositories.find(
+                                                                (repo) => repo.id === item.repositoryId
+                                                            )?.name ?? 'Repository'
+                                                        }
+                                                        connected={index < dayItems.length - 1}
                                                         className="ws-activity-row"
                                                         aria-pressed={selectedId === item.id}
                                                         draggable={canCite}
@@ -493,32 +500,7 @@ export function Workspace({
                                                             event.dataTransfer.effectAllowed = 'copy'
                                                         }}
                                                         onClick={() => void inspect(item)}
-                                                    >
-                                                        <WorkspaceIcon
-                                                            name={item.kind === 'commit' ? 'commit' : 'pr'}
-                                                        />
-                                                        <span className="ws-row-copy">
-                                                            <span>{item.title}</span>
-                                                            <small>
-                                                                {
-                                                                    state.repositories.find(
-                                                                        (repo) => repo.id === item.repositoryId
-                                                                    )?.name
-                                                                }
-                                                                <span>·</span>
-                                                                {item.sha?.slice(0, 7) ?? item.kind}
-                                                            </small>
-                                                        </span>
-                                                        <span className="ws-row-kind">
-                                                            {item.kind === 'merged'
-                                                                ? 'Merged'
-                                                                : item.kind === 'review'
-                                                                  ? 'Review'
-                                                                  : item.kind === 'pr'
-                                                                    ? 'PR'
-                                                                    : ''}
-                                                        </span>
-                                                    </button>
+                                                    />
                                                 </li>
                                             ))}
                                     </ul>

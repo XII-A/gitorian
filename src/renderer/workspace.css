@@ -174,51 +174,6 @@
     margin: 0;
     list-style: none;
 }
-.ws-activity-row {
-    display: flex;
-    width: 100%;
-    align-items: flex-start;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    text-align: left;
-    border: 1px solid transparent;
-    border-radius: var(--radius-inset);
-    color: var(--foreground);
-    background: transparent;
-    line-height: 1.5;
-}
-.ws-activity-row > svg {
-    margin-top: 3px;
-    color: var(--text-secondary);
-    flex: none;
-}
-.ws-activity-row:hover {
-    background: var(--surface-muted);
-}
-.ws-activity-row[aria-pressed='true'] {
-    background: var(--surface);
-    border-color: var(--border);
-}
-.ws-row-copy {
-    flex: 1;
-}
-.ws-row-copy > span {
-    display: block;
-    font-weight: 500;
-    overflow-wrap: anywhere;
-}
-.ws-row-copy small {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    color: var(--text-secondary);
-    font-size: var(--text-xs);
-    margin-top: var(--space-1);
-}
-.ws-row-kind {
-    color: var(--text-secondary);
-    font-size: var(--text-xs);
-}
 .ws-activity-empty {
     padding: var(--space-8) var(--space-6);
     text-align: center;
@@ -753,9 +708,6 @@
         flex: none;
         border-left: 0;
         border-top: 1px solid var(--border);
-    }
-    .ws-activity-row {
-        min-height: 60px;
     }
     .ws-paper {
         padding: var(--space-8) var(--space-5);

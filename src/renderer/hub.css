@@ -191,82 +191,6 @@
 .hub-filters > button > span {
     font-variant-numeric: tabular-nums;
 }
-.hub-activity {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    width: 100%;
-    text-align: start;
-    color: var(--foreground);
-    padding: var(--space-4) var(--space-3);
-    background: transparent;
-    border: 0;
-    border-radius: var(--radius-inset);
-}
-.hub-git-node {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    flex-shrink: 0;
-    color: var(--text-secondary);
-    position: relative;
-}
-.hub-activity:not(:last-child) .hub-git-node::after {
-    content: '';
-    position: absolute;
-    width: 1px;
-    height: 35px;
-    top: 28px;
-    background: var(--border-strong);
-}
-.hub-kind-merged .hub-git-node {
-    color: var(--success);
-}
-.hub-activity-content {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: var(--space-2);
-}
-.hub-activity-title {
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-    font-weight: 450;
-}
-.hub-activity-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-    color: var(--text-secondary);
-    font-size: 0.6875rem;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-}
-.hub-branch {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-.hub-activity-trailing {
-    display: flex;
-    flex-direction: column;
-    align-items: end;
-    gap: var(--space-2);
-    color: var(--text-secondary);
-    font-size: 0.6875rem;
-    flex-shrink: 0;
-}
-.hub-sha {
-    font-family: ui-monospace, monospace;
-}
-.hub-row-arrow {
-    color: var(--text-secondary);
-    flex-shrink: 0;
-}
 .hub-project-summary {
     padding: var(--space-6);
     border: 1px solid var(--border);
@@ -499,9 +423,6 @@
 }
 
 @media (hover: hover) {
-    .hub-activity:hover {
-        background: var(--surface-muted);
-    }
     .hub-filters > button:hover {
         color: var(--foreground);
     }
@@ -586,19 +507,6 @@
     }
     .hub-stats span {
         font-size: 0.6875rem;
-    }
-    .hub-activity {
-        gap: var(--space-2);
-        padding-inline: var(--space-1);
-    }
-    .hub-activity-trailing {
-        display: none;
-    }
-    .hub-git-node {
-        width: 22px;
-    }
-    .hub-activity-meta {
-        gap: var(--space-2);
     }
     .hub-filters > button {
         padding-inline: var(--space-2);

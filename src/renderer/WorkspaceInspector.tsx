@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/arc/tabs/
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
 import { DiffViewer } from './DiffViewer'
+import { ActivityRow } from './ActivityRow'
 import { activityLink } from './workspace-model'
 
 interface Props {
@@ -172,24 +173,17 @@ export function WorkspaceInspector({
                 </TabsContent>
                 <TabsContent value="related">
                     <ScrollArea className="ws-inspector-scroll" label="Related activity" fade={16}>
-                        <ul className="ws-related-list">
+                        <ul className="ws-related-list activity-row-list">
                             {related.length ? (
-                                related.map((item) => (
+                                related.map((item, index) => (
                                     <li key={item.id}>
-                                        <button
-                                            type="button"
+                                        <ActivityRow
+                                            activity={item}
+                                            repositoryName={repository?.name ?? 'Repository'}
+                                            connected={index < related.length - 1}
                                             className="ws-activity-row"
                                             onClick={() => onInspect?.(item)}
-                                        >
-                                            <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'pr'} />
-                                            <span className="ws-row-copy">
-                                                <span>{item.title}</span>
-                                                <small>
-                                                    {item.kind} ·{' '}
-                                                    {item.sha?.slice(0, 7) ?? item.prId?.split('/').at(-1)}
-                                                </small>
-                                            </span>
-                                        </button>
+                                        />
                                     </li>
                                 ))
                             ) : (

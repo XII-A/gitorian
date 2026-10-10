@@ -10,16 +10,22 @@ Run development through `npm run dev`, which watches both the desktop backend an
 
 The radius definitions live in `src/renderer/components/arc/foundation.css`. Use these tokens for new UI and keep their values shared across pages.
 
-| Token              | Value  | Use                                                      |
-| ------------------ | ------ | -------------------------------------------------------- |
-| `--radius-key`     | 4px    | Keyboard hints and tiny code affordances                 |
-| `--radius-inset`   | 12px   | Activity rows and small nested list items                |
-| `--radius-control` | 18px   | Buttons, inputs, selects, tab groups, and other controls |
-| `--radius-panel`   | 26px   | Popovers, menus, and bordered panels                     |
-| `--radius-surface` | 34px   | Large contained hub surfaces and dialogs                 |
-| `--radius-pill`    | 9999px | Small activity filter chips and their project select     |
+| Token              | Value  | Use                                                     |
+| ------------------ | ------ | ------------------------------------------------------- |
+| `--radius-key`     | 4px    | Keyboard hints and tiny code affordances                |
+| `--radius-inset`   | 12px   | Small nested list items                                 |
+| `--radius-control` | 18px   | Activity rows, buttons, inputs, selects, and tab groups |
+| `--radius-panel`   | 26px   | Popovers, menus, and bordered panels                    |
+| `--radius-surface` | 34px   | Large contained hub surfaces and dialogs                |
+| `--radius-pill`    | 9999px | Small activity filter chips and their project select    |
 
 Do not redefine these tokens for an entire page. A filter chip may locally set `--radius-control: var(--radius-pill)`. Nested controls should follow Arc's concentric inset radii. Full-width pane boundaries stay square and share dividers; they are not floating cards.
+
+## Activity lists
+
+The hub, workspace, and related activity use `ActivityRow`: connected timeline nodes, a title, repository and branch metadata, an Arc status badge, and a short SHA or pull request number. Connect nodes only within each visible group. Rows have a borderless rounded hover/selection background. Preserve native button behavior, workspace selection, and citation dragging. The installed Arc `Badge` has a local `animateChanges={false}` option for static records, keeping long lists free of per-row motion and resize observers; changing status controls retain the default animation.
+
+Closed ghost `MorphSelect` controls use the same hover surface and foreground as Arc ghost buttons, with no pointer-hover border. Expanded menus retain their border.
 
 ## Writing workspace
 

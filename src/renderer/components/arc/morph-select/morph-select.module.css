@@ -78,14 +78,14 @@
     opacity: 0.55;
 }
 @media (hover: hover) and (pointer: fine) {
-    .root[data-variant='ghost']:not([data-open]) .shape:hover {
-        background: var(--surface-muted);
-    }
     .root:not([data-open], [data-disabled]) .shape:hover {
         background: var(--surface-muted);
     }
-    .root:not([data-open], [data-disabled]) .shape:hover::after {
+    .root:not([data-open], [data-disabled], [data-variant='ghost']) .shape:hover::after {
         border-color: var(--border-strong);
+    }
+    .root[data-variant='ghost']:not([data-open], [data-disabled]) .shape:hover .trigger {
+        color: var(--foreground);
     }
 }
 
@@ -109,6 +109,7 @@
     font-size: inherit;
     font-weight: 500;
     white-space: nowrap;
+    transition: color var(--duration-fast) var(--ease-standard);
 }
 .lid .trigger {
     position: absolute;

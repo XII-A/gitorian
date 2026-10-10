@@ -1,21 +1,12 @@
 import { useRef, useState } from 'react'
-import {
-    ArrowRight,
-    BookOpen,
-    Check,
-    GitBranch,
-    GitCommitHorizontal,
-    GitMerge,
-    GitPullRequest,
-    RefreshCw,
-    Settings2
-} from 'lucide-react'
+import { BookOpen, Check, GitBranch, GitCommitHorizontal, RefreshCw, Settings2 } from 'lucide-react'
 import { localDate, shiftWeek, weekOf } from '../shared/model'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
 import { ProjectFilter } from './ProjectFilter'
 import { ActivityChart } from './ActivityChart'
+import { ActivityRow } from './ActivityRow'
 import { HubActivityDialog, type HubActivityDialogHandle } from './HubActivityDialog'
 import landscape from './assets/week-landscape.jpg'
 import './hub.css'
@@ -26,12 +17,6 @@ const dateKey = (date: Date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 const formatDate = (date: string, options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }) =>
     dateValue(date).toLocaleDateString('en-US', options)
-const kindLabel = (item: Activity) =>
-    ({ commit: 'Commit', pr: 'Pull request', review: 'Review', opened: 'Opened', merged: 'Merged' })[item.kind]
-const ActivityIcon = ({ item }: { item: Activity }) => {
-    const Icon = item.kind === 'commit' ? GitCommitHorizontal : item.kind === 'merged' ? GitMerge : GitPullRequest
-    return <Icon size={17} aria-hidden="true" />
-}
 
 interface Props {
     initialWeek?: string
@@ -61,36 +46,15 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
         (item) => tab === 'all' || (tab === 'commit' ? item.kind === 'commit' : item.kind !== 'commit')
     )
     const period = `${formatDate(start)} – ${formatDate(end, { month: 'short', day: 'numeric', year: 'numeric' })}`
-    const row = (item: Activity) => (
-        <button
-            type="button"
+    const row = (item: Activity, index: number, dayItems: Activity[]) => (
+        <ActivityRow
+            activity={item}
+            repositoryName={state.repositories.find((repo) => repo.id === item.repositoryId)?.name ?? 'Repository'}
+            connected={index < dayItems.length - 1}
             className={`hub-activity hub-kind-${item.kind}`}
             key={item.id}
             onClick={() => detailDialog.current?.open(item)}
-        >
-            <span className="hub-git-node">
-                <ActivityIcon item={item} />
-            </span>
-            <span className="hub-activity-content">
-                <span className="hub-activity-title">{item.title}</span>
-                <span className="hub-activity-meta">
-                    <span>{state.repositories.find((repo) => repo.id === item.repositoryId)?.name}</span>
-                    <span className="hub-branch">
-                        <GitBranch size={12} aria-hidden="true" />
-                        {item.branches[0] ?? 'No branch'}
-                    </span>
-                </span>
-            </span>
-            <span className="hub-activity-trailing">
-                <span className="hub-kind-label">{kindLabel(item)}</span>
-                <span className="hub-sha">
-                    {item.sha?.slice(0, 7) ??
-                        item.prId?.split('/').at(-1) ??
-                        formatDate(localDate(new Date(item.date), state.settings.timezone))}
-                </span>
-            </span>
-            <ArrowRight size={14} className="hub-row-arrow" aria-hidden="true" />
-        </button>
+        />
     )
     const filters = (
         <div className="hub-filters" role="group" aria-label="Filter activity">
@@ -274,7 +238,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
                                               <strong>{formatDate(day, { weekday: 'long' })}</strong>
                                               <span>{formatDate(day)}</span>
                                           </div>
-                                          <div className="hub-day-work">
+                                          <div className="hub-day-work activity-row-list">
                                               {visible
                                                   .filter(
                                                       (item) =>
