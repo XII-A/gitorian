@@ -1,6 +1,19 @@
 .activity-row-list {
     container: activity-list / inline-size;
 }
+.activity-hover {
+    position: relative;
+    isolation: isolate;
+}
+.activity-hover-highlight {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: -1;
+    border-radius: var(--radius-control);
+    background: var(--surface-muted);
+    pointer-events: none;
+}
 .activity-row {
     --activity-node-size: 26px;
     --activity-line-color: var(--border-subtle);
@@ -143,6 +156,9 @@
         --activity-line-color: var(--border-strong);
         --activity-node-border: var(--border-strong);
         background: var(--surface-muted);
+    }
+    .activity-hover .activity-row:not([aria-pressed='true']):hover {
+        background: transparent;
     }
 }
 @media (prefers-reduced-motion: reduce) {

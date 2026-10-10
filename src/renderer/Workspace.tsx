@@ -18,6 +18,7 @@ import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
 import { ActivityChart } from './ActivityChart'
 import { ActivityRow } from './ActivityRow'
+import { ActivityHover } from './ActivityHover'
 import { ProjectFilter } from './ProjectFilter'
 import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
 import landscape from './assets/week-landscape.jpg'
@@ -462,72 +463,74 @@ export function Workspace({
                         label="Weekly activity list"
                         fade={16}
                     >
-                        {visible.length ? (
-                            [
-                                ...new Set(
-                                    visible.map((item) => localDate(new Date(item.date), state.settings.timezone))
-                                )
-                            ].map((day) => (
-                                <section className="ws-day-group" key={day}>
-                                    <header>
-                                        <h3>{formatDay(day, { weekday: 'long' })}</h3>
-                                        <span>{formatDay(day)}</span>
-                                    </header>
-                                    <ul className="activity-row-list">
-                                        {visible
-                                            .filter(
-                                                (item) =>
-                                                    localDate(new Date(item.date), state.settings.timezone) === day
-                                            )
-                                            .map((item, index, dayItems) => (
-                                                <li key={item.id}>
-                                                    <ActivityRow
-                                                        activity={item}
-                                                        repositoryName={
-                                                            state.repositories.find(
-                                                                (repo) => repo.id === item.repositoryId
-                                                            )?.name ?? 'Repository'
-                                                        }
-                                                        connected={index < dayItems.length - 1}
-                                                        className="ws-activity-row"
-                                                        aria-pressed={selectedId === item.id}
-                                                        draggable={canCite}
-                                                        onDragStart={(event) => {
-                                                            event.dataTransfer.setData(
-                                                                'application/x-weekly-j-activity',
-                                                                item.id
-                                                            )
-                                                            event.dataTransfer.effectAllowed = 'copy'
-                                                        }}
-                                                        onClick={() => void inspect(item)}
-                                                    />
-                                                </li>
-                                            ))}
-                                    </ul>
-                                </section>
-                            ))
-                        ) : (
-                            <div className="ws-activity-empty">
-                                <h3>{items.length ? 'No matching changes' : 'A quiet week so far.'}</h3>
-                                <p>
-                                    {items.length
-                                        ? 'Choose another project or clear the activity filters.'
-                                        : 'Choose another week or refresh your repositories. You can write at any time.'}
-                                </p>
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => {
-                                        setProject('all')
-                                        setBranch('all')
-                                        setKind('all')
-                                        if (!items.length) void refresh()
-                                    }}
-                                >
-                                    {items.length ? 'Clear activity filters' : 'Refresh activity'}
-                                </Button>
-                            </div>
-                        )}
+                        <ActivityHover>
+                            {visible.length ? (
+                                [
+                                    ...new Set(
+                                        visible.map((item) => localDate(new Date(item.date), state.settings.timezone))
+                                    )
+                                ].map((day) => (
+                                    <section className="ws-day-group" key={day}>
+                                        <header>
+                                            <h3>{formatDay(day, { weekday: 'long' })}</h3>
+                                            <span>{formatDay(day)}</span>
+                                        </header>
+                                        <ul className="activity-row-list">
+                                            {visible
+                                                .filter(
+                                                    (item) =>
+                                                        localDate(new Date(item.date), state.settings.timezone) === day
+                                                )
+                                                .map((item, index, dayItems) => (
+                                                    <li key={item.id}>
+                                                        <ActivityRow
+                                                            activity={item}
+                                                            repositoryName={
+                                                                state.repositories.find(
+                                                                    (repo) => repo.id === item.repositoryId
+                                                                )?.name ?? 'Repository'
+                                                            }
+                                                            connected={index < dayItems.length - 1}
+                                                            className="ws-activity-row"
+                                                            aria-pressed={selectedId === item.id}
+                                                            draggable={canCite}
+                                                            onDragStart={(event) => {
+                                                                event.dataTransfer.setData(
+                                                                    'application/x-weekly-j-activity',
+                                                                    item.id
+                                                                )
+                                                                event.dataTransfer.effectAllowed = 'copy'
+                                                            }}
+                                                            onClick={() => void inspect(item)}
+                                                        />
+                                                    </li>
+                                                ))}
+                                        </ul>
+                                    </section>
+                                ))
+                            ) : (
+                                <div className="ws-activity-empty">
+                                    <h3>{items.length ? 'No matching changes' : 'A quiet week so far.'}</h3>
+                                    <p>
+                                        {items.length
+                                            ? 'Choose another project or clear the activity filters.'
+                                            : 'Choose another week or refresh your repositories. You can write at any time.'}
+                                    </p>
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => {
+                                            setProject('all')
+                                            setBranch('all')
+                                            setKind('all')
+                                            if (!items.length) void refresh()
+                                        }}
+                                    >
+                                        {items.length ? 'Clear activity filters' : 'Refresh activity'}
+                                    </Button>
+                                </div>
+                            )}
+                        </ActivityHover>
                     </ScrollArea>
                     {detached && (
                         <div className="ws-detached-status">

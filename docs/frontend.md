@@ -27,6 +27,8 @@ The hub, workspace, and related activity use `ActivityRow`: connected timeline n
 
 Pull references display only the trailing number from real `repository-id:pr:number` IDs or sample `sample/pr/number` IDs. Bound the trailing column so the title and metadata retain priority. Each row draws its own incoming connector; hover and selection use the stronger border token so row backgrounds cannot hide the timeline.
 
+`ActivityHover` moves one shared background between rows using Arc's morph spring, including across day groups. Pointer movement updates motion values without rerendering the activity records. Leaving the list or scrolling clears the highlight; resizing and filtering update its bounds. Keep the highlight noninteractive, preserve selected-row backgrounds, and snap motion when reduced motion is requested.
+
 Closed ghost `MorphSelect` controls use the same hover surface and foreground as Arc ghost buttons, with no pointer-hover border. Expanded menus retain their border.
 
 ## Writing workspace

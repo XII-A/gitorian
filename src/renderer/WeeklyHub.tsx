@@ -7,6 +7,7 @@ import { DateRangePicker } from './components/arc/date-range-picker/date-range-p
 import { ProjectFilter } from './ProjectFilter'
 import { ActivityChart } from './ActivityChart'
 import { ActivityRow } from './ActivityRow'
+import { ActivityHover } from './ActivityHover'
 import { HubActivityDialog, type HubActivityDialogHandle } from './HubActivityDialog'
 import landscape from './assets/week-landscape.jpg'
 import './hub.css'
@@ -227,29 +228,35 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
                                 <h2>The days behind the work</h2>
                             </div>
                             {filters}
-                            {visible.length
-                                ? [
-                                      ...new Set(
-                                          visible.map((item) => localDate(new Date(item.date), state.settings.timezone))
-                                      )
-                                  ].map((day) => (
-                                      <section className="hub-day" key={day}>
-                                          <div className="hub-day-date">
-                                              <strong>{formatDate(day, { weekday: 'long' })}</strong>
-                                              <span>{formatDate(day)}</span>
-                                          </div>
-                                          <div className="hub-day-work activity-row-list">
-                                              {visible
-                                                  .filter(
-                                                      (item) =>
-                                                          localDate(new Date(item.date), state.settings.timezone) ===
-                                                          day
-                                                  )
-                                                  .map(row)}
-                                          </div>
-                                      </section>
-                                  ))
-                                : empty}
+                            {visible.length ? (
+                                <ActivityHover>
+                                    {[
+                                        ...new Set(
+                                            visible.map((item) =>
+                                                localDate(new Date(item.date), state.settings.timezone)
+                                            )
+                                        )
+                                    ].map((day) => (
+                                        <section className="hub-day" key={day}>
+                                            <div className="hub-day-date">
+                                                <strong>{formatDate(day, { weekday: 'long' })}</strong>
+                                                <span>{formatDate(day)}</span>
+                                            </div>
+                                            <div className="hub-day-work activity-row-list">
+                                                {visible
+                                                    .filter(
+                                                        (item) =>
+                                                            localDate(new Date(item.date), state.settings.timezone) ===
+                                                            day
+                                                    )
+                                                    .map(row)}
+                                            </div>
+                                        </section>
+                                    ))}
+                                </ActivityHover>
+                            ) : (
+                                empty
+                            )}
                         </section>
                         <aside>
                             <section className="hub-project-summary">

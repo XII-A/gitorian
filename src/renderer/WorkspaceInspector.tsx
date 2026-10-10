@@ -6,6 +6,7 @@ import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
 import { DiffViewer } from './DiffViewer'
 import { ActivityRow } from './ActivityRow'
+import { ActivityHover } from './ActivityHover'
 import { activityLink } from './workspace-model'
 
 interface Props {
@@ -173,23 +174,25 @@ export function WorkspaceInspector({
                 </TabsContent>
                 <TabsContent value="related">
                     <ScrollArea className="ws-inspector-scroll" label="Related activity" fade={16}>
-                        <ul className="ws-related-list activity-row-list">
-                            {related.length ? (
-                                related.map((item, index) => (
-                                    <li key={item.id}>
-                                        <ActivityRow
-                                            activity={item}
-                                            repositoryName={repository?.name ?? 'Repository'}
-                                            connected={index < related.length - 1}
-                                            className="ws-activity-row"
-                                            onClick={() => onInspect?.(item)}
-                                        />
-                                    </li>
-                                ))
-                            ) : (
-                                <li>No related activity has been captured for this branch.</li>
-                            )}
-                        </ul>
+                        <ActivityHover>
+                            <ul className="ws-related-list activity-row-list">
+                                {related.length ? (
+                                    related.map((item, index) => (
+                                        <li key={item.id}>
+                                            <ActivityRow
+                                                activity={item}
+                                                repositoryName={repository?.name ?? 'Repository'}
+                                                connected={index < related.length - 1}
+                                                className="ws-activity-row"
+                                                onClick={() => onInspect?.(item)}
+                                            />
+                                        </li>
+                                    ))
+                                ) : (
+                                    <li>No related activity has been captured for this branch.</li>
+                                )}
+                            </ul>
+                        </ActivityHover>
                     </ScrollArea>
                 </TabsContent>
             </Tabs>
