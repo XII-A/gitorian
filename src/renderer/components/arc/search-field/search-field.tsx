@@ -7,11 +7,13 @@ import { motionTokens } from '../lib/motion-tokens'
 import styles from './search-field.module.css'
 export interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
     label: string
+    /** Keep the field's name available to assistive technology without a visible label. */
+    hideLabel?: boolean
     value: string
     onValueChange: (value: string) => void
 }
 export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(function SearchField(
-    { label, value, onValueChange, id, className, ...props },
+    { label, hideLabel = false, value, onValueChange, id, className, ...props },
     ref
 ) {
     const generated = useId()
@@ -30,7 +32,9 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
     }
     return (
         <div className={styles.field}>
-            <label htmlFor={controlId}>{label}</label>
+            <label htmlFor={controlId} className={hideLabel ? styles.srOnly : undefined}>
+                {label}
+            </label>
             <div className={styles.shell} data-filled={value ? 'true' : undefined}>
                 <Search width={18} height={18} aria-hidden="true" />
                 <input

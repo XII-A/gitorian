@@ -44,7 +44,7 @@ app.on('browser-window-created', (_, window) => {
             const originalFolderPicker = dialog.showOpenDialog
             dialog.showOpenDialog = () =>
                 new Promise((resolve) =>
-                    setTimeout(() => resolve({ canceled: false, filePaths: [repositoryFolder] }), 250)
+                    setTimeout(() => resolve({ canceled: false, filePaths: [repositoryFolder] }), 650)
                 )
             const settingsResult = await window.webContents.executeJavaScript(`(async () => {
                 document.querySelector('[aria-label="Open settings"]').click()
@@ -53,8 +53,16 @@ app.on('browser-window-created', (_, window) => {
                 const unsubscribeImport=window.journal.onRepositoryImportProgress(update=>importProgress.push(update))
                 const settingsScrollArea = !!document.querySelector('.settings-scroll [role="region"][aria-label="Settings content"]')
                 Array.from(document.querySelectorAll('.settings button')).find(button => button.textContent.includes('Add repositories from folder')).click()
-                await new Promise(resolve=>setTimeout(resolve,80))
+                await new Promise(resolve=>setTimeout(resolve,300))
                 const importWaitsForSelection=document.querySelector('.settings').textContent.includes('Waiting for folder selection')
+                const importButton=Array.from(document.querySelectorAll('.settings button')).find(button=>button.textContent.includes('Waiting for folder selection'))
+                const importPhase=Array.from(importButton.querySelectorAll('span')).find(span=>span.textContent.includes('Waiting for folder selection')&&span.children.length===0)
+                let importLabelVisible=!!importPhase
+                // Assert the loading style too: Chromium may pause CSS transitions in this hidden window.
+                if (importButton.querySelector('[class*="loadingLabel"]')) importLabelVisible=false
+                for (let parent=importPhase?.parentElement;parent&&parent!==importButton;parent=parent.parentElement)
+                    if (Number(getComputedStyle(parent).opacity)<0.9) importLabelVisible=false
+                if (!importLabelVisible) throw new Error('Repository import label is hidden behind the loading spinner')
                 for (let attempt=0;attempt<30;attempt++) {
                     await new Promise(resolve => setTimeout(resolve,100))
                     if ((await window.journal.invoke({type:'state'})).state.repositories.length===2) break
@@ -117,7 +125,7 @@ app.on('browser-window-created', (_, window) => {
                 const beforeMenu = {height:settingsViewport.clientHeight,scroll:settingsViewport.scrollHeight,top:settingsViewport.scrollTop}
                 document.querySelector('.settings input[role="combobox"]').click()
                 await new Promise(resolve=>setTimeout(resolve,100))
-                const timezoneMenu = document.querySelector('[role="listbox"]')
+                const timezoneMenu = document.querySelector('[role="region"][aria-label="Timezone options"] [role="listbox"]')
                 const timezoneUsesOwnScrollArea = !!timezoneMenu?.closest('[role="region"][aria-label="Timezone options"]') && !document.querySelector('.settings').contains(timezoneMenu)
                 const timezoneMotionOwnsAnimation = getComputedStyle(timezoneMenu.closest('[data-side]')).transitionDuration==='0s' && getComputedStyle(timezoneMenu.closest('[data-side]')).animationName==='none'
                 Array.from(timezoneMenu.querySelectorAll('[role="option"]')).find(option=>option.textContent==='UTC').click()
@@ -140,7 +148,7 @@ app.on('browser-window-created', (_, window) => {
                 }
                 const saved=(await window.journal.invoke({type:'state'})).state
                 const templateSaved = JSON.stringify(saved.settings.template).includes('Template reflection.') && saved.settings.template.content.some(node=>node.type==='heading'&&node.attrs.level===2)
-                return {settingsScrollArea,folderAddsRepositories,verticalSettingsTabs,repositoryTrackingSwitch,repositoryCardPaths,repositoriesExpandIndependently,allRepositoryCardsClosed,folderImportProgress,importWaitsForSelection,noDisconnectedAction,refreshNumberField,timezoneSelect,timezoneUsesOwnScrollArea,timezoneMotionOwnsAnimation,timezoneKeepsPaneSize,arcTemplateEditor,templateSaved,templateTitleHasNoFormattingHint,unsavedCloseGuard,keepEditingPreservesChanges,unsavedEscapeGuard,discardDoesNotSave,cleanSettingsClose}
+                return {settingsScrollArea,folderAddsRepositories,verticalSettingsTabs,repositoryTrackingSwitch,repositoryCardPaths,repositoriesExpandIndependently,allRepositoryCardsClosed,folderImportProgress,importWaitsForSelection,importLabelVisible,noDisconnectedAction,refreshNumberField,timezoneSelect,timezoneUsesOwnScrollArea,timezoneMotionOwnsAnimation,timezoneKeepsPaneSize,arcTemplateEditor,templateSaved,templateTitleHasNoFormattingHint,unsavedCloseGuard,keepEditingPreservesChanges,unsavedEscapeGuard,discardDoesNotSave,cleanSettingsClose}
             })()`)
             dialog.showOpenDialog = originalFolderPicker
             const result = await window.webContents.executeJavaScript(`(async () => {

@@ -9,6 +9,14 @@
     line-height: var(--leading-body);
     letter-spacing: var(--tracking-body);
 }
+.srOnly {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
 /* Focus darkens the border; the shell never changes size. */
 .shell {
     display: flex;

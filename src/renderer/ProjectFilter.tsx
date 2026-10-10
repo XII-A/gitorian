@@ -1,5 +1,5 @@
 import type { Repository } from '../shared/model'
-import { Select } from './components/arc/select/select'
+import { MorphSelect } from './components/arc/morph-select/morph-select'
 import './project-filter.css'
 
 export function ProjectFilter({
@@ -14,17 +14,20 @@ export function ProjectFilter({
     const projects = repositories.filter((repository) => !repository.removed)
     return (
         <div className="project-filter">
-            <Select
-                label=""
-                aria-label="Filter by project"
+            <MorphSelect
+                label="Projects"
+                hideLabel
                 className="project-chip"
                 variant="ghost"
-                contentMinWidth={240}
+                size="sm"
+                searchable
+                searchPlaceholder="Find a project…"
+                panelWidth={280}
                 value={value}
                 onValueChange={onValueChange}
-                options={[
-                    { value: 'all', label: 'Projects', count: projects.length },
-                    ...projects.map((project) => ({ value: project.id, label: project.name }))
+                items={[
+                    { value: 'all', label: 'All Projects' },
+                    ...projects.map((project) => ({ value: project.id, label: project.name, keywords: project.path }))
                 ]}
             />
         </div>

@@ -286,7 +286,7 @@ export function Settings({
                                     variant="secondary"
                                     size="sm"
                                     disabled={!!busy}
-                                    loading={busy === 'repositories'}
+                                    aria-busy={busy === 'repositories' || undefined}
                                     onClick={() =>
                                         action('repositories', async () => {
                                             setImportProgress({ stage: 'selecting' })
@@ -309,6 +309,7 @@ export function Settings({
                             {!!repositories.length && (
                                 <SearchField
                                     label="Search repositories"
+                                    hideLabel
                                     placeholder="Repository name or folder path"
                                     value={repositorySearch}
                                     onValueChange={setRepositorySearch}
@@ -368,7 +369,7 @@ export function Settings({
                                                 pendingLabel="Disconnecting"
                                                 doneLabel="Disconnected"
                                                 errorLabel="Could not disconnect"
-                                                tone="neutral"
+                                                tone="danger"
                                                 disabled={!!busy}
                                                 onConfirm={async () => {
                                                     setBusy('disconnect-github')
