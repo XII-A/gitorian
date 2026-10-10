@@ -130,12 +130,25 @@ app.on('browser-window-created', (_, window) => {
             result.workerDiffRendered = await window.webContents.executeJavaScript(
                 `!!document.querySelector('.diff-viewer .file-diff') && document.querySelector('.diff-viewer').textContent.includes('A real change to inspect.')`
             )
+            result.cachedWorkspaceDetailsOpenImmediately = await window.webContents.executeJavaScript(`(async()=>{
+                const inspector=document.querySelector('.ws-inspector')
+                let loading=false
+                const observer=new MutationObserver(records=>{
+                    if(records.some(record=>record.oldValue==='false'&&inspector.getAttribute('aria-busy')==='true')) loading=true
+                })
+                observer.observe(inspector,{attributes:true,attributeFilter:['aria-busy'],attributeOldValue:true})
+                document.querySelector('.ws-activity-row[aria-pressed="true"]').click()
+                await new Promise(resolve=>setTimeout(resolve,100))
+                observer.disconnect()
+                return !loading&&inspector.getAttribute('aria-busy')==='false'
+            })()`)
             if (
                 !result.editorReady ||
                 !result.typingSaved ||
                 result.repositoryCount !== 24 ||
                 !result.hubFilesWithoutPatch ||
-                !result.workerDiffRendered
+                !result.workerDiffRendered ||
+                !result.cachedWorkspaceDetailsOpenImmediately
             )
                 throw new Error(JSON.stringify(result))
             console.info(JSON.stringify(result))

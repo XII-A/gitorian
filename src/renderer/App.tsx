@@ -10,6 +10,7 @@ import { localDate, weekOf } from '../shared/model'
 import type { Activity } from '../shared/model'
 import { journalWeek } from './hub-model'
 import { AcquisitionStatus } from './AcquisitionStatus'
+import { unchangedStateReply } from './activity-cache'
 
 export function App() {
     const [screen, setScreen] = useState<'hub' | 'workspace'>('hub')
@@ -29,6 +30,7 @@ export function App() {
         try {
             const result = await window.journal.invoke(command)
             setReply((current) => {
+                if (unchangedStateReply(current, result, command)) return current
                 if (
                     current?.state.restoreId === result.state.restoreId &&
                     (current?.state.snapshotVersion ?? 0) > (result.state.snapshotVersion ?? 0)
@@ -38,7 +40,10 @@ export function App() {
                 if (command.type === 'details' && result.diff !== undefined) diffs[command.activityId] = result.diff
                 return { ...result, state: { ...result.state, diffs: { ...diffs, ...result.state.diffs } } }
             })
-            if ('remotes' in result) setRemotes(result.remotes as Record<string, string[]>)
+            if ('remotes' in result) {
+                const next = result.remotes as Record<string, string[]>
+                setRemotes((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next))
+            }
             setError('')
             return result
         } catch (failure) {

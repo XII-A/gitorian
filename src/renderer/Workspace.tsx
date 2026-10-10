@@ -20,6 +20,7 @@ import { ActivityChart } from './ActivityChart'
 import { ActivityRow } from './ActivityRow'
 import { ActivityHover } from './ActivityHover'
 import { ProjectFilter } from './ProjectFilter'
+import { hasCachedDetails } from './activity-cache'
 import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
 import landscape from './assets/week-landscape.jpg'
 import './workspace.css'
@@ -160,7 +161,10 @@ export function Workspace({
             setSelectedId(item.id)
             setInspectionTab(tab)
             setDetailError('')
-            if (sample) return
+            if (sample || hasCachedDetails(realState, item, tab === 'details' ? 'files' : 'diff')) {
+                setDetailBusy(false)
+                return
+            }
             setDetailBusy(true)
             const reply = await realRun({
                 type: 'details',
@@ -172,7 +176,7 @@ export function Workspace({
                 setDetailError(reply?.detailError ?? 'Could not load these changes. Retry loading the activity.')
             setDetailBusy(false)
         },
-        [sample, realRun]
+        [sample, realRun, realState]
     )
     const initialInspected = useRef(false)
     useEffect(() => {

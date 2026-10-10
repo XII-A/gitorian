@@ -202,13 +202,20 @@ export function initialState(): State {
         }
     }
 }
+const dateFormatters = new Map<string, Intl.DateTimeFormat>()
 export function localDate(date: Date, timezone: string): string {
-    const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-    }).formatToParts(date)
+    let formatter = dateFormatters.get(timezone)
+    if (!formatter) {
+        formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        })
+        if (dateFormatters.size >= 16) dateFormatters.delete(dateFormatters.keys().next().value!)
+        dateFormatters.set(timezone, formatter)
+    }
+    const parts = formatter.formatToParts(date)
     const get = (type: string) => parts.find((part) => part.type === type)!.value
     return `${get('year')}-${get('month')}-${get('day')}`
 }

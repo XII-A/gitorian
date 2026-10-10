@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useState, type Ref } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { ArrowRight, GitBranch } from 'lucide-react'
 import { localDate, type Activity, type State } from '../shared/model'
 import { Button } from './components/arc/button/button'
@@ -24,20 +24,34 @@ export function HubActivityDialog({
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState('')
     const [attempt, setAttempt] = useState(0)
+    const loadedDetails = useRef(new Map<string, Activity>())
     useImperativeHandle(
         ref,
         () => ({
             open(activity) {
-                setDetails(undefined)
+                const previous = loadedDetails.current.get(activity.id)
+                const cached = activity.filesLoaded
+                    ? activity
+                    : previous?.filesLoaded &&
+                        previous.sourceVersion === activity.sourceVersion &&
+                        previous.sha === activity.sha
+                      ? previous
+                      : undefined
+                setDetails(cached)
                 setError('')
-                setBusy(true)
-                setSelected(activity)
+                setBusy(!cached)
+                setSelected(cached ?? activity)
             }
         }),
         []
     )
     useEffect(() => {
         if (!selected) return
+        if (selected.filesLoaded) {
+            setDetails(selected)
+            setBusy(false)
+            return
+        }
         let cancelled = false
         setBusy(true)
         setError('')
@@ -46,7 +60,13 @@ export function HubActivityDialog({
             .invoke({ type: 'details', activityId: selected.id, content: 'files' })
             .then((reply) => {
                 if (!cancelled) {
-                    setDetails(reply.state.activities.find((item) => item.id === selected.id))
+                    const activity = reply.state.activities.find((item) => item.id === selected.id)
+                    setDetails(activity)
+                    if (activity?.filesLoaded && !reply.detailError) {
+                        if (loadedDetails.current.size >= 32)
+                            loadedDetails.current.delete(loadedDetails.current.keys().next().value!)
+                        loadedDetails.current.set(activity.id, activity)
+                    }
                     setError(reply.detailError ?? '')
                 }
             })
