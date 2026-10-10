@@ -34,6 +34,15 @@ export interface MorphSelectGroup {
 
 export type MorphSelectItem = MorphSelectOption | MorphSelectGroup
 
+/** A hierarchical picker can reuse the morph surface while keeping tree keyboard semantics. */
+export interface MorphSelectTreeContext {
+    id: string
+    query: string
+    selected: string | null
+    select: (value: string) => void
+    close: () => void
+}
+
 /**
  * A select whose trigger is the list. Opening grows the trigger itself into the options surface, a highlight glides between options,
  * and the chosen option's label lifts out of the list and settles into the trigger while the trigger springs to its new width.
@@ -66,6 +75,12 @@ export interface MorphSelectProps {
     /** Local toolbar variants keep the resting trigger consistent with activity chips. */
     variant?: 'surface' | 'ghost'
     size?: 'sm' | 'md'
+    /** Replaces the flat options with an Arc TreeView. Give the tree this context's id. */
+    renderTree?: (context: MorphSelectTreeContext) => ReactNode
+    /** Full selected value for truncated toolbar labels. */
+    title?: string
+    /** Bounds long resting labels to the toolbar space, independent of the open panel width. */
+    maxTriggerWidth?: number
 }
 
 interface Section {
@@ -180,7 +195,10 @@ export function MorphSelect({
     disabled = false,
     className,
     variant = 'surface',
-    size = 'md'
+    size = 'md',
+    renderTree,
+    title,
+    maxTriggerWidth
 }: MorphSelectProps) {
     const reduced = useReducedFlag()
     const uid = useId()
@@ -457,8 +475,39 @@ export function MorphSelect({
             return
         }
 
-        const at = enabled.findIndex((option) => option.value === current)
         const caretKeys = fromInput && query.length > 0
+        if (
+            renderTree &&
+            open &&
+            (key === 'ArrowDown' ||
+                key === 'ArrowUp' ||
+                key === 'PageDown' ||
+                key === 'PageUp' ||
+                (!caretKeys && (key === 'Home' || key === 'End')))
+        ) {
+            event.preventDefault()
+            const tree = rootRef.current?.querySelector<HTMLElement>("[role='tree']")
+            const rows = [...(tree?.querySelectorAll<HTMLElement>("[role='treeitem']") ?? [])]
+            const selectedRow = rows.findIndex((row) => row.getAttribute('aria-selected') === 'true')
+            const at = Math.max(0, selectedRow >= 0 ? selectedRow : rows.findIndex((row) => row.tabIndex === 0))
+            const to =
+                key === 'Home'
+                    ? 0
+                    : key === 'End'
+                      ? rows.length - 1
+                      : key === 'PageDown'
+                        ? Math.min(rows.length - 1, at + PAGE)
+                        : key === 'PageUp'
+                          ? Math.max(0, at - PAGE)
+                          : at
+            const row = rows[to]
+            row?.focus({ preventScroll: true })
+            row?.scrollIntoView({ block: 'nearest' })
+            return
+        }
+        if (renderTree && key === 'Tab') return
+
+        const at = enabled.findIndex((option) => option.value === current)
         switch (key) {
             case 'ArrowDown':
                 event.preventDefault()
@@ -556,7 +605,11 @@ export function MorphSelect({
     const showSearch = open && canSearch
     const layerKey = selected ?? '__empty'
     const changeForLayer: Change = change.value === selected ? change : { ...change, fly: null }
-    const rootStyle = { '--ms-panel-w': `${panelWidth}px`, '--ms-list-max': `${maxListHeight}px` } as CSSProperties
+    const rootStyle = {
+        '--ms-panel-w': `${panelWidth}px`,
+        '--ms-list-max': `${maxListHeight}px`,
+        '--ms-trigger-max': maxTriggerWidth ? `${maxTriggerWidth}px` : undefined
+    } as CSSProperties
 
     return (
         <div
@@ -586,13 +639,16 @@ export function MorphSelect({
                             ref={triggerRef}
                             type="button"
                             className={styles.trigger}
+                            title={title}
                             role="combobox"
                             aria-labelledby={labelId}
-                            aria-haspopup="listbox"
+                            aria-haspopup={renderTree ? 'tree' : 'listbox'}
                             aria-expanded={open}
                             aria-controls={listId}
                             aria-activedescendant={
-                                open && !canSearch && current !== null ? optionId(indexOf.get(current) ?? 0) : undefined
+                                open && !renderTree && !canSearch && current !== null
+                                    ? optionId(indexOf.get(current) ?? 0)
+                                    : undefined
                             }
                             disabled={disabled}
                             inert={showSearch || undefined}
@@ -665,10 +721,13 @@ export function MorphSelect({
                                     role="combobox"
                                     aria-label={`Search ${label.toLowerCase()}`}
                                     aria-expanded={open}
+                                    aria-haspopup={renderTree ? 'tree' : 'listbox'}
                                     aria-controls={listId}
                                     aria-autocomplete="list"
                                     aria-activedescendant={
-                                        open && current !== null ? optionId(indexOf.get(current) ?? 0) : undefined
+                                        open && !renderTree && current !== null
+                                            ? optionId(indexOf.get(current) ?? 0)
+                                            : undefined
                                     }
                                     placeholder={searchPlaceholder ?? selectedOption?.label ?? 'Search'}
                                     value={query}
@@ -749,91 +808,103 @@ export function MorphSelect({
                             maxHeight={maxListHeight}
                             fade={8}
                         >
-                            <div id={listId} className={styles.options} role="listbox" aria-labelledby={labelId}>
-                                <motion.span
-                                    className={styles.highlight}
-                                    style={{ y: hy, height: hh, opacity: ho }}
-                                    aria-hidden="true"
-                                />
-                                {visibleSections.map((section) => {
-                                    const rows = section.options.map((option) => {
-                                        const index = indexOf.get(option.value) ?? 0
-                                        const isSelected = option.value === selected,
-                                            isActive = option.value === current
-                                        return (
-                                            <div
-                                                key={option.value}
-                                                id={optionId(index)}
-                                                role="option"
-                                                aria-selected={isSelected}
-                                                aria-disabled={option.disabled || undefined}
-                                                tabIndex={-1}
-                                                onKeyDown={(event) => {
-                                                    if (event.key === 'Enter' || event.key === ' ') {
-                                                        event.preventDefault()
-                                                        commit(option, event.currentTarget)
-                                                    }
-                                                }}
-                                                className={styles.option}
-                                                data-active={isActive || undefined}
-                                                ref={(node) => {
-                                                    if (node) optionRefs.current.set(option.value, node)
-                                                    else optionRefs.current.delete(option.value)
-                                                }}
-                                                onPointerMove={(event) => {
-                                                    if (
-                                                        event.pointerType === 'mouse' &&
-                                                        !option.disabled &&
-                                                        option.value !== current
-                                                    )
-                                                        setActive(option.value)
-                                                }}
-                                                onPointerDown={(event) => event.preventDefault()}
-                                                onClick={(event) => commit(option, event.currentTarget)}
-                                            >
-                                                <span className={styles.optionValue} data-part="value">
-                                                    {option.icon && (
-                                                        <span className={styles.icon} aria-hidden="true">
-                                                            {option.icon}
-                                                        </span>
-                                                    )}
-                                                    <span className={styles.valueText}>{option.label}</span>
-                                                </span>
-                                                {option.meta && <span className={styles.meta}>{option.meta}</span>}
-                                                <span
-                                                    className={styles.check}
-                                                    data-on={isSelected || undefined}
-                                                    aria-hidden="true"
+                            {renderTree ? (
+                                renderTree({
+                                    id: listId,
+                                    query,
+                                    selected,
+                                    select: (next) => commit(all.find((option) => option.value === next)),
+                                    close: () => close(true)
+                                })
+                            ) : (
+                                <div id={listId} className={styles.options} role="listbox" aria-labelledby={labelId}>
+                                    <motion.span
+                                        className={styles.highlight}
+                                        style={{ y: hy, height: hh, opacity: ho }}
+                                        aria-hidden="true"
+                                    />
+                                    {visibleSections.map((section) => {
+                                        const rows = section.options.map((option) => {
+                                            const index = indexOf.get(option.value) ?? 0
+                                            const isSelected = option.value === selected,
+                                                isActive = option.value === current
+                                            return (
+                                                <div
+                                                    key={option.value}
+                                                    id={optionId(index)}
+                                                    role="option"
+                                                    aria-selected={isSelected}
+                                                    aria-disabled={option.disabled || undefined}
+                                                    tabIndex={-1}
+                                                    onKeyDown={(event) => {
+                                                        if (event.key === 'Enter' || event.key === ' ') {
+                                                            event.preventDefault()
+                                                            commit(option, event.currentTarget)
+                                                        }
+                                                    }}
+                                                    className={styles.option}
+                                                    data-active={isActive || undefined}
+                                                    ref={(node) => {
+                                                        if (node) optionRefs.current.set(option.value, node)
+                                                        else optionRefs.current.delete(option.value)
+                                                    }}
+                                                    onPointerMove={(event) => {
+                                                        if (
+                                                            event.pointerType === 'mouse' &&
+                                                            !option.disabled &&
+                                                            option.value !== current
+                                                        )
+                                                            setActive(option.value)
+                                                    }}
+                                                    onPointerDown={(event) => event.preventDefault()}
+                                                    onClick={(event) => commit(option, event.currentTarget)}
                                                 >
-                                                    <Check size={16} strokeWidth={1.75} />
-                                                </span>
+                                                    <span className={styles.optionValue} data-part="value">
+                                                        {option.icon && (
+                                                            <span className={styles.icon} aria-hidden="true">
+                                                                {option.icon}
+                                                            </span>
+                                                        )}
+                                                        <span className={styles.valueText}>{option.label}</span>
+                                                    </span>
+                                                    {option.meta && <span className={styles.meta}>{option.meta}</span>}
+                                                    <span
+                                                        className={styles.check}
+                                                        data-on={isSelected || undefined}
+                                                        aria-hidden="true"
+                                                    >
+                                                        <Check size={16} strokeWidth={1.75} />
+                                                    </span>
+                                                </div>
+                                            )
+                                        })
+                                        return section.label ? (
+                                            <div
+                                                key={section.key}
+                                                role="group"
+                                                aria-labelledby={`${uid}-${section.key}`}
+                                                className={styles.group}
+                                            >
+                                                <div
+                                                    id={`${uid}-${section.key}`}
+                                                    className={styles.groupLabel}
+                                                    role="presentation"
+                                                >
+                                                    {section.label}
+                                                </div>
+                                                {rows}
+                                            </div>
+                                        ) : (
+                                            <div key={section.key} role="presentation" className={styles.group}>
+                                                {rows}
                                             </div>
                                         )
-                                    })
-                                    return section.label ? (
-                                        <div
-                                            key={section.key}
-                                            role="group"
-                                            aria-labelledby={`${uid}-${section.key}`}
-                                            className={styles.group}
-                                        >
-                                            <div
-                                                id={`${uid}-${section.key}`}
-                                                className={styles.groupLabel}
-                                                role="presentation"
-                                            >
-                                                {section.label}
-                                            </div>
-                                            {rows}
-                                        </div>
-                                    ) : (
-                                        <div key={section.key} role="presentation" className={styles.group}>
-                                            {rows}
-                                        </div>
-                                    )
-                                })}
-                                {resultCount === 0 && <p className={styles.empty}>No matches for “{query.trim()}”</p>}
-                            </div>
+                                    })}
+                                    {resultCount === 0 && (
+                                        <p className={styles.empty}>No matches for “{query.trim()}”</p>
+                                    )}
+                                </div>
+                            )}
                         </ScrollArea>
                     </motion.div>
                 </motion.div>

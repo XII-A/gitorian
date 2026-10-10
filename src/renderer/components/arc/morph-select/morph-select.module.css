@@ -135,7 +135,7 @@
     visibility: hidden;
     pointer-events: none;
     width: max-content;
-    max-width: min(20rem, calc(100vw - 2rem));
+    max-width: min(var(--ms-trigger-max, 20rem), calc(100vw - 2rem));
 }
 .root[data-ready] .measure {
     position: absolute;

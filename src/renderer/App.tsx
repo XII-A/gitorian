@@ -55,7 +55,9 @@ export function App() {
         const keyboard = (event: KeyboardEvent) => {
             const editing =
                 event.target instanceof HTMLElement &&
-                !!event.target.closest('input, textarea, [contenteditable="true"], [role="dialog"], [role="listbox"]')
+                !!event.target.closest(
+                    'input, textarea, [contenteditable="true"], [role="dialog"], [role="listbox"], [role="tree"]'
+                )
             if (
                 event.key === 'Escape' &&
                 !event.defaultPrevented &&

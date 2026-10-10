@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Diff, Hunk, parseDiff } from 'react-diff-view'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
-import { Select } from './components/arc/select/select'
+import { ChangedFilePicker } from './ChangedFilePicker'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 
 export function DiffViewer({ text, initialSplit = false }: { text: string; initialSplit?: boolean }) {
@@ -15,6 +15,10 @@ export function DiffViewer({ text, initialSplit = false }: { text: string; initi
             return []
         }
     }, [text])
+    const paths = useMemo(
+        () => files.map((file) => (file.newPath === '/dev/null' ? file.oldPath : file.newPath)),
+        [files]
+    )
     if (!text)
         return (
             <div className="ws-diff-empty">
@@ -34,16 +38,7 @@ export function DiffViewer({ text, initialSplit = false }: { text: string; initi
     return (
         <div className="diff-viewer ws-diff-viewer">
             <div className="ws-diff-tools">
-                <Select
-                    label=""
-                    aria-label="Changed file"
-                    value={path}
-                    onValueChange={setSelected}
-                    options={files.map((file) => {
-                        const name = file.newPath === '/dev/null' ? file.oldPath : file.newPath
-                        return { value: name, label: name }
-                    })}
-                />
+                <ChangedFilePicker value={path} onValueChange={setSelected} paths={paths} />
                 <SegmentedControl
                     label="Diff layout"
                     value={mode}

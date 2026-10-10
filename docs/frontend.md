@@ -33,6 +33,10 @@ Timeline hover contrast travels with the background. A noninteractive SVG mirror
 
 Closed ghost `MorphSelect` controls use the same hover surface and foreground as Arc ghost buttons, with no pointer-hover border. Expanded menus retain their border.
 
+The shared diff viewer uses `ChangedFilePicker`: an Arc `MorphSelect` search surface containing Arc `TreeView`, with compact single-folder chains, filename wrapping, full-path titles and a visible selected path. Search matches the whole path and expands matching folders. Selecting a folder only expands it; selecting a file changes the diff and folds the picker. Deleted files use their original paths, and renamed files use their new paths.
+
+Local Arc extensions: `MorphSelect.renderTree` receives `{ id, query, selected, select, close }` and changes its popup semantics to a tree; search navigation transfers focus into the tree, Escape restores trigger focus, and Tab can move between the search and tree. `title` and `maxTriggerWidth` support bounded toolbar labels. `TreeView` adds `id`, controlled `selectedId`, `TreeNode.title`, a `plain` variant, `wrapLabels`, `animateExpansion`, and `onEscape`. The embedded picker disables row size animations so the morph surface alone animates expansion, and uses semantic colors. Keep the tree's native keyboard navigation and the Arc scroll area. Bound the open surface to the diff pane's available width and height in the workspace and pop-out. Global app shortcuts treat focused trees like other composite controls.
+
 ## Writing workspace
 
 The workspace has one layout: activity, writing, and inspector. It fills the viewport below its main header. The header uses Arc `Breadcrumb`; its Journal crumb returns to the hub. Equal outer grid columns center the date picker independently of the side controls. Desktop header padding is 8px vertically; at narrower widths the date moves into its own centered row. Below 1100px the inspector moves beneath the writing pane, and phones stack the panes with useful minimum heights. Preserve a readable writing measure inside the full-width pane.
