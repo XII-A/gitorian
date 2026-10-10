@@ -88,6 +88,7 @@ export function transport() {
         loseCreateResponse: false,
         failAppend: false,
         failDiff: false,
+        diffStatus: 200,
         fetch: (input: string | URL | Request, init: RequestInit = {}): Promise<Response> =>
             Promise.resolve().then(() => {
                 const url = input instanceof Request ? input.url : String(input)
@@ -126,6 +127,14 @@ export function transport() {
                     }
                     if (new Headers(init.headers).get('Accept') === 'application/vnd.github.diff') {
                         if (remote.failDiff) throw new Error('Diff connection unavailable')
+                        if (remote.diffStatus !== 200)
+                            return new Response(
+                                JSON.stringify({
+                                    message: 'Sorry, the diff exceeded the maximum number of lines.',
+                                    errors: [{ resource: 'PullRequest', field: 'diff', code: 'too_large' }]
+                                }),
+                                { status: remote.diffStatus, statusText: 'Not Acceptable' }
+                            )
                         return new Response(
                             url.includes(`/commits/${'c'.repeat(40)}`) ? remote.finalPatch : remote.patch
                         )

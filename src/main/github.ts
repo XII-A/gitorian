@@ -301,6 +301,11 @@ export class GitHub {
             return await this.http.request<string>(url, token, init, 'text', { maxBytes: 2_000_000, background })
         } catch (error) {
             if (error instanceof HttpError && error.status === 413) return 'Diff is too large. Open in GitHub.'
+            // GitHub may reject the diff representation (for example, when its
+            // server-side rendering limit is exceeded) while JSON metadata works.
+            // Keep acquisition moving, but never fingerprint unavailable evidence.
+            if (error instanceof HttpError && error.status === 406)
+                return "GitHub could not provide this diff (HTTP 406). It may exceed GitHub's rendering limits. Open in GitHub or inspect the changes locally."
             throw error
         }
     }
