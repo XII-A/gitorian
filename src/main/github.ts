@@ -1,6 +1,7 @@
 import type { Activity, Repository } from '../shared/model'
 import type { Http } from './http'
 import { fingerprint, githubRemote } from './git'
+import { HttpError } from './http'
 
 interface User {
     login: string
@@ -11,11 +12,20 @@ interface Pull {
     body: string | null
     html_url: string
     created_at: string
+    updated_at: string
     merged_at: string | null
     merge_commit_sha: string | null
     user: User
     base: { ref: string; sha: string }
     head: { ref: string; sha: string }
+}
+export interface ActivityScan {
+    since?: string
+    page?: number
+    versions?: Record<string, string>
+    background?: boolean
+    checkpoint?: (page: number, complete: boolean) => void
+    batch?: (activities: Activity[]) => Promise<void>
 }
 interface Commit {
     sha: string
@@ -47,16 +57,20 @@ export class GitHub {
         private readonly token: () => string,
         private readonly setToken: (token: string) => void
     ) {}
-    private request<T>(path: string): Promise<T> {
-        return this.http.request<T>(`https://api.github.com/${path}`, this.token())
+    private request<T>(path: string, background = false): Promise<T> {
+        return this.http.request<T>(`https://api.github.com/${path}`, this.token(), {}, 'json', { background })
     }
-    private async list<T>(path: string): Promise<T[]> {
+    private async list<T>(path: string, background = false): Promise<T[]> {
         const result: T[] = []
-        for (let page = 1; ; page++) {
-            const items = await this.request<T[]>(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`)
+        for (let page = 1; page <= 30; page++) {
+            const items = await this.request<T[]>(
+                `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`,
+                background
+            )
             result.push(...items)
             if (items.length < 100) return result
         }
+        throw new Error('This activity has more than 3,000 detail records. Open it in GitHub for the complete source.')
     }
     async start(clientId: string): Promise<{ code: string; url: string; interval: number }> {
         if (!clientId) throw new Error('Enter the public client ID of a GitHub OAuth app with device flow enabled')
@@ -125,129 +139,209 @@ export class GitHub {
         this.device = undefined
         return { login: user.login, emails: emails.map((item) => item.email) }
     }
-    async activities(repository: Repository, login: string, trackedPrIds: string[]): Promise<Activity[]> {
+    async activities(
+        repository: Repository,
+        login: string,
+        trackedPrIds: string[],
+        scan: ActivityScan = {}
+    ): Promise<Activity[]> {
         const remote = githubRemote(repository.remote)
         if (!remote || !this.token()) return []
-        const pulls = await this.list<Pull>(`repos/${remote}/pulls?state=all&sort=updated&direction=desc`)
         const activities: Activity[] = []
-        for (const summary of pulls) {
-            const path = `repos/${remote}/pulls/${summary.number}`
-            const pr = await this.request<Pull>(path)
-            const commits = await this.list<Commit>(`${path}/commits`)
-            const reviews = await this.list<Review>(`${path}/reviews`)
-            const id = `${repository.id}:pr:${pr.number}`
-            const mine = commits.filter((commit) =>
-                repository.emails.some((email) => email.toLowerCase() === commit.commit.author.email.toLowerCase())
+        const since = scan.since ?? repository.trackingStart
+        const firstPage = Math.max(1, (scan.page ?? 1) - 1)
+        let complete = false
+        let hydrated = 0
+        for (let page = firstPage; page < firstPage + 2; page++) {
+            const pulls = await this.request<Pull[]>(
+                `repos/${remote}/pulls?state=all&sort=updated&direction=desc&per_page=100&page=${page}`,
+                scan.background
             )
-            const myReviews = reviews.filter(
-                (review) => review.user.login === login && review.submitted_at && review.state !== 'PENDING'
-            )
-            if (pr.user.login !== login && !mine.length && !myReviews.length && !trackedPrIds.includes(id)) continue
-            const files = await this.list<File>(`${path}/files`)
-            const latest =
-                commits
-                    .map((commit) => commit.commit.author.date)
-                    .sort()
-                    .at(-1) ?? pr.created_at
-            const common = {
-                repositoryId: repository.id,
-                title: `#${pr.number} ${pr.title}`,
-                author: pr.user.login,
-                branches: [pr.head.ref],
-                prId: id,
-                url: pr.html_url,
-                description: pr.body ?? '',
-                files: files.map((file) => ({ name: file.filename, status: file.status })),
-                base: pr.base.ref,
-                head: pr.head.sha,
-                disposition: 'inbox' as const,
-                explicit: false,
-                deletedBranches: []
+            for (const summary of pulls) {
+                if ((summary.updated_at ?? summary.created_at).slice(0, 10) < since) {
+                    complete = true
+                    break
+                }
+                const version = JSON.stringify([
+                    summary.updated_at,
+                    summary.base.sha,
+                    summary.head.sha,
+                    summary.merged_at,
+                    summary.merge_commit_sha,
+                    login,
+                    repository.emails
+                ])
+                if (scan.versions?.[String(summary.number)] === version) continue
+                if (hydrated >= 20) {
+                    scan.checkpoint?.(page, false)
+                    return activities
+                }
+                hydrated++
+                const path = `repos/${remote}/pulls/${summary.number}`
+                const pr = summary
+                const commits = await this.list<Commit>(`${path}/commits`, scan.background)
+                const reviews = await this.list<Review>(`${path}/reviews`, scan.background)
+                const id = `${repository.id}:pr:${pr.number}`
+                const mine = commits.filter((commit) =>
+                    repository.emails.some((email) => email.toLowerCase() === commit.commit.author.email.toLowerCase())
+                )
+                const myReviews = reviews.filter(
+                    (review) => review.user.login === login && review.submitted_at && review.state !== 'PENDING'
+                )
+                if (pr.user.login !== login && !mine.length && !myReviews.length && !trackedPrIds.includes(id)) {
+                    if (scan.versions) scan.versions[String(summary.number)] = version
+                    scan.checkpoint?.(page, false)
+                    continue
+                }
+                const batch: Activity[] = []
+                const latest =
+                    commits
+                        .map((commit) => commit.commit.author.date)
+                        .sort()
+                        .at(-1) ?? pr.created_at
+                const common = {
+                    repositoryId: repository.id,
+                    title: `#${pr.number} ${pr.title}`,
+                    author: pr.user.login,
+                    branches: [pr.head.ref],
+                    prId: id,
+                    url: pr.html_url,
+                    description: pr.body ?? '',
+                    files: [],
+                    base: pr.base.ref,
+                    head: pr.head.sha,
+                    sourceVersion: version,
+                    disposition: 'inbox' as const,
+                    explicit: false,
+                    deletedBranches: []
+                }
+                batch.push({ ...common, id, kind: 'pr', date: latest })
+                batch.push({
+                    ...common,
+                    id: `${id}:opened`,
+                    kind: 'opened',
+                    date: pr.created_at,
+                    title: `Opened ${common.title}`
+                })
+                if (pr.merged_at)
+                    batch.push({
+                        ...common,
+                        id: `${id}:merged`,
+                        kind: 'merged',
+                        date: pr.merged_at,
+                        title: `Merged ${common.title}`,
+                        integrationSha: pr.merge_commit_sha ?? undefined
+                    })
+                for (const commit of mine)
+                    batch.push({
+                        ...common,
+                        id: `${repository.id}:commit:${commit.sha}`,
+                        kind: 'commit',
+                        sha: commit.sha,
+                        author: commit.commit.author.email,
+                        date: commit.commit.author.date,
+                        title: commit.commit.message.split('\n')[0],
+                        description: commit.commit.message
+                    })
+                for (const review of myReviews)
+                    batch.push({
+                        ...common,
+                        id: `${id}:review:${review.id}`,
+                        kind: 'review',
+                        author: login,
+                        date: review.submitted_at!,
+                        title: `${review.state}: ${common.title}`,
+                        description: review.body,
+                        url: review.html_url
+                    })
+                const eligible = batch.filter(
+                    (item) => item.kind === 'pr' || item.date.slice(0, 10) >= repository.trackingStart
+                )
+                if (scan.batch) await scan.batch(eligible)
+                else activities.push(...eligible)
+                if (scan.versions) scan.versions[String(summary.number)] = version
+                scan.checkpoint?.(page, false)
             }
-            activities.push({ ...common, id, kind: 'pr', date: latest })
-            activities.push({
-                ...common,
-                id: `${id}:opened`,
-                kind: 'opened',
-                date: pr.created_at,
-                title: `Opened ${common.title}`
-            })
-            if (pr.merged_at)
-                activities.push({
-                    ...common,
-                    id: `${id}:merged`,
-                    kind: 'merged',
-                    date: pr.merged_at,
-                    title: `Merged ${common.title}`,
-                    integrationSha: pr.merge_commit_sha ?? undefined
-                })
-            for (const commit of mine)
-                activities.push({
-                    ...common,
-                    id: `${repository.id}:commit:${commit.sha}`,
-                    kind: 'commit',
-                    sha: commit.sha,
-                    author: commit.commit.author.email,
-                    date: commit.commit.author.date,
-                    title: commit.commit.message.split('\n')[0],
-                    description: commit.commit.message
-                })
-            for (const review of myReviews)
-                activities.push({
-                    ...common,
-                    id: `${id}:review:${review.id}`,
-                    kind: 'review',
-                    author: login,
-                    date: review.submitted_at!,
-                    title: `${review.state}: ${common.title}`,
-                    description: review.body,
-                    url: review.html_url
-                })
+            if (pulls.length < 100) complete = true
+            scan.checkpoint?.(complete ? 1 : page + 1, complete)
+            if (complete) break
         }
         return activities
     }
-    async commitDetails(repository: Repository, sha: string): Promise<{ diff: string; files: Activity['files'] }> {
+    async files(repository: Repository, activity: Activity): Promise<Activity['files']> {
+        const remote = githubRemote(repository.remote)
+        const number = activity.prId?.split(':').at(-1)
+        if (!remote || !number) return []
+        return (await this.list<File>(`repos/${remote}/pulls/${number}/files`)).map((file) => ({
+            name: file.filename,
+            status: file.status
+        }))
+    }
+    async commitDetails(
+        repository: Repository,
+        sha: string,
+        includeDiff = true
+    ): Promise<{ diff: string; files: Activity['files'] }> {
         const remote = githubRemote(repository.remote)
         if (!remote || !/^[a-f0-9]{40,64}$/.test(sha)) throw new Error('GitHub commit source is unavailable')
         const path = `repos/${remote}/commits/${sha}`
         const metadata = await this.request<{ files: File[] }>(path)
-        const diff = await this.http.request<string>(
-            `https://api.github.com/${path}`,
-            this.token(),
-            { headers: { Accept: 'application/vnd.github.diff' } },
-            'text'
-        )
+        const diff = includeDiff
+            ? await this.diff(`https://api.github.com/${path}`, this.token(), {
+                  headers: { Accept: 'application/vnd.github.diff' }
+              })
+            : ''
         return {
             diff: diff.length <= 2_000_000 ? diff : 'Diff is too large. Open in GitHub.',
             files: metadata.files.map((file) => ({ name: file.filename, status: file.status }))
         }
     }
+    private async diff(url: string, token: string, init: RequestInit, background = false): Promise<string> {
+        try {
+            return await this.http.request<string>(url, token, init, 'text', { maxBytes: 2_000_000, background })
+        } catch (error) {
+            if (error instanceof HttpError && error.status === 413) return 'Diff is too large. Open in GitHub.'
+            throw error
+        }
+    }
     async snapshot(
         repository: Repository,
-        activity: Activity
+        activity: Activity,
+        background = false
     ): Promise<{ diff: string; fingerprint?: string; base: string; head: string }> {
         const remote = githubRemote(repository.remote)
         const number = activity.prId?.split(':').at(-1)
         if (!remote || !number) throw new Error('GitHub remote is unavailable')
         const path = `repos/${remote}/pulls/${number}`
-        const before = await this.request<Pull>(path)
+        const before = await this.request<Pull>(path, background)
+        if (activity.sourceVersion) {
+            const [, base, head, merged, integration] = JSON.parse(activity.sourceVersion) as unknown[]
+            if (
+                before.base.sha !== base ||
+                before.head.sha !== head ||
+                before.merged_at !== merged ||
+                before.merge_commit_sha !== integration
+            )
+                throw new Error('PR changed since activity refresh. Refresh this repository and try again.')
+        }
         const integration =
             before.merged_at && before.merge_commit_sha
                 ? await this.request<{ parents: { sha: string }[] }>(
-                      `repos/${remote}/commits/${before.merge_commit_sha}`
+                      `repos/${remote}/commits/${before.merge_commit_sha}`,
+                      background
                   )
                 : undefined
         // A linear integration tip may be only the last of several rebased commits.
         // Only a true merge proves that its first-parent diff includes the full integration.
         const provenIntegration = integration && integration.parents.length > 1
         const diffPath = provenIntegration ? `repos/${remote}/commits/${before.merge_commit_sha}` : path
-        const diff = await this.http.request<string>(
+        const diff = await this.diff(
             `https://api.github.com/${diffPath}`,
             this.token(),
             { headers: { Accept: 'application/vnd.github.diff' } },
-            'text'
+            background
         )
-        const after = await this.request<Pull>(path)
+        const after = await this.request<Pull>(path, background)
         if (
             before.base.sha !== after.base.sha ||
             before.head.sha !== after.head.sha ||

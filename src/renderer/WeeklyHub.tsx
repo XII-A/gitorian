@@ -200,12 +200,9 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onActivity, 
                 </div>
             </nav>
             <div className="hub-content" id="hub-content">
-                {(error || state.refreshError) && (
+                {error && (
                     <div className="hub-error" role="alert">
-                        <p>
-                            Unable to load or update your journal. Your saved work is still available. Refresh activity,
-                            or try the action again.
-                        </p>
+                        <p>{error}</p>
                         <Button variant="secondary" size="sm" loading={busy} onClick={() => void refresh()}>
                             Refresh activity
                         </Button>

@@ -440,3 +440,52 @@ legend {
         scroll-behavior: auto !important;
     }
 }
+/* Background work status remains separate from the writing surface. */
+.acquisition-status,
+.acquisition-notice {
+    position: relative;
+    z-index: 2;
+    padding: 8px 24px;
+    background: var(--surface-muted);
+    color: var(--foreground);
+    font-size: var(--text-sm);
+    border-bottom: 1px solid var(--border);
+}
+.acquisition-status summary {
+    cursor: pointer;
+}
+.acquisition-sources {
+    display: grid;
+    gap: 12px;
+    padding: 12px 0;
+    max-height: 260px;
+    overflow: auto;
+}
+.acquisition-sources p {
+    margin: 4px 0;
+}
+.acquisition-sources small {
+    display: block;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+}
+.acquisition-sources > div {
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+}
+.acquisition-sources strong {
+    font-weight: 500;
+}
+#root:has(> .writing-workspace) {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+}
+#root:has(> .writing-workspace) > div:first-child {
+    flex: none;
+}
+#root > .writing-workspace {
+    flex: 1;
+    height: 0;
+    min-height: 0;
+}

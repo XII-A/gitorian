@@ -157,8 +157,15 @@ app.on('browser-window-created', (_, window) => {
                 const hubProjectChip=document.querySelector('.hub-filters > :last-child [role="combobox"]')?.textContent.includes('Projects')
                 const hubUsesArcChart=!!document.querySelector('.hub-chart [role="slider"]')
                 document.querySelector('[aria-label="Refresh activity"]').click()
-                for(let attempt=0;attempt<30&&!document.querySelector('.hub-activity');attempt++)
+                for(let attempt=0;attempt<100&&!document.querySelector('.hub-activity');attempt++)
                     await new Promise(resolve=>setTimeout(resolve,50))
+                // Measure dialog-only rendering after the asynchronous refresh settles.
+                for(let attempt=0;attempt<100;attempt++) {
+                    await new Promise(resolve=>setTimeout(resolve,50))
+                    const state=(await window.journal.invoke({type:'state'})).state
+                    if(Object.values(state.acquisition??{}).every(status=>status.status!=='running'&&!status.windowEnd)
+                        && document.querySelector('.acquisition-status summary')?.textContent.includes('Activity is up to date')) break
+                }
                 let dialogDateFormats=0
                 const originalFormatter=Intl.DateTimeFormat
                 Intl.DateTimeFormat=new Proxy(originalFormatter,{construct(target,args){dialogDateFormats++;return Reflect.construct(target,args)}})

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { Effect } from 'effect'
-import { commits, branches, commitDetails, inspectRepository, git } from './git'
+import { commits, indexCommits, commitDetails, inspectRepository, git, githubRemote } from './git'
 import { HttpError } from './http'
 import { discoverRepositories, repositoryPathKey } from './repository-discovery'
 import { weekOf } from '../shared/model'
@@ -8,9 +8,14 @@ import type { Activity, Command, Reply, Repository, RepositoryImportProgress, Se
 import type { Store } from './store'
 import type { GitHub } from './github'
 import type { Notion } from './notion'
+import { forEachConcurrent } from './work-queue'
 
 export class JournalService {
     private refreshing?: Promise<void>
+    private queuedRefreshes = new Map<string, Promise<void>>()
+    private details = new Map<string, Promise<void>>()
+    private importing = false
+    private importStopped = false
     constructor(
         readonly store: Store,
         private readonly github: GitHub,
@@ -18,7 +23,7 @@ export class JournalService {
         private readonly connections: () => Reply['connections']
     ) {}
     reply(extra: Partial<Reply> = {}): Reply {
-        return { state: structuredClone(this.store.state), connections: this.connections(), ...extra }
+        return { state: this.store.snapshot(), connections: this.connections(), ...extra }
     }
     execute(command: Command): Effect.Effect<Reply, Error> {
         return Effect.tryPromise({
@@ -26,7 +31,7 @@ export class JournalService {
             catch: (error) => (error instanceof Error ? error : new Error(String(error)))
         })
     }
-    async addRepository(path: string): Promise<void> {
+    async addRepository(path: string, persist = true): Promise<void> {
         const inspected = await inspectRepository(path)
         if (
             this.store.state.repositories.some(
@@ -45,57 +50,92 @@ export class JournalService {
             available: true,
             removed: false,
             branchBases: {},
-            branches: inspected.branches
+            branches: inspected.branches,
+            remotes: inspected.remotes
         })
-        this.store.persist()
+        if (persist) this.store.persist()
     }
     async addRepositories(folder: string, onProgress?: (progress: RepositoryImportProgress) => void): Promise<Reply> {
-        onProgress?.({ stage: 'discovering', scanned: 0, found: 0 })
-        const discovered = await discoverRepositories(folder, (counts) =>
-            onProgress?.({ stage: 'discovering', ...counts })
-        )
-        let added = 0
-        let existing = 0
-        let restored = 0
-        let skipped = discovered.unreadable.length
-        let completed = 0
-        onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
-        for (const path of discovered.paths) {
-            const tracked = this.store.state.repositories.find(
-                (item) => repositoryPathKey(item.path) === repositoryPathKey(path)
+        if (this.importing) return this.reply({ message: 'A repository import is already running.' })
+        this.importing = true
+        this.importStopped = false
+        try {
+            onProgress?.({ stage: 'discovering', scanned: 0, found: 0 })
+            const discovered = await discoverRepositories(folder, (counts) =>
+                onProgress?.({ stage: 'discovering', ...counts })
             )
-            try {
-                if (tracked) {
-                    if (tracked.removed || !tracked.available) {
-                        const inspected = await inspectRepository(path)
-                        Object.assign(tracked, {
-                            path: inspected.path,
-                            available: true,
-                            removed: false,
-                            branches: inspected.branches
-                        })
-                        restored++
-                    } else existing++
-                } else {
-                    await this.addRepository(path)
-                    added++
-                }
-            } catch {
-                skipped++
-            }
-            completed++
+            let added = 0
+            let existing = 0
+            let restored = 0
+            let skipped = discovered.unreadable.length
+            let completed = 0
             onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
+            this.store.state.repositoryImport = { status: 'running', completed, total: discovered.paths.length }
+            this.store.persist()
+            await forEachConcurrent(discovered.paths, 2, async (path) => {
+                if (this.importStopped) return
+                const tracked = this.store.state.repositories.find(
+                    (item) => repositoryPathKey(item.path) === repositoryPathKey(path)
+                )
+                try {
+                    if (tracked) {
+                        if (tracked.removed || !tracked.available) {
+                            const inspected = await inspectRepository(path)
+                            Object.assign(tracked, {
+                                path: inspected.path,
+                                available: true,
+                                removed: false,
+                                branches: inspected.branches,
+                                remotes: inspected.remotes
+                            })
+                            restored++
+                        } else existing++
+                    } else {
+                        await this.addRepository(path, false)
+                        added++
+                    }
+                } catch {
+                    skipped++
+                }
+                completed++
+                this.store.state.repositoryImport = { status: 'running', completed, total: discovered.paths.length }
+                if (completed % 4 === 0) this.store.persist()
+                onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
+            })
+            const messages = [`Added ${added} ${added === 1 ? 'repository' : 'repositories'}.`]
+            if (!discovered.paths.length) messages[0] = 'No Git repositories found in this folder.'
+            if (restored) messages.push(`Resumed tracking ${restored}.`)
+            if (existing) messages.push(`${existing} already tracked.`)
+            if (skipped) messages.push(`${skipped} unreadable or invalid folders skipped.`)
+            if (this.importStopped) messages.push('Import stopped. Add the folder again to continue.')
+            this.store.state.repositoryImport = {
+                status: this.importStopped ? 'cancelled' : 'done',
+                completed,
+                total: discovered.paths.length,
+                message: messages.join(' ')
+            }
+            this.store.persist()
+            return this.reply({ message: messages.join(' ') })
+        } finally {
+            this.importing = false
         }
-        this.store.persist()
-        const messages = [`Added ${added} ${added === 1 ? 'repository' : 'repositories'}.`]
-        if (!discovered.paths.length) messages[0] = 'No Git repositories found in this folder.'
-        if (restored) messages.push(`Resumed tracking ${restored}.`)
-        if (existing) messages.push(`${existing} already tracked.`)
-        if (skipped) messages.push(`${skipped} unreadable or invalid folders skipped.`)
-        return this.reply({ message: messages.join(' ') })
     }
-    async remoteCandidates(id: string): Promise<string[]> {
-        return (await inspectRepository(this.repository(id).path)).remotes
+    stopWork(source: 'git' | 'github' | 'repositories', repositoryId?: string): void {
+        if (source === 'repositories') this.importStopped = true
+        else
+            for (const [key, status] of Object.entries(this.store.state.acquisition ?? {})) {
+                if (key.startsWith(`${source}:`) && (!repositoryId || key === `${source}:${repositoryId}`)) {
+                    status.status = 'cancelled'
+                    status.error = 'Paused by you. Completed work is kept; retry this source to continue.'
+                }
+            }
+        this.store.persist()
+    }
+    private checkStopped(status: NonNullable<State['acquisition']>[string]): void {
+        if (this.isStopped(status)) throw new Error('Paused by you. Completed work is kept.')
+    }
+    private isStopped(status: NonNullable<State['acquisition']>[string]): boolean {
+        return status.status === 'cancelled'
     }
     private repository(id: string): Repository {
         const repository = this.store.state.repositories.find((item) => item.id === id)
@@ -120,12 +160,20 @@ export class JournalService {
                 revision: incoming.revision ?? current.revision,
                 fingerprint: incoming.fingerprint ?? current.fingerprint,
                 deletedBranches: current.deletedBranches,
-                branches: [...new Set([...current.branches, ...incoming.branches])]
+                branches: [...new Set([...current.branches, ...incoming.branches])],
+                files: incoming.filesLoaded ? incoming.files : current.files,
+                filesLoaded:
+                    current.filesLoaded && (!incoming.sourceVersion || incoming.sourceVersion === current.sourceVersion)
             })
     }
-    private async capture(activity: Activity, retainDiff = true): Promise<string> {
+    private async capture(activity: Activity, retainDiff = true, persist = true): Promise<string> {
         const state = this.store.state
-        const snapshot = await this.github.snapshot(this.repository(activity.repositoryId), activity)
+        const version = activity.sourceVersion
+        const snapshot = await this.github.snapshot(this.repository(activity.repositoryId), activity, !persist)
+        if (state !== this.store.state)
+            throw new Error('Local data was restored while loading. Open the activity again.')
+        if (version !== activity.sourceVersion)
+            throw new Error('Activity changed while loading. Select it again to load the current revision.')
         const prior = snapshot.fingerprint
             ? state.revisions.find(
                   (revision) => revision.prId === activity.id && revision.fingerprint === snapshot.fingerprint
@@ -144,99 +192,332 @@ export class JournalService {
             state.diffs[activity.id] = snapshot.diff
             activity.diffRevision = id
         }
-        this.store.persist()
+        if (persist) this.store.persist()
         return id
     }
-    async refresh(): Promise<void> {
-        if (this.refreshing) return this.refreshing
-        this.refreshing = this.refreshSources().finally(() => {
+    private status(key: string): NonNullable<State['acquisition']>[string] {
+        const state = this.store.state
+        state.acquisition ??= {}
+        return (state.acquisition[key] ??= { status: 'idle' })
+    }
+    async refresh(
+        options: {
+            repositoryId?: string
+            source?: 'git' | 'github' | 'notion'
+            resume?: boolean
+            afterCurrent?: boolean
+        } = {}
+    ): Promise<void> {
+        if (this.refreshing) {
+            if (!options.resume && !options.afterCurrent) return this.refreshing
+            const key = `${options.repositoryId ?? '*'}:${options.source ?? '*'}:${!!options.resume}`
+            const queued = this.queuedRefreshes.get(key)
+            if (queued) return queued
+            const next = this.refreshing.then(
+                () => {
+                    this.queuedRefreshes.delete(key)
+                    return this.refresh(options)
+                },
+                (error: unknown) => {
+                    this.queuedRefreshes.delete(key)
+                    throw error
+                }
+            )
+            this.queuedRefreshes.set(key, next)
+            return next
+        }
+        this.refreshing = this.refreshSources(options).finally(() => {
             this.refreshing = undefined
         })
         return this.refreshing
     }
-    private async refreshSources(): Promise<void> {
+    async backfill(repositoryId: string, since: string): Promise<void> {
+        if (this.refreshing) await this.refreshing
+        const repository = this.repository(repositoryId)
+        if (since > repository.trackingStart) throw new Error('Choose a date before the current history start.')
+        repository.trackingStart = since
+        for (const source of ['git', 'github']) {
+            const status = this.status(`${source}:${repositoryId}`)
+            status.since = since
+            status.page = 1
+            status.refs = undefined
+            status.offset = undefined
+            status.excludedTips = undefined
+            status.windowEnd = undefined
+            status.lastSuccess = undefined
+        }
+        this.store.persist()
+        await this.refresh({ repositoryId, resume: true })
+    }
+    private async source(key: string, work: () => Promise<void>, resume = false): Promise<void> {
+        const status = this.status(key)
+        if (this.isStopped(status) && !resume) return
+        if (status.retryAt && Date.parse(status.retryAt) > Date.now()) return
+        status.status = 'running'
+        status.error = undefined
+        status.retryAt = undefined
+        this.store.persist()
+        try {
+            await work()
+            this.checkStopped(status)
+            status.status = 'idle'
+            if (!status.windowEnd) status.lastSuccess = new Date().toISOString()
+        } catch (error) {
+            if (!this.isStopped(status))
+                status.status = error instanceof HttpError && error.retryAt ? 'paused' : 'error'
+            status.error = error instanceof Error ? error.message : String(error)
+            status.retryAt =
+                error instanceof HttpError && error.retryAt ? new Date(error.retryAt).toISOString() : undefined
+        }
+        this.store.persist()
+    }
+    private async refreshSources(options: {
+        repositoryId?: string
+        source?: 'git' | 'github' | 'notion'
+        resume?: boolean
+    }): Promise<void> {
         const state = this.store.state
-        const errors: string[] = []
-        for (const repository of state.repositories.filter((item) => !item.removed)) {
-            try {
-                const names = await branches(repository)
-                repository.branches = names
-                repository.available = true
-                for (const activity of state.activities.filter((item) => item.repositoryId === repository.id))
-                    activity.deletedBranches = activity.branches.filter((branch) => !names.includes(branch))
-                const indexed = new Map<string, Activity>()
-                for (const branch of names) {
-                    for (const activity of await commits(repository, branch)) {
-                        const existing = indexed.get(activity.id)
-                        if (existing) existing.branches.push(branch)
-                        else indexed.set(activity.id, activity)
-                    }
-                }
-                for (const activity of indexed.values())
-                    if (repository.emails.some((email) => email.toLowerCase() === activity.author.toLowerCase()))
-                        this.mergeActivity(activity)
-            } catch (error) {
-                repository.available = false
-                errors.push(`${repository.name}: ${String(error)}`)
-            }
-            if (this.connections().github) {
-                try {
-                    const tracked = state.activities.filter((item) => item.kind === 'pr').map((item) => item.id)
-                    for (const activity of await this.github.activities(
-                        repository,
-                        state.settings.githubLogin,
-                        tracked
-                    )) {
-                        const previous = state.activities.find((item) => item.id === activity.id)
-                        const previousFingerprint = previous?.fingerprint
-                        const previousDate = previous?.date
-                        const previousRevision = state.revisions.find((revision) => revision.id === previous?.revision)
-                        this.mergeActivity(activity)
-                        if (activity.kind === 'pr') {
-                            const current = this.activity(activity.id)
-                            // A failed comparison must never leave stale coverage on mutable PR state.
-                            current.fingerprint = undefined
-                            current.revision = undefined
-                            try {
-                                await this.capture(current, state.diffs[activity.id] !== undefined)
-                                const revision = state.revisions.find((item) => item.id === current.revision)
-                                const changed = previousFingerprint
-                                    ? previousFingerprint !== current.fingerprint
-                                    : previousRevision &&
-                                      revision &&
-                                      (previousRevision.head !== revision.head ||
-                                          previousRevision.base !== revision.base)
-                                if (changed) current.date = new Date().toISOString()
-                                else if (previousDate && previousDate > current.date) current.date = previousDate
-                            } catch (error) {
-                                if (previousRevision && previousRevision.head !== current.head)
-                                    current.date = new Date().toISOString()
-                                else if (previousDate && previousDate > current.date) current.date = previousDate
-                                errors.push(`${activity.title}: ${String(error)}`)
+        const repositories = state.repositories.filter(
+            (item) => !item.removed && (!options.repositoryId || item.id === options.repositoryId)
+        )
+        if (!options.repositoryId && !options.source) {
+            state.lastRefreshAttempt = new Date().toISOString()
+            this.store.persist()
+        }
+        // Notion refresh proceeds independently of a potentially long GitHub backlog.
+        const notion =
+            !options.repositoryId &&
+            (!options.source || options.source === 'notion') &&
+            this.connections().notion &&
+            state.settings.destination
+                ? this.source('notion', async () => {
+                      for (const page of await this.notion.pages(state.settings.destination!)) {
+                          const entry = await this.notion.entry(page)
+                          const index = state.entries.findIndex((item) => item.id === entry.id)
+                          if (index < 0) state.entries.push(entry)
+                          else state.entries[index] = entry
+                      }
+                      for (const save of state.saves.filter((item) => item.status === 'unknown'))
+                          await this.reconcile(save.id)
+                  })
+                : Promise.resolve()
+        await Promise.all([
+            notion,
+            forEachConcurrent(repositories, 2, async (repository) => {
+                if (state !== this.store.state) return
+                if (!options.source || options.source === 'git')
+                    await this.source(
+                        `git:${repository.id}`,
+                        async () => {
+                            const status = this.status(`git:${repository.id}`)
+                            const configuration = JSON.stringify([
+                                repository.path,
+                                repository.remote,
+                                repository.emails,
+                                repository.trackingStart
+                            ])
+                            if (status.configuration !== configuration) {
+                                status.refs = undefined
+                                status.offset = undefined
+                                status.excludedTips = undefined
                             }
-                        }
-                    }
-                } catch (error) {
-                    errors.push(`GitHub ${repository.name}: ${String(error)}`)
-                }
-            }
-        }
-        if (this.connections().notion && state.settings.destination) {
-            try {
-                for (const page of await this.notion.pages(state.settings.destination)) {
-                    const entry = await this.notion.entry(page)
-                    const index = state.entries.findIndex((item) => item.id === entry.id)
-                    if (index < 0) state.entries.push(entry)
-                    else state.entries[index] = entry
-                }
-                for (const save of state.saves.filter((item) => item.status === 'unknown'))
-                    await this.reconcile(save.id)
-            } catch (error) {
-                errors.push(`Notion: ${String(error)}`)
-            }
-        }
-        state.lastRefreshed = new Date().toISOString()
+                            try {
+                                if (!repository.remotes)
+                                    repository.remotes = (await inspectRepository(repository.path)).remotes
+                                const indexed = await indexCommits(
+                                    repository,
+                                    status.refs ?? {},
+                                    repository.trackingStart,
+                                    status.offset,
+                                    status.excludedTips,
+                                    state.activities.filter(
+                                        (activity) =>
+                                            activity.repositoryId === repository.id && activity.kind === 'commit'
+                                    )
+                                )
+                                this.checkStopped(status)
+                                if (state !== this.store.state)
+                                    throw new Error('Local data was restored while refreshing.')
+                                const names = Object.keys(indexed.refs)
+                                repository.branches = names
+                                repository.available = true
+                                for (const activity of state.activities.filter(
+                                    (item) => item.repositoryId === repository.id
+                                ))
+                                    activity.deletedBranches = activity.branches.filter(
+                                        (branch) => !names.includes(branch)
+                                    )
+                                for (const activity of indexed.items)
+                                    if (
+                                        repository.emails.some(
+                                            (email) => email.toLowerCase() === activity.author.toLowerCase()
+                                        )
+                                    )
+                                        this.mergeActivity(activity)
+                                status.refs = indexed.refs
+                                status.offset = indexed.nextOffset
+                                status.excludedTips = indexed.excludedTips
+                                status.windowEnd = indexed.nextOffset
+                                    ? (status.windowEnd ?? new Date().toISOString())
+                                    : undefined
+                                status.configuration = configuration
+                                status.since = repository.trackingStart
+                            } catch (error) {
+                                if (!this.isStopped(status)) repository.available = false
+                                throw error
+                            }
+                        },
+                        options.resume
+                    )
+                if (
+                    (!options.source || options.source === 'github') &&
+                    this.connections().github &&
+                    githubRemote(repository.remote)
+                )
+                    await this.source(
+                        `github:${repository.id}`,
+                        async () => {
+                            const status = this.status(`github:${repository.id}`)
+                            const configuration = JSON.stringify([
+                                repository.remote,
+                                repository.emails,
+                                repository.trackingStart,
+                                state.settings.githubLogin
+                            ])
+                            if (status.configuration !== configuration) {
+                                status.since = repository.trackingStart
+                                status.page = 1
+                                status.versions = {}
+                                status.windowEnd = undefined
+                                status.lastSuccess = undefined
+                            }
+                            status.configuration = configuration
+                            status.versions ??= {}
+                            if (!status.windowEnd) status.page = 1
+                            status.windowEnd ??= new Date().toISOString()
+                            if (!status.since)
+                                status.since = status.lastSuccess
+                                    ? new Date(
+                                          Math.max(
+                                              Date.parse(repository.trackingStart),
+                                              Date.parse(status.lastSuccess) - 2 * 86400000
+                                          )
+                                      )
+                                          .toISOString()
+                                          .slice(0, 10)
+                                    : repository.trackingStart
+                            const tracked = state.activities
+                                .filter((item) => item.repositoryId === repository.id && item.kind === 'pr')
+                                .map((item) => item.id)
+                            await this.github.activities(repository, state.settings.githubLogin, tracked, {
+                                since: status.since,
+                                page: status.page,
+                                versions: status.versions,
+                                background: true,
+                                checkpoint: (page, complete) => {
+                                    this.checkStopped(status)
+                                    status.page = page
+                                    if (complete) {
+                                        status.since = new Date(
+                                            Math.max(
+                                                Date.parse(repository.trackingStart),
+                                                Date.parse(status.windowEnd!) - 2 * 86400000
+                                            )
+                                        )
+                                            .toISOString()
+                                            .slice(0, 10)
+                                        status.windowEnd = undefined
+                                    }
+                                    this.store.persist()
+                                },
+                                batch: async (activities) => {
+                                    if (state !== this.store.state)
+                                        throw new Error('Local data was restored while refreshing.')
+                                    this.checkStopped(status)
+                                    for (const incoming of activities) {
+                                        const previous = state.activities.find((item) => item.id === incoming.id)
+                                        const previousDate = previous?.date
+                                        const previousFingerprint = previous?.fingerprint
+                                        const previousRevision = state.revisions.find(
+                                            (item) => item.id === previous?.revision
+                                        )
+                                        this.mergeActivity(incoming)
+                                        if (incoming.kind !== 'pr') continue
+                                        const current = this.activity(incoming.id)
+                                        const needsComparison =
+                                            !!previousRevision || current.date.slice(0, 10) < repository.trackingStart
+                                        current.fingerprint = undefined
+                                        current.revision = undefined
+                                        if (needsComparison) {
+                                            try {
+                                                await this.capture(
+                                                    current,
+                                                    state.diffs[current.id] !== undefined,
+                                                    false
+                                                )
+                                                const revision = state.revisions.find(
+                                                    (item) => item.id === current.revision
+                                                )
+                                                const changed = previousFingerprint
+                                                    ? previousFingerprint !== current.fingerprint
+                                                    : previousRevision &&
+                                                      revision &&
+                                                      (previousRevision.head !== revision.head ||
+                                                          previousRevision.base !== revision.base)
+                                                if (changed) current.date = new Date().toISOString()
+                                                else if (previousDate && previousDate > current.date)
+                                                    current.date = previousDate
+                                            } catch (error) {
+                                                if (previousRevision && previousRevision.head !== current.head)
+                                                    current.date = new Date().toISOString()
+                                                this.store.persist()
+                                                throw error
+                                            }
+                                        } else if (previousDate && previousDate > current.date)
+                                            current.date = previousDate
+                                    }
+                                }
+                            })
+                        },
+                        options.resume
+                    )
+            })
+        ])
+        const errors = Object.entries(state.acquisition ?? {})
+            .filter(([, status]) => status.error)
+            .map(([key, status]) => `${key}: ${status.error}`)
         state.refreshError = errors.length ? errors.join('\n') : undefined
+        if (!errors.length && !Object.values(state.acquisition ?? {}).some((status) => status.windowEnd))
+            state.lastRefreshed = new Date().toISOString()
+        this.store.persist()
+    }
+    private async loadDetails(activity: Activity, includeDiff: boolean): Promise<void> {
+        const state = this.store.state
+        const repository = this.repository(activity.repositoryId)
+        const version = activity.sourceVersion
+        if (activity.kind === 'pr') {
+            if (includeDiff) await this.capture(activity)
+            if (!activity.filesLoaded) activity.files = await this.github.files(repository, activity)
+        } else if (activity.sha) {
+            let details: Awaited<ReturnType<typeof commitDetails>>
+            try {
+                if (!repository.available) throw new Error('Local checkout unavailable')
+                details = await commitDetails(repository, activity.sha, includeDiff)
+            } catch (localError) {
+                if (!githubRemote(repository.remote) || !this.connections().github)
+                    throw new Error(
+                        `Local changes are unavailable (${localError instanceof Error ? localError.message : String(localError)}). Locate the repository, or connect GitHub and select its remote in Settings.`
+                    )
+                details = await this.github.commitDetails(repository, activity.sha, includeDiff)
+            }
+            if (state !== this.store.state)
+                throw new Error('Local data was restored while loading. Open the activity again.')
+            if (includeDiff) state.diffs[activity.id] = details.diff
+            activity.files = details.files
+        } else if (activity.prId) activity.files = await this.github.files(repository, activity)
+        if (version !== activity.sourceVersion)
+            throw new Error('Activity changed while loading. Select it again to load the current revision.')
+        activity.filesLoaded = true
         this.store.persist()
     }
     private confirm(save: State['saves'][number], entry: State['entries'][number]): void {
@@ -334,7 +615,13 @@ export class JournalService {
                 break
             }
             case 'refresh':
-                await this.refresh()
+                await this.refresh({ ...command, resume: true })
+                return this.reply()
+            case 'backfill':
+                await this.backfill(command.repositoryId, command.since)
+                return this.reply()
+            case 'stopWork':
+                this.stopWork(command.source, command.repositoryId)
                 return this.reply()
             case 'history': {
                 const repository = this.repository(command.repositoryId)
@@ -356,7 +643,7 @@ export class JournalService {
                         ? target
                         : (remoteTarget ?? target)
                     : (repository.branchBases[command.branch] ?? repository.branchBases[branchName] ?? repository.base)
-                const items = await commits(repository, command.branch, command.view, base)
+                const items = await commits(repository, command.branch, command.view, base, command.since)
                 for (const item of items) this.mergeActivity(item)
                 this.store.persist()
                 return this.reply({
@@ -372,30 +659,23 @@ export class JournalService {
             }
             case 'details': {
                 const activity = this.activity(command.activityId)
-                if (
-                    state.diffs[activity.id] !== undefined &&
-                    (activity.kind !== 'pr' || activity.diffRevision === activity.revision)
-                )
-                    return this.reply({ diff: state.diffs[activity.id] })
-                if (activity.kind === 'pr') await this.capture(activity)
-                else if (activity.sha) {
-                    const repository = this.repository(activity.repositoryId)
-                    let details: Awaited<ReturnType<typeof commitDetails>>
-                    try {
-                        if (!repository.available) throw new Error('Local source unavailable')
-                        details = await commitDetails(repository, activity.sha)
-                    } catch {
-                        if (!activity.url || !this.connections().github)
-                            throw new Error(
-                                'Source unavailable. Locate the repository or connect GitHub to load this diff.'
-                            )
-                        details = await this.github.commitDetails(repository, activity.sha)
+                const includeDiff = command.content !== 'files'
+                const cached = includeDiff
+                    ? state.diffs[activity.id] !== undefined &&
+                      (activity.kind !== 'pr' || activity.diffRevision === activity.revision)
+                    : activity.filesLoaded
+                if (!cached) {
+                    const key = `${activity.id}:${activity.sourceVersion ?? activity.sha ?? ''}:${includeDiff}`
+                    let request = this.details.get(key)
+                    if (!request) {
+                        request = this.loadDetails(activity, includeDiff).finally(() => {
+                            this.details.delete(key)
+                        })
+                        this.details.set(key, request)
                     }
-                    state.diffs[activity.id] = details.diff
-                    activity.files = details.files
+                    await request
                 }
-                this.store.persist()
-                return this.reply({ diff: state.diffs[activity.id] ?? '' })
+                return this.reply(includeDiff ? { diff: state.diffs[activity.id] ?? '' } : {})
             }
             case 'newDraft':
                 state.drafts.push({

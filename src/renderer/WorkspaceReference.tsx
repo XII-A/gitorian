@@ -63,8 +63,8 @@ export function WorkspaceReference({
             setLoading(true)
             setError('')
             const reply = await run({ type: 'details', activityId: item.id })
-            if (!reply)
-                setError('Could not load this diff. Retry loading it, or reconnect the repository in the workspace.')
+            if (!reply || reply.detailError)
+                setError(reply?.detailError ?? 'Could not load this diff. Retry loading it.')
             setLoading(false)
         },
         [example, run]

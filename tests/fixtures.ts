@@ -61,6 +61,9 @@ export async function workspace() {
     }
 }
 export function transport() {
+    let githubVersion = ''
+    let githubUpdatedAt = new Date().toISOString()
+    let revision = 0
     const pages: {
         id: string
         url: string
@@ -95,12 +98,26 @@ export function transport() {
                 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 })
                 const list = (results: unknown[]) => json({ results, has_more: false, next_cursor: null })
                 if (url.includes('api.github.com')) {
+                    const version = JSON.stringify([
+                        remote.head,
+                        remote.patch,
+                        remote.merged,
+                        remote.finalPatch,
+                        remote.mergeParents,
+                        remote.authorDate,
+                        remote.authorEmail
+                    ])
+                    if (version !== githubVersion) {
+                        githubVersion = version
+                        githubUpdatedAt = new Date(Date.now() + revision++).toISOString()
+                    }
                     const pull = {
                         number: 1,
                         title: 'Improve work',
                         body: 'Context',
                         html_url: 'https://github.com/example/project/pull/1',
                         created_at: '2026-10-05T10:00:00Z',
+                        updated_at: githubUpdatedAt,
                         merged_at: remote.merged ? '2026-10-07T10:00:00Z' : null,
                         merge_commit_sha: remote.merged ? 'c'.repeat(40) : null,
                         user: { login: 'someone-else' },

@@ -22,7 +22,7 @@ interface Props {
     onCite: () => void
     onPopout?: () => void
     onClose?: () => void
-    onInspect?: (activity: Activity) => void
+    onInspect?: (activity: Activity, tab?: 'diff' | 'details') => void
 }
 export function WorkspaceInspector({
     state,
@@ -119,7 +119,19 @@ export function WorkspaceInspector({
                         changes.
                     </p>
                 )}
-            <Tabs value={tab} onValueChange={setTab} className="ws-inspector-tabs">
+            <Tabs
+                value={tab}
+                onValueChange={(value) => {
+                    setTab(value)
+                    if (
+                        value === 'diff' &&
+                        (state.diffs[activity.id] === undefined ||
+                            (activity.kind === 'pr' && activity.diffRevision !== activity.revision))
+                    )
+                        onInspect?.(activity, 'diff')
+                }}
+                className="ws-inspector-tabs"
+            >
                 <TabsList aria-label="Activity information" edgeToEdge>
                     <TabsTrigger value="diff">Diff</TabsTrigger>
                     <TabsTrigger value="details">Details</TabsTrigger>

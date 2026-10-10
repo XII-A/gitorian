@@ -41,14 +41,17 @@ export function HubActivityDialog({
         let cancelled = false
         setBusy(true)
         setError('')
-        // Details are read locally. The hub receives persisted changes on its next state refresh.
+        // The hub needs file metadata, not a full patch or revision capture.
         void window.journal
-            .invoke({ type: 'details', activityId: selected.id })
+            .invoke({ type: 'details', activityId: selected.id, content: 'files' })
             .then((reply) => {
-                if (!cancelled) setDetails(reply.state.activities.find((item) => item.id === selected.id))
+                if (!cancelled) {
+                    setDetails(reply.state.activities.find((item) => item.id === selected.id))
+                    setError(reply.detailError ?? '')
+                }
             })
-            .catch(() => {
-                if (!cancelled) setError('Could not load activity details. Try again.')
+            .catch((failure: unknown) => {
+                if (!cancelled) setError(failure instanceof Error ? failure.message : String(failure))
             })
             .finally(() => {
                 if (!cancelled) setBusy(false)

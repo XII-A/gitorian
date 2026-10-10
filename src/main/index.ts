@@ -67,7 +67,8 @@ async function folder(): Promise<string | undefined> {
 void app.whenReady().then(() => {
     store = new Store(join(app.getPath('userData'), 'weekly-j.sqlite'))
     const vault = new Vault(app.getPath('userData'))
-    const http = new Http()
+    store.state.transportPauses ??= {}
+    const http = new Http(fetch, { pauses: store.state.transportPauses, changed: () => store.persist() })
     const github = new GitHub(
         http,
         () => vault.get('github'),
@@ -89,6 +90,26 @@ void app.whenReady().then(() => {
         if (referenceWindows.has(event.sender.id) && !['state', 'details', 'open'].includes(command.type))
             throw new Error('Reference windows are read-only')
         switch (command.type) {
+            case 'refresh':
+                void service.refresh({ ...command, resume: true })
+                return service.reply({ message: 'Activity refresh started. You can keep writing.' })
+            case 'backfill': {
+                const repository = store.state.repositories.find((item) => item.id === command.repositoryId)
+                if (!repository || repository.removed) throw new Error('Choose a tracked repository.')
+                if (command.since > repository.trackingStart)
+                    throw new Error('Choose a date before the current history start.')
+                void service.backfill(command.repositoryId, command.since).catch((error: unknown) => {
+                    store.state.refreshError = error instanceof Error ? error.message : String(error)
+                    store.persist()
+                })
+                return service.reply({ message: 'Older activity is being acquired in the background.' })
+            }
+            case 'details':
+                try {
+                    return await service.handle(command)
+                } catch (error) {
+                    return service.reply({ detailError: error instanceof Error ? error.message : String(error) })
+                }
             case 'addRepository': {
                 const path = await folder()
                 if (path) await service.addRepository(path)
@@ -102,12 +123,32 @@ void app.whenReady().then(() => {
                     if (update.stage !== lastStage || finished || Date.now() - lastSent >= 50) {
                         lastStage = update.stage
                         lastSent = Date.now()
-                        if (!event.sender.isDestroyed()) event.sender.send('journal:repository-import', update)
+                        if (!event.sender.isDestroyed() && !event.sender.isLoadingMainFrame())
+                            event.sender.send('journal:repository-import', update)
                     }
                 }
                 progress({ stage: 'selecting' })
                 const path = await folder()
-                return path ? await service.addRepositories(path, progress) : service.reply()
+                if (!path) return service.reply()
+                if (store.state.repositoryImport?.status === 'running')
+                    return service.reply({ message: 'A repository import is already running.' })
+                store.state.repositoryImport = { status: 'running', completed: 0, total: 0 }
+                store.persist()
+                void service
+                    .addRepositories(path, progress)
+                    .then(() => {
+                        if (store.state.settings.refreshMinutes > 0) void service.refresh({ afterCurrent: true })
+                    })
+                    .catch((error: unknown) => {
+                        store.state.repositoryImport = {
+                            status: 'error',
+                            completed: 0,
+                            total: 0,
+                            message: error instanceof Error ? error.message : String(error)
+                        }
+                        store.persist()
+                    })
+                return service.reply({ message: 'Import started. You can close Settings and keep writing.' })
             }
             case 'relocate': {
                 const path = await folder()
@@ -117,6 +158,7 @@ void app.whenReady().then(() => {
                     if (!repository) throw new Error('Repository not found')
                     repository.path = inspected.path
                     repository.branches = inspected.branches
+                    repository.remotes = inspected.remotes
                     repository.available = true
                     repository.removed = false
                     store.persist()
@@ -190,13 +232,7 @@ void app.whenReady().then(() => {
                 break
             case 'state': {
                 const remotes: Record<string, string[]> = {}
-                for (const repository of store.state.repositories.filter((item) => item.available && !item.removed)) {
-                    try {
-                        remotes[repository.id] = await service.remoteCandidates(repository.id)
-                    } catch {
-                        remotes[repository.id] = []
-                    }
-                }
+                for (const repository of store.state.repositories) remotes[repository.id] = repository.remotes ?? []
                 return { ...service.reply(), remotes }
             }
             default:
@@ -206,11 +242,28 @@ void app.whenReady().then(() => {
     })
     const refreshIfActive = () => {
         const minutes = store.state.settings.refreshMinutes
-        const elapsed = Date.now() - new Date(store.state.lastRefreshed ?? 0).getTime()
+        const elapsed =
+            Date.now() - new Date(store.state.lastRefreshAttempt ?? store.state.lastRefreshed ?? 0).getTime()
+        const pending = Object.entries(store.state.acquisition ?? {}).find(
+            ([key, status]) =>
+                store.state.repositories.some(
+                    (repository) => key.endsWith(`:${repository.id}`) && !repository.removed
+                ) &&
+                (!key.startsWith('github:') || !!vault.get('github')) &&
+                (key.startsWith('github:') || key.startsWith('git:')) &&
+                status.windowEnd &&
+                (status.status === 'idle' ||
+                    (status.status === 'paused' && !!status.retryAt && Date.parse(status.retryAt) <= Date.now()))
+        )
+        if (pending) {
+            const [source, repositoryId] = pending[0].split(':')
+            void service.refresh({ repositoryId, source: source === 'git' ? 'git' : 'github' })
+            return
+        }
         if (minutes > 0 && !mainWindow.isDestroyed() && mainWindow.isVisible() && elapsed >= minutes * 60000)
             void service.refresh()
     }
-    setInterval(refreshIfActive, 30000).unref()
+    setInterval(refreshIfActive, 5000).unref()
     if (store.state.settings.refreshMinutes > 0) void service.refresh()
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) mainWindow = windowFor()

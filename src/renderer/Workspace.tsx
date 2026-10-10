@@ -162,10 +162,14 @@ export function Workspace({
             setDetailError('')
             if (sample) return
             setDetailBusy(true)
-            const reply = await realRun({ type: 'details', activityId: item.id })
+            const reply = await realRun({
+                type: 'details',
+                activityId: item.id,
+                content: tab === 'details' ? 'files' : 'diff'
+            })
             if (requestId.current !== id) return
-            if (!reply)
-                setDetailError('Could not load these changes. Retry, or check the repository connection in settings.')
+            if (!reply || reply.detailError)
+                setDetailError(reply?.detailError ?? 'Could not load these changes. Retry loading the activity.')
             setDetailBusy(false)
         },
         [sample, realRun]
@@ -283,7 +287,7 @@ export function Workspace({
                 canCite={canCite}
                 initialTab={inspectionTab}
                 onCite={() => cite(selected)}
-                onInspect={(item) => void inspect(item)}
+                onInspect={(item, tab) => void inspect(item, tab)}
                 onPopout={popout}
                 onClose={() => setSelectedId(undefined)}
             />
@@ -350,9 +354,9 @@ export function Workspace({
                     </Button>
                 </div>
             )}
-            {!sample && (error || state.refreshError) && (
+            {!sample && error && (
                 <div className="ws-error-bar" role="alert">
-                    <span>Could not update your journal. Your saved writing is still available.</span>
+                    <span>{error}</span>
                     <Button variant="secondary" size="sm" onClick={refresh}>
                         Retry refresh
                     </Button>

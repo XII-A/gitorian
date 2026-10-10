@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { plainText } from '../shared/notion-format'
 import type { Command, Destination, Reply, Repository, RepositoryImportProgress, State } from '../shared/model'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/arc/tabs/tabs'
@@ -87,22 +87,25 @@ export function Settings({
     }
     const editRepository = (repository: Repository, patch: Partial<Repository>) =>
         setRepositories((items) => items.map((item) => (item.id === repository.id ? { ...item, ...patch } : item)))
-    const mergeRepositories = (fresh: Repository[]) =>
-        setRepositories((local) =>
-            fresh.map((item) => {
-                const edited = local.find((old) => old.id === item.id)
-                if (!edited) return item
-                const before = state.repositories.find((old) => old.id === item.id)
-                return {
-                    ...item,
-                    ...edited,
-                    path: item.path,
-                    available: item.available,
-                    branches: item.branches,
-                    removed: item.removed !== before?.removed ? item.removed : edited.removed
-                }
-            })
-        )
+    const mergeRepositories = useCallback(
+        (fresh: Repository[]) =>
+            setRepositories((local) =>
+                fresh.map((item) => {
+                    const edited = local.find((old) => old.id === item.id)
+                    if (!edited) return item
+                    const before = state.repositories.find((old) => old.id === item.id)
+                    return {
+                        ...item,
+                        ...edited,
+                        path: item.path,
+                        available: item.available,
+                        branches: item.branches,
+                        removed: item.removed !== before?.removed ? item.removed : edited.removed
+                    }
+                })
+            ),
+        [state.repositories]
+    )
     const destination = (patch: Partial<Destination>) =>
         setSettings((current) => ({
             ...current,
@@ -161,6 +164,9 @@ export function Settings({
             await invoke({ type: 'settings', settings })
             close()
         })
+    useEffect(() => {
+        mergeRepositories(state.repositories)
+    }, [state.repositories, mergeRepositories])
     const startSignIn = () =>
         action('github', async () => {
             if (!settings.githubClientId.trim())
@@ -200,6 +206,23 @@ export function Settings({
                         .map((value) => ({ value, label: value }))}
                     onValueChange={(base) => editRepository(repository, { base })}
                 />
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={!!busy || repository.removed}
+                    onClick={() =>
+                        action('backfill', async () => {
+                            const result = await invoke({
+                                type: 'backfill',
+                                repositoryId: repository.id,
+                                since: dateKey(dateValue(repository.trackingStart))
+                            })
+                            setStatus(result.message ?? 'Older activity is being acquired. You can close Settings.')
+                        })
+                    }
+                >
+                    Fetch activity from this date
+                </Button>
             </div>
             <Select
                 label="GitHub remote"

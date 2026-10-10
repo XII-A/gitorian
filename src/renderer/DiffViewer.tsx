@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
-import { Diff, Hunk, parseDiff } from 'react-diff-view'
+import { useEffect, useMemo, useState } from 'react'
+import { Diff, Hunk } from 'react-diff-view'
+import { cachedDiff, loadDiff } from './diff-loader'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { ChangedFilePicker } from './ChangedFilePicker'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -7,14 +8,19 @@ import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 export function DiffViewer({ text, initialSplit = false }: { text: string; initialSplit?: boolean }) {
     const [mode, setMode] = useState(initialSplit ? 'split' : 'unified')
     const [selected, setSelected] = useState('')
-    const files = useMemo(() => {
-        if (!text.startsWith('diff --git') || text.length > 2_000_000) return []
-        try {
-            return parseDiff(text)
-        } catch {
-            return []
+    const [parsed, setParsed] = useState<{ text: string; files: Awaited<ReturnType<typeof loadDiff>> }>()
+    const needsParsing = text.startsWith('diff --git') && text.length <= 2_000_000
+    const files = useMemo(() => cachedDiff(text) ?? (parsed?.text === text ? parsed.files : []), [text, parsed])
+    useEffect(() => {
+        if (!needsParsing) return
+        let current = true
+        void loadDiff(text).then((files) => {
+            if (current) setParsed({ text, files })
+        })
+        return () => {
+            current = false
         }
-    }, [text])
+    }, [text, needsParsing])
     const paths = useMemo(
         () => files.map((file) => (file.newPath === '/dev/null' ? file.oldPath : file.newPath)),
         [files]
@@ -26,6 +32,7 @@ export function DiffViewer({ text, initialSplit = false }: { text: string; initi
                 <span>Reviews and metadata changes may not contain code changes.</span>
             </div>
         )
+    if (needsParsing && !cachedDiff(text) && parsed?.text !== text) return <p role="status">Preparing changes…</p>
     if (!files.length)
         return (
             <ScrollArea className="ws-diff-scroll" orientation="both" label="Text diff" fade={0}>
@@ -62,7 +69,12 @@ export function DiffViewer({ text, initialSplit = false }: { text: string; initi
                     label={`Scrollable diff for ${path}`}
                     fade={0}
                 >
-                    {active.hunks.length ? (
+                    {active.hunks.reduce((total, hunk) => total + hunk.changes.length, 0) > 4000 ? (
+                        <p>
+                            This file has more than 4,000 diff lines. Open it in GitHub or your Git tool to view the
+                            full changes.
+                        </p>
+                    ) : active.hunks.length ? (
                         <Diff
                             viewType={mode === 'split' ? 'split' : 'unified'}
                             diffType={active.type}
