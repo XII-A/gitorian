@@ -25,6 +25,8 @@ Do not redefine these tokens for an entire page. A filter chip may locally set `
 
 The hub, workspace, and related activity use `ActivityRow`: connected timeline nodes, a title, repository and branch metadata, an Arc status badge, and a short SHA or pull request number. Connect nodes only within each visible group. Rows have a borderless rounded hover/selection background. Preserve native button behavior, workspace selection, and citation dragging. The installed Arc `Badge` has a local `animateChanges={false}` option for static records, keeping long lists free of per-row motion and resize observers; changing status controls retain the default animation.
 
+Pull references display only the trailing number from real `repository-id:pr:number` IDs or sample `sample/pr/number` IDs. Bound the trailing column so the title and metadata retain priority. Each row draws its own incoming connector; hover and selection use the stronger border token so row backgrounds cannot hide the timeline.
+
 Closed ghost `MorphSelect` controls use the same hover surface and foreground as Arc ghost buttons, with no pointer-hover border. Expanded menus retain their border.
 
 ## Writing workspace

@@ -3,9 +3,11 @@
 }
 .activity-row {
     --activity-node-size: 26px;
+    --activity-line-color: var(--border-subtle);
+    --activity-node-border: var(--border);
     position: relative;
     display: grid;
-    grid-template-columns: var(--activity-node-size) minmax(0, 1fr) max-content 14px;
+    grid-template-columns: var(--activity-node-size) minmax(0, 1fr) fit-content(7rem) 14px;
     align-items: flex-start;
     gap: var(--space-3);
     width: 100%;
@@ -20,15 +22,24 @@
     cursor: pointer;
     transition: background-color var(--duration-fast) var(--ease-standard);
 }
-.activity-row[data-connected]::before {
+.activity-row[data-connected]::before,
+.activity-row-list > .activity-row + .activity-row::after,
+.activity-row-list > li + li > .activity-row::after {
     content: '';
     position: absolute;
-    top: calc(var(--space-3) + var(--activity-node-size));
-    bottom: calc(-1 * var(--space-3));
     left: calc(var(--space-4) + var(--activity-node-size) / 2);
     width: 1px;
-    background: var(--border-subtle);
+    background: var(--activity-line-color);
     pointer-events: none;
+}
+.activity-row[data-connected]::before {
+    top: calc(var(--space-3) + var(--activity-node-size));
+    bottom: 0;
+}
+.activity-row-list > .activity-row + .activity-row::after,
+.activity-row-list > li + li > .activity-row::after {
+    top: 0;
+    height: var(--space-3);
 }
 .activity-row-node {
     display: grid;
@@ -36,13 +47,13 @@
     width: var(--activity-node-size);
     height: var(--activity-node-size);
     flex: none;
-    border: 1px solid var(--border);
+    border: 1px solid var(--activity-node-border);
     border-radius: var(--radius-pill);
     color: var(--text-secondary);
 }
 .activity-row[data-kind='merged'] .activity-row-node {
     color: var(--success);
-    border-color: color-mix(in oklab, var(--success) 30%, var(--border));
+    border-color: color-mix(in oklab, var(--success) 30%, var(--activity-node-border));
 }
 .activity-row-content {
     display: flex;
@@ -76,6 +87,8 @@
 .activity-row-trailing {
     display: flex;
     flex: none;
+    min-width: 0;
+    max-width: 7rem;
     flex-direction: column;
     align-items: flex-end;
     gap: var(--space-1);
@@ -88,6 +101,10 @@
     --badge-foreground: var(--foreground);
 }
 .activity-row-reference {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: var(--text-muted);
     font-family: ui-monospace, monospace;
     font-size: var(--text-xs);
@@ -117,10 +134,14 @@
     }
 }
 .activity-row[aria-pressed='true'] {
+    --activity-line-color: var(--border-strong);
+    --activity-node-border: var(--border-strong);
     background: var(--surface-muted);
 }
 @media (hover: hover) and (pointer: fine) {
     .activity-row:hover {
+        --activity-line-color: var(--border-strong);
+        --activity-node-border: var(--border-strong);
         background: var(--surface-muted);
     }
 }

@@ -21,7 +21,7 @@ const labels: Record<Activity['kind'], string> = {
 export function ActivityRow({ activity, repositoryName, connected, className, ...props }: Props) {
     const Icon =
         activity.kind === 'commit' ? GitCommitHorizontal : activity.kind === 'merged' ? GitMerge : GitPullRequest
-    const pullNumber = activity.prId?.split('/').at(-1)
+    const pullNumber = activity.prId?.match(/(?:^|[:/])(\d+)$/)?.[1]
     const reference = activity.kind === 'commit' ? activity.sha?.slice(0, 7) : pullNumber ? `#${pullNumber}` : undefined
     return (
         <button
