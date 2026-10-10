@@ -29,6 +29,8 @@ Pull references display only the trailing number from real `repository-id:pr:num
 
 `ActivityHover` moves one shared background between rows using Arc's morph spring, including across day groups. Pointer movement updates motion values without rerendering the activity records. Leaving the list or scrolling clears the highlight; resizing and filtering update its bounds. Keep the highlight noninteractive, preserve selected-row backgrounds, and snap motion when reduced motion is requested.
 
+Timeline hover contrast travels with the background. A noninteractive SVG mirrors the connector and node borders in two paths (neutral and merged), clipped by the background's shared motion values. Only the portion covered by the moving background brightens, with no delayed per-row hover state. Measure paths on layout changes, not animation frames; preserve gaps between day groups and merged status colors.
+
 Closed ghost `MorphSelect` controls use the same hover surface and foreground as Arc ghost buttons, with no pointer-hover border. Expanded menus retain their border.
 
 ## Writing workspace
