@@ -1,3 +1,7 @@
+import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
+import { Alert } from './components/arc/alert/alert'
+import { readableError } from './background-work'
+import { activityUpdating, actionableSources } from './background-work'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { localDate, shiftWeek, weekOf, stateSchema } from '../shared/model'
@@ -20,6 +24,7 @@ import { ActivityChart } from './ActivityChart'
 import { ActivityRow } from './ActivityRow'
 import { ActivityHover } from './ActivityHover'
 import { ProjectFilter } from './ProjectFilter'
+import { hasCachedDetails } from './activity-cache'
 import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
 import landscape from './assets/week-landscape.jpg'
 import './workspace.css'
@@ -32,6 +37,7 @@ interface Props {
     initialWeek: string
     initialActivity?: string
     onBack: (week: string) => void
+    onSources: () => void
     onSettings: () => void
 }
 export function Workspace({
@@ -42,6 +48,7 @@ export function Workspace({
     initialWeek,
     initialActivity,
     onBack,
+    onSources,
     onSettings
 }: Props) {
     const [week, setWeek] = useState(initialWeek)
@@ -160,15 +167,22 @@ export function Workspace({
             setSelectedId(item.id)
             setInspectionTab(tab)
             setDetailError('')
-            if (sample) return
+            if (sample || hasCachedDetails(realState, item, tab === 'details' ? 'files' : 'diff')) {
+                setDetailBusy(false)
+                return
+            }
             setDetailBusy(true)
-            const reply = await realRun({ type: 'details', activityId: item.id })
+            const reply = await realRun({
+                type: 'details',
+                activityId: item.id,
+                content: tab === 'details' ? 'files' : 'diff'
+            })
             if (requestId.current !== id) return
-            if (!reply)
-                setDetailError('Could not load these changes. Retry, or check the repository connection in settings.')
+            if (!reply || reply.detailError)
+                setDetailError(reply?.detailError ?? 'Could not load these changes. Retry loading the activity.')
             setDetailBusy(false)
         },
-        [sample, realRun]
+        [sample, realRun, realState]
     )
     const initialInspected = useRef(false)
     useEffect(() => {
@@ -283,7 +297,7 @@ export function Workspace({
                 canCite={canCite}
                 initialTab={inspectionTab}
                 onCite={() => cite(selected)}
-                onInspect={(item) => void inspect(item)}
+                onInspect={(item, tab) => void inspect(item, tab)}
                 onPopout={popout}
                 onClose={() => setSelectedId(undefined)}
             />
@@ -319,11 +333,23 @@ export function Workspace({
                     />
                 </div>
                 <div className="ws-utilities">
+                    {actionableSources(state).length > 0 && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            data-source-status
+                            onClick={onSources}
+                            aria-label="Activity sources"
+                            title="Activity sources"
+                        >
+                            <StackIcon size={18} weight="bold" aria-hidden="true" />
+                        </Button>
+                    )}
                     <Button
                         variant="ghost"
                         size="sm"
                         onClick={refresh}
-                        loading={refreshing}
+                        loading={refreshing || activityUpdating(state)}
                         aria-label="Refresh activity"
                         title="Refresh activity"
                     >
@@ -350,13 +376,13 @@ export function Workspace({
                     </Button>
                 </div>
             )}
-            {!sample && (error || state.refreshError) && (
-                <div className="ws-error-bar" role="alert">
-                    <span>Could not update your journal. Your saved writing is still available.</span>
+            {!sample && error && (
+                <Alert tone="danger" title="Activity could not be refreshed">
+                    <p>{readableError(error)}</p>
                     <Button variant="secondary" size="sm" onClick={refresh}>
                         Retry refresh
                     </Button>
-                </div>
+                </Alert>
             )}
             <div className="ws-frame" data-inspecting={!!inspector}>
                 <aside className="ws-activity" aria-label="Weekly activity">

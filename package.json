@@ -19,6 +19,7 @@
         "package": "npm run build && electron-builder",
         "package:dir": "npm run build && electron-builder --dir",
         "smoke": "electron tools/desktop-smoke.mjs",
+        "smoke:acquisition": "electron tools/acquisition-smoke.mjs",
         "smoke:dev-reload": "node tools/dev-reload-smoke.mjs"
     },
     "build": {
@@ -61,6 +62,7 @@
         "@tiptap/react": "3.31.4",
         "@tiptap/starter-kit": "3.31.4",
         "effect": "3.22.2",
+        "gitdiff-parser": "0.3.1",
         "lucide-react": "1.52.0",
         "motion": "14.0.0",
         "react": "19.3.0",

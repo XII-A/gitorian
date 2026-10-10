@@ -28,7 +28,8 @@ export const repositorySchema = z.object({
     available: z.boolean(),
     removed: z.boolean(),
     branchBases: z.record(z.string(), z.string()),
-    branches: z.array(z.string()).default([])
+    branches: z.array(z.string()).default([]),
+    remotes: z.array(z.string()).optional()
 })
 export const activitySchema = z.object({
     id: z.string(),
@@ -49,6 +50,8 @@ export const activitySchema = z.object({
     head: z.string().optional(),
     fingerprint: z.string().optional(),
     integrationSha: z.string().optional(),
+    sourceVersion: z.string().optional(),
+    filesLoaded: z.boolean().optional(),
     disposition: z.enum(['inbox', 'deferred', 'dismissed']),
     deferUntil: z.string().optional(),
     reason: z.string().optional(),
@@ -132,7 +135,40 @@ export const stateSchema = z.object({
         })
     }),
     lastRefreshed: z.string().optional(),
-    refreshError: z.string().optional()
+    lastRefreshAttempt: z.string().optional(),
+    refreshError: z.string().optional(),
+    snapshotVersion: z.number().optional(),
+    transportPauses: z.record(z.string(), z.number()).optional(),
+    acquisition: z
+        .record(
+            z.string(),
+            z.object({
+                status: z.enum(['idle', 'running', 'paused', 'error', 'cancelled']),
+                lastSuccess: z.string().optional(),
+                error: z.string().optional(),
+                retryAt: z.string().optional(),
+                since: z.string().optional(),
+                windowEnd: z.string().optional(),
+                page: z.number().optional(),
+                versions: z.record(z.string(), z.string()).optional(),
+                refs: z.record(z.string(), z.string()).optional(),
+                configuration: z.string().optional(),
+                offset: z.number().optional(),
+                excludedTips: z.array(z.string()).optional()
+            })
+        )
+        .optional(),
+    repositoryImport: z
+        .object({
+            id: z.string().optional(),
+            skipped: z.number().optional(),
+            skippedItems: z.array(z.object({ path: z.string(), reason: z.string() })).optional(),
+            status: z.enum(['running', 'done', 'error', 'cancelled']),
+            completed: z.number(),
+            total: z.number(),
+            message: z.string().optional()
+        })
+        .optional()
 })
 export type State = z.infer<typeof stateSchema>
 export type Repository = z.infer<typeof repositorySchema>
@@ -169,13 +205,20 @@ export function initialState(): State {
         }
     }
 }
+const dateFormatters = new Map<string, Intl.DateTimeFormat>()
 export function localDate(date: Date, timezone: string): string {
-    const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-    }).formatToParts(date)
+    let formatter = dateFormatters.get(timezone)
+    if (!formatter) {
+        formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        })
+        if (dateFormatters.size >= 16) dateFormatters.delete(dateFormatters.keys().next().value!)
+        dateFormatters.set(timezone, formatter)
+    }
+    const parts = formatter.formatToParts(date)
     const get = (type: string) => parts.find((part) => part.type === type)!.value
     return `${get('year')}-${get('month')}-${get('day')}`
 }
@@ -239,7 +282,17 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('addRepositories') }),
     z.object({ type: z.literal('repository'), repository: repositorySchema }),
     z.object({ type: z.literal('relocate'), id: z.string() }),
-    z.object({ type: z.literal('refresh') }),
+    z.object({
+        type: z.literal('refresh'),
+        repositoryId: z.string().optional(),
+        source: z.enum(['git', 'github', 'notion']).optional()
+    }),
+    z.object({ type: z.literal('backfill'), repositoryId: z.string(), since: z.iso.date() }),
+    z.object({
+        type: z.literal('stopWork'),
+        source: z.enum(['git', 'github', 'repositories']),
+        repositoryId: z.string().optional()
+    }),
     z.object({
         type: z.literal('history'),
         repositoryId: z.string(),
@@ -248,7 +301,7 @@ export const commandSchema = z.discriminatedUnion('type', [
         author: z.string(),
         since: z.string()
     }),
-    z.object({ type: z.literal('details'), activityId: z.string() }),
+    z.object({ type: z.literal('details'), activityId: z.string(), content: z.enum(['files', 'diff']).optional() }),
     z.object({ type: z.literal('newDraft'), week: z.string() }),
     z.object({ type: z.literal('draft'), draft: draftSchema }),
     z.object({ type: z.literal('select'), draftId: z.string(), activityId: z.string(), included: z.boolean() }),
@@ -288,6 +341,7 @@ export interface Reply {
     devicePending?: { interval: number }
     connections: { github: boolean; notion: boolean; protectedStorage: boolean }
     message?: string
+    detailError?: string
 }
 export interface DesktopBridge {
     invoke: (command: Command) => Promise<Reply>

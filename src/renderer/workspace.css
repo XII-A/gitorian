@@ -851,3 +851,28 @@
     flex: 1;
     min-height: 0;
 }
+
+.ws-diff-state {
+    flex: 1;
+    min-height: 0;
+}
+.ws-diff-state-viewport {
+    display: grid;
+    place-items: center;
+}
+.ws-diff-error-icon {
+    color: var(--danger);
+}
+.ws-diff-loading {
+    display: grid;
+    flex: 1;
+    place-items: center;
+    padding: var(--space-6);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+}
+.ws-diff-notice {
+    padding: var(--space-3) var(--space-6);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+}

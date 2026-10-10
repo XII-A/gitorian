@@ -5,6 +5,7 @@ import { sampleState } from './workspace-sample'
 import { Button } from './components/arc/button/button'
 import { Editor } from './Editor'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
+import { hasCachedDetails } from './activity-cache'
 import './workspace.css'
 
 export function WorkspaceReference({
@@ -59,15 +60,18 @@ export function WorkspaceReference({
     const inspect = useCallback(
         async (item: Activity) => {
             setSelectedId(item.id)
-            if (example) return
-            setLoading(true)
             setError('')
+            if (example || hasCachedDetails(state, item)) {
+                setLoading(false)
+                return
+            }
+            setLoading(true)
             const reply = await run({ type: 'details', activityId: item.id })
-            if (!reply)
-                setError('Could not load this diff. Retry loading it, or reconnect the repository in the workspace.')
+            if (!reply || reply.detailError)
+                setError(reply?.detailError ?? 'Could not load this diff. Retry loading it.')
             setLoading(false)
         },
-        [example, run]
+        [example, run, state]
     )
     const loaded = useRef(false)
     useEffect(() => {

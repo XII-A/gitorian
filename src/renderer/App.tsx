@@ -1,4 +1,5 @@
-﻿import { useCallback, useEffect, useState } from 'react'
+import { activityUpdating } from './background-work'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Command, Reply } from '../shared/model'
 import { WeeklyHub } from './WeeklyHub'
 import { Settings } from './Settings'
@@ -9,8 +10,21 @@ import { WorkspaceReference } from './WorkspaceReference'
 import { localDate, weekOf } from '../shared/model'
 import type { Activity } from '../shared/model'
 import { journalWeek } from './hub-model'
+import { AcquisitionStatus } from './AcquisitionStatus'
+import { BackgroundNotifications } from './BackgroundNotifications'
+import { ToastStack, ToastStackProvider } from './components/arc/toast-stack/toast-stack'
+import { unchangedStateReply } from './activity-cache'
 
 export function App() {
+    return (
+        <ToastStackProvider>
+            <JournalApp />
+            <ToastStack className="journal-notifications" />
+        </ToastStackProvider>
+    )
+}
+
+function JournalApp() {
     const [screen, setScreen] = useState<'hub' | 'workspace'>('hub')
     const [reply, setReply] = useState<Reply>()
     const [remotes, setRemotes] = useState<Record<string, string[]>>({})
@@ -20,11 +34,28 @@ export function App() {
     const [workspaceWeek, setWorkspaceWeek] = useState('')
     const [workspaceActivity, setWorkspaceActivity] = useState<string>()
     const [reference, setReference] = useState<{ kind: string; id: string }>()
+    const [sourcesOpen, setSourcesOpen] = useState(false)
+    const polling = useRef(false)
+    const currentReply = useRef(reply)
+    currentReply.current = reply
     const run = useCallback(async (command: Command): Promise<Reply | undefined> => {
         try {
             const result = await window.journal.invoke(command)
-            setReply(result)
-            if ('remotes' in result) setRemotes(result.remotes as Record<string, string[]>)
+            setReply((current) => {
+                if (unchangedStateReply(current, result, command)) return current
+                if (
+                    current?.state.restoreId === result.state.restoreId &&
+                    (current?.state.snapshotVersion ?? 0) > (result.state.snapshotVersion ?? 0)
+                )
+                    return current
+                const diffs = current?.state.restoreId === result.state.restoreId ? { ...current?.state.diffs } : {}
+                if (command.type === 'details' && result.diff !== undefined) diffs[command.activityId] = result.diff
+                return { ...result, state: { ...result.state, diffs: { ...diffs, ...result.state.diffs } } }
+            })
+            if ('remotes' in result) {
+                const next = result.remotes as Record<string, string[]>
+                setRemotes((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next))
+            }
             setError('')
             return result
         } catch (failure) {
@@ -46,9 +77,18 @@ export function App() {
             setWorkspaceWeek(requestedWeek)
         if (parameters.has('workspace') || parameters.has('reference')) setScreen('workspace')
         void run({ type: 'state' })
+        let lastPoll = Date.now()
         const timer = setInterval(() => {
-            void run({ type: 'state' })
-        }, 15000)
+            if (polling.current) return
+            const state = currentReply.current?.state
+            const active = state?.repositoryImport?.status === 'running' || (!!state && activityUpdating(state))
+            if (!active && Date.now() - lastPoll < 15000) return
+            lastPoll = Date.now()
+            polling.current = true
+            void run({ type: 'state' }).finally(() => {
+                polling.current = false
+            })
+        }, 2000)
         return () => clearInterval(timer)
     }, [run])
     useEffect(() => {
@@ -107,6 +147,26 @@ export function App() {
     }
     return (
         <>
+            {reply && !reference && (
+                <>
+                    <AcquisitionStatus
+                        state={reply.state}
+                        run={run}
+                        open={sourcesOpen}
+                        onOpenChange={setSourcesOpen}
+                        onSettings={() => {
+                            setSourcesOpen(false)
+                            setSettingsOpen(true)
+                        }}
+                    />
+                    <BackgroundNotifications
+                        state={reply.state}
+                        run={run}
+                        settingsOpen={settingsOpen}
+                        onSources={() => setSourcesOpen(true)}
+                    />
+                </>
+            )}
             {reference && reply ? (
                 <WorkspaceReference state={reply.state} run={run} kind={reference.kind} id={reference.id} />
             ) : screen === 'workspace' && reply ? (
@@ -118,6 +178,7 @@ export function App() {
                     initialWeek={workspaceWeek || weekOf(new Date(), reply.state.settings)}
                     initialActivity={workspaceActivity}
                     onBack={backToHub}
+                    onSources={() => setSourcesOpen(true)}
                     onSettings={() => setSettingsOpen(true)}
                 />
             ) : reply && !reference ? (
@@ -126,6 +187,7 @@ export function App() {
                     state={reply.state}
                     run={run}
                     error={error}
+                    onSources={() => setSourcesOpen(true)}
                     onSettings={() => setSettingsOpen(true)}
                     onWrite={openWorkspace}
                     onActivity={openActivity}

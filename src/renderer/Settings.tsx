@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Disclosure } from './components/Disclosure'
+import { ImportResults } from './ImportResults'
+import { Alert } from './components/arc/alert/alert'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { plainText } from '../shared/notion-format'
 import type { Command, Destination, Reply, Repository, RepositoryImportProgress, State } from '../shared/model'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/arc/tabs/tabs'
@@ -55,13 +58,17 @@ export function Settings({
     const matchingRepositories = repositories.filter((repository) =>
         `${repository.name} ${repository.path}`.toLowerCase().includes(repositorySearch.trim().toLowerCase())
     )
-    const importLabel = !importProgress
-        ? 'Add repositories from folder'
-        : importProgress.stage === 'selecting'
-          ? 'Waiting for folder selection…'
-          : importProgress.stage === 'discovering'
-            ? `Finding repositories… ${importProgress.found} found`
-            : `Processing repositories ${importProgress.completed}/${importProgress.total}`
+    const activeImport = state.repositoryImport?.status === 'running' ? state.repositoryImport : undefined
+    const importLabel =
+        !importProgress && activeImport
+            ? `Processing repositories ${activeImport.completed}/${activeImport.total || '...'}`
+            : !importProgress
+              ? 'Add repositories from folder'
+              : importProgress.stage === 'selecting'
+                ? 'Waiting for folder selection…'
+                : importProgress.stage === 'discovering'
+                  ? `Finding repositories… ${importProgress.found} found`
+                  : `Processing repositories ${importProgress.completed}/${importProgress.total}`
     useEffect(() => window.journal.onRepositoryImportProgress?.(setImportProgress), [])
     const requestClose = () => {
         if (busy) return
@@ -87,22 +94,25 @@ export function Settings({
     }
     const editRepository = (repository: Repository, patch: Partial<Repository>) =>
         setRepositories((items) => items.map((item) => (item.id === repository.id ? { ...item, ...patch } : item)))
-    const mergeRepositories = (fresh: Repository[]) =>
-        setRepositories((local) =>
-            fresh.map((item) => {
-                const edited = local.find((old) => old.id === item.id)
-                if (!edited) return item
-                const before = state.repositories.find((old) => old.id === item.id)
-                return {
-                    ...item,
-                    ...edited,
-                    path: item.path,
-                    available: item.available,
-                    branches: item.branches,
-                    removed: item.removed !== before?.removed ? item.removed : edited.removed
-                }
-            })
-        )
+    const mergeRepositories = useCallback(
+        (fresh: Repository[]) =>
+            setRepositories((local) =>
+                fresh.map((item) => {
+                    const edited = local.find((old) => old.id === item.id)
+                    if (!edited) return item
+                    const before = state.repositories.find((old) => old.id === item.id)
+                    return {
+                        ...item,
+                        ...edited,
+                        path: item.path,
+                        available: item.available,
+                        branches: item.branches,
+                        removed: item.removed !== before?.removed ? item.removed : edited.removed
+                    }
+                })
+            ),
+        [state.repositories]
+    )
     const destination = (patch: Partial<Destination>) =>
         setSettings((current) => ({
             ...current,
@@ -161,6 +171,9 @@ export function Settings({
             await invoke({ type: 'settings', settings })
             close()
         })
+    useEffect(() => {
+        mergeRepositories(state.repositories)
+    }, [state.repositories, mergeRepositories])
     const startSignIn = () =>
         action('github', async () => {
             if (!settings.githubClientId.trim())
@@ -200,6 +213,23 @@ export function Settings({
                         .map((value) => ({ value, label: value }))}
                     onValueChange={(base) => editRepository(repository, { base })}
                 />
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={!!busy || repository.removed}
+                    onClick={() =>
+                        action('backfill', async () => {
+                            const result = await invoke({
+                                type: 'backfill',
+                                repositoryId: repository.id,
+                                since: dateKey(dateValue(repository.trackingStart))
+                            })
+                            setStatus(result.message ?? 'Older activity is being acquired. You can close Settings.')
+                        })
+                    }
+                >
+                    Fetch activity from this date
+                </Button>
             </div>
             <Select
                 label="GitHub remote"
@@ -285,15 +315,15 @@ export function Settings({
                                 <Button
                                     variant="secondary"
                                     size="sm"
-                                    disabled={!!busy}
-                                    aria-busy={busy === 'repositories' || undefined}
+                                    disabled={!!busy || !!activeImport}
+                                    aria-busy={busy === 'repositories' || !!activeImport || undefined}
                                     onClick={() =>
                                         action('repositories', async () => {
                                             setImportProgress({ stage: 'selecting' })
                                             try {
                                                 const result = await invoke({ type: 'addRepositories' })
                                                 mergeRepositories(result.state.repositories)
-                                                setStatus(result.message ?? '')
+                                                setStatus('')
                                             } finally {
                                                 setImportProgress(undefined)
                                             }
@@ -303,6 +333,11 @@ export function Settings({
                                     {importLabel}
                                 </Button>
                             </div>
+                            {state.repositoryImport?.status !== 'running' && state.repositoryImport?.message && (
+                                <Disclosure title="Last import results" className="settings-hint">
+                                    <ImportResults job={state.repositoryImport} />
+                                </Disclosure>
+                            )}
                             {!repositories.length && (
                                 <p className="settings-hint">Choose the folder containing your Git repositories.</p>
                             )}
@@ -693,9 +728,11 @@ export function Settings({
                 <footer className="settings-footer">
                     <div className="settings-feedback">
                         {error ? (
-                            <p role="alert">{error}</p>
+                            <Alert tone="danger" title="Settings could not be updated">
+                                {error}
+                            </Alert>
                         ) : (
-                            <p role="status">{importProgress ? importLabel : status || 'Changes apply when saved.'}</p>
+                            <p role="status">{status || 'Changes apply when saved.'}</p>
                         )}
                     </div>
                     <Button disabled={!!busy || !!device} loading={busy === 'save'} onClick={save}>

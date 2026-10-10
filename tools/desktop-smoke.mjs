@@ -157,8 +157,15 @@ app.on('browser-window-created', (_, window) => {
                 const hubProjectChip=document.querySelector('.hub-filters > :last-child [role="combobox"]')?.textContent.includes('Projects')
                 const hubUsesArcChart=!!document.querySelector('.hub-chart [role="slider"]')
                 document.querySelector('[aria-label="Refresh activity"]').click()
-                for(let attempt=0;attempt<30&&!document.querySelector('.hub-activity');attempt++)
+                for(let attempt=0;attempt<100&&!document.querySelector('.hub-activity');attempt++)
                     await new Promise(resolve=>setTimeout(resolve,50))
+                // Measure dialog-only rendering after the asynchronous refresh settles.
+                for(let attempt=0;attempt<100;attempt++) {
+                    await new Promise(resolve=>setTimeout(resolve,50))
+                    const state=(await window.journal.invoke({type:'state'})).state
+                    if(Object.values(state.acquisition??{}).every(status=>status.status!=='running'&&!status.windowEnd)
+                        && document.querySelector('.acquisition-status summary')?.textContent.includes('Activity is up to date')) break
+                }
                 let dialogDateFormats=0
                 const originalFormatter=Intl.DateTimeFormat
                 Intl.DateTimeFormat=new Proxy(originalFormatter,{construct(target,args){dialogDateFormats++;return Reflect.construct(target,args)}})
@@ -168,6 +175,18 @@ app.on('browser-window-created', (_, window) => {
                 const hubDialogKeepsListIdle=dialogDateFormats<20
                 const hubDialogArcScroll=!!document.querySelector('.hub-detail-dialog [role="region"][aria-label="Activity details"]')
                 const hubDialogDimBackdrop=getComputedStyle(document.querySelector('[data-backdrop="dim"]')).backdropFilter==='none'
+                document.querySelector('.hub-detail-dialog [aria-label="Close dialog"]').click()
+                await new Promise(resolve=>setTimeout(resolve,250))
+                let cachedLoadingFlash=false
+                const cacheObserver=new MutationObserver(records=>{
+                    for(const record of records) for(const node of record.addedNodes)
+                        if(node.textContent?.includes('Loading activity details')) cachedLoadingFlash=true
+                })
+                cacheObserver.observe(document.body,{childList:true,subtree:true})
+                document.querySelector('.hub-activity').click()
+                await new Promise(resolve=>setTimeout(resolve,100))
+                cacheObserver.disconnect()
+                const cachedHubDetailsOpenImmediately=!!document.querySelector('.hub-detail-dialog')&&!cachedLoadingFlash
                 document.querySelector('.hub-detail-dialog [aria-label="Close dialog"]').click()
                 await new Promise(resolve=>setTimeout(resolve,250))
                 document.querySelector('[aria-label="Open journal"]').click()
@@ -183,7 +202,7 @@ app.on('browser-window-created', (_, window) => {
                 await new Promise(resolve => setTimeout(resolve, 200))
                 document.querySelector('[aria-label="Journal body"]').focus()
                 const newEntryUsesTemplate=document.querySelector('[aria-label="Journal body"]').textContent.includes('Template reflection.') && !!document.querySelector('[aria-label="Journal body"] h2')
-                return {opensOnHub,hubProjectChip,hubUsesArcChart,hubDialogKeepsListIdle,hubDialogArcScroll,hubDialogDimBackdrop,workspaceImplemented,noDraftCreated,returnsToHub,newEntryUsesTemplate,node:typeof require,version:before.state.version}
+                return {opensOnHub,hubProjectChip,hubUsesArcChart,hubDialogKeepsListIdle,hubDialogArcScroll,hubDialogDimBackdrop,cachedHubDetailsOpenImmediately,workspaceImplemented,noDraftCreated,returnsToHub,newEntryUsesTemplate,node:typeof require,version:before.state.version}
             })().catch(error => ({failure:String(error),stack:error.stack,text:document.body.innerText}))`)
             if ('failure' in result) throw new Error(JSON.stringify(result))
             Object.assign(result, settingsResult)

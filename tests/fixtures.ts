@@ -61,6 +61,9 @@ export async function workspace() {
     }
 }
 export function transport() {
+    let githubVersion = ''
+    let githubUpdatedAt = new Date().toISOString()
+    let revision = 0
     const pages: {
         id: string
         url: string
@@ -85,6 +88,7 @@ export function transport() {
         loseCreateResponse: false,
         failAppend: false,
         failDiff: false,
+        diffStatus: 200,
         fetch: (input: string | URL | Request, init: RequestInit = {}): Promise<Response> =>
             Promise.resolve().then(() => {
                 const url = input instanceof Request ? input.url : String(input)
@@ -95,12 +99,26 @@ export function transport() {
                 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 })
                 const list = (results: unknown[]) => json({ results, has_more: false, next_cursor: null })
                 if (url.includes('api.github.com')) {
+                    const version = JSON.stringify([
+                        remote.head,
+                        remote.patch,
+                        remote.merged,
+                        remote.finalPatch,
+                        remote.mergeParents,
+                        remote.authorDate,
+                        remote.authorEmail
+                    ])
+                    if (version !== githubVersion) {
+                        githubVersion = version
+                        githubUpdatedAt = new Date(Date.now() + revision++).toISOString()
+                    }
                     const pull = {
                         number: 1,
                         title: 'Improve work',
                         body: 'Context',
                         html_url: 'https://github.com/example/project/pull/1',
                         created_at: '2026-10-05T10:00:00Z',
+                        updated_at: githubUpdatedAt,
                         merged_at: remote.merged ? '2026-10-07T10:00:00Z' : null,
                         merge_commit_sha: remote.merged ? 'c'.repeat(40) : null,
                         user: { login: 'someone-else' },
@@ -109,6 +127,14 @@ export function transport() {
                     }
                     if (new Headers(init.headers).get('Accept') === 'application/vnd.github.diff') {
                         if (remote.failDiff) throw new Error('Diff connection unavailable')
+                        if (remote.diffStatus !== 200)
+                            return new Response(
+                                JSON.stringify({
+                                    message: 'Sorry, the diff exceeded the maximum number of lines.',
+                                    errors: [{ resource: 'PullRequest', field: 'diff', code: 'too_large' }]
+                                }),
+                                { status: remote.diffStatus, statusText: 'Not Acceptable' }
+                            )
                         return new Response(
                             url.includes(`/commits/${'c'.repeat(40)}`) ? remote.finalPatch : remote.patch
                         )

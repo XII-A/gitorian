@@ -1,4 +1,6 @@
-import { useEffect, useImperativeHandle, useState, type Ref } from 'react'
+import { Alert } from './components/arc/alert/alert'
+import { readableError } from './background-work'
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { ArrowRight, GitBranch } from 'lucide-react'
 import { localDate, type Activity, type State } from '../shared/model'
 import { Button } from './components/arc/button/button'
@@ -24,31 +26,54 @@ export function HubActivityDialog({
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState('')
     const [attempt, setAttempt] = useState(0)
+    const loadedDetails = useRef(new Map<string, Activity>())
     useImperativeHandle(
         ref,
         () => ({
             open(activity) {
-                setDetails(undefined)
+                const previous = loadedDetails.current.get(activity.id)
+                const cached = activity.filesLoaded
+                    ? activity
+                    : previous?.filesLoaded &&
+                        previous.sourceVersion === activity.sourceVersion &&
+                        previous.sha === activity.sha
+                      ? previous
+                      : undefined
+                setDetails(cached)
                 setError('')
-                setBusy(true)
-                setSelected(activity)
+                setBusy(!cached)
+                setSelected(cached ?? activity)
             }
         }),
         []
     )
     useEffect(() => {
         if (!selected) return
+        if (selected.filesLoaded) {
+            setDetails(selected)
+            setBusy(false)
+            return
+        }
         let cancelled = false
         setBusy(true)
         setError('')
-        // Details are read locally. The hub receives persisted changes on its next state refresh.
+        // The hub needs file metadata, not a full patch or revision capture.
         void window.journal
-            .invoke({ type: 'details', activityId: selected.id })
+            .invoke({ type: 'details', activityId: selected.id, content: 'files' })
             .then((reply) => {
-                if (!cancelled) setDetails(reply.state.activities.find((item) => item.id === selected.id))
+                if (!cancelled) {
+                    const activity = reply.state.activities.find((item) => item.id === selected.id)
+                    setDetails(activity)
+                    if (activity?.filesLoaded && !reply.detailError) {
+                        if (loadedDetails.current.size >= 32)
+                            loadedDetails.current.delete(loadedDetails.current.keys().next().value!)
+                        loadedDetails.current.set(activity.id, activity)
+                    }
+                    setError(reply.detailError ?? '')
+                }
             })
-            .catch(() => {
-                if (!cancelled) setError('Could not load activity details. Try again.')
+            .catch((failure: unknown) => {
+                if (!cancelled) setError(failure instanceof Error ? failure.message : String(failure))
             })
             .finally(() => {
                 if (!cancelled) setBusy(false)
@@ -109,8 +134,8 @@ export function HubActivityDialog({
                             {busy ? (
                                 <p role="status">Loading activity details…</p>
                             ) : error ? (
-                                <div role="alert">
-                                    <p>{error}</p>
+                                <Alert tone="danger" title="Activity details could not be loaded">
+                                    <p>{readableError(error)}</p>
                                     <Button
                                         variant="secondary"
                                         size="sm"
@@ -118,7 +143,7 @@ export function HubActivityDialog({
                                     >
                                         Retry details
                                     </Button>
-                                </div>
+                                </Alert>
                             ) : (
                                 <>
                                     <h3>Changed files</h3>
