@@ -16,6 +16,7 @@
         "**/node_modules",
         "/out",
         "/release",
-        "/package-lock.json"
+        "/package-lock.json",
+        "/.agents"
     ]
 }

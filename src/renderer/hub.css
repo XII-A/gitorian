@@ -161,54 +161,21 @@
     font-size: var(--text-xs);
     color: var(--text-secondary);
 }
-.hub-chart-bars {
-    display: flex;
-    align-items: end;
-    gap: var(--space-2);
-}
-.hub-chart-column {
-    flex: 1;
-    text-align: center;
-}
-.hub-chart-track {
-    height: 74px;
-    display: flex;
-    align-items: end;
-}
-.hub-chart-track > span {
-    width: 100%;
-    display: block;
-    background: var(--accent);
-    opacity: 0.65;
-    border-radius: 4px 4px 1px 1px;
-}
-.hub-chart-track > span[data-empty='true'] {
-    background: var(--border-strong);
-}
-.hub-chart-column small {
-    display: block;
-    color: var(--text-secondary);
-    font-size: var(--text-xs);
-    padding-top: var(--space-2);
-}
-.hub-chart-count {
-    display: block;
-    height: 20px;
-    font-size: 0.6875rem;
-    color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
-}
 .hub-filters {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
     gap: var(--space-1);
     margin-bottom: var(--space-5);
 }
-.hub-filters button {
+.hub-filters > button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: var(--space-2);
+    --radius-control: var(--radius-pill);
+    font-weight: 500;
+    line-height: var(--leading-body);
     background: transparent;
     border: 0;
     border-radius: var(--radius-pill);
@@ -217,89 +184,12 @@
     min-height: var(--control-height-sm);
     font-size: var(--text-xs);
 }
-.hub-filters button[aria-pressed='true'] {
+.hub-filters > button[aria-pressed='true'] {
     color: var(--foreground);
     background: var(--surface-muted);
 }
-.hub-filters button span {
-    font-size: 0.6875rem;
+.hub-filters > button > span {
     font-variant-numeric: tabular-nums;
-}
-.hub-activity {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    width: 100%;
-    text-align: start;
-    color: var(--foreground);
-    padding: var(--space-4) var(--space-3);
-    background: transparent;
-    border: 0;
-    border-radius: var(--space-3);
-}
-.hub-git-node {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    flex-shrink: 0;
-    color: var(--text-secondary);
-    position: relative;
-}
-.hub-activity:not(:last-child) .hub-git-node::after {
-    content: '';
-    position: absolute;
-    width: 1px;
-    height: 35px;
-    top: 28px;
-    background: var(--border-strong);
-}
-.hub-kind-merged .hub-git-node {
-    color: var(--success);
-}
-.hub-activity-content {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: var(--space-2);
-}
-.hub-activity-title {
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-    font-weight: 450;
-}
-.hub-activity-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-    color: var(--text-secondary);
-    font-size: 0.6875rem;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-}
-.hub-branch {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-.hub-activity-trailing {
-    display: flex;
-    flex-direction: column;
-    align-items: end;
-    gap: var(--space-2);
-    color: var(--text-secondary);
-    font-size: 0.6875rem;
-    flex-shrink: 0;
-}
-.hub-sha {
-    font-family: ui-monospace, monospace;
-}
-.hub-row-arrow {
-    color: var(--text-secondary);
-    flex-shrink: 0;
 }
 .hub-project-summary {
     padding: var(--space-6);
@@ -309,18 +199,6 @@
 }
 .hub-project-summary h2 {
     margin-bottom: var(--space-3);
-}
-.hub-timeline .hub-section-heading > div {
-    width: 140px;
-    flex-shrink: 0;
-}
-.hub-timeline .hub-section-heading label {
-    display: none;
-}
-.hub-project-filter {
-    min-height: var(--control-height-sm);
-    padding-inline: var(--space-3);
-    font-size: var(--text-xs);
 }
 .hub-project-line {
     display: flex;
@@ -406,9 +284,6 @@
 .hub-thread-summary .hub-chart {
     width: 260px;
 }
-.hub-thread-summary .hub-chart-track {
-    height: 36px;
-}
 .hub-thread-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 300px;
@@ -434,10 +309,38 @@
     color: var(--text-secondary);
 }
 .hub-detail-dialog {
-    width: min(640px, calc(100vw - 32px));
-    max-height: calc(100vh - 48px);
-    overflow: auto;
+    width: min(640px, calc(100% - var(--space-8)));
+    height: min(620px, calc(100dvh - var(--space-8)));
+    max-height: calc(100dvh - var(--space-8));
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     user-select: text;
+}
+.hub-detail-dialog > [data-arc-dialog-header] {
+    flex: none;
+}
+.hub-detail-dialog > [data-arc-dialog-body] {
+    padding: 0;
+    min-height: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+.hub-detail-scroll {
+    flex: 1;
+    min-height: 0;
+}
+.hub-detail-viewport {
+    padding: var(--space-6);
+    height: 100%;
+}
+.hub-detail-footer {
+    flex: none;
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--space-4) var(--space-6);
+    border-top: 1px solid var(--border);
 }
 .hub-detail-meta {
     display: flex;
@@ -520,10 +423,7 @@
 }
 
 @media (hover: hover) {
-    .hub-activity:hover {
-        background: var(--surface-muted);
-    }
-    .hub-filters button:hover {
+    .hub-filters > button:hover {
         color: var(--foreground);
     }
 }
@@ -575,9 +475,6 @@
         align-items: start;
         flex-direction: column;
     }
-    .hub-timeline .hub-section-heading > div {
-        width: 140px;
-    }
     .hub-topbar {
         flex-wrap: wrap;
         gap: var(--space-4);
@@ -611,22 +508,9 @@
     .hub-stats span {
         font-size: 0.6875rem;
     }
-    .hub-activity {
-        gap: var(--space-2);
-        padding-inline: var(--space-1);
-    }
-    .hub-activity-trailing {
-        display: none;
-    }
-    .hub-git-node {
-        width: 22px;
-    }
-    .hub-activity-meta {
-        gap: var(--space-2);
-    }
-    .hub-filters button {
+    .hub-filters > button {
         padding-inline: var(--space-2);
-        font-size: 0.6875rem;
+        font-size: var(--text-xs);
     }
     .hub-footer {
         flex-wrap: wrap;

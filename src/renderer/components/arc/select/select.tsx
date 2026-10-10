@@ -15,7 +15,11 @@ export interface SelectProps extends Omit<ComponentPropsWithoutRef<typeof Select
     placeholder?: string
     id?: string
     className?: string
-    options: { value: string; label: string; disabled?: boolean }[]
+    /** Ghost controls blend into toolbars and filter rows. */
+    variant?: 'default' | 'ghost'
+    /** Minimum menu width in pixels, still constrained to the viewport. */
+    contentMinWidth?: number
+    options: { value: string; label: string; disabled?: boolean; count?: number }[]
     'aria-labelledby'?: string
     'aria-label'?: string
 }
@@ -55,6 +59,8 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
         options,
         id,
         className,
+        variant = 'default',
+        contentMinWidth,
         disabled,
         onValueChange,
         ...rootProps
@@ -69,6 +75,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
     const currentValue = rootProps.value ?? uncontrolledValue
     const index = options.findIndex((option) => option.value === currentValue)
     const shown = currentValue ? (options[index]?.label ?? '') : placeholder
+    const count = options[index]?.count
     const [previousIndex, setPreviousIndex] = useState(index)
     const [direction, setDirection] = useState(1)
     if (previousIndex !== index) {
@@ -78,7 +85,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
 
     return (
         <div className={styles.field}>
-            <label htmlFor={controlId}>{label}</label>
+            {label && <label htmlFor={controlId}>{label}</label>}
             <SelectPrimitive.Root
                 {...rootProps}
                 disabled={disabled}
@@ -94,6 +101,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                     aria-label={rootProps['aria-label']}
                     aria-describedby={hintId}
                     className={[styles.trigger, className].filter(Boolean).join(' ')}
+                    data-variant={variant}
                 >
                     {/* Radix keeps the real value for assistive tech; the visible copy below animates between values. */}
                     <span className={styles.srOnly}>
@@ -110,7 +118,8 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                                 animate="center"
                                 exit="exit"
                             >
-                                {shown}
+                                <span className={styles.optionLabel}>{shown}</span>
+                                {count !== undefined && <span className={styles.count}>{count}</span>}
                             </motion.span>
                         </AnimatePresence>
                     </span>
@@ -124,6 +133,11 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                         position="popper"
                         sideOffset={4}
                         collisionPadding={12}
+                        style={
+                            contentMinWidth === undefined
+                                ? undefined
+                                : { minWidth: `max(var(--radix-select-trigger-width), ${contentMinWidth}px)` }
+                        }
                     >
                         <SelectPrimitive.ScrollUpButton className={styles.scrollButton}>
                             <ChevronUp size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -136,7 +150,10 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                                     disabled={option.disabled}
                                     className={styles.item}
                                 >
-                                    <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
+                                    <SelectPrimitive.ItemText>
+                                        {option.label}
+                                        {option.count !== undefined ? ` ${option.count}` : ''}
+                                    </SelectPrimitive.ItemText>
                                     <SelectPrimitive.ItemIndicator className={styles.indicator}>
                                         <Check size={16} strokeWidth={1.75} aria-hidden="true" />
                                     </SelectPrimitive.ItemIndicator>

@@ -1,0 +1,8 @@
+.project-filter {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+}
+.project-chip {
+    max-width: 100%;
+}

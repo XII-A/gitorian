@@ -41,6 +41,8 @@ export interface DialogContentProps extends ComponentPropsWithoutRef<typeof Dial
     title: string
     description?: string
     children: ReactNode
+    /** Dim large data views without repainting the whole page through a backdrop blur. */
+    backdrop?: 'blur' | 'dim'
 }
 
 const fade: Transition = { duration: motionTokens.duration.instant }
@@ -83,6 +85,7 @@ export function DialogContent({
     children,
     className,
     onPointerDownOutside,
+    backdrop = 'blur',
     ...props
 }: DialogContentProps) {
     const open = useContext(OpenContext)
@@ -125,7 +128,7 @@ export function DialogContent({
     if (open === null)
         return (
             <DialogPrimitive.Portal>
-                <DialogPrimitive.Overlay className={`${styles.overlay} ${styles.keyframes}`} />
+                <DialogPrimitive.Overlay data-backdrop={backdrop} className={`${styles.overlay} ${styles.keyframes}`} />
                 <DialogPrimitive.Content
                     {...props}
                     onPointerDownOutside={pressOutside}
@@ -143,6 +146,7 @@ export function DialogContent({
                     <DialogPrimitive.Overlay asChild forceMount>
                         <motion.div
                             className={styles.overlay}
+                            data-backdrop={backdrop}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0, transition: reduced ? fade : leave }}

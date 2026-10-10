@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { Effect } from 'effect'
 import { commits, branches, commitDetails, inspectRepository, git } from './git'
 import { HttpError } from './http'
+import { discoverRepositories, repositoryPathKey } from './repository-discovery'
 import { weekOf } from '../shared/model'
-import type { Activity, Command, Reply, Repository, Selection, State } from '../shared/model'
+import type { Activity, Command, Reply, Repository, RepositoryImportProgress, Selection, State } from '../shared/model'
 import type { Store } from './store'
 import type { GitHub } from './github'
 import type { Notion } from './notion'
@@ -26,13 +27,17 @@ export class JournalService {
         })
     }
     async addRepository(path: string): Promise<void> {
-        if (this.store.state.repositories.some((repository) => repository.path === path))
-            throw new Error('This repository is already tracked')
         const inspected = await inspectRepository(path)
+        if (
+            this.store.state.repositories.some(
+                (repository) => repositoryPathKey(repository.path) === repositoryPathKey(inspected.path)
+            )
+        )
+            throw new Error('This repository is already tracked')
         this.store.state.repositories.push({
             id: randomUUID(),
             name: inspected.name,
-            path,
+            path: inspected.path,
             remote: '',
             base: inspected.base,
             emails: inspected.email ? [inspected.email] : [],
@@ -40,9 +45,54 @@ export class JournalService {
             available: true,
             removed: false,
             branchBases: {},
-            branches: []
+            branches: inspected.branches
         })
         this.store.persist()
+    }
+    async addRepositories(folder: string, onProgress?: (progress: RepositoryImportProgress) => void): Promise<Reply> {
+        onProgress?.({ stage: 'discovering', scanned: 0, found: 0 })
+        const discovered = await discoverRepositories(folder, (counts) =>
+            onProgress?.({ stage: 'discovering', ...counts })
+        )
+        let added = 0
+        let existing = 0
+        let restored = 0
+        let skipped = discovered.unreadable.length
+        let completed = 0
+        onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
+        for (const path of discovered.paths) {
+            const tracked = this.store.state.repositories.find(
+                (item) => repositoryPathKey(item.path) === repositoryPathKey(path)
+            )
+            try {
+                if (tracked) {
+                    if (tracked.removed || !tracked.available) {
+                        const inspected = await inspectRepository(path)
+                        Object.assign(tracked, {
+                            path: inspected.path,
+                            available: true,
+                            removed: false,
+                            branches: inspected.branches
+                        })
+                        restored++
+                    } else existing++
+                } else {
+                    await this.addRepository(path)
+                    added++
+                }
+            } catch {
+                skipped++
+            }
+            completed++
+            onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
+        }
+        this.store.persist()
+        const messages = [`Added ${added} ${added === 1 ? 'repository' : 'repositories'}.`]
+        if (!discovered.paths.length) messages[0] = 'No Git repositories found in this folder.'
+        if (restored) messages.push(`Resumed tracking ${restored}.`)
+        if (existing) messages.push(`${existing} already tracked.`)
+        if (skipped) messages.push(`${skipped} unreadable or invalid folders skipped.`)
+        return this.reply({ message: messages.join(' ') })
     }
     async remoteCandidates(id: string): Promise<string[]> {
         return (await inspectRepository(this.repository(id).path)).remotes

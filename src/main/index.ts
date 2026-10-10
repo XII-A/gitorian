@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { readFile, writeFile } from 'node:fs/promises'
 import { Effect } from 'effect'
 import { commandSchema } from '../shared/model'
+import type { RepositoryImportProgress } from '../shared/model'
 import { Store } from './store'
 import { Vault } from './vault'
 import { Http } from './http'
@@ -20,7 +21,7 @@ const referenceWindows = new Set<number>()
 function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
     const window = new BrowserWindow({
         title: 'weekly-j',
-        width: reference ? 900 : 1560,
+        width: reference ? 1400 : 1560,
         height: 1000,
         minWidth: reference ? 600 : 1000,
         minHeight: 640,
@@ -93,13 +94,29 @@ void app.whenReady().then(() => {
                 if (path) await service.addRepository(path)
                 break
             }
+            case 'addRepositories': {
+                let lastStage = ''
+                let lastSent = 0
+                const progress = (update: RepositoryImportProgress) => {
+                    const finished = update.stage === 'processing' && update.completed === update.total
+                    if (update.stage !== lastStage || finished || Date.now() - lastSent >= 50) {
+                        lastStage = update.stage
+                        lastSent = Date.now()
+                        if (!event.sender.isDestroyed()) event.sender.send('journal:repository-import', update)
+                    }
+                }
+                progress({ stage: 'selecting' })
+                const path = await folder()
+                return path ? await service.addRepositories(path, progress) : service.reply()
+            }
             case 'relocate': {
                 const path = await folder()
                 if (path) {
-                    await inspectRepository(path)
+                    const inspected = await inspectRepository(path)
                     const repository = store.state.repositories.find((item) => item.id === command.id)
                     if (!repository) throw new Error('Repository not found')
-                    repository.path = path
+                    repository.path = inspected.path
+                    repository.branches = inspected.branches
                     repository.available = true
                     repository.removed = false
                     store.persist()
@@ -160,6 +177,7 @@ void app.whenReady().then(() => {
                         store.restore(await readFile(result.filePaths[0], 'utf8'))
                         vault.set('github', '')
                         vault.set('notion', '')
+                        return service.reply({ message: 'Backup imported.' })
                     }
                 }
                 break

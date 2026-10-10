@@ -19,6 +19,11 @@
     border-radius: inherit;
     scrollbar-width: none;
 }
+.listShell[data-edge-to-edge='true'] {
+    width: 100%;
+    border-radius: 0;
+    border-inline: 0;
+}
 .viewport::-webkit-scrollbar {
     display: none;
 }

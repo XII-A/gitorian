@@ -389,28 +389,6 @@ p {
     place-items: center;
     padding: 30px;
 }
-.settings {
-    width: min(900px, 95vw);
-    height: min(850px, 90vh);
-    background: var(--background);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-control);
-    display: flex;
-    flex-direction: column;
-    padding: 24px;
-    box-shadow: var(--shadow-floating);
-}
-.settings h2 {
-    margin-bottom: 0;
-}
-.settings-content {
-    overflow: auto;
-    flex: 1;
-    padding-right: 8px;
-}
-.settings footer {
-    padding-top: 20px;
-}
 fieldset {
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-control);

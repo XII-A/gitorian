@@ -1,10 +1,26 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { plainText } from '../shared/notion-format'
+import type { Command, Destination, Reply, Repository, RepositoryImportProgress, State } from '../shared/model'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/arc/tabs/tabs'
-import { Input, Select, Textarea, Field } from './components/Fields'
-import { useEffect, useState } from 'react'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
-import { Editor } from './Editor'
+import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { Button } from './components/arc/button/button'
-import type { Command, Reply, Repository, State } from '../shared/model'
+import { Input } from './components/arc/input/input'
+import { Select } from './components/arc/select/select'
+import { Combobox } from './components/arc/combobox/combobox'
+import { DatePicker } from './components/arc/date-picker/date-picker'
+import { Switch } from './components/arc/switch/switch'
+import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
+import { NumberField } from './components/arc/number-field/number-field'
+import { SearchField } from './components/arc/search-field/search-field'
+import { ConfirmMorph } from './components/arc/confirm-morph/confirm-morph'
+import { RichTextEditor, type RichTextEditorHandle } from './components/arc/rich-text-editor/rich-text-editor'
+import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
+import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise'
+import { Editor } from './Editor'
+import { dateKey, dateValue, journalFromHTML, journalHTML, needsLegacyEditor } from './workspace-model'
+import { hasUnsavedSettings, timezoneOptions } from './settings-model'
+import './settings.css'
 
 export function Settings({
     state,
@@ -23,11 +39,82 @@ export function Settings({
     const [repositories, setRepositories] = useState(state.repositories)
     const [token, setToken] = useState('')
     const [device, setDevice] = useState<Reply['device']>()
-    const [signInError, setSignInError] = useState('')
-    const [signInBusy, setSignInBusy] = useState(false)
-    const [signInStatus, setSignInStatus] = useState('')
+    const [error, setError] = useState('')
+    const [status, setStatus] = useState('')
+    const [busy, setBusy] = useState('')
     const [section, setSection] = useState('repositories')
-    const [previousFocus] = useState(() => document.activeElement)
+    const [confirmClose, setConfirmClose] = useState(false)
+    const [repositorySearch, setRepositorySearch] = useState('')
+    const [importProgress, setImportProgress] = useState<RepositoryImportProgress>()
+    const keepEditing = useRef<HTMLButtonElement>(null)
+    const previousFocus = useRef<Element | null>(null)
+    const templateEditor = useRef<RichTextEditorHandle>(null)
+    const [templateHistory, setTemplateHistory] = useState({ canUndo: false, canRedo: false })
+    const templateWords = plainText(settings.template).trim().split(/\s+/).filter(Boolean).length
+    const zones = useMemo(() => timezoneOptions(state.settings.timezone), [state.settings.timezone])
+    const matchingRepositories = repositories.filter((repository) =>
+        `${repository.name} ${repository.path}`.toLowerCase().includes(repositorySearch.trim().toLowerCase())
+    )
+    const importLabel = !importProgress
+        ? 'Add repositories from folder'
+        : importProgress.stage === 'selecting'
+          ? 'Waiting for folder selection…'
+          : importProgress.stage === 'discovering'
+            ? `Finding repositories… ${importProgress.found} found`
+            : `Processing repositories ${importProgress.completed}/${importProgress.total}`
+    useEffect(() => window.journal.onRepositoryImportProgress?.(setImportProgress), [])
+    const requestClose = () => {
+        if (busy) return
+        if (hasUnsavedSettings(settings, repositories, state, token)) setConfirmClose(true)
+        else close()
+    }
+    const invoke = async (command: Command) => {
+        const result = await window.journal.invoke(command)
+        await run({ type: 'state' })
+        return result
+    }
+    const action = async (name: string, task: () => Promise<void>) => {
+        setBusy(name)
+        setError('')
+        setStatus('')
+        try {
+            await task()
+        } catch (failure) {
+            setError(failure instanceof Error ? failure.message : String(failure))
+        } finally {
+            setBusy('')
+        }
+    }
+    const editRepository = (repository: Repository, patch: Partial<Repository>) =>
+        setRepositories((items) => items.map((item) => (item.id === repository.id ? { ...item, ...patch } : item)))
+    const mergeRepositories = (fresh: Repository[]) =>
+        setRepositories((local) =>
+            fresh.map((item) => {
+                const edited = local.find((old) => old.id === item.id)
+                if (!edited) return item
+                const before = state.repositories.find((old) => old.id === item.id)
+                return {
+                    ...item,
+                    ...edited,
+                    path: item.path,
+                    available: item.available,
+                    branches: item.branches,
+                    removed: item.removed !== before?.removed ? item.removed : edited.removed
+                }
+            })
+        )
+    const destination = (patch: Partial<Destination>) =>
+        setSettings((current) => ({
+            ...current,
+            destination: {
+                kind: 'page',
+                id: '',
+                titleProperty: 'Name',
+                dateProperty: '',
+                ...current.destination,
+                ...patch
+            }
+        }))
     useEffect(() => {
         if (!device) return
         let cancelled = false
@@ -36,20 +123,26 @@ export function Settings({
             try {
                 const result = await window.journal.invoke({ type: 'githubPoll' })
                 if (cancelled) return
-                if (result.devicePending) {
-                    timer = setTimeout(() => void poll(), result.devicePending.interval * 1000)
-                } else {
+                if (result.devicePending) timer = setTimeout(() => void poll(), result.devicePending.interval * 1000)
+                else {
                     setDevice(undefined)
-                    setSettings(result.state.settings)
-                    setRepositories(result.state.repositories)
-                    setSignInStatus(`Connected as ${result.state.settings.githubLogin}`)
+                    setSettings((current) => ({ ...current, githubLogin: result.state.settings.githubLogin }))
+                    setRepositories((local) =>
+                        result.state.repositories.map((item) => {
+                            const edited = local.find((old) => old.id === item.id)
+                            return edited
+                                ? { ...item, ...edited, emails: [...new Set([...item.emails, ...edited.emails])] }
+                                : item
+                        })
+                    )
+                    setStatus(`Connected as ${result.state.settings.githubLogin}`)
                     await run({ type: 'state' })
                 }
             } catch (failure) {
                 if (!cancelled) {
-                    setSignInError(failure instanceof Error ? failure.message : String(failure))
+                    setError(failure instanceof Error ? failure.message : String(failure))
                     setDevice(undefined)
-                    setSignInStatus('')
+                    setStatus('')
                 }
             }
         }
@@ -59,443 +152,577 @@ export function Settings({
             clearTimeout(timer)
         }
     }, [device, run])
-    const startSignIn = async () => {
-        setSignInError('')
-        setSignInStatus('')
-        setDevice(undefined)
-        if (!settings.githubClientId.trim()) {
-            setSignInError('Enter a GitHub OAuth client ID with device flow enabled to sign in.')
-            return
-        }
-        setSignInBusy(true)
-        try {
+    const save = () =>
+        action('save', async () => {
+            if (!settings.timezone) throw new Error('Choose a timezone before saving.')
+            if (repositories.some((repository) => !repository.removed && !repository.base))
+                throw new Error('Choose a comparison base for each tracked repository.')
+            for (const repository of repositories) await window.journal.invoke({ type: 'repository', repository })
+            await invoke({ type: 'settings', settings })
+            close()
+        })
+    const startSignIn = () =>
+        action('github', async () => {
+            if (!settings.githubClientId.trim())
+                throw new Error('Enter a GitHub OAuth client ID with device flow enabled.')
             await window.journal.invoke({
                 type: 'settings',
-                settings: { ...settings, githubClientId: settings.githubClientId.trim() }
+                settings: { ...state.settings, githubClientId: settings.githubClientId.trim() }
             })
-            const result = await window.journal.invoke({ type: 'githubStart' })
+            const result = await invoke({ type: 'githubStart' })
             setDevice(result.device)
-            setSignInStatus(result.message ?? 'Waiting for authorization in your browser…')
-            await run({ type: 'state' })
-        } catch (failure) {
-            setSignInError(failure instanceof Error ? failure.message : String(failure))
-        } finally {
-            setSignInBusy(false)
-        }
-    }
-    const editRepository = (repository: Repository, patch: Partial<Repository>) => {
-        setRepositories((items) => items.map((item) => (item.id === repository.id ? { ...item, ...patch } : item)))
-    }
-    const save = async () => {
-        for (const repository of repositories) if (!(await run({ type: 'repository', repository }))) return
-        if (await run({ type: 'settings', settings })) close()
-    }
+            setStatus(result.message ?? 'Waiting for your browser…')
+        })
+    const repositoryFields = (repository: Repository) => (
+        <div className="settings-fields">
+            {!repository.available && (
+                <p className="settings-hint">Folder unavailable. Locate it to resume tracking.</p>
+            )}
+            <div className="settings-field-grid">
+                <DatePicker
+                    label="History starts"
+                    value={dateValue(repository.trackingStart)}
+                    showToday
+                    onChange={(date) => date && editRepository(repository, { trackingStart: dateKey(date) })}
+                />
+                <Select
+                    label="Comparison base"
+                    value={repository.base || '__choose__'}
+                    placeholder="Choose a branch"
+                    options={[
+                        ...new Set([
+                            repository.base,
+                            ...repository.branches,
+                            ...(state.repositories.find((item) => item.id === repository.id)?.branches ?? [])
+                        ])
+                    ]
+                        .filter(Boolean)
+                        .map((value) => ({ value, label: value }))}
+                    onValueChange={(base) => editRepository(repository, { base })}
+                />
+            </div>
+            <Select
+                label="GitHub remote"
+                value={repository.remote || '__local__'}
+                options={[
+                    { value: '__local__', label: 'Local only' },
+                    ...[...new Set([...(remotes[repository.id] ?? []), repository.remote])]
+                        .filter(Boolean)
+                        .map((value) => ({ value, label: value }))
+                ]}
+                onValueChange={(remote) => editRepository(repository, { remote: remote === '__local__' ? '' : remote })}
+            />
+            <Input
+                label="Author emails"
+                value={repository.emails.join(', ')}
+                placeholder="you@example.com, another@example.com"
+                onChange={(event) =>
+                    editRepository(repository, { emails: event.target.value.split(',').map((email) => email.trim()) })
+                }
+            />
+            <div className="settings-actions settings-repository-actions">
+                <Switch
+                    label="Track this repository"
+                    checked={!repository.removed}
+                    disabled={!!busy}
+                    onCheckedChange={(checked) => editRepository(repository, { removed: !checked })}
+                />
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={!!busy}
+                    loading={busy === `locate:${repository.id}`}
+                    onClick={() =>
+                        action(`locate:${repository.id}`, async () => {
+                            const result = await invoke({ type: 'relocate', id: repository.id })
+                            mergeRepositories(result.state.repositories)
+                        })
+                    }
+                >
+                    Locate folder
+                </Button>
+            </div>
+        </div>
+    )
     return (
         <Dialog
             open
             onOpenChange={(open) => {
-                if (!open) close()
+                if (!open) requestClose()
             }}
         >
             <DialogContent
                 className="settings"
                 title="Workspace settings"
                 aria-describedby={undefined}
+                onOpenAutoFocus={() => {
+                    previousFocus.current = document.activeElement
+                }}
                 onCloseAutoFocus={(event) => {
                     event.preventDefault()
-                    if (previousFocus instanceof HTMLElement) previousFocus.focus()
+                    if (previousFocus.current instanceof HTMLElement) previousFocus.current.focus()
                 }}
             >
                 <Tabs value={section} onValueChange={setSection} orientation="vertical" className="settings-tabs">
-                    <TabsList aria-label="Settings sections">
-                        {['repositories', 'connections', 'preferences', 'template', 'backup'].map((tab) => (
-                            <TabsTrigger key={tab} value={tab}>
-                                {tab[0].toUpperCase() + tab.slice(1)}
-                            </TabsTrigger>
-                        ))}
-                    </TabsList>
-                    <TabsContent value="repositories" className="settings-content">
-                        <>
-                            <p className="muted">
-                                Choose existing folders. weekly-j never fetches, checks out, or changes your
-                                repositories.
-                            </p>
-                            <Button
-                                onClick={async () => {
-                                    const result = await run({ type: 'addRepository' })
-                                    if (result) {
-                                        setRepositories(result.state.repositories)
-                                        await run({ type: 'state' })
-                                    }
-                                }}
-                            >
-                                Add repository
-                            </Button>
-                            {repositories.map((repository) => (
-                                <fieldset key={repository.id}>
-                                    <legend>
-                                        {repository.name} {!repository.available && '· Source unavailable'}
-                                    </legend>
-                                    <p className="path">
-                                        {repository.path || 'Locate this repository after restoring'}
-                                    </p>
-                                    <Field>
-                                        Confirmed GitHub remote{' '}
-                                        <Select
-                                            value={repository.remote}
-                                            onChange={(event) => {
-                                                editRepository(repository, { remote: event.target.value })
-                                            }}
-                                        >
-                                            <option value="">Local only</option>
-                                            {[
-                                                ...new Set([
-                                                    ...(remotes[repository.id] ?? []),
-                                                    ...(repository.remote ? [repository.remote] : [])
-                                                ])
-                                            ].map((remote) => (
-                                                <option key={remote}>{remote}</option>
-                                            ))}
-                                        </Select>
-                                    </Field>
-                                    <Field>
-                                        Author emails (comma separated)
-                                        <Input
-                                            value={repository.emails.join(', ')}
-                                            onChange={(event) => {
-                                                editRepository(repository, {
-                                                    emails: event.target.value.split(',').map((email) => email.trim())
-                                                })
-                                            }}
-                                        />
-                                    </Field>
-                                    <div className="row">
-                                        <Field>
-                                            Activity history starts
-                                            <Input
-                                                type="date"
-                                                value={repository.trackingStart}
-                                                onChange={(event) => {
-                                                    editRepository(repository, { trackingStart: event.target.value })
-                                                }}
-                                            />
-                                        </Field>
-                                        <Field>
-                                            Comparison base
-                                            <Input
-                                                value={repository.base}
-                                                onChange={(event) => {
-                                                    editRepository(repository, { base: event.target.value })
-                                                }}
-                                            />
-                                        </Field>
-                                    </div>
-                                    <Field>
-                                        Branch comparison overrides (one branch=base per line)
-                                        <Textarea
-                                            value={Object.entries(repository.branchBases)
-                                                .map(([branch, base]) => `${branch}=${base}`)
-                                                .join('\n')}
-                                            onChange={(event) => {
-                                                editRepository(repository, {
-                                                    branchBases: Object.fromEntries(
-                                                        event.target.value
-                                                            .split('\n')
-                                                            .filter((line) => line.includes('='))
-                                                            .map((line) => line.split('=').map((value) => value.trim()))
-                                                    )
-                                                })
-                                            }}
-                                        />
-                                    </Field>
-                                    <div className="row">
-                                        <Button
-                                            variant="secondary"
-                                            onClick={async () => {
-                                                const result = await run({ type: 'relocate', id: repository.id })
-                                                if (result) setRepositories(result.state.repositories)
-                                            }}
-                                        >
-                                            Locate folder
-                                        </Button>
-                                        <Field className="row">
-                                            <Input
-                                                type="checkbox"
-                                                checked={repository.removed}
-                                                onChange={(event) => {
-                                                    editRepository(repository, { removed: event.target.checked })
-                                                }}
-                                            />
-                                            Stop tracking; keep history
-                                        </Field>
-                                    </div>
-                                </fieldset>
+                    <ScrollArea className="settings-navigation" fade={12} label="Settings navigation">
+                        <TabsList aria-label="Settings sections">
+                            {['repositories', 'connections', 'preferences', 'template', 'backup'].map((tab) => (
+                                <TabsTrigger key={tab} value={tab}>
+                                    {tab[0].toUpperCase() + tab.slice(1)}
+                                </TabsTrigger>
                             ))}
-                        </>
-                    </TabsContent>
-                    <TabsContent value="connections" className="settings-content">
-                        <>
-                            <fieldset>
-                                <legend>GitHub · {connections.github ? 'Connected' : 'Disconnected'}</legend>
-                                <Field>
-                                    Public OAuth client ID
-                                    <Input
-                                        value={settings.githubClientId}
-                                        onChange={(event) => {
-                                            setSettings({ ...settings, githubClientId: event.target.value })
-                                        }}
-                                    />
-                                </Field>
-                                <p className="muted">
-                                    Register a GitHub OAuth app, enable device flow, then paste its Client ID above. No
-                                    client secret is needed. This build does not include a registered client ID.
-                                </p>
+                        </TabsList>
+                    </ScrollArea>
+                    <ScrollArea
+                        className="settings-scroll"
+                        viewportClassName="settings-viewport"
+                        label="Settings content"
+                        fade={16}
+                    >
+                        <TabsContent value="repositories" className="settings-content">
+                            <div className="settings-section-heading">
+                                <h3>Repositories</h3>
                                 <Button
-                                    variant="ghost"
+                                    variant="secondary"
                                     size="sm"
+                                    disabled={!!busy}
+                                    aria-busy={busy === 'repositories' || undefined}
                                     onClick={() =>
-                                        run({ type: 'open', url: 'https://github.com/settings/applications/new' })
+                                        action('repositories', async () => {
+                                            setImportProgress({ stage: 'selecting' })
+                                            try {
+                                                const result = await invoke({ type: 'addRepositories' })
+                                                mergeRepositories(result.state.repositories)
+                                                setStatus(result.message ?? '')
+                                            } finally {
+                                                setImportProgress(undefined)
+                                            }
+                                        })
                                     }
                                 >
-                                    Set up GitHub OAuth app ↗
-                                </Button>
-                                <div className="row">
-                                    <Button
-                                        loading={signInBusy}
-                                        disabled={signInBusy || !!device}
-                                        onClick={startSignIn}
-                                    >
-                                        Sign in with browser
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() => {
-                                            setDevice(undefined)
-                                            setSignInStatus('')
-                                            void run({ type: 'disconnect', service: 'github' })
-                                        }}
-                                    >
-                                        Disconnect
-                                    </Button>
-                                </div>
-                                {signInError && (
-                                    <p className="save-warning" role="alert">
-                                        {signInError}
-                                    </p>
-                                )}
-                                {signInStatus && <p role="status">{signInStatus}</p>}
-                                {device && (
-                                    <div>
-                                        <p>
-                                            Enter <strong>{device.code}</strong> in the opened browser.
-                                        </p>
-                                        <p className="path">{device.url}</p>
-                                        <Button
-                                            variant="secondary"
-                                            onClick={() => run({ type: 'open', url: device.url })}
-                                        >
-                                            Open browser
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            onClick={() => {
-                                                setDevice(undefined)
-                                                setSignInStatus('')
-                                            }}
-                                        >
-                                            Cancel sign-in
-                                        </Button>
-                                    </div>
-                                )}
-                            </fieldset>
-                            <fieldset>
-                                <legend>Notion · {connections.notion ? 'Connected' : 'Disconnected'}</legend>
-                                <Field>
-                                    Notion token
-                                    <Input
-                                        type="password"
-                                        autoComplete="off"
-                                        value={token}
-                                        onChange={(event) => {
-                                            setToken(event.target.value)
-                                        }}
-                                    />
-                                </Field>
-                                <div className="row">
-                                    <Button
-                                        onClick={async () => {
-                                            const result = await run({ type: 'notionConnect', token })
-                                            if (result) setToken('')
-                                        }}
-                                    >
-                                        Connect Notion
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() => run({ type: 'disconnect', service: 'notion' })}
-                                    >
-                                        Disconnect
-                                    </Button>
-                                </div>
-                                {!connections.protectedStorage && (
-                                    <p>
-                                        Credentials are held for this session because protected OS storage is
-                                        unavailable.
-                                    </p>
-                                )}
-                                <Field>
-                                    Journal destination
-                                    <Select
-                                        value={settings.destination?.kind ?? 'page'}
-                                        onChange={(event) => {
-                                            setSettings({
-                                                ...settings,
-                                                destination: {
-                                                    kind: event.target.value as 'page' | 'database',
-                                                    id: settings.destination?.id ?? '',
-                                                    titleProperty: settings.destination?.titleProperty ?? 'Name',
-                                                    dateProperty: settings.destination?.dateProperty ?? ''
-                                                }
-                                            })
-                                        }}
-                                    >
-                                        <option value="page">Parent page</option>
-                                        <option value="database">Database data source</option>
-                                    </Select>
-                                </Field>
-                                <Field>
-                                    {settings.destination?.kind === 'database' ? 'Data source ID' : 'Parent page ID'}
-                                    <Input
-                                        value={settings.destination?.id ?? ''}
-                                        onChange={(event) => {
-                                            setSettings({
-                                                ...settings,
-                                                destination: {
-                                                    kind: settings.destination?.kind ?? 'page',
-                                                    id: event.target.value.trim(),
-                                                    titleProperty: settings.destination?.titleProperty ?? 'Name',
-                                                    dateProperty: settings.destination?.dateProperty ?? ''
-                                                }
-                                            })
-                                        }}
-                                    />
-                                </Field>
-                                {settings.destination?.kind === 'database' && (
-                                    <>
-                                        <Field>
-                                            Title property
-                                            <Input
-                                                value={settings.destination.titleProperty}
-                                                onChange={(event) => {
-                                                    setSettings({
-                                                        ...settings,
-                                                        destination: {
-                                                            ...settings.destination!,
-                                                            titleProperty: event.target.value
-                                                        }
-                                                    })
-                                                }}
-                                            />
-                                        </Field>
-                                        <Field>
-                                            Week date property (optional)
-                                            <Input
-                                                value={settings.destination.dateProperty}
-                                                onChange={(event) => {
-                                                    setSettings({
-                                                        ...settings,
-                                                        destination: {
-                                                            ...settings.destination!,
-                                                            dateProperty: event.target.value
-                                                        }
-                                                    })
-                                                }}
-                                            />
-                                        </Field>
-                                    </>
-                                )}
-                                <p className="muted">
-                                    Share the destination with your Notion connection. New pages go directly under the
-                                    parent; arrange year toggles in Notion.
-                                </p>
-                            </fieldset>
-                        </>
-                    </TabsContent>
-                    <TabsContent value="preferences" className="settings-content">
-                        <fieldset>
-                            <legend>Time and refresh</legend>
-                            <Field>
-                                Week starts
-                                <Select
-                                    value={settings.weekStart}
-                                    onChange={(event) => {
-                                        setSettings({ ...settings, weekStart: Number(event.target.value) })
-                                    }}
-                                >
-                                    {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(
-                                        (day, index) => (
-                                            <option key={day} value={index}>
-                                                {day}
-                                            </option>
-                                        )
-                                    )}
-                                </Select>
-                            </Field>
-                            <Field>
-                                Timezone
-                                <Input
-                                    value={settings.timezone}
-                                    onChange={(event) => {
-                                        setSettings({ ...settings, timezone: event.target.value })
-                                    }}
-                                />
-                            </Field>
-                            <Field>
-                                Background refresh interval (minutes; 0 disables)
-                                <Input
-                                    type="number"
-                                    min="0"
-                                    max="1440"
-                                    value={settings.refreshMinutes}
-                                    onChange={(event) => {
-                                        setSettings({ ...settings, refreshMinutes: Number(event.target.value) })
-                                    }}
-                                />
-                            </Field>
-                        </fieldset>
-                    </TabsContent>
-                    <TabsContent value="template" className="settings-content">
-                        <>
-                            <p className="muted">New drafts copy this template. Existing drafts keep their content.</p>
-                            <Editor
-                                value={settings.template}
-                                onChange={(body) => {
-                                    setSettings((current) => ({ ...current, template: body }))
-                                }}
-                            />
-                        </>
-                    </TabsContent>
-                    <TabsContent value="backup" className="settings-content">
-                        <>
-                            <p>
-                                Back up tracking, drafts, settings and cached journal text. Credentials and repository
-                                contents are excluded. Import replaces local tracking; reconnect services and locate
-                                your repositories afterward.
-                            </p>
-                            <div className="row">
-                                <Button onClick={() => run({ type: 'export' })}>Export backup</Button>
-                                <Button variant="secondary" onClick={() => run({ type: 'import' })}>
-                                    Import backup
+                                    {importLabel}
                                 </Button>
                             </div>
-                        </>
-                    </TabsContent>
+                            {!repositories.length && (
+                                <p className="settings-hint">Choose the folder containing your Git repositories.</p>
+                            )}
+                            {!!repositories.length && (
+                                <SearchField
+                                    label="Search repositories"
+                                    hideLabel
+                                    placeholder="Repository name or folder path"
+                                    value={repositorySearch}
+                                    onValueChange={setRepositorySearch}
+                                />
+                            )}
+                            {!!repositories.length && !matchingRepositories.length && (
+                                <p className="settings-hint" role="status">
+                                    No matching repositories.
+                                </p>
+                            )}
+                            {!!matchingRepositories.length && (
+                                <div className="settings-repositories">
+                                    {matchingRepositories.map((repository) => (
+                                        <ExpandableCard
+                                            key={repository.id}
+                                            title={repository.name}
+                                            description={repository.path || 'Folder not located'}
+                                        >
+                                            {repositoryFields(repository)}
+                                        </ExpandableCard>
+                                    ))}
+                                </div>
+                            )}
+                        </TabsContent>
+                        <TabsContent value="connections" className="settings-content">
+                            <section className="settings-section" aria-label="GitHub connection">
+                                <div className="settings-section-heading">
+                                    <h3>GitHub</h3>
+                                    {connections.github ? (
+                                        <div className="settings-github-account">
+                                            <span className="settings-github-identity">
+                                                {settings.githubLogin && (
+                                                    <span className="settings-github-avatar" aria-hidden="true">
+                                                        {settings.githubLogin.slice(0, 1).toUpperCase()}
+                                                        <img
+                                                            src={`https://github.com/${encodeURIComponent(settings.githubLogin)}.png?size=64`}
+                                                            width={32}
+                                                            height={32}
+                                                            alt=""
+                                                            onError={(event) => {
+                                                                event.currentTarget.hidden = true
+                                                            }}
+                                                        />
+                                                    </span>
+                                                )}
+                                                <span>{settings.githubLogin || 'Connected'}</span>
+                                            </span>
+                                            <ConfirmMorph
+                                                label="Disconnect"
+                                                prompt={
+                                                    <span className="settings-disconnect-question">
+                                                        Disconnect GitHub?
+                                                    </span>
+                                                }
+                                                confirmLabel="Disconnect"
+                                                confirmMode="hold"
+                                                pendingLabel="Disconnecting"
+                                                doneLabel="Disconnected"
+                                                errorLabel="Could not disconnect"
+                                                tone="danger"
+                                                disabled={!!busy}
+                                                onConfirm={async () => {
+                                                    setBusy('disconnect-github')
+                                                    setError('')
+                                                    try {
+                                                        await invoke({ type: 'disconnect', service: 'github' })
+                                                        setSettings((current) => ({ ...current, githubLogin: '' }))
+                                                        setStatus('GitHub disconnected.')
+                                                    } finally {
+                                                        setBusy('')
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <span className="settings-connection-status">Not connected</span>
+                                    )}
+                                </div>
+                                {!connections.github && (
+                                    <>
+                                        <Input
+                                            label="OAuth client ID"
+                                            value={settings.githubClientId}
+                                            onChange={(event) =>
+                                                setSettings({ ...settings, githubClientId: event.target.value })
+                                            }
+                                        />
+                                        <div className="settings-actions">
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                disabled={!!busy || !!device}
+                                                loading={busy === 'github'}
+                                                onClick={startSignIn}
+                                            >
+                                                Sign in with browser
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                disabled={!!busy}
+                                                onClick={() =>
+                                                    action('oauth', async () => {
+                                                        await invoke({
+                                                            type: 'open',
+                                                            url: 'https://github.com/settings/applications/new'
+                                                        })
+                                                    })
+                                                }
+                                            >
+                                                Set up OAuth app
+                                            </Button>
+                                        </div>
+                                        <p className="settings-hint">Enable device flow in your GitHub OAuth app.</p>
+                                    </>
+                                )}
+                                {device && (
+                                    <div className="settings-device">
+                                        <p>
+                                            Enter <code>{device.code}</code> in your browser.
+                                        </p>
+                                        <div className="settings-actions">
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                disabled={!!busy}
+                                                onClick={() =>
+                                                    action('browser', async () => {
+                                                        await invoke({ type: 'open', url: device.url })
+                                                    })
+                                                }
+                                            >
+                                                Open browser
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                    setDevice(undefined)
+                                                    setStatus('')
+                                                }}
+                                            >
+                                                Cancel sign-in
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+                            </section>
+                            <section className="settings-section" aria-label="Notion connection">
+                                <div className="settings-section-heading">
+                                    <h3>Notion</h3>
+                                    <span className="settings-connection-status">
+                                        {connections.notion ? 'Connected' : 'Not connected'}
+                                    </span>
+                                </div>
+                                {!connections.notion ? (
+                                    <>
+                                        <Input
+                                            label="Integration token"
+                                            type="password"
+                                            autoComplete="off"
+                                            value={token}
+                                            onChange={(event) => setToken(event.target.value)}
+                                        />
+                                        <div className="settings-actions">
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                disabled={!token.trim() || !!busy}
+                                                loading={busy === 'notion'}
+                                                onClick={() =>
+                                                    action('notion', async () => {
+                                                        await invoke({ type: 'notionConnect', token: token.trim() })
+                                                        setToken('')
+                                                        setStatus('Notion connected.')
+                                                    })
+                                                }
+                                            >
+                                                Connect Notion
+                                            </Button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={!!busy}
+                                        onClick={() =>
+                                            action('disconnect-notion', async () => {
+                                                await invoke({ type: 'disconnect', service: 'notion' })
+                                                setStatus('Notion disconnected.')
+                                            })
+                                        }
+                                    >
+                                        Disconnect Notion
+                                    </Button>
+                                )}
+                                {(connections.github || connections.notion) && !connections.protectedStorage && (
+                                    <p className="settings-hint">Credentials are kept for this session only.</p>
+                                )}
+                                <div className="settings-field-grid">
+                                    <Select
+                                        label="Destination"
+                                        value={settings.destination?.kind ?? 'page'}
+                                        options={[
+                                            { value: 'page', label: 'Parent page' },
+                                            { value: 'database', label: 'Database data source' }
+                                        ]}
+                                        onValueChange={(kind) => destination({ kind: kind as Destination['kind'] })}
+                                    />
+                                    <Input
+                                        label={settings.destination?.kind === 'database' ? 'Data source ID' : 'Page ID'}
+                                        value={settings.destination?.id ?? ''}
+                                        onChange={(event) => destination({ id: event.target.value.trim() })}
+                                    />
+                                </div>
+                                {settings.destination?.kind === 'database' && (
+                                    <div className="settings-field-grid">
+                                        <Input
+                                            label="Title property"
+                                            value={settings.destination.titleProperty}
+                                            onChange={(event) => destination({ titleProperty: event.target.value })}
+                                        />
+                                        <Input
+                                            label="Date property (optional)"
+                                            value={settings.destination.dateProperty}
+                                            onChange={(event) => destination({ dateProperty: event.target.value })}
+                                        />
+                                    </div>
+                                )}
+                                <p className="settings-hint">Share the destination with your Notion integration.</p>
+                            </section>
+                        </TabsContent>
+                        <TabsContent value="preferences" className="settings-content">
+                            <section className="settings-section" aria-label="Time and refresh">
+                                <h3>Time and refresh</h3>
+                                <Combobox
+                                    label="Timezone"
+                                    options={zones}
+                                    value={settings.timezone}
+                                    onValueChange={(timezone) => setSettings({ ...settings, timezone })}
+                                    placeholder="Search timezones"
+                                />
+                                <div className="settings-field-grid">
+                                    <Select
+                                        label="Week starts"
+                                        value={String(settings.weekStart)}
+                                        options={[
+                                            'Sunday',
+                                            'Monday',
+                                            'Tuesday',
+                                            'Wednesday',
+                                            'Thursday',
+                                            'Friday',
+                                            'Saturday'
+                                        ].map((label, index) => ({ value: String(index), label }))}
+                                        onValueChange={(value) =>
+                                            setSettings({ ...settings, weekStart: Number(value) })
+                                        }
+                                    />
+                                    <NumberField
+                                        label="Refresh interval"
+                                        min={0}
+                                        max={1440}
+                                        value={settings.refreshMinutes}
+                                        onValueChange={(refreshMinutes) => setSettings({ ...settings, refreshMinutes })}
+                                        suffix={(minutes) => (minutes === 1 ? ' minute' : ' minutes')}
+                                        description="Set to 0 to turn off background refresh."
+                                    />
+                                </div>
+                            </section>
+                        </TabsContent>
+                        <TabsContent value="template" className="settings-content">
+                            <section className="settings-section" aria-label="Entry template">
+                                <div className="settings-section-heading">
+                                    <h3>Entry template</h3>
+                                </div>
+                                <p className="settings-hint">Used for new entries. Existing writing stays as it is.</p>
+                                <div className="settings-template">
+                                    <header className="settings-template-header">
+                                        <div className="settings-template-history">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                aria-label="Undo template edit"
+                                                disabled={
+                                                    !templateHistory.canUndo || needsLegacyEditor(settings.template)
+                                                }
+                                                onClick={() => templateEditor.current?.undo()}
+                                            >
+                                                <ArrowCounterClockwiseIcon aria-hidden="true" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                aria-label="Redo template edit"
+                                                disabled={
+                                                    !templateHistory.canRedo || needsLegacyEditor(settings.template)
+                                                }
+                                                onClick={() => templateEditor.current?.redo()}
+                                            >
+                                                <ArrowClockwiseIcon aria-hidden="true" />
+                                            </Button>
+                                        </div>
+                                        <span>
+                                            {templateWords} {templateWords === 1 ? 'word' : 'words'}
+                                        </span>
+                                    </header>
+                                    <div className="settings-template-body">
+                                        {needsLegacyEditor(settings.template) ? (
+                                            <Editor
+                                                value={settings.template}
+                                                onChange={(template) =>
+                                                    setSettings((current) => ({ ...current, template }))
+                                                }
+                                            />
+                                        ) : (
+                                            <RichTextEditor
+                                                ref={templateEditor}
+                                                onHistoryChange={setTemplateHistory}
+                                                aria-label="Entry template"
+                                                defaultValue={journalHTML(settings.template)}
+                                                placeholder="Give each week a starting point…"
+                                                blockHint="Type / for formatting"
+                                                onChange={({ html }) =>
+                                                    setSettings((current) => ({
+                                                        ...current,
+                                                        template: journalFromHTML(html)
+                                                    }))
+                                                }
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+                            </section>
+                        </TabsContent>
+                        <TabsContent value="backup" className="settings-content">
+                            <section className="settings-section" aria-label="Journal backup">
+                                <h3>Journal backup</h3>
+                                <p className="settings-hint">
+                                    Includes writing and tracking. Excludes credentials and repository files.
+                                </p>
+                                <div className="settings-actions">
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={!!busy}
+                                        loading={busy === 'export'}
+                                        onClick={() =>
+                                            action('export', async () => {
+                                                await invoke({ type: 'export' })
+                                            })
+                                        }
+                                    >
+                                        Export backup
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={!!busy}
+                                        loading={busy === 'import'}
+                                        onClick={() =>
+                                            action('import', async () => {
+                                                const result = await invoke({ type: 'import' })
+                                                if (result.message === 'Backup imported.') {
+                                                    setSettings(result.state.settings)
+                                                    setRepositories(result.state.repositories)
+                                                    setStatus(result.message)
+                                                }
+                                            })
+                                        }
+                                    >
+                                        Import backup
+                                    </Button>
+                                </div>
+                                <p className="settings-hint">Import replaces this device’s journal.</p>
+                            </section>
+                        </TabsContent>
+                    </ScrollArea>
                 </Tabs>
-                <footer className="row between">
-                    <span className="muted">Changes apply when saved.</span>
-                    <Button onClick={save}>Save settings</Button>
+                <footer className="settings-footer">
+                    <div className="settings-feedback">
+                        {error ? (
+                            <p role="alert">{error}</p>
+                        ) : (
+                            <p role="status">{importProgress ? importLabel : status || 'Changes apply when saved.'}</p>
+                        )}
+                    </div>
+                    <Button disabled={!!busy || !!device} loading={busy === 'save'} onClick={save}>
+                        Save settings
+                    </Button>
                 </footer>
             </DialogContent>
+            <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
+                <DialogContent
+                    role="alertdialog"
+                    title="Discard unsaved changes?"
+                    description="Your settings changes will be lost."
+                    onOpenAutoFocus={(event) => {
+                        event.preventDefault()
+                        keepEditing.current?.focus()
+                    }}
+                >
+                    <div className="settings-discard-actions">
+                        <Button ref={keepEditing} variant="secondary" onClick={() => setConfirmClose(false)}>
+                            Keep editing
+                        </Button>
+                        <Button variant="danger" onClick={close}>
+                            Discard changes
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </Dialog>
     )
 }

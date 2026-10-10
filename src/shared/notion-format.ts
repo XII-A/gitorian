@@ -42,6 +42,7 @@ function block(type: string, data: Record<string, unknown>): NotionBlock {
 }
 export function toNotion(document: JournalNode): NotionBlock[] {
     return (document.content ?? []).flatMap((node) => {
+        if (node.type === 'horizontalRule') return [block('divider', {})]
         if (node.type === 'bulletList' || node.type === 'orderedList' || node.type === 'taskList') {
             return (node.content ?? []).map((item) => {
                 const [first, ...rest] = item.content ?? []
@@ -121,7 +122,8 @@ export function fromNotion(blocks: NotionBlock[]): JournalNode {
                 attrs: { checked: !!data?.checked },
                 content: [{ type: 'paragraph', content: text }, ...nested]
             })
-        } else if (/^heading_[123]$/.test(item.type))
+        } else if (item.type === 'divider') content.push({ type: 'horizontalRule' })
+        else if (/^heading_[123]$/.test(item.type))
             content.push({ type: 'heading', attrs: { level: Number(item.type.slice(-1)) }, content: text }, ...nested)
         else if (item.type === 'code') content.push({ type: 'codeBlock', content: text })
         else if (item.type === 'quote')
