@@ -9,6 +9,7 @@ import type { Store } from './store'
 import type { GitHub } from './github'
 import type { Notion } from './notion'
 import { forEachConcurrent } from './work-queue'
+import { filesFromDiff } from './diff-files'
 
 export class JournalService {
     private refreshing?: Promise<void>
@@ -191,6 +192,13 @@ export class JournalService {
         if (retainDiff) {
             state.diffs[activity.id] = snapshot.diff
             activity.diffRevision = id
+            if (!activity.filesLoaded) {
+                const files = filesFromDiff(snapshot.diff)
+                if (files !== undefined) {
+                    activity.files = files
+                    activity.filesLoaded = true
+                }
+            }
         }
         if (persist) this.store.persist()
         return id
