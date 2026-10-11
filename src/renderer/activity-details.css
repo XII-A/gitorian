@@ -222,8 +222,21 @@
 }
 .hub-detail-markdown pre.hub-detail-diff {
     padding: 0;
-    border: 1px solid var(--border);
+}
+.hub-detail-code-scroll {
+    margin-bottom: var(--space-4);
     border-radius: var(--radius-control);
+    background: var(--surface-muted);
+}
+.hub-detail-diff-scroll {
+    border: 1px solid var(--border);
+}
+.hub-detail-markdown .hub-detail-code-scroll pre {
+    margin: 0;
+    min-width: max-content;
+    max-width: none;
+    overflow: visible;
+    border-radius: 0;
 }
 .hub-detail-diff > code {
     display: block;

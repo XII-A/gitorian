@@ -355,6 +355,13 @@
     overflow: hidden;
     flex: 1;
     min-height: 0;
+    margin-top: 0;
+    --focus-outline: transparent;
+}
+.ws-inspector-tabs [role='tab'],
+.ws-inspector-tabs [role='tab'] * {
+    user-select: none;
+    --focus-outline: transparent;
 }
 .ws-diff-viewer {
     display: flex;
@@ -374,6 +381,13 @@
 .ws-diff-tools > div:first-child {
     flex: 1;
     max-width: 280px;
+}
+.ws-diff-layout {
+    --radius-control: var(--radius-pill);
+}
+.ws-diff-layout,
+.ws-diff-layout * {
+    user-select: none;
 }
 .ws-diff-viewer > .ws-file-diff {
     display: flex;
@@ -421,6 +435,12 @@
     background: var(--surface-muted);
     color: var(--text-secondary);
 }
+.ws-diff-scroll .diff-fallback {
+    margin: 0;
+    min-width: 100%;
+    width: max-content;
+    overflow: visible;
+}
 .ws-inspector-footer {
     display: flex;
     align-items: center;
@@ -453,6 +473,7 @@
     container: inspector-details / inline-size;
     overflow-wrap: anywhere;
     user-select: text;
+    padding-top: var(--space-3);
 }
 .ws-details-heading {
     display: flex;
@@ -527,7 +548,7 @@
     color: var(--text-muted);
     font-style: italic;
 }
-.ws-diff-scroll :is(.token.keyword, .token.tag, .token.selector) {
+.ws-diff-scroll :is(.token.keyword, .token.tag, .token.selector, .token.atrule) {
     color: var(--syntax-keyword);
 }
 .ws-diff-scroll :is(.token.string, .token.template-string, .token.attr-value, .token.regex) {
@@ -536,7 +557,7 @@
 .ws-diff-scroll :is(.token.number, .token.boolean, .token.constant, .token.attr-name) {
     color: var(--syntax-value);
 }
-.ws-diff-scroll :is(.token.function, .token.class-name) {
+.ws-diff-scroll :is(.token.function, .token.class-name, .token.property) {
     color: var(--syntax-name);
     font-weight: 500;
 }
@@ -911,6 +932,7 @@
 .ws-diff-state-viewport {
     display: grid;
     place-items: center;
+    padding: var(--space-3) var(--space-4);
 }
 .ws-diff-error-icon {
     color: var(--danger);

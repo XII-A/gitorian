@@ -52,7 +52,11 @@ it('preserves cached changes after a failed refresh', () => {
 })
 
 it('shows an empty-diff message only for a confirmed empty response', () => {
-    expect(renderInspector({ diff: '' }).textContent).toContain('No text diff for this activity.')
+    const empty = renderInspector({ diff: '' })
+    expect(empty.querySelector('h3')?.textContent).toBe('No text diff')
+    expect(empty.querySelector('[data-variant="plain"]')).not.toBeNull()
+    expect(empty.querySelector('[aria-label="Diff status"]')).not.toBeNull()
+    expect(empty.textContent).toContain('Reviews and metadata updates may not include code changes.')
     expect(renderInspector({}).textContent).not.toContain('No text diff')
 })
 

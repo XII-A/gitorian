@@ -207,6 +207,7 @@ describe('activity descriptions', () => {
             })
         )
         const block = container.querySelector('pre.hub-detail-diff code')
+        expect(block?.closest('[role="region"]')?.getAttribute('aria-label')).toBe('Diff code block')
         expect(block?.textContent).toBe(source)
         expect(block?.querySelectorAll('[data-diff-line="added"]')).toHaveLength(2)
         expect(block?.querySelectorAll('[data-diff-line="removed"]')).toHaveLength(1)

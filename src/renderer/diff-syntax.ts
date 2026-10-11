@@ -2,7 +2,7 @@ import { tokenize, type FileData, type HunkTokens } from 'react-diff-view'
 import refractor from 'refractor/core'
 import tsx from 'refractor/lang/tsx'
 
-// TSX also registers JSX and TypeScript; the core includes JavaScript.
+// TSX also registers JSX and TypeScript; the core includes JavaScript and CSS.
 refractor.register(tsx)
 
 const languages: Record<string, string> = {
@@ -13,7 +13,8 @@ const languages: Record<string, string> = {
     ts: 'typescript',
     mts: 'typescript',
     cts: 'typescript',
-    tsx: 'tsx'
+    tsx: 'tsx',
+    css: 'css'
 }
 
 export function highlightDiff(file: FileData): HunkTokens | undefined {

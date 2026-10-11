@@ -18,6 +18,15 @@ function tokenClasses(nodes: TokenNode[]): string[] {
 }
 
 describe('diff syntax highlighting', () => {
+    it('highlights CSS selectors, properties, and values while preserving both sides', () => {
+        const before = ['/* Previous style */', '.panel { color: red; gap: 8px; }']
+        const after = ['/* Updated style */', '.panel:hover { color: blue; gap: 12px; }']
+        const [file] = parseDiff(patch('src/panel.css', before, after))
+        const tokens = highlightDiff(file)!
+        expect(tokens.old.map(tokenText)).toEqual(before)
+        expect(tokens.new.map(tokenText)).toEqual(after)
+        expect(tokenClasses(tokens.new.flat())).toEqual(expect.arrayContaining(['selector', 'property', 'comment']))
+    })
     it.each(['js', 'mjs', 'cjs', 'ts', 'mts', 'cts'])(
         'highlights both sides of %s without changing code text',
         (extension) => {

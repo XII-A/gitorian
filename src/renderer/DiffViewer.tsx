@@ -1,11 +1,27 @@
 import { Button } from './components/arc/button/button'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Diff, Hunk, type FileData, type HunkTokens } from 'react-diff-view'
 import { cachedDiff, cachedDiffTokens, loadDiff, loadDiffTokens } from './diff-loader'
 import { DiffSkeleton } from './DiffSkeleton'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { ChangedFilePicker } from './ChangedFilePicker'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
+import { EmptyState } from './components/arc/empty-state/empty-state'
+import { FileDiff } from 'lucide-react'
+
+function DiffEmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
+    return (
+        <ScrollArea className="ws-diff-state" viewportClassName="ws-diff-state-viewport" label="Diff status" fade={0}>
+            <EmptyState
+                iconVariant="plain"
+                icon={<FileDiff size={32} strokeWidth={1.5} aria-hidden="true" />}
+                title={title}
+                description={description}
+                action={action}
+            />
+        </ScrollArea>
+    )
+}
 
 export function DiffViewer({
     text,
@@ -63,22 +79,23 @@ export function DiffViewer({
     )
     if (unavailable)
         return (
-            <div className="ws-diff-empty">
-                <p>
-                    {text.includes('406')
-                        ? 'GitHub could not provide these changes.'
-                        : 'These changes are too large to display here.'}
-                </p>
-                <span>The activity is retained in your journal.</span>
-                {sourceAction}
-            </div>
+            <DiffEmptyState
+                title={
+                    text.includes('406')
+                        ? 'GitHub could not provide these changes'
+                        : 'These changes are too large to display here'
+                }
+                description="The activity is retained in your journal. View the changes at the source."
+                action={sourceAction}
+            />
         )
     if (!text)
         return (
-            <div className="ws-diff-empty">
-                <p>No text diff for this activity.</p>
-                <span>Reviews and metadata changes may not contain code changes.</span>
-            </div>
+            <DiffEmptyState
+                title="No text diff"
+                description="Reviews and metadata updates may not include code changes."
+                action={sourceAction}
+            />
         )
     if (needsParsing && !cachedDiff(text) && parsed?.text !== text) return <DiffSkeleton label="Preparing changes" />
     if (!files.length)
@@ -94,6 +111,7 @@ export function DiffViewer({
             <div className="ws-diff-tools">
                 <ChangedFilePicker value={path} onValueChange={setSelected} paths={paths} />
                 <SegmentedControl
+                    className="ws-diff-layout"
                     label="Diff layout"
                     value={mode}
                     onValueChange={setMode}
