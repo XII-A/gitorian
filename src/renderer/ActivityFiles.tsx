@@ -61,7 +61,7 @@ export function ActivityFiles({ files }: { files: Activity['files'] }) {
                     const slash = name.lastIndexOf('/')
                     return (
                         <li key={file.name} data-change={kind}>
-                            <Badge tone={tones[kind]} size="sm" animateChanges={false}>
+                            <Badge className="hub-detail-file-chip" tone={tones[kind]} size="sm" animateChanges={false}>
                                 <span aria-hidden="true">{letters[kind]}</span>
                                 <span className="hub-sr-only">
                                     {kind === 'other' ? file.status : changeLabels[kind]}

@@ -1,5 +1,34 @@
 import type { Activity, Repository } from '../shared/model'
 
+/** Commit membership does not establish origin. A matching PR head supplies a known source branch. */
+export function activityBranches(activity: Activity, activities: Activity[] = []) {
+    const branches = [...new Set(activity.branches.filter(Boolean))]
+    const sources =
+        activity.kind === 'commit'
+            ? [
+                  ...new Set(
+                      activities
+                          .filter(
+                              (item) =>
+                                  item.repositoryId === activity.repositoryId &&
+                                  item.kind !== 'commit' &&
+                                  activity.sha &&
+                                  item.head === activity.sha
+                          )
+                          .map((item) => item.branches[0])
+                          .filter(Boolean)
+                  )
+              ]
+            : branches.slice(0, 1)
+    const source = sources.length === 1 ? sources[0] : undefined
+    const primary = source ?? branches[0]
+    return {
+        primary,
+        remaining: branches.filter((branch) => branch !== primary),
+        label: source ? 'Source branch' : activity.kind === 'commit' && primary ? 'Found on' : 'Branch'
+    }
+}
+
 export const changeKinds = ['deleted', 'added', 'renamed', 'modified', 'copied', 'other'] as const
 export type ChangeKind = (typeof changeKinds)[number]
 export const changeLabels: Record<ChangeKind, string> = {

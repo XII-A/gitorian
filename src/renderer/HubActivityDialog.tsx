@@ -6,7 +6,6 @@ import {
     CalendarDays,
     ExternalLink,
     FolderGit2,
-    GitBranch,
     GitCommitHorizontal,
     GitMerge,
     GitPullRequest,
@@ -21,6 +20,7 @@ import { Skeleton } from './components/arc/skeleton/skeleton'
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import { ActivityDescription } from './ActivityDescription'
 import { ActivityFiles } from './ActivityFiles'
+import { ActivityBranches } from './ActivityBranches'
 import './activity-details.css'
 
 export interface HubActivityDialogHandle {
@@ -158,17 +158,7 @@ export function HubActivityDialog({
                                     </dt>
                                     <dd>{repository?.name ?? 'Unknown repository'}</dd>
                                 </div>
-                                <div className="hub-detail-branches">
-                                    <dt>
-                                        <GitBranch size={16} strokeWidth={1.5} aria-hidden="true" />
-                                        {activity.branches.length > 1 ? 'Branches' : 'Branch'}
-                                    </dt>
-                                    <dd>
-                                        {activity.branches.length
-                                            ? activity.branches.map((branch) => <code key={branch}>{branch}</code>)
-                                            : 'No branch recorded'}
-                                    </dd>
-                                </div>
+                                <ActivityBranches key={activity.id} activity={activity} activities={state.activities} />
                                 <div>
                                     <dt>
                                         <CalendarDays size={16} strokeWidth={1.5} aria-hidden="true" />
@@ -214,19 +204,12 @@ export function HubActivityDialog({
                                 )}
                             </section>
                             <section className="hub-detail-section" aria-label="Changed files" aria-busy={busy}>
-                                <div className="hub-detail-section-heading">
-                                    <h3>Changed files</h3>
-                                    {!busy && !error && (
-                                        <span>
-                                            {activity.files.length} {activity.files.length === 1 ? 'file' : 'files'}
-                                        </span>
-                                    )}
-                                </div>
+                                <h3>Changed files</h3>
                                 {busy ? (
                                     <Skeleton lines={4} label="Loading changed files" />
                                 ) : error ? (
                                     <Alert tone="danger" title="Changed files could not be loaded">
-                                        <p>{readableError(error)}</p>
+                                        <span className="hub-detail-error-message">{readableError(error)}</span>
                                         <Button variant="secondary" onClick={() => setAttempt((value) => value + 1)}>
                                             Retry details
                                         </Button>

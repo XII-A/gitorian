@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ActivityDescription } from '../src/renderer/ActivityDescription'
 import { ActivityFiles } from '../src/renderer/ActivityFiles'
-import { changeKind, markdownUrl, orderedFiles } from '../src/renderer/activity-details'
+import { activityBranches, changeKind, markdownUrl, orderedFiles } from '../src/renderer/activity-details'
 import { sampleState } from '../src/renderer/workspace-sample'
 
 const state = sampleState('2026-10-05')
@@ -16,6 +16,46 @@ const render = (element: Parameters<typeof renderToStaticMarkup>[0]) => {
     container.innerHTML = renderToStaticMarkup(element)
     return container
 }
+
+describe('activity branch context', () => {
+    const commit = {
+        ...activity,
+        kind: 'commit' as const,
+        sha: 'abc123',
+        branches: ['development', 'feature/work', 'origin/development']
+    }
+    it('uses one containing branch without claiming that it is the original branch', () => {
+        expect(activityBranches(commit)).toEqual({
+            primary: 'development',
+            remaining: ['feature/work', 'origin/development'],
+            label: 'Found on'
+        })
+    })
+    it('uses a matching PR source branch and excludes another repository with the same head', () => {
+        const pull = { ...activity, head: commit.sha, branches: ['feature/work'] }
+        const unrelated = { ...pull, repositoryId: 'another-repository', branches: ['other/work'] }
+        expect(activityBranches(commit, [pull, unrelated])).toEqual({
+            primary: 'feature/work',
+            remaining: ['development', 'origin/development'],
+            label: 'Source branch'
+        })
+    })
+    it('does not guess between conflicting PR sources or absent commit hashes', () => {
+        const pull = { ...activity, head: commit.sha, branches: ['feature/work'] }
+        expect(activityBranches(commit, [pull, { ...pull, branches: ['another/work'] }]).label).toBe('Found on')
+        expect(activityBranches({ ...commit, sha: undefined }, [pull]).label).toBe('Found on')
+    })
+    it('keeps PR source context and counts unique remaining branches without altering metadata', () => {
+        const pull = { ...activity, branches: ['feature/work', 'development', 'development'] }
+        expect(activityBranches(pull)).toEqual({
+            primary: 'feature/work',
+            remaining: ['development'],
+            label: 'Source branch'
+        })
+        expect(pull.branches).toHaveLength(3)
+        expect(activityBranches({ ...commit, branches: [] }).primary).toBeUndefined()
+    })
+})
 
 describe('activity descriptions', () => {
     it('renders GitHub Markdown with headings, code, tasks, tables, and external links', () => {
