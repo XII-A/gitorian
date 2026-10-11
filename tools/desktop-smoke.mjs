@@ -277,6 +277,45 @@ app.on('browser-window-created', (_, window) => {
             const realDraftsBefore = await window.webContents.executeJavaScript(
                 `(async () => (await window.journal.invoke({type:'state'})).state.drafts.length)()`
             )
+            Object.assign(
+                result,
+                await window.webContents.executeJavaScript(`(async () => {
+                const pause = () => new Promise(resolve => setTimeout(resolve, 180))
+                const viewport = document.querySelector('[aria-label="Weekly activity list"]')
+                const filter = text => Array.from(document.querySelectorAll('.ws-activity-filters button'))
+                    .find(button => button.textContent.startsWith(text))
+                viewport.scrollTop = viewport.scrollHeight
+                await pause()
+                const rows = Array.from(viewport.querySelectorAll('.activity-row'))
+                const removedRow = rows.at(-2)
+                if (!removedRow.textContent.includes('Commit')) throw new Error('Expected a commit hover fixture')
+                removedRow.dispatchEvent(new PointerEvent('pointermove', {bubbles:true,pointerType:'mouse'}))
+                await pause()
+                filter('PRs & reviews').click()
+                await pause()
+                const bounds = viewport.getBoundingClientRect()
+                const content = viewport.querySelector('.activity-hover').getBoundingClientRect()
+                const visibleRows = Array.from(viewport.querySelectorAll('.activity-row')).filter(row => {
+                    const rect = row.getBoundingClientRect()
+                    return rect.bottom > bounds.top && rect.top < bounds.bottom
+                })
+                const activityFilterStartsAtTop = viewport.scrollTop === 0 && visibleRows.length > 0
+                const padding = parseFloat(getComputedStyle(viewport).paddingBottom)
+                const activityHoverCannotExtendScroll = viewport.scrollHeight <= Math.max(viewport.clientHeight, content.height + padding) + 1
+                viewport.scrollTop = 100
+                const offset = viewport.scrollTop
+                if (offset === 0) throw new Error('Expected a scrollable PR fixture')
+                filter('PRs & reviews').click()
+                await pause()
+                const activityUnchangedFilterKeepsScroll = viewport.scrollTop === offset
+                document.querySelector('[aria-label="Refresh activity"]').click()
+                await pause()
+                const activityRefreshKeepsScroll = viewport.scrollTop === offset
+                filter('All').click()
+                await pause()
+                return {activityFilterStartsAtTop, activityHoverCannotExtendScroll, activityUnchangedFilterKeepsScroll, activityRefreshKeepsScroll}
+            })()`)
+            )
             result.summaryDismissesOutsideChart = await window.webContents.executeJavaScript(`(async () => {
                 const slider = document.querySelector('.ws-week-chart [role="slider"]')
                 const rect = slider.getBoundingClientRect()

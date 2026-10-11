@@ -4,6 +4,8 @@
 .activity-hover {
     position: relative;
     isolation: isolate;
+    /* Decorative motion must never enlarge the surrounding scroll viewport. */
+    overflow: clip;
 }
 .activity-hover-highlight {
     position: absolute;

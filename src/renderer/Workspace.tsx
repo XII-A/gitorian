@@ -2,7 +2,7 @@ import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
 import { activityUpdating, actionableSources } from './background-work'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { localDate, shiftWeek, weekOf, stateSchema } from '../shared/model'
 import { offsetDay, journalWeek, rangeActivities } from './hub-model'
@@ -58,6 +58,11 @@ export function Workspace({
     const [project, setProject] = useState('all')
     const [branch, setBranch] = useState('all')
     const [kind, setKind] = useState('all')
+    const activityViewport = useRef<HTMLDivElement>(null)
+    useLayoutEffect(() => {
+        // A new result set starts at the top before paint. Background refreshes keep their position.
+        activityViewport.current?.scrollTo({ top: 0, behavior: 'instant' })
+    }, [week, project, branch, kind])
     const [searchExpanded, setSearchExpanded] = useState(false)
     const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('diff')
     const [publishTarget, setPublishTarget] = useState<HTMLElement | null>(null)
@@ -486,6 +491,7 @@ export function Workspace({
                     <ScrollArea
                         className="ws-activity-scroll"
                         viewportClassName="ws-activity-viewport"
+                        viewportRef={activityViewport}
                         label="Weekly activity list"
                         fade={16}
                     >

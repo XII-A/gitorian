@@ -74,10 +74,12 @@ export function ActivityHover({ children }: { children: ReactNode }) {
     )
     const sync = useCallback(() => {
         const row = active.current
-        if (!row) return
-        if (!row.isConnected || !root.current?.contains(row)) hide()
-        else position(row, true)
-    }, [hide, position])
+        if (!row || !row.isConnected || !root.current?.contains(row)) {
+            // Opacity alone leaves transformed decorations in the scroll overflow.
+            active.current = null
+            for (const value of [x, y, width, height, opacity]) value.jump(0)
+        } else position(row, true)
+    }, [x, y, width, height, opacity, position])
     const hover = (event: PointerEvent<HTMLDivElement>) => {
         if (event.pointerType === 'touch' || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
         const row = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('.activity-row') : null
