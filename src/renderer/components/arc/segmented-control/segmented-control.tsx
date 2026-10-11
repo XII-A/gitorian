@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
-import { LayoutGroup, motion, useReducedMotion } from 'motion/react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import { motionTokens } from '../lib/motion-tokens'
 import styles from './segmented-control.module.css'
 
@@ -31,6 +31,28 @@ export default function SegmentedControl({
     const id = useId()
     const reduced = useReducedMotion()
     const track = useRef<HTMLDivElement>(null)
+    const [selection, setSelection] = useState<{ x: number; width: number }>()
+
+    // Keep one indicator in track coordinates. Shared layout IDs also animate ancestor scroll clamps as movement.
+    useLayoutEffect(() => {
+        const node = track.current
+        if (!node) return
+        const measure = () => {
+            const button = node.querySelector<HTMLElement>('[aria-pressed="true"]')
+            if (!button) {
+                setSelection(undefined)
+                return
+            }
+            const x = button.offsetLeft,
+                width = button.offsetWidth
+            setSelection((current) => (current?.x === x && current.width === width ? current : { x, width }))
+        }
+        measure()
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+        observer?.observe(node)
+        node.querySelectorAll('button').forEach((button) => observer?.observe(button))
+        return () => observer?.disconnect()
+    }, [value, options])
 
     // When the options are wider than the container, the track scrolls inside itself. Edges fade only on the side with more to see.
     useLayoutEffect(() => {
@@ -100,39 +122,37 @@ export default function SegmentedControl({
 
     return (
         <div className={`${styles.root} ${className ?? ''}`} role="group" aria-label={label}>
-            <LayoutGroup id={id}>
-                <motion.div ref={track} layoutScroll className={styles.track}>
-                    {options.map((option, index) => (
-                        <button
-                            key={option.value}
-                            id={`${id}-${option.value}`}
-                            className={styles.button}
-                            type="button"
-                            data-value={option.value}
-                            aria-pressed={value === option.value}
-                            tabIndex={index === selectedIndex ? 0 : -1}
-                            onClick={() => onValueChange(option.value)}
-                            onKeyDown={onKeyDown}
-                            onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
-                            onFocus={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
-                        >
-                            {value === option.value && (
-                                <motion.span
-                                    className={styles.selection}
-                                    layoutId="selection"
-                                    layoutDependency={value}
-                                    transition={reduced ? { duration: 0 } : motionTokens.spring.morph}
-                                    aria-hidden="true"
-                                />
-                            )}
-                            <span className={styles.label}>
-                                {option.label}
-                                {option.accessory}
-                            </span>
-                        </button>
-                    ))}
-                </motion.div>
-            </LayoutGroup>
+            <div ref={track} className={styles.track}>
+                {selection && (
+                    <motion.span
+                        className={styles.selection}
+                        initial={false}
+                        animate={selection}
+                        transition={reduced ? { duration: 0 } : motionTokens.spring.morph}
+                        aria-hidden="true"
+                    />
+                )}
+                {options.map((option, index) => (
+                    <button
+                        key={option.value}
+                        id={`${id}-${option.value}`}
+                        className={styles.button}
+                        type="button"
+                        data-value={option.value}
+                        aria-pressed={value === option.value}
+                        tabIndex={index === selectedIndex ? 0 : -1}
+                        onClick={() => onValueChange(option.value)}
+                        onKeyDown={onKeyDown}
+                        onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
+                        onFocus={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
+                    >
+                        <span className={styles.label}>
+                            {option.label}
+                            {option.accessory}
+                        </span>
+                    </button>
+                ))}
+            </div>
         </div>
     )
 }
