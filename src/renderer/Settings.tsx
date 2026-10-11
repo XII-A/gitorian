@@ -15,6 +15,7 @@ import { DatePicker } from './components/arc/date-picker/date-picker'
 import { RepositoryEmails } from './RepositoryEmails'
 import { ImportProgressLabel } from './ImportProgressLabel'
 import { Folder, RefreshCw } from 'lucide-react'
+import { GitHubSignIn, githubSignInFailure, type GitHubSignInFeedback } from './GitHubSignIn'
 import { Switch } from './components/arc/switch/switch'
 import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
 import { NumberField } from './components/arc/number-field/number-field'
@@ -45,6 +46,10 @@ export function Settings({
     const [repositories, setRepositories] = useState(state.repositories)
     const [token, setToken] = useState('')
     const [device, setDevice] = useState<Reply['device']>()
+    const [githubFeedback, setGithubFeedback] = useState<GitHubSignInFeedback>()
+    const [githubNotice, setGithubNotice] = useState('')
+    const githubAttempt = useRef(0)
+    const githubAccount = useRef<HTMLDivElement>(null)
     const [error, setError] = useState('')
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState('')
@@ -120,15 +125,18 @@ export function Settings({
         }))
     useEffect(() => {
         if (!device) return
+        const attempt = githubAttempt.current
         let cancelled = false
         let timer: ReturnType<typeof setTimeout>
         const poll = async () => {
             try {
                 const result = await window.journal.invoke({ type: 'githubPoll' })
-                if (cancelled) return
+                if (cancelled || githubAttempt.current !== attempt) return
                 if (result.devicePending) timer = setTimeout(() => void poll(), result.devicePending.interval * 1000)
                 else {
                     setDevice(undefined)
+                    setGithubNotice('')
+                    setGithubFeedback({ kind: 'success', login: result.state.settings.githubLogin })
                     setSettings((current) => ({ ...current, githubLogin: result.state.settings.githubLogin }))
                     setRepositories((local) =>
                         result.state.repositories.map((item) => {
@@ -138,14 +146,12 @@ export function Settings({
                                 : item
                         })
                     )
-                    setStatus(`Connected as ${result.state.settings.githubLogin}`)
-                    await run({ type: 'state' })
                 }
             } catch (failure) {
-                if (!cancelled) {
-                    setError(failure instanceof Error ? failure.message : String(failure))
+                if (!cancelled && githubAttempt.current === attempt) {
+                    setGithubFeedback(githubSignInFailure(failure))
                     setDevice(undefined)
-                    setStatus('')
+                    setGithubNotice('')
                 }
             }
         }
@@ -155,6 +161,23 @@ export function Settings({
             clearTimeout(timer)
         }
     }, [device, run])
+    useEffect(() => {
+        if (githubFeedback?.kind !== 'success') return
+        let cancelled = false
+        // Give the in-place confirmation time to be read before showing the account controls.
+        const timer = setTimeout(() => {
+            void run({ type: 'state' }).then(() => {
+                if (!cancelled) {
+                    setGithubFeedback(undefined)
+                    window.requestAnimationFrame(() => githubAccount.current?.focus({ preventScroll: true }))
+                }
+            })
+        }, 900)
+        return () => {
+            cancelled = true
+            clearTimeout(timer)
+        }
+    }, [githubFeedback, run])
     const save = () =>
         action('save', async () => {
             if (!settings.timezone) throw new Error('Choose a timezone before saving.')
@@ -169,15 +192,27 @@ export function Settings({
     }, [state.repositories, mergeRepositories])
     const startSignIn = () =>
         action('github', async () => {
-            if (!settings.githubClientId.trim())
-                throw new Error('Enter a GitHub OAuth client ID with device flow enabled.')
-            await window.journal.invoke({
-                type: 'settings',
-                settings: { ...state.settings, githubClientId: settings.githubClientId.trim() }
-            })
-            const result = await invoke({ type: 'githubStart' })
-            setDevice(result.device)
-            setStatus(result.message ?? 'Waiting for your browser…')
+            const attempt = ++githubAttempt.current
+            setGithubNotice('')
+            try {
+                if (!settings.githubClientId.trim())
+                    throw new Error('Enter a GitHub OAuth client ID with device flow enabled.')
+                await window.journal.invoke({
+                    type: 'settings',
+                    settings: { ...state.settings, githubClientId: settings.githubClientId.trim() }
+                })
+                const result = await invoke({ type: 'githubStart' })
+                if (githubAttempt.current !== attempt) return
+                if (!result.device) throw new Error('GitHub did not provide a sign-in code')
+                setDevice(result.device)
+                setGithubFeedback(undefined)
+                if (result.message)
+                    setGithubNotice(
+                        'Your browser could not be opened. Use Open GitHub, or visit github.com/login/device.'
+                    )
+            } catch (failure) {
+                if (githubAttempt.current === attempt) setGithubFeedback(githubSignInFailure(failure))
+            }
         })
     const repositoryFields = (repository: Repository) => (
         <div className="settings-fields settings-repository-fields">
@@ -372,8 +407,8 @@ export function Settings({
                             <section className="settings-section" aria-label="GitHub connection">
                                 <div className="settings-section-heading">
                                     <h3>GitHub</h3>
-                                    {connections.github ? (
-                                        <div className="settings-github-account">
+                                    {connections.github && githubFeedback?.kind !== 'success' ? (
+                                        <div ref={githubAccount} tabIndex={-1} className="settings-github-account">
                                             <span className="settings-github-identity">
                                                 {settings.githubLogin && (
                                                     <span className="settings-github-avatar" aria-hidden="true">
@@ -419,32 +454,31 @@ export function Settings({
                                             />
                                         </div>
                                     ) : (
-                                        <span className="settings-connection-status">Not connected</span>
+                                        <span className="settings-connection-status">
+                                            {githubFeedback?.kind === 'success' ? 'Connected' : 'Not connected'}
+                                        </span>
                                     )}
                                 </div>
-                                {!connections.github && (
+                                {(!connections.github || githubFeedback?.kind === 'success') && (
                                     <>
                                         <Input
                                             label="OAuth client ID"
                                             value={settings.githubClientId}
+                                            disabled={
+                                                !!device || busy === 'github' || githubFeedback?.kind === 'success'
+                                            }
                                             onChange={(event) =>
                                                 setSettings({ ...settings, githubClientId: event.target.value })
                                             }
                                         />
-                                        <div className="settings-actions">
-                                            <Button
-                                                variant="secondary"
-                                                size="sm"
-                                                disabled={!!busy || !!device}
-                                                loading={busy === 'github'}
-                                                onClick={startSignIn}
-                                            >
-                                                Sign in with browser
-                                            </Button>
+                                        <div className="settings-actions settings-github-setup">
+                                            <p className="settings-hint">
+                                                Enable device flow in your GitHub OAuth app.
+                                            </p>
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                disabled={!!busy}
+                                                disabled={!!busy || !!device || githubFeedback?.kind === 'success'}
                                                 onClick={() =>
                                                     action('oauth', async () => {
                                                         await invoke({
@@ -457,39 +491,38 @@ export function Settings({
                                                 Set up OAuth app
                                             </Button>
                                         </div>
-                                        <p className="settings-hint">Enable device flow in your GitHub OAuth app.</p>
-                                    </>
-                                )}
-                                {device && (
-                                    <div className="settings-device">
-                                        <p>
-                                            Enter <code>{device.code}</code> in your browser.
-                                        </p>
-                                        <div className="settings-actions">
-                                            <Button
-                                                variant="secondary"
-                                                size="sm"
-                                                disabled={!!busy}
-                                                onClick={() =>
-                                                    action('browser', async () => {
+                                        <GitHubSignIn
+                                            device={device}
+                                            feedback={githubFeedback}
+                                            notice={githubNotice}
+                                            pending={busy === 'github'}
+                                            openingBrowser={busy === 'browser'}
+                                            disabled={!!busy && busy !== 'github' && busy !== 'browser'}
+                                            onStart={startSignIn}
+                                            onOpen={() =>
+                                                action('browser', async () => {
+                                                    if (!device) return
+                                                    const attempt = githubAttempt.current
+                                                    try {
                                                         await invoke({ type: 'open', url: device.url })
-                                                    })
-                                                }
-                                            >
-                                                Open browser
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    setDevice(undefined)
-                                                    setStatus('')
-                                                }}
-                                            >
-                                                Cancel sign-in
-                                            </Button>
-                                        </div>
-                                    </div>
+                                                        if (githubAttempt.current === attempt) setGithubNotice('')
+                                                    } catch {
+                                                        if (githubAttempt.current === attempt)
+                                                            setGithubNotice(
+                                                                'Your browser could not be opened. Visit github.com/login/device and enter this code.'
+                                                            )
+                                                    }
+                                                })
+                                            }
+                                            onCancel={() => {
+                                                githubAttempt.current++
+                                                setDevice(undefined)
+                                                setGithubFeedback(undefined)
+                                                setGithubNotice('')
+                                                setStatus('')
+                                            }}
+                                        />
+                                    </>
                                 )}
                             </section>
                             <section className="settings-section" aria-label="Notion connection">
