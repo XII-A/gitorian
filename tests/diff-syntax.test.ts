@@ -18,6 +18,43 @@ function tokenClasses(nodes: TokenNode[]): string[] {
 }
 
 describe('diff syntax highlighting', () => {
+    it.each(['json', 'jsonc', 'webmanifest'])(
+        'highlights %s keys and values without changing either side',
+        (extension) => {
+            const before = ['{', '  "name": "before", "enabled": false, "count": 1, "value": null', '}']
+            const after = [
+                '{',
+                '  "name": "<script>alert(1)</script>", "enabled": true, "count": 2, "value": null',
+                '}'
+            ]
+            const [file] = parseDiff(patch(`config.${extension}`, before, after))
+            const tokens = highlightDiff(file)!
+            expect(tokens.old.map(tokenText)).toEqual(before)
+            expect(tokens.new.map(tokenText)).toEqual(after)
+            expect(tokenClasses(tokens.new.flat())).toEqual(
+                expect.arrayContaining(['property', 'string', 'boolean', 'number', 'keyword'])
+            )
+        }
+    )
+    it.each(['md', 'markdown'])('highlights %s source while preserving Markdown syntax on both sides', (extension) => {
+        const before = ['# Before', '', '- **Strong** and *emphasis* with `code`', '[Docs](https://example.com/before)']
+        const after = [
+            '# After',
+            '',
+            '- **Updated** and *emphasis* with `code`',
+            '[Docs](https://example.com/after)',
+            '```json',
+            '{"count": 2}',
+            '```'
+        ]
+        const [file] = parseDiff(patch(`README.${extension}`, before, after))
+        const tokens = highlightDiff(file)!
+        expect(tokens.old.map(tokenText)).toEqual(before)
+        expect(tokens.new.map(tokenText)).toEqual(after)
+        expect(tokenClasses(tokens.new.flat())).toEqual(
+            expect.arrayContaining(['title', 'bold', 'italic', 'code-snippet', 'url', 'code-language', 'code-block'])
+        )
+    })
     it('highlights CSS selectors, properties, and values while preserving both sides', () => {
         const before = ['/* Previous style */', '.panel { color: red; gap: 8px; }']
         const after = ['/* Updated style */', '.panel:hover { color: blue; gap: 12px; }']
@@ -50,7 +87,7 @@ describe('diff syntax highlighting', () => {
     it('uses the old path for deleted files and declines unsupported files', () => {
         const [file] = parseDiff(patch('src/file.ts', ['const count = 1'], ['const count = 2']))
         expect(highlightDiff({ ...file, newPath: '/dev/null' })).toBeDefined()
-        expect(highlightDiff({ ...file, newPath: 'README.md' })).toBeUndefined()
+        expect(highlightDiff({ ...file, newPath: 'image.svg' })).toBeUndefined()
         expect(highlightDiff({ ...file, hunks: [] })).toBeUndefined()
     })
     it('does not highlight files beyond the existing display limit', () => {

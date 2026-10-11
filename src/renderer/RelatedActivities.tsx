@@ -1,9 +1,11 @@
 import { useLayoutEffect, useRef, type KeyboardEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { GitBranch } from 'lucide-react'
 import type { Activity } from '../shared/model'
 import { ActivityRow } from './ActivityRow'
 import { ActivityHover } from './ActivityHover'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
+import { EmptyState } from './components/arc/empty-state/empty-state'
 
 export function RelatedActivities({
     activities,
@@ -61,7 +63,13 @@ export function RelatedActivities({
         }
     }
     return (
-        <ScrollArea className="ws-inspector-scroll" viewportRef={viewport} label="Related activity" fade={16}>
+        <ScrollArea
+            className="ws-inspector-scroll"
+            viewportClassName={activities.length ? undefined : 'ws-related-empty-viewport'}
+            viewportRef={viewport}
+            label="Related activity"
+            fade={activities.length ? 16 : 0}
+        >
             {activities.length ? (
                 <div className="ws-related-space" style={{ height: virtualizer.getTotalSize() }}>
                     <div className="ws-related-window" style={{ transform: `translateY(${rows[0]?.start ?? 0}px)` }}>
@@ -94,7 +102,12 @@ export function RelatedActivities({
                     </div>
                 </div>
             ) : (
-                <p className="ws-related-empty">No related activity has been captured for this branch.</p>
+                <EmptyState
+                    iconVariant="plain"
+                    icon={<GitBranch size={32} strokeWidth={1.5} aria-hidden="true" />}
+                    title="No related activity"
+                    description="No other captured activity shares this branch or pull request."
+                />
             )}
         </ScrollArea>
     )
