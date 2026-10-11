@@ -23,11 +23,13 @@ export function WorkspaceReference({
     const example = useMemo(() => (sampleWeek ? sampleState(sampleWeek) : undefined), [sampleWeek])
     const source = example ?? state
     const [selectedId, setSelectedId] = useState(id)
+    const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('diff')
     const activity = source.activities.find((item) => item.id === selectedId)
     const entry = source.entries.find((item) => item.id === id)
     const [status, setStatus] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
+    const requestId = useRef(0)
     const channel = useRef<BroadcastChannel | undefined>(undefined)
     const citationTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     useEffect(() => {
@@ -58,15 +60,22 @@ export function WorkspaceReference({
         }
     }, [id, selectedId])
     const inspect = useCallback(
-        async (item: Activity) => {
+        async (item: Activity, tab: 'diff' | 'details' = 'diff') => {
+            const request = ++requestId.current
             setSelectedId(item.id)
+            setInspectionTab(tab)
             setError('')
-            if (example || hasCachedDetails(state, item)) {
+            if (example || hasCachedDetails(state, item, tab === 'details' ? 'files' : 'diff')) {
                 setLoading(false)
                 return
             }
             setLoading(true)
-            const reply = await run({ type: 'details', activityId: item.id })
+            const reply = await run({
+                type: 'details',
+                activityId: item.id,
+                content: tab === 'details' ? 'files' : 'diff'
+            })
+            if (requestId.current !== request) return
             if (!reply || reply.detailError)
                 setError(reply?.detailError ?? 'Could not load this diff. Retry loading it.')
             setLoading(false)
@@ -126,13 +135,14 @@ export function WorkspaceReference({
                                 : run
                         }
                         reference
+                        initialTab={inspectionTab}
                         loading={loading}
                         error={error}
                         canCite
                         citationStatus={status}
                         onCite={() => cite()}
                         onClose={dock}
-                        onInspect={(item) => void inspect(item)}
+                        onInspect={(item, tab) => void inspect(item, tab)}
                     />
                 </>
             ) : (

@@ -1,7 +1,8 @@
 import { Button } from './components/arc/button/button'
 import { useEffect, useMemo, useState } from 'react'
-import { Diff, Hunk } from 'react-diff-view'
-import { cachedDiff, loadDiff } from './diff-loader'
+import { Diff, Hunk, type FileData, type HunkTokens } from 'react-diff-view'
+import { cachedDiff, cachedDiffTokens, loadDiff, loadDiffTokens } from './diff-loader'
+import { DiffSkeleton } from './DiffSkeleton'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { ChangedFilePicker } from './ChangedFilePicker'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -18,6 +19,7 @@ export function DiffViewer({
     const [mode, setMode] = useState(initialSplit ? 'split' : 'unified')
     const [selected, setSelected] = useState('')
     const [parsed, setParsed] = useState<{ text: string; files: Awaited<ReturnType<typeof loadDiff>> }>()
+    const [highlighted, setHighlighted] = useState<{ file: FileData; tokens?: HunkTokens }>()
     const needsParsing = text.startsWith('diff --git') && text.length <= 2_000_000
     const files = useMemo(() => cachedDiff(text) ?? (parsed?.text === text ? parsed.files : []), [text, parsed])
     useEffect(() => {
@@ -34,6 +36,24 @@ export function DiffViewer({
         () => files.map((file) => (file.newPath === '/dev/null' ? file.oldPath : file.newPath)),
         [files]
     )
+    const active = useMemo(
+        () =>
+            files.find((file) => (file.newPath === '/dev/null' ? file.oldPath : file.newPath) === selected) ?? files[0],
+        [files, selected]
+    )
+    useEffect(() => {
+        if (!active) return
+        let current = true
+        void loadDiffTokens(active).then((tokens) => {
+            if (current) setHighlighted({ file: active, tokens })
+        })
+        return () => {
+            current = false
+        }
+    }, [active])
+    const tokens = active
+        ? (cachedDiffTokens(active) ?? (highlighted?.file === active ? highlighted.tokens : undefined))
+        : undefined
     const unavailable =
         text.length > 2_000_000 || /^(Diff is too large\.|GitHub could not provide this diff)/.test(text)
     const sourceAction = onOpenSource && (
@@ -60,15 +80,14 @@ export function DiffViewer({
                 <span>Reviews and metadata changes may not contain code changes.</span>
             </div>
         )
-    if (needsParsing && !cachedDiff(text) && parsed?.text !== text) return <p role="status">Preparing changes…</p>
+    if (needsParsing && !cachedDiff(text) && parsed?.text !== text) return <DiffSkeleton label="Preparing changes" />
     if (!files.length)
         return (
             <ScrollArea className="ws-diff-scroll" orientation="both" label="Text diff" fade={0}>
                 <pre className="diff-fallback">{text.slice(0, 8000)}</pre>
             </ScrollArea>
         )
-    const active =
-        files.find((file) => (file.newPath === '/dev/null' ? file.oldPath : file.newPath) === selected) ?? files[0]
+    if (!active) return null
     const path = active.newPath === '/dev/null' ? active.oldPath : active.newPath
     return (
         <div className="diff-viewer ws-diff-viewer">
@@ -108,6 +127,7 @@ export function DiffViewer({
                             viewType={mode === 'split' ? 'split' : 'unified'}
                             diffType={active.type}
                             hunks={active.hunks}
+                            tokens={tokens}
                         >
                             {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
                         </Diff>

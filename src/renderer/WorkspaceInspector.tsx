@@ -1,15 +1,19 @@
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
 import { readableError } from './background-work'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/arc/tabs/tabs'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
 import { DiffViewer } from './DiffViewer'
-import { ActivityRow } from './ActivityRow'
-import { ActivityHover } from './ActivityHover'
+import { ActivityDetails } from './ActivityDetails'
+import { RelatedActivities } from './RelatedActivities'
+import { DiffSkeleton } from './DiffSkeleton'
+import { PullRequestStatus } from './PullRequestLifecycle'
+import { isPullRequest } from './pull-request'
+import { Badge } from './components/arc/badge/badge'
 import { activityLink } from './workspace-model'
 
 interface Props {
@@ -45,12 +49,18 @@ export function WorkspaceInspector({
     const [tab, setTab] = useState<string>(initialTab)
     useEffect(() => setTab(initialTab), [activity.id, initialTab])
     const repository = state.repositories.find((repo) => repo.id === activity.repositoryId)
-    const related = state.activities.filter(
-        (item) =>
-            item.id !== activity.id &&
-            item.repositoryId === activity.repositoryId &&
-            ((activity.prId && item.prId === activity.prId) ||
-                item.branches.some((branch) => branch !== repository?.base && activity.branches.includes(branch)))
+    const related = useMemo(
+        () =>
+            state.activities.filter(
+                (item) =>
+                    item.id !== activity.id &&
+                    item.repositoryId === activity.repositoryId &&
+                    ((activity.prId && item.prId === activity.prId) ||
+                        item.branches.some(
+                            (branch) => branch !== repository?.base && activity.branches.includes(branch)
+                        ))
+            ),
+        [state.activities, activity.id, activity.repositoryId, activity.prId, activity.branches, repository?.base]
     )
     const url = activityLink(activity, state)
     return (
@@ -108,6 +118,7 @@ export function WorkspaceInspector({
                             (activity.kind === 'pr' && activity.diffRevision !== activity.revision))
                     )
                         onInspect?.(activity, 'diff')
+                    if (value === 'details' && !activity.filesLoaded && !loading) onInspect?.(activity, 'details')
                 }}
                 className="ws-inspector-tabs"
             >
@@ -119,9 +130,7 @@ export function WorkspaceInspector({
                 <TabsContent value="diff">
                     {state.diffs[activity.id] === undefined && (loading || error) ? (
                         loading ? (
-                            <div className="ws-diff-loading" role="status">
-                                Loading changes...
-                            </div>
+                            <DiffSkeleton />
                         ) : (
                             <ScrollArea
                                 className="ws-diff-state"
@@ -201,38 +210,23 @@ export function WorkspaceInspector({
                 <TabsContent value="details">
                     <ScrollArea className="ws-inspector-scroll" label="Activity details" fade={16}>
                         <div className="ws-details-content">
-                            <h2>{activity.title}</h2>
-                            <p>{activity.description || 'No description was captured for this activity.'}</p>
-                            <dl>
-                                <div>
-                                    <dt>Project</dt>
-                                    <dd>{repository?.name}</dd>
-                                </div>
-                                <div>
-                                    <dt>Branch</dt>
-                                    <dd>{activity.branches.join(', ') || 'No branch'}</dd>
-                                </div>
-                                <div>
-                                    <dt>Author</dt>
-                                    <dd>{activity.author}</dd>
-                                </div>
-                                <div>
-                                    <dt>Comparison</dt>
-                                    <dd>{activity.base ?? 'Parent commit'}</dd>
-                                </div>
-                            </dl>
-                            {activity.deletedBranches.length > 0 && (
-                                <p>Deleted branches: {activity.deletedBranches.join(', ')}. History is retained.</p>
-                            )}
-                            <h3>Changed files</h3>
-                            <ul className="ws-paths">
-                                {activity.files.map((file) => (
-                                    <li key={file.name}>
-                                        <code>{file.name}</code>
-                                        <span>{file.status}</span>
-                                    </li>
-                                ))}
-                            </ul>
+                            <div className="ws-details-heading">
+                                <h2>{activity.title}</h2>
+                                {isPullRequest(activity) ? (
+                                    <PullRequestStatus activity={activity} activities={state.activities} />
+                                ) : (
+                                    <Badge animateChanges={false}>
+                                        {activity.kind === 'commit' ? 'Commit' : 'Review'}
+                                    </Badge>
+                                )}
+                            </div>
+                            <ActivityDetails
+                                activity={activity}
+                                state={state}
+                                loading={loading}
+                                error={!activity.filesLoaded ? error : undefined}
+                                onRetry={() => onInspect?.(activity, 'details')}
+                            />
                             {url && (
                                 <Button variant="secondary" size="sm" onClick={() => run({ type: 'open', url })}>
                                     Open in GitHub
@@ -243,27 +237,12 @@ export function WorkspaceInspector({
                     </ScrollArea>
                 </TabsContent>
                 <TabsContent value="related">
-                    <ScrollArea className="ws-inspector-scroll" label="Related activity" fade={16}>
-                        <ActivityHover>
-                            <ul className="ws-related-list activity-row-list">
-                                {related.length ? (
-                                    related.map((item, index) => (
-                                        <li key={item.id}>
-                                            <ActivityRow
-                                                activity={item}
-                                                repositoryName={repository?.name ?? 'Repository'}
-                                                connected={index < related.length - 1}
-                                                className="ws-activity-row"
-                                                onClick={() => onInspect?.(item)}
-                                            />
-                                        </li>
-                                    ))
-                                ) : (
-                                    <li>No related activity has been captured for this branch.</li>
-                                )}
-                            </ul>
-                        </ActivityHover>
-                    </ScrollArea>
+                    <RelatedActivities
+                        key={activity.id}
+                        activities={related}
+                        repositoryName={repository?.name ?? 'Repository'}
+                        onInspect={onInspect}
+                    />
                 </TabsContent>
             </Tabs>
             <footer className="ws-inspector-footer">
