@@ -40,6 +40,8 @@ export const DialogClose = DialogPrimitive.Close
 export interface DialogContentProps extends ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
     title: string
     description?: string
+    /** Optional activity context or status displayed above the title. */
+    headerContent?: ReactNode
     children: ReactNode
     /** Dim large data views without repainting the whole page through a backdrop blur. */
     backdrop?: 'blur' | 'dim'
@@ -82,6 +84,7 @@ function SwapText({ text }: { text: string }) {
 export function DialogContent({
     title,
     description,
+    headerContent,
     children,
     className,
     onPointerDownOutside,
@@ -106,6 +109,7 @@ export function DialogContent({
         <>
             <div className={styles.header} data-arc-dialog-header>
                 <div>
+                    {headerContent ? <div className={styles.headerContent}>{headerContent}</div> : null}
                     <DialogPrimitive.Title className={styles.title}>
                         <SwapText text={title} />
                     </DialogPrimitive.Title>

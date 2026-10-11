@@ -22,7 +22,11 @@ export function filesFromDiff(diff: string): Activity['files'] | undefined {
                     : file.type === 'modify' && file.oldMode && !file.newMode
                       ? 'removed'
                       : statuses[file.type]
-            return { name: status === 'removed' ? file.oldPath : file.newPath, status }
+            return {
+                name: status === 'removed' ? file.oldPath : file.newPath,
+                status,
+                ...(status === 'renamed' || status === 'copied' ? { previousName: file.oldPath } : {})
+            }
         })
     } catch {
         return undefined

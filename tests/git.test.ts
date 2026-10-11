@@ -3,9 +3,29 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { execFile } from 'node:child_process'
-import { commits } from '../src/main/git'
+import { commits, commitDetails } from '../src/main/git'
 import { workspace } from './fixtures'
 import { inbox, weekOf } from '../src/shared/model'
+
+it('preserves old and new rename paths and filenames containing whitespace in commit details', async () => {
+    const app = await workspace()
+    try {
+        await app.git('mv', 'work.txt', 'renamed work.txt')
+        await writeFile(join(app.directory, ' leading space.txt'), 'new file\n')
+        await app.git('add', ' leading space.txt')
+        await app.git('commit', '-m', 'Rename work and add a file')
+        const details = await commitDetails(app.repository, await app.git('rev-parse', 'HEAD'), false)
+        expect(details.files).toEqual(
+            expect.arrayContaining([
+                { name: 'renamed work.txt', previousName: 'work.txt', status: 'R100' },
+                { name: ' leading space.txt', status: 'A' }
+            ])
+        )
+        expect(details.diff).toBe('')
+    } finally {
+        await app.close()
+    }
+})
 
 it('uses author dates after rewriting commits and compares ordinary branches against development', async () => {
     const app = await workspace()

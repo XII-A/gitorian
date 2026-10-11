@@ -42,6 +42,7 @@ interface Review {
 interface File {
     filename: string
     status: string
+    previous_filename?: string
 }
 interface Device {
     device_code: string
@@ -274,7 +275,8 @@ export class GitHub {
         if (!remote || !number) return []
         return (await this.list<File>(`repos/${remote}/pulls/${number}/files`)).map((file) => ({
             name: file.filename,
-            status: file.status
+            status: file.status,
+            ...(file.previous_filename ? { previousName: file.previous_filename } : {})
         }))
     }
     async commitDetails(
@@ -293,7 +295,11 @@ export class GitHub {
             : ''
         return {
             diff: diff.length <= 2_000_000 ? diff : 'Diff is too large. Open in GitHub.',
-            files: metadata.files.map((file) => ({ name: file.filename, status: file.status }))
+            files: metadata.files.map((file) => ({
+                name: file.filename,
+                status: file.status,
+                ...(file.previous_filename ? { previousName: file.previous_filename } : {})
+            }))
         }
     }
     private async diff(url: string, token: string, init: RequestInit, background = false): Promise<string> {

@@ -43,7 +43,7 @@ export const activitySchema = z.object({
     prId: z.string().optional(),
     url: z.string().optional(),
     description: z.string(),
-    files: z.array(z.object({ name: z.string(), status: z.string() })),
+    files: z.array(z.object({ name: z.string(), status: z.string(), previousName: z.string().optional() })),
     revision: z.string().optional(),
     diffRevision: z.string().optional(),
     base: z.string().optional(),

@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import '@fontsource-variable/geist'
+import '@fontsource-variable/inter'
 import './components/arc/foundation.css'
 import 'react-diff-view/style/index.css'
 import './styles.css'
