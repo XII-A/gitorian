@@ -81,6 +81,35 @@ describe('activity descriptions', () => {
         expect(container.querySelector('img')).toBeNull()
         expect(container.textContent).toContain('unsafe')
     })
+    it('preserves diff signs, spacing and literal markup with full-line change semantics', () => {
+        const source =
+            '--- a/actions.ts\n+++ b/actions.ts\n@@ -1,2 +1,3 @@\n- Urgent only\n+ Search with highlights                         Add button\n\n  Unchanged context\n+ <script>alert(1)</script>\n'
+        const container = render(
+            createElement(ActivityDescription, {
+                activity: { ...activity, description: `\`\`\`diff\n${source}\`\`\`` }
+            })
+        )
+        const block = container.querySelector('pre.hub-detail-diff code')
+        expect(block?.textContent).toBe(source)
+        expect(block?.querySelectorAll('[data-diff-line="added"]')).toHaveLength(2)
+        expect(block?.querySelectorAll('[data-diff-line="removed"]')).toHaveLength(1)
+        expect(block?.querySelectorAll('[data-diff-line="context"]')).toHaveLength(5)
+        expect(block?.querySelector('script')).toBeNull()
+    })
+    it('keeps ordinary code and Markdown lists outside diff highlighting', () => {
+        const container = render(
+            createElement(ActivityDescription, {
+                activity: {
+                    ...activity,
+                    description: '```txt\n- ordinary text\n+ ordinary text\n```\n\n- A list item\n\n`+ inline`'
+                }
+            })
+        )
+        expect(container.querySelector('.hub-detail-diff')).toBeNull()
+        expect(container.querySelector('pre code')?.textContent).toBe('- ordinary text\n+ ordinary text\n')
+        expect(container.querySelector('li')?.textContent).toBe('A list item')
+        expect(container.querySelector('p code')?.textContent).toBe('+ inline')
+    })
     it('resolves repository links, PR fragments, and refuses credentialed URLs', () => {
         expect(markdownUrl('README.md', activity, repository)).toBe(
             'https://github.com/example/project/blob/main/README.md'
