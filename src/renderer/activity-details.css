@@ -156,6 +156,10 @@
   color: var(--text-secondary);
   line-height: 1.7;
 }
+.hub-detail-lifecycle {
+  --timeline-surface: var(--surface-raised);
+  --text-muted: var(--detail-muted);
+}
 .hub-detail-markdown > :first-child {
   margin-top: 0;
 }

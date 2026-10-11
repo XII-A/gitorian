@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ActivityDescription } from '../src/renderer/ActivityDescription'
 import { ActivityFiles } from '../src/renderer/ActivityFiles'
+import { PullRequestLifecycle, PullRequestStatus } from '../src/renderer/PullRequestLifecycle'
 import { activityBranches, changeKind, markdownUrl, orderedFiles } from '../src/renderer/activity-details'
 import { sampleState } from '../src/renderer/workspace-sample'
 
@@ -16,6 +17,71 @@ const render = (element: Parameters<typeof renderToStaticMarkup>[0]) => {
     container.innerHTML = renderToStaticMarkup(element)
     return container
 }
+
+describe('pull request lifecycle presentation', () => {
+    it.each(['open', 'draft', 'closed', 'merged'] as const)('labels %s as current status', (status) => {
+        const pull = { ...activity, pullRequest: { status, openedAt: activity.date, commitDates: [] } }
+        const container = render(createElement(PullRequestStatus, { activity: pull, activities: [pull] }))
+        expect(container.textContent).toBe(`Current status: ${status[0].toUpperCase()}${status.slice(1)}`)
+    })
+    it('shows lifecycle milestones newest first with timezone-aware accessible times', () => {
+        const pull = {
+            ...activity,
+            pullRequest: {
+                status: 'merged' as const,
+                openedAt: '2026-10-05T10:00:00Z',
+                commitDates: ['2026-10-06T10:00:00Z', '2026-10-08T10:00:00Z'],
+                closedAt: '2026-10-09T10:00:00Z',
+                mergedAt: '2026-10-09T10:00:00Z'
+            }
+        }
+        const container = render(
+            createElement(PullRequestLifecycle, {
+                activity: pull,
+                activities: [pull],
+                timezone: 'Europe/Istanbul',
+                refreshedAt: '2026-10-11T12:00:00Z'
+            })
+        )
+        expect([...container.querySelectorAll('li')].map((row) => row.textContent)).toEqual([
+            expect.stringContaining('Merged pull request'),
+            expect.stringContaining('Latest commit'),
+            expect.stringContaining('Opened pull request')
+        ])
+        expect(container.querySelector('time')?.getAttribute('datetime')).toBe('2026-10-09T10:00:00.000Z')
+        expect(container.querySelector('time')?.getAttribute('title')).toContain('1:00 PM')
+        expect(container.querySelectorAll('[role="heading"][aria-level="4"]')).toHaveLength(3)
+        expect(container.textContent).not.toContain('Closed without merging')
+    })
+    it('shows closed without merging and avoids duplicated opening/commit timestamps', () => {
+        const pull = {
+            ...activity,
+            pullRequest: {
+                status: 'closed' as const,
+                openedAt: activity.date,
+                commitDates: [activity.date],
+                closedAt: '2026-10-09T10:00:00Z'
+            }
+        }
+        const container = render(
+            createElement(PullRequestLifecycle, {
+                activity: pull,
+                activities: [pull],
+                timezone: 'UTC'
+            })
+        )
+        expect(container.querySelectorAll('li')).toHaveLength(2)
+        expect(container.textContent).toContain('Closed without merging')
+    })
+    it('keeps missing legacy status honest and provides a history recovery hint', () => {
+        const container = render(createElement(PullRequestStatus, { activity, activities: [activity] }))
+        expect(container.textContent).toBe('Current status unavailable')
+        const history = render(
+            createElement(PullRequestLifecycle, { activity, activities: [activity], timezone: 'UTC' })
+        )
+        expect(history.textContent).toContain('Refresh activity')
+    })
+})
 
 describe('activity branch context', () => {
     const commit = {

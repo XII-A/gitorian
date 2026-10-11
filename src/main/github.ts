@@ -13,6 +13,9 @@ interface Pull {
     html_url: string
     created_at: string
     updated_at: string
+    state?: 'open' | 'closed'
+    draft?: boolean
+    closed_at?: string | null
     merged_at: string | null
     merge_commit_sha: string | null
     user: User
@@ -170,7 +173,10 @@ export class GitHub {
                     summary.merged_at,
                     summary.merge_commit_sha,
                     login,
-                    repository.emails
+                    repository.emails,
+                    summary.state,
+                    summary.draft,
+                    summary.closed_at
                 ])
                 if (scan.versions?.[String(summary.number)] === version) continue
                 if (hydrated >= 20) {
@@ -216,7 +222,29 @@ export class GitHub {
                     explicit: false,
                     deletedBranches: []
                 }
-                batch.push({ ...common, id, kind: 'pr', date: latest })
+                batch.push({
+                    ...common,
+                    id,
+                    kind: 'pr',
+                    date: latest,
+                    pullRequest: {
+                        status: pr.merged_at
+                            ? 'merged'
+                            : pr.state === 'closed'
+                              ? 'closed'
+                              : pr.draft
+                                ? 'draft'
+                                : pr.state === 'open'
+                                  ? 'open'
+                                  : undefined,
+                        openedAt: pr.created_at,
+                        commitDates: [...new Set(commits.map((commit) => commit.commit.author.date))]
+                            .filter((date) => date >= pr.created_at)
+                            .sort(),
+                        closedAt: pr.closed_at ?? undefined,
+                        mergedAt: pr.merged_at ?? undefined
+                    }
+                })
                 batch.push({
                     ...common,
                     id: `${id}:opened`,

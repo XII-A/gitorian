@@ -7,7 +7,6 @@ import {
     ExternalLink,
     FolderGit2,
     GitCommitHorizontal,
-    GitMerge,
     GitPullRequest,
     UserRound
 } from 'lucide-react'
@@ -21,6 +20,8 @@ import { EmptyState } from './components/arc/empty-state/empty-state'
 import { ActivityDescription } from './ActivityDescription'
 import { ActivityFiles } from './ActivityFiles'
 import { ActivityBranches } from './ActivityBranches'
+import { PullRequestLifecycle, PullRequestStatus } from './PullRequestLifecycle'
+import { isPullRequest } from './pull-request'
 import './activity-details.css'
 
 export interface HubActivityDialogHandle {
@@ -102,16 +103,18 @@ export function HubActivityDialog({
             cancelled = true
         }
     }, [isOpen, selected, attempt])
-    const activity = details ?? selected
-    const kind =
-        activity &&
-        { commit: 'Commit', pr: 'Pull request', review: 'Review', opened: 'Opened', merged: 'Merged' }[activity.kind]
+    const loaded = details ?? selected
+    // Loaded files belong to the stored record; keep the hub's date-range placement and unified PR type.
+    const activity =
+        loaded && selected && isPullRequest(selected)
+            ? { ...loaded, kind: 'pr' as const, title: selected.title, date: selected.date }
+            : loaded
+    const kind = activity?.kind === 'commit' ? 'Commit' : 'Review'
     const repository = state.repositories.find((repo) => repo.id === activity?.repositoryId)
     const pullNumber = activity?.prId?.match(/(?:^|[:/])(\d+)$/)?.[1]
     const reference =
         activity?.kind === 'commit' ? activity.sha?.slice(0, 7) : pullNumber ? `#${pullNumber}` : undefined
-    const Icon =
-        activity?.kind === 'commit' ? GitCommitHorizontal : activity?.kind === 'merged' ? GitMerge : GitPullRequest
+    const Icon = activity?.kind === 'commit' ? GitCommitHorizontal : GitPullRequest
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogContent
@@ -126,13 +129,16 @@ export function HubActivityDialog({
                 headerContent={
                     activity && (
                         <>
-                            <Badge
-                                tone={activity.kind === 'merged' ? 'success' : 'neutral'}
-                                animateChanges={false}
-                                icon={<Icon size={16} strokeWidth={1.5} aria-hidden="true" />}
-                            >
-                                {kind}
-                            </Badge>
+                            {isPullRequest(activity) ? (
+                                <PullRequestStatus activity={activity} activities={state.activities} />
+                            ) : (
+                                <Badge
+                                    animateChanges={false}
+                                    icon={<Icon size={16} strokeWidth={1.5} aria-hidden="true" />}
+                                >
+                                    {kind}
+                                </Badge>
+                            )}
                             {reference && (
                                 <Badge animateChanges={false}>
                                     <code title={activity.sha}>{reference}</code>
@@ -162,7 +168,7 @@ export function HubActivityDialog({
                                 <div>
                                     <dt>
                                         <CalendarDays size={16} strokeWidth={1.5} aria-hidden="true" />
-                                        Date
+                                        {isPullRequest(activity) ? 'Activity date' : 'Date'}
                                     </dt>
                                     <dd>
                                         <time dateTime={activity.date}>
@@ -203,6 +209,14 @@ export function HubActivityDialog({
                                     </p>
                                 )}
                             </section>
+                            {isPullRequest(activity) && (
+                                <PullRequestLifecycle
+                                    activity={activity}
+                                    activities={state.activities}
+                                    timezone={state.settings.timezone}
+                                    refreshedAt={state.lastRefreshed}
+                                />
+                            )}
                             <section className="hub-detail-section" aria-label="Changed files" aria-busy={busy}>
                                 <h3>Changed files</h3>
                                 {busy ? (
