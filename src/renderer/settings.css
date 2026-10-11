@@ -215,10 +215,6 @@
     min-width: 0;
     padding: var(--space-4);
 }
-.github-signin-instruction {
-    font-size: var(--text-sm);
-    color: var(--foreground);
-}
 .github-signin-code-row {
     display: flex;
     align-items: center;

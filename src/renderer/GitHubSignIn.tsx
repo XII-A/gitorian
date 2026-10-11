@@ -116,7 +116,6 @@ export function GitHubSignIn({
                         >
                             {device ? (
                                 <>
-                                    <p className="github-signin-instruction">Enter this code on GitHub</p>
                                     <div className="github-signin-code-row">
                                         <code className="github-signin-code">{device.code}</code>
                                         <CopyButton
@@ -125,9 +124,6 @@ export function GitHubSignIn({
                                             className="github-signin-copy"
                                         />
                                     </div>
-                                    <p className="settings-hint" role="status">
-                                        Waiting for authorization…
-                                    </p>
                                     {notice && (
                                         <p className="settings-hint" role="alert">
                                             {notice}

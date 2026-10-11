@@ -114,7 +114,6 @@ it('replaces the sign-in action with a selectable code and copies the exact code
         const surface = document.querySelector('.github-signin-surface')!
         expect(surface.getAttribute('data-expanded')).toBe('true')
         expect(surface.querySelector('code')?.textContent).toBe('ABCD-EFGH')
-        expect(surface.textContent).toContain('Waiting for authorization')
         expect(surface.querySelectorAll('button')).toHaveLength(3)
         expect(document.querySelector('.settings-device')).toBeNull()
         await update(() => {
