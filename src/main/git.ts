@@ -139,18 +139,22 @@ export async function commitDetails(
         '--root',
         '--no-commit-id',
         '--name-status',
+        '-z',
+        '-M',
         '-r',
         sha,
         '--'
     ])
-    const files = names
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .map((line) => {
-            const [status, ...name] = line.split('\t')
-            return { status, name: name.join('\t') }
-        })
+    // NUL delimiters preserve filenames containing tabs, newlines, or spaces.
+    const paths = names.split('\0')
+    const files: Activity['files'] = []
+    for (let index = 0; index < paths.length && paths[index];) {
+        const status = paths[index++]
+        const firstPath = paths[index++]
+        if (/^[RC]/.test(status)) {
+            files.push({ status, previousName: firstPath, name: paths[index++] })
+        } else files.push({ status, name: firstPath })
+    }
     let diff = ''
     if (includeDiff) {
         try {

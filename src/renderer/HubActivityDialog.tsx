@@ -1,11 +1,28 @@
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
-import { ArrowRight, GitBranch } from 'lucide-react'
-import { localDate, type Activity, type State } from '../shared/model'
+import {
+    ArrowRight,
+    CalendarDays,
+    ExternalLink,
+    FolderGit2,
+    GitCommitHorizontal,
+    GitPullRequest,
+    UserRound
+} from 'lucide-react'
+import { type Activity, type State } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
+import { Badge } from './components/arc/badge/badge'
+import { Skeleton } from './components/arc/skeleton/skeleton'
+import { EmptyState } from './components/arc/empty-state/empty-state'
+import { ActivityDescription } from './ActivityDescription'
+import { ActivityFiles } from './ActivityFiles'
+import { ActivityBranches } from './ActivityBranches'
+import { PullRequestLifecycle, PullRequestStatus } from './PullRequestLifecycle'
+import { isPullRequest } from './pull-request'
+import './activity-details.css'
 
 export interface HubActivityDialogHandle {
     open: (activity: Activity) => void
@@ -21,16 +38,19 @@ export function HubActivityDialog({
     onActivity: (activity: Activity) => void
     ref: Ref<HubActivityDialogHandle>
 }) {
+    const [isOpen, setIsOpen] = useState(false)
     const [selected, setSelected] = useState<Activity>()
     const [details, setDetails] = useState<Activity>()
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState('')
     const [attempt, setAttempt] = useState(0)
     const loadedDetails = useRef(new Map<string, Activity>())
+    const returnFocus = useRef<HTMLElement | null>(null)
     useImperativeHandle(
         ref,
         () => ({
             open(activity) {
+                returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
                 const previous = loadedDetails.current.get(activity.id)
                 const cached = activity.filesLoaded
                     ? activity
@@ -43,12 +63,13 @@ export function HubActivityDialog({
                 setError('')
                 setBusy(!cached)
                 setSelected(cached ?? activity)
+                setIsOpen(true)
             }
         }),
         []
     )
     useEffect(() => {
-        if (!selected) return
+        if (!isOpen || !selected) return
         if (selected.filesLoaded) {
             setDetails(selected)
             setBusy(false)
@@ -81,27 +102,50 @@ export function HubActivityDialog({
         return () => {
             cancelled = true
         }
-    }, [selected, attempt])
-    const activity = details ?? selected
-    const kind =
-        activity &&
-        { commit: 'Commit', pr: 'Pull request', review: 'Review', opened: 'Opened', merged: 'Merged' }[activity.kind]
-    const date = activity && new Date(`${localDate(new Date(activity.date), state.settings.timezone)}T12:00:00`)
+    }, [isOpen, selected, attempt])
+    const loaded = details ?? selected
+    // Loaded files belong to the stored record; keep the hub's date-range placement and unified PR type.
+    const activity =
+        loaded && selected && isPullRequest(selected)
+            ? { ...loaded, kind: 'pr' as const, title: selected.title, date: selected.date }
+            : loaded
+    const kind = activity?.kind === 'commit' ? 'Commit' : 'Review'
+    const repository = state.repositories.find((repo) => repo.id === activity?.repositoryId)
+    const pullNumber = activity?.prId?.match(/(?:^|[:/])(\d+)$/)?.[1]
+    const reference =
+        activity?.kind === 'commit' ? activity.sha?.slice(0, 7) : pullNumber ? `#${pullNumber}` : undefined
+    const Icon = activity?.kind === 'commit' ? GitCommitHorizontal : GitPullRequest
     return (
-        <Dialog
-            open={!!selected}
-            onOpenChange={(open) => {
-                if (!open) setSelected(undefined)
-            }}
-        >
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogContent
                 className="hub-detail-dialog"
                 backdrop="dim"
                 title={activity?.title ?? 'Activity details'}
-                description={
-                    activity
-                        ? `${kind} in ${state.repositories.find((repo) => repo.id === activity.repositoryId)?.name ?? 'repository'}`
-                        : undefined
+                onCloseAutoFocus={(event) => {
+                    event.preventDefault()
+                    returnFocus.current?.focus()
+                }}
+                aria-describedby={undefined}
+                headerContent={
+                    activity && (
+                        <>
+                            {isPullRequest(activity) ? (
+                                <PullRequestStatus activity={activity} activities={state.activities} />
+                            ) : (
+                                <Badge
+                                    animateChanges={false}
+                                    icon={<Icon size={16} strokeWidth={1.5} aria-hidden="true" />}
+                                >
+                                    {kind}
+                                </Badge>
+                            )}
+                            {reference && (
+                                <Badge animateChanges={false}>
+                                    <code title={activity.sha}>{reference}</code>
+                                </Badge>
+                            )}
+                        </>
+                    )
                 }
             >
                 {activity && (
@@ -112,60 +156,108 @@ export function HubActivityDialog({
                             label="Activity details"
                             fade={16}
                         >
-                            <div className="hub-detail-meta">
-                                <span>
-                                    <GitBranch size={14} aria-hidden="true" />
-                                    {activity.branches.join(', ') || 'No branch'}
-                                </span>
-                                <span>
-                                    {date?.toLocaleDateString('en-US', {
-                                        weekday: 'long',
-                                        month: 'long',
-                                        day: 'numeric',
-                                        year: 'numeric'
-                                    })}
-                                </span>
-                                <span>{activity.author}</span>
-                            </div>
-                            <p className="hub-detail-description">
-                                {activity.description ||
-                                    'Open the workspace to inspect the diff and add this change to your journal.'}
-                            </p>
-                            {busy ? (
-                                <p role="status">Loading activity details…</p>
-                            ) : error ? (
-                                <Alert tone="danger" title="Activity details could not be loaded">
-                                    <p>{readableError(error)}</p>
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        onClick={() => setAttempt((value) => value + 1)}
-                                    >
-                                        Retry details
-                                    </Button>
-                                </Alert>
-                            ) : (
-                                <>
-                                    <h3>Changed files</h3>
-                                    {activity.files.length ? (
-                                        <ul className="hub-detail-files">
-                                            {activity.files.map((file) => (
-                                                <li key={file.name}>
-                                                    <span>{file.name}</span>
-                                                    <small>{file.status}</small>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    ) : (
-                                        <p>No changed files.</p>
-                                    )}
-                                </>
+                            <dl className="hub-detail-meta">
+                                <div className="hub-detail-repository">
+                                    <dt>
+                                        <FolderGit2 size={16} strokeWidth={1.5} aria-hidden="true" />
+                                        Repository
+                                    </dt>
+                                    <dd>{repository?.name ?? 'Unknown repository'}</dd>
+                                </div>
+                                <ActivityBranches key={activity.id} activity={activity} activities={state.activities} />
+                                <div>
+                                    <dt>
+                                        <CalendarDays size={16} strokeWidth={1.5} aria-hidden="true" />
+                                        {isPullRequest(activity) ? 'Activity date' : 'Date'}
+                                    </dt>
+                                    <dd>
+                                        <time dateTime={activity.date}>
+                                            {new Date(activity.date).toLocaleString('en-US', {
+                                                timeZone: state.settings.timezone,
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric',
+                                                hour: 'numeric',
+                                                minute: '2-digit'
+                                            })}
+                                        </time>
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt>
+                                        <UserRound size={16} strokeWidth={1.5} aria-hidden="true" />
+                                        Author
+                                    </dt>
+                                    <dd>{activity.author || 'Unknown author'}</dd>
+                                </div>
+                            </dl>
+                            <section className="hub-detail-section" aria-label="Description">
+                                <h3>
+                                    {activity.kind === 'commit'
+                                        ? 'Commit message'
+                                        : activity.kind === 'review'
+                                          ? 'Review summary'
+                                          : 'Description'}
+                                </h3>
+                                {activity.description.trim() ? (
+                                    <ActivityDescription activity={activity} repository={repository} />
+                                ) : (
+                                    <p className="hub-detail-muted">
+                                        {activity.kind === 'review'
+                                            ? 'No written review summary.'
+                                            : 'No description provided.'}
+                                    </p>
+                                )}
+                            </section>
+                            {isPullRequest(activity) && (
+                                <PullRequestLifecycle
+                                    activity={activity}
+                                    activities={state.activities}
+                                    timezone={state.settings.timezone}
+                                    refreshedAt={state.lastRefreshed}
+                                />
                             )}
+                            <section className="hub-detail-section" aria-label="Changed files" aria-busy={busy}>
+                                <h3>Changed files</h3>
+                                {busy ? (
+                                    <Skeleton lines={4} label="Loading changed files" />
+                                ) : error ? (
+                                    <Alert tone="danger" title="Changed files could not be loaded">
+                                        <span className="hub-detail-error-message">{readableError(error)}</span>
+                                        <Button variant="secondary" onClick={() => setAttempt((value) => value + 1)}>
+                                            Retry details
+                                        </Button>
+                                    </Alert>
+                                ) : activity.files.length ? (
+                                    <ActivityFiles key={activity.id} files={activity.files} />
+                                ) : (
+                                    <EmptyState
+                                        title="No changed files"
+                                        description="This activity has no file changes. Open the workspace to explore its context."
+                                    />
+                                )}
+                            </section>
                         </ScrollArea>
                         <footer className="hub-detail-footer">
-                            <Button onClick={() => onActivity(activity)}>
+                            {activity.url && (
+                                <a
+                                    className="hub-detail-source-link"
+                                    href={activity.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    View on GitHub
+                                    <ExternalLink size={16} strokeWidth={1.5} aria-hidden="true" />
+                                </a>
+                            )}
+                            <Button
+                                onClick={() => {
+                                    setIsOpen(false)
+                                    onActivity(activity)
+                                }}
+                            >
                                 Open in workspace
-                                <ArrowRight size={15} aria-hidden="true" />
+                                <ArrowRight size={16} strokeWidth={1.5} aria-hidden="true" />
                             </Button>
                         </footer>
                     </>

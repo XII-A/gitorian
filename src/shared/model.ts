@@ -41,9 +41,18 @@ export const activitySchema = z.object({
     branches: z.array(z.string()),
     sha: z.string().optional(),
     prId: z.string().optional(),
+    pullRequest: z
+        .object({
+            status: z.enum(['open', 'draft', 'closed', 'merged']).optional(),
+            openedAt: z.string(),
+            commitDates: z.array(z.string()),
+            closedAt: z.string().optional(),
+            mergedAt: z.string().optional()
+        })
+        .optional(),
     url: z.string().optional(),
     description: z.string(),
-    files: z.array(z.object({ name: z.string(), status: z.string() })),
+    files: z.array(z.object({ name: z.string(), status: z.string(), previousName: z.string().optional() })),
     revision: z.string().optional(),
     diffRevision: z.string().optional(),
     base: z.string().optional(),

@@ -15,8 +15,8 @@ it('derives changed-file names and statuses from text and metadata patches', () 
         { name: 'a.ts', status: 'modified' },
         { name: 'new.bin', status: 'added' },
         { name: 'deleted.ts', status: 'removed' },
-        { name: 'renamed.ts', status: 'renamed' },
-        { name: 'copied.ts', status: 'copied' },
+        { name: 'renamed.ts', status: 'renamed', previousName: 'old.ts' },
+        { name: 'copied.ts', status: 'copied', previousName: 'source.ts' },
         { name: 'mode.sh', status: 'modified' }
     ])
 })

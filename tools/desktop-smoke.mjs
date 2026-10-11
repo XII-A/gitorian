@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog } from 'electron'
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
@@ -19,6 +19,19 @@ for (const name of ['first-project', 'second-project']) {
         ['branch', 'feature']
     ])
         execFileSync('git', args, { cwd: path, windowsHide: true, stdio: 'ignore' })
+    if (name === 'first-project') {
+        for (let index = 0; index < 20; index++) writeFileSync(join(path, `file-${index}.txt`), 'before\n')
+        execFileSync('git', ['add', '.'], { cwd: path, windowsHide: true, stdio: 'ignore' })
+        execFileSync('git', ['commit', '-m', 'Baseline files'], { cwd: path, windowsHide: true, stdio: 'ignore' })
+        for (let index = 0; index < 20; index++) writeFileSync(join(path, `file-${index}.txt`), 'after\n')
+        writeFileSync(join(path, 'added.txt'), 'new\n')
+        execFileSync('git', ['add', '.'], { cwd: path, windowsHide: true, stdio: 'ignore' })
+        execFileSync('git', ['commit', '-m', 'File filter animation fixture'], {
+            cwd: path,
+            windowsHide: true,
+            stdio: 'ignore'
+        })
+    }
 }
 const pause = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds))
 const waitForElement = async (window, selector) => {
@@ -189,6 +202,33 @@ app.on('browser-window-created', (_, window) => {
                 const cachedHubDetailsOpenImmediately=!!document.querySelector('.hub-detail-dialog')&&!cachedLoadingFlash
                 document.querySelector('.hub-detail-dialog [aria-label="Close dialog"]').click()
                 await new Promise(resolve=>setTimeout(resolve,250))
+                Array.from(document.querySelectorAll('.hub-activity')).find(row=>row.textContent.includes('File filter animation fixture')).click()
+                for(let attempt=0;attempt<100&&!document.querySelector('.hub-detail-file-filters [data-value="modified"]');attempt++)
+                    await new Promise(resolve=>setTimeout(resolve,25))
+                const filters=document.querySelector('.hub-detail-file-filters')
+                filters.querySelector('[data-value="modified"]').click()
+                await new Promise(resolve=>setTimeout(resolve,500))
+                const filesViewport=document.querySelector('.hub-detail-viewport')
+                filesViewport.scrollTop=180
+                await new Promise(resolve=>setTimeout(resolve,50))
+                const scrollBeforeFilter=filesViewport.scrollTop
+                const rowsBeforeFilter=document.querySelectorAll('.hub-detail-files > li').length
+                const indicator=()=>filters.querySelector('[class*="selection"]')
+                const expectedOffset=indicator().getBoundingClientRect().top-filters.getBoundingClientRect().top
+                const indicatorFrames=[]
+                filters.querySelector('[data-value="added"]').click()
+                const animationStart=performance.now()
+                while(performance.now()-animationStart<650) {
+                    await new Promise(resolve=>setTimeout(resolve,16))
+                    const pill=indicator().getBoundingClientRect(),track=filters.getBoundingClientRect()
+                    indicatorFrames.push(Math.abs(pill.top-track.top-expectedOffset))
+                }
+                const maxVerticalJump=Math.max(...indicatorFrames)
+                // Hidden Electron windows may pause horizontal animation; the vertical escape remains observable.
+                const hubFileFilterStaysInTrackAfterShrink=rowsBeforeFilter===20&&scrollBeforeFilter>50&&filesViewport.scrollTop<scrollBeforeFilter&&maxVerticalJump<2&&document.querySelectorAll('.hub-detail-files > li').length===1
+                if(!hubFileFilterStaysInTrackAfterShrink) throw new Error(JSON.stringify({failure:'File filter indicator escapes its track when the scroll offset clamps',rowsBeforeFilter,scrollBeforeFilter,scrollAfterFilter:filesViewport.scrollTop,maxVerticalJump}))
+                document.querySelector('.hub-detail-dialog [aria-label="Close dialog"]').click()
+                await new Promise(resolve=>setTimeout(resolve,250))
                 document.querySelector('[aria-label="Open journal"]').click()
                 await new Promise(resolve => setTimeout(resolve, 150))
                 const workspaceImplemented = !!document.querySelector('.ws-frame') && document.querySelector('.writing-workspace').dataset.layout === 'three-panes' && !document.querySelector('.variant-picker')
@@ -202,7 +242,7 @@ app.on('browser-window-created', (_, window) => {
                 await new Promise(resolve => setTimeout(resolve, 200))
                 document.querySelector('[aria-label="Journal body"]').focus()
                 const newEntryUsesTemplate=document.querySelector('[aria-label="Journal body"]').textContent.includes('Template reflection.') && !!document.querySelector('[aria-label="Journal body"] h2')
-                return {opensOnHub,hubProjectChip,hubUsesArcChart,hubDialogKeepsListIdle,hubDialogArcScroll,hubDialogDimBackdrop,cachedHubDetailsOpenImmediately,workspaceImplemented,noDraftCreated,returnsToHub,newEntryUsesTemplate,node:typeof require,version:before.state.version}
+                return {opensOnHub,hubProjectChip,hubUsesArcChart,hubDialogKeepsListIdle,hubDialogArcScroll,hubDialogDimBackdrop,cachedHubDetailsOpenImmediately,hubFileFilterStaysInTrackAfterShrink,workspaceImplemented,noDraftCreated,returnsToHub,newEntryUsesTemplate,node:typeof require,version:before.state.version}
             })().catch(error => ({failure:String(error),stack:error.stack,text:document.body.innerText}))`)
             if ('failure' in result) throw new Error(JSON.stringify(result))
             Object.assign(result, settingsResult)

@@ -13,6 +13,9 @@ interface Pull {
     html_url: string
     created_at: string
     updated_at: string
+    state?: 'open' | 'closed'
+    draft?: boolean
+    closed_at?: string | null
     merged_at: string | null
     merge_commit_sha: string | null
     user: User
@@ -42,6 +45,7 @@ interface Review {
 interface File {
     filename: string
     status: string
+    previous_filename?: string
 }
 interface Device {
     device_code: string
@@ -169,7 +173,10 @@ export class GitHub {
                     summary.merged_at,
                     summary.merge_commit_sha,
                     login,
-                    repository.emails
+                    repository.emails,
+                    summary.state,
+                    summary.draft,
+                    summary.closed_at
                 ])
                 if (scan.versions?.[String(summary.number)] === version) continue
                 if (hydrated >= 20) {
@@ -215,7 +222,29 @@ export class GitHub {
                     explicit: false,
                     deletedBranches: []
                 }
-                batch.push({ ...common, id, kind: 'pr', date: latest })
+                batch.push({
+                    ...common,
+                    id,
+                    kind: 'pr',
+                    date: latest,
+                    pullRequest: {
+                        status: pr.merged_at
+                            ? 'merged'
+                            : pr.state === 'closed'
+                              ? 'closed'
+                              : pr.draft
+                                ? 'draft'
+                                : pr.state === 'open'
+                                  ? 'open'
+                                  : undefined,
+                        openedAt: pr.created_at,
+                        commitDates: [...new Set(commits.map((commit) => commit.commit.author.date))]
+                            .filter((date) => date >= pr.created_at)
+                            .sort(),
+                        closedAt: pr.closed_at ?? undefined,
+                        mergedAt: pr.merged_at ?? undefined
+                    }
+                })
                 batch.push({
                     ...common,
                     id: `${id}:opened`,
@@ -274,7 +303,8 @@ export class GitHub {
         if (!remote || !number) return []
         return (await this.list<File>(`repos/${remote}/pulls/${number}/files`)).map((file) => ({
             name: file.filename,
-            status: file.status
+            status: file.status,
+            ...(file.previous_filename ? { previousName: file.previous_filename } : {})
         }))
     }
     async commitDetails(
@@ -293,7 +323,11 @@ export class GitHub {
             : ''
         return {
             diff: diff.length <= 2_000_000 ? diff : 'Diff is too large. Open in GitHub.',
-            files: metadata.files.map((file) => ({ name: file.filename, status: file.status }))
+            files: metadata.files.map((file) => ({
+                name: file.filename,
+                status: file.status,
+                ...(file.previous_filename ? { previousName: file.previous_filename } : {})
+            }))
         }
     }
     private async diff(url: string, token: string, init: RequestInit, background = false): Promise<string> {
