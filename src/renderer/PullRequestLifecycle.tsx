@@ -20,9 +20,10 @@ export function PullRequestStatus({ activity, activities }: { activity: Activity
         <Badge
             tone={presentation?.tone ?? 'neutral'}
             animateChanges={false}
+            aria-label={presentation ? `Current status: ${presentation.label}` : 'Status unavailable'}
             icon={<Icon size={16} strokeWidth={1.5} aria-hidden="true" />}
         >
-            {presentation ? `Current status: ${presentation.label}` : 'Current status unavailable'}
+            {presentation?.label ?? 'Status unavailable'}
         </Badge>
     )
 }
@@ -85,7 +86,7 @@ export function PullRequestLifecycle({
                     now={now}
                     label="Pull request history"
                     timeZone={timezone}
-                    headingLevel={4}
+                    groupByDay={false}
                     scrollToNew={false}
                     className="hub-detail-lifecycle"
                 />

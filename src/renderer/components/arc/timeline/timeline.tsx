@@ -54,6 +54,8 @@ export interface TimelineProps {
     /** Time zone for day groups and clock times. Fixed by default so server and client agree. */
     timeZone?: string
     locale?: string
+    /** Group updates under day headings. Disable for a continuous lifecycle, with a date beside every time. */
+    groupByDay?: boolean
     /** Height of the scrolling area. Without it the feed grows with the page and reveals on page scroll. */
     maxHeight?: number | string
     /** Scroll back to the top when a new update arrives while the feed is scrolled down. */
@@ -179,7 +181,7 @@ function DaySection({
     reduced,
     children
 }: {
-    id: string
+    id?: string
     fresh: boolean
     reduced: boolean
     children: ReactNode
@@ -398,6 +400,7 @@ export function Timeline({
     label,
     timeZone = 'UTC',
     locale = 'en-US',
+    groupByDay = true,
     maxHeight,
     scrollToNew = true,
     defaultExpanded = [],
@@ -462,30 +465,47 @@ export function Timeline({
 
     const [initialDays] = useState(() => new Set(events.map((event) => dayKey(new Date(event.at).getTime(), timeZone))))
     const groups = useMemo<Group[]>(() => {
+        const rows = events
+            .map((event) => {
+                const time = new Date(event.at).getTime()
+                return { ...event, time, day: dayKey(time, timeZone) }
+            })
+            .sort((a, b) => b.time - a.time)
+        if (!groupByDay) return rows.length ? [{ day: 'lifecycle', label: '', rows }] : []
         const today = dayKey(now, timeZone),
             yesterday = dayKey(now - 24 * HOUR, timeZone)
         const heading = new Intl.DateTimeFormat(locale, { weekday: 'long', month: 'long', day: 'numeric', timeZone })
         const byDay = new Map<string, Row[]>()
-        ;[...events]
-            .map((event) => ({ ...event, time: new Date(event.at).getTime() }))
-            .sort((a, b) => b.time - a.time)
-            .forEach((event) => {
-                const day = dayKey(event.time, timeZone)
-                byDay.set(day, [...(byDay.get(day) ?? []), { ...event, day }])
-            })
+        rows.forEach((row) => byDay.set(row.day, [...(byDay.get(row.day) ?? []), row]))
         return [...byDay].map(([day, rows]) => ({
             day,
             rows,
             label: day === today ? 'Today' : day === yesterday ? 'Yesterday' : heading.format(new Date(rows[0].time))
         }))
-    }, [events, now, timeZone, locale])
+    }, [events, now, timeZone, locale, groupByDay])
     const formats = useMemo(
         () => ({
             clock: new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone }),
+            dateClock: new Intl.DateTimeFormat(locale, {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                timeZone
+            }),
+            dateClockYear: new Intl.DateTimeFormat(locale, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                timeZone
+            }),
             full: new Intl.DateTimeFormat(locale, {
                 weekday: 'long',
                 month: 'long',
                 day: 'numeric',
+                year: 'numeric',
                 hour: 'numeric',
                 minute: '2-digit',
                 timeZone
@@ -551,32 +571,44 @@ export function Timeline({
                             {groups.map((group) => (
                                 <DaySection
                                     key={group.day}
-                                    id={`${id}-${group.day}`}
-                                    fresh={!initialDays.has(group.day)}
+                                    id={groupByDay ? `${id}-${group.day}` : undefined}
+                                    fresh={groupByDay && !initialDays.has(group.day)}
                                     reduced={reduced}
                                 >
-                                    <div
-                                        className={styles.day}
-                                        role="heading"
-                                        aria-level={headingLevel}
-                                        id={`${id}-${group.day}`}
-                                    >
-                                        <span>{group.label}</span>
-                                        <span className={styles.count} aria-hidden="true">
-                                            <RollingCount value={group.rows.length} reduced={reduced} />{' '}
-                                            {group.rows.length === 1 ? 'update' : 'updates'}
-                                        </span>
-                                        <span
-                                            className={styles.srOnly}
-                                        >{`, ${group.rows.length} ${group.rows.length === 1 ? 'update' : 'updates'}`}</span>
-                                    </div>
+                                    {groupByDay && (
+                                        <div
+                                            className={styles.day}
+                                            role="heading"
+                                            aria-level={headingLevel}
+                                            id={`${id}-${group.day}`}
+                                        >
+                                            <span>{group.label}</span>
+                                            <span className={styles.count} aria-hidden="true">
+                                                <RollingCount value={group.rows.length} reduced={reduced} />{' '}
+                                                {group.rows.length === 1 ? 'update' : 'updates'}
+                                            </span>
+                                            <span
+                                                className={styles.srOnly}
+                                            >{`, ${group.rows.length} ${group.rows.length === 1 ? 'update' : 'updates'}`}</span>
+                                        </div>
+                                    )}
                                     <ol className={styles.list}>
                                         <AnimatePresence>
                                             {group.rows.map((row, index) => {
-                                                const today = group.label === 'Today' && now - row.time < 12 * HOUR
+                                                const today =
+                                                    groupByDay && group.label === 'Today' && now - row.time < 12 * HOUR
                                                 const time = today
                                                     ? relative(row.time, now)
-                                                    : { short: formats.clock.format(new Date(row.time)), long: '' }
+                                                    : {
+                                                          short: (groupByDay
+                                                              ? formats.clock
+                                                              : row.day.slice(0, 4) ===
+                                                                  dayKey(now, timeZone).slice(0, 4)
+                                                                ? formats.dateClock
+                                                                : formats.dateClockYear
+                                                          ).format(new Date(row.time)),
+                                                          long: ''
+                                                      }
                                                 return (
                                                     <TimelineRow
                                                         key={row.id}

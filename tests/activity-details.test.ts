@@ -6,6 +6,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { ActivityDescription } from '../src/renderer/ActivityDescription'
 import { ActivityFiles } from '../src/renderer/ActivityFiles'
 import { PullRequestLifecycle, PullRequestStatus } from '../src/renderer/PullRequestLifecycle'
+import { Timeline } from '../src/renderer/components/arc/timeline/timeline'
+import timelineStyles from '../src/renderer/components/arc/timeline/timeline.module.css'
 import { activityBranches, changeKind, markdownUrl, orderedFiles } from '../src/renderer/activity-details'
 import { sampleState } from '../src/renderer/workspace-sample'
 
@@ -22,7 +24,9 @@ describe('pull request lifecycle presentation', () => {
     it.each(['open', 'draft', 'closed', 'merged'] as const)('labels %s as current status', (status) => {
         const pull = { ...activity, pullRequest: { status, openedAt: activity.date, commitDates: [] } }
         const container = render(createElement(PullRequestStatus, { activity: pull, activities: [pull] }))
-        expect(container.textContent).toBe(`Current status: ${status[0].toUpperCase()}${status.slice(1)}`)
+        const label = `${status[0].toUpperCase()}${status.slice(1)}`
+        expect(container.textContent).toBe(label)
+        expect(container.firstElementChild?.getAttribute('aria-label')).toBe(`Current status: ${label}`)
     })
     it('shows lifecycle milestones newest first with timezone-aware accessible times', () => {
         const pull = {
@@ -50,7 +54,11 @@ describe('pull request lifecycle presentation', () => {
         ])
         expect(container.querySelector('time')?.getAttribute('datetime')).toBe('2026-10-09T10:00:00.000Z')
         expect(container.querySelector('time')?.getAttribute('title')).toContain('1:00 PM')
-        expect(container.querySelectorAll('[role="heading"][aria-level="4"]')).toHaveLength(3)
+        expect(container.querySelector('time')?.textContent).toContain('Oct 9, 1:00 PM')
+        expect(container.querySelectorAll('[role="heading"]')).toHaveLength(0)
+        expect(container.querySelectorAll('ol')).toHaveLength(1)
+        expect(container.querySelectorAll(`.${timelineStyles.segment}`)).toHaveLength(2)
+        expect(container.textContent).not.toContain('update')
         expect(container.textContent).not.toContain('Closed without merging')
     })
     it('shows closed without merging and avoids duplicated opening/commit timestamps', () => {
@@ -75,11 +83,54 @@ describe('pull request lifecycle presentation', () => {
     })
     it('keeps missing legacy status honest and provides a history recovery hint', () => {
         const container = render(createElement(PullRequestStatus, { activity, activities: [activity] }))
-        expect(container.textContent).toBe('Current status unavailable')
+        expect(container.textContent).toBe('Status unavailable')
         const history = render(
             createElement(PullRequestLifecycle, { activity, activities: [activity], timezone: 'UTC' })
         )
         expect(history.textContent).toContain('Refresh activity')
+    })
+})
+
+describe('timeline date grouping', () => {
+    const events = [
+        { id: 'opened', at: '2026-10-05T10:00:00Z', title: 'Opened pull request' },
+        { id: 'merged', at: '2026-10-09T10:00:00Z', title: 'Merged pull request' }
+    ]
+    const props = { events, now: Date.parse('2026-10-11T12:00:00Z'), label: 'History', timeZone: 'Europe/Istanbul' }
+    it('connects Monday and Friday in a single list with dates instead of day headings and counts', () => {
+        const container = render(createElement(Timeline, { ...props, groupByDay: false }))
+        expect(container.querySelectorAll('ol')).toHaveLength(1)
+        expect(container.querySelectorAll('li')).toHaveLength(2)
+        expect(container.querySelectorAll(`.${timelineStyles.segment}`)).toHaveLength(1)
+        expect(
+            [...container.querySelectorAll('time')].map((time) => time.querySelector('[aria-hidden]')?.textContent)
+        ).toEqual(['Oct 9, 1:00 PM', 'Oct 5, 1:00 PM'])
+        expect(container.querySelector('[role="heading"]')).toBeNull()
+        expect(container.querySelector('[aria-labelledby]')).toBeNull()
+        expect(container.textContent).not.toContain('update')
+    })
+    it('preserves grouped feed headings and counts by default', () => {
+        const container = render(createElement(Timeline, props))
+        expect(container.querySelectorAll('ol')).toHaveLength(2)
+        expect(container.querySelectorAll('[role="heading"]')).toHaveLength(2)
+        expect(container.querySelectorAll(`.${timelineStyles.segment}`)).toHaveLength(0)
+        expect(container.textContent).toContain('1 update')
+        expect(container.querySelector('time')?.querySelector('[aria-hidden]')?.textContent).toBe('1:00 PM')
+    })
+    it('keeps the year visible for older events, using the display timezone at year boundaries', () => {
+        const container = render(
+            createElement(Timeline, {
+                ...props,
+                groupByDay: false,
+                events: [
+                    { id: 'older', at: '2025-10-05T10:00:00Z', title: 'Older event' },
+                    { id: 'boundary', at: '2025-12-31T23:30:00Z', title: 'New year event' }
+                ]
+            })
+        )
+        expect(
+            [...container.querySelectorAll('time')].map((time) => time.querySelector('[aria-hidden]')?.textContent)
+        ).toEqual(['Jan 1, 2:30 AM', 'Oct 5, 2025, 1:00 PM'])
     })
 })
 
