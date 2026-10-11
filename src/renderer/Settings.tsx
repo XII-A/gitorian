@@ -12,6 +12,9 @@ import { Input } from './components/arc/input/input'
 import { Select } from './components/arc/select/select'
 import { Combobox } from './components/arc/combobox/combobox'
 import { DatePicker } from './components/arc/date-picker/date-picker'
+import { RepositoryEmails } from './RepositoryEmails'
+import { ImportProgressLabel } from './ImportProgressLabel'
+import { Folder, RefreshCw } from 'lucide-react'
 import { Switch } from './components/arc/switch/switch'
 import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
 import { NumberField } from './components/arc/number-field/number-field'
@@ -59,16 +62,6 @@ export function Settings({
         `${repository.name} ${repository.path}`.toLowerCase().includes(repositorySearch.trim().toLowerCase())
     )
     const activeImport = state.repositoryImport?.status === 'running' ? state.repositoryImport : undefined
-    const importLabel =
-        !importProgress && activeImport
-            ? `Processing repositories ${activeImport.completed}/${activeImport.total || '...'}`
-            : !importProgress
-              ? 'Add repositories from folder'
-              : importProgress.stage === 'selecting'
-                ? 'Waiting for folder selection…'
-                : importProgress.stage === 'discovering'
-                  ? `Finding repositories… ${importProgress.found} found`
-                  : `Processing repositories ${importProgress.completed}/${importProgress.total}`
     useEffect(() => window.journal.onRepositoryImportProgress?.(setImportProgress), [])
     const requestClose = () => {
         if (busy) return
@@ -187,7 +180,30 @@ export function Settings({
             setStatus(result.message ?? 'Waiting for your browser…')
         })
     const repositoryFields = (repository: Repository) => (
-        <div className="settings-fields">
+        <div className="settings-fields settings-repository-fields">
+            <div className="settings-actions settings-repository-actions">
+                <Switch
+                    label="Track this repository"
+                    checked={!repository.removed}
+                    disabled={!!busy}
+                    onCheckedChange={(checked) => editRepository(repository, { removed: !checked })}
+                />
+                <Button
+                    className="settings-locate-button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={!!busy}
+                    loading={busy === `locate:${repository.id}`}
+                    onClick={() =>
+                        action(`locate:${repository.id}`, async () => {
+                            const result = await invoke({ type: 'relocate', id: repository.id })
+                            mergeRepositories(result.state.repositories)
+                        })
+                    }
+                >
+                    <Folder size={16} aria-hidden="true" /> Locate folder
+                </Button>
+            </div>
             {!repository.available && (
                 <p className="settings-hint">Folder unavailable. Locate it to resume tracking.</p>
             )}
@@ -213,24 +229,29 @@ export function Settings({
                         .map((value) => ({ value, label: value }))}
                     onValueChange={(base) => editRepository(repository, { base })}
                 />
-                <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={!!busy || repository.removed}
-                    onClick={() =>
-                        action('backfill', async () => {
-                            const result = await invoke({
-                                type: 'backfill',
-                                repositoryId: repository.id,
-                                since: dateKey(dateValue(repository.trackingStart))
-                            })
-                            setStatus(result.message ?? 'Older activity is being acquired. You can close Settings.')
-                        })
-                    }
-                >
-                    Fetch activity from this date
-                </Button>
             </div>
+            <Button
+                className="settings-backfill"
+                contentLayout="stack"
+                variant="ghost"
+                size="sm"
+                disabled={!!busy || repository.removed}
+                onClick={() =>
+                    action('backfill', async () => {
+                        const result = await invoke({
+                            type: 'backfill',
+                            repositoryId: repository.id,
+                            since: dateKey(dateValue(repository.trackingStart))
+                        })
+                        setStatus(result.message ?? 'Older activity is being acquired. You can close Settings.')
+                    })
+                }
+            >
+                <span className="settings-backfill-label">
+                    <RefreshCw size={14} aria-hidden="true" />
+                    <span>Fetch activity from this date</span>
+                </span>
+            </Button>
             <Select
                 label="GitHub remote"
                 value={repository.remote || '__local__'}
@@ -242,36 +263,11 @@ export function Settings({
                 ]}
                 onValueChange={(remote) => editRepository(repository, { remote: remote === '__local__' ? '' : remote })}
             />
-            <Input
-                label="Author emails"
-                value={repository.emails.join(', ')}
-                placeholder="you@example.com, another@example.com"
-                onChange={(event) =>
-                    editRepository(repository, { emails: event.target.value.split(',').map((email) => email.trim()) })
-                }
+            <RepositoryEmails
+                value={repository.emails}
+                suggestions={state.repositories.find((item) => item.id === repository.id)?.emails ?? []}
+                onChange={(emails) => editRepository(repository, { emails })}
             />
-            <div className="settings-actions settings-repository-actions">
-                <Switch
-                    label="Track this repository"
-                    checked={!repository.removed}
-                    disabled={!!busy}
-                    onCheckedChange={(checked) => editRepository(repository, { removed: !checked })}
-                />
-                <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={!!busy}
-                    loading={busy === `locate:${repository.id}`}
-                    onClick={() =>
-                        action(`locate:${repository.id}`, async () => {
-                            const result = await invoke({ type: 'relocate', id: repository.id })
-                            mergeRepositories(result.state.repositories)
-                        })
-                    }
-                >
-                    Locate folder
-                </Button>
-            </div>
         </div>
     )
     return (
@@ -283,6 +279,7 @@ export function Settings({
         >
             <DialogContent
                 className="settings"
+                backdrop="dim"
                 title="Workspace settings"
                 aria-describedby={undefined}
                 onOpenAutoFocus={() => {
@@ -315,6 +312,8 @@ export function Settings({
                                 <Button
                                     variant="secondary"
                                     size="sm"
+                                    className="settings-import-button"
+                                    contentLayout="stack"
                                     disabled={!!busy || !!activeImport}
                                     aria-busy={busy === 'repositories' || !!activeImport || undefined}
                                     onClick={() =>
@@ -330,7 +329,7 @@ export function Settings({
                                         })
                                     }
                                 >
-                                    {importLabel}
+                                    <ImportProgressLabel progress={importProgress} activeImport={activeImport} />
                                 </Button>
                             </div>
                             {state.repositoryImport?.status !== 'running' && state.repositoryImport?.message && (
@@ -363,7 +362,7 @@ export function Settings({
                                             title={repository.name}
                                             description={repository.path || 'Folder not located'}
                                         >
-                                            {repositoryFields(repository)}
+                                            {() => repositoryFields(repository)}
                                         </ExpandableCard>
                                     ))}
                                 </div>

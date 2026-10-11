@@ -113,15 +113,17 @@
 .popover {
     position: relative;
     width: min(320px, calc(100vw - 32px));
-    max-height: var(--radix-popover-content-available-height);
-    overflow: auto;
+    overflow: hidden;
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
-    padding: 16px;
+    padding: 0;
     background: var(--surface-raised);
     box-shadow: var(--shadow-floating);
     transform-origin: 22px -8px;
     will-change: transform, opacity;
+}
+.calendarViewport {
+    padding: 16px;
 }
 .popover[data-state] {
     animation: none;
@@ -129,7 +131,7 @@
 }
 /* On phone widths the calendar matches the field instead of running past the screen edge, and a tighter inset keeps the month and its controls on one row. */
 @media (max-width: 360px) {
-    .popover {
+    .calendarViewport {
         padding: 12px;
     }
 }

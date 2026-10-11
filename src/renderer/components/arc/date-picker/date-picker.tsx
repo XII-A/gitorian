@@ -9,6 +9,7 @@ import { Calendar, type CalendarDateMatcher } from '../calendar/calendar'
 import { motionTokens } from '../lib/motion-tokens'
 import styles from './date-picker.module.css'
 import { Popover, PopoverTrigger, PopoverContent } from '../popover/popover'
+import { ScrollArea } from '../scroll-area/scroll-area'
 
 export interface DatePickerProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'value' | 'onChange'> {
     label: string
@@ -81,11 +82,19 @@ export function DatePicker({
     const [side, setSide] = useState<'bottom' | 'right'>('bottom')
     useEffect(() => {
         // A side placement leaves the whole calendar visible in short desktop windows.
-        const query = window.matchMedia('(max-height: 720px) and (min-width: 768px)')
-        const update = () => setSide(query.matches ? 'right' : 'bottom')
+        const query = window.matchMedia('(max-height: 820px) and (min-width: 768px)')
+        const update = () => {
+            const bounds = triggerRef.current?.getBoundingClientRect()
+            const sideRoom = bounds ? Math.max(bounds.left, window.innerWidth - bounds.right) : 0
+            setSide(query.matches && sideRoom >= 340 ? 'right' : 'bottom')
+        }
         update()
         query.addEventListener('change', update)
-        return () => query.removeEventListener('change', update)
+        window.addEventListener('resize', update)
+        return () => {
+            query.removeEventListener('change', update)
+            window.removeEventListener('resize', update)
+        }
     }, [])
     const [month, setMonth] = useState(monthStart(value ?? new Date()))
     const rootRef = useRef<HTMLDivElement>(null)
@@ -241,6 +250,7 @@ export function DatePicker({
                                 asChild
                                 forceMount
                                 side={side}
+                                align={side === 'right' ? 'center' : 'start'}
                                 sideOffset={8}
                                 collisionPadding={12}
                                 onOpenAutoFocus={(event) => {
@@ -279,35 +289,46 @@ export function DatePicker({
                                         transition: { duration: 0.14, ease: ease.standard }
                                     }}
                                 >
-                                    <Calendar
-                                        value={value}
-                                        onChange={selectDate}
-                                        month={month}
-                                        onMonthChange={setMonth}
-                                        minDate={minDate}
-                                        maxDate={maxDate}
-                                        disabledDates={disabledDates}
-                                        locale={locale}
-                                        showToday={showToday}
-                                    />
-                                    <div className={styles.footer}>
-                                        <button type="button" onClick={() => selectDate(undefined)} disabled={!value}>
-                                            Clear
-                                        </button>
-                                        <span className={styles.status}>
-                                            <AnimatePresence initial={false}>
-                                                <motion.span
-                                                    key={time ?? 'none'}
-                                                    variants={reduce ? valueFade : statusRise}
-                                                    initial="enter"
-                                                    animate="center"
-                                                    exit="exit"
-                                                >
-                                                    {value ? `Selected ${formatter.format(value)}` : 'Choose a day'}
-                                                </motion.span>
-                                            </AnimatePresence>
-                                        </span>
-                                    </div>
+                                    <ScrollArea
+                                        label={`${label || 'Date'} calendar content`}
+                                        fade={12}
+                                        maxHeight="calc(var(--radix-popover-content-available-height) - 2px)"
+                                        viewportClassName={styles.calendarViewport}
+                                    >
+                                        <Calendar
+                                            value={value}
+                                            onChange={selectDate}
+                                            month={month}
+                                            onMonthChange={setMonth}
+                                            minDate={minDate}
+                                            maxDate={maxDate}
+                                            disabledDates={disabledDates}
+                                            locale={locale}
+                                            showToday={showToday}
+                                        />
+                                        <div className={styles.footer}>
+                                            <button
+                                                type="button"
+                                                onClick={() => selectDate(undefined)}
+                                                disabled={!value}
+                                            >
+                                                Clear
+                                            </button>
+                                            <span className={styles.status}>
+                                                <AnimatePresence initial={false}>
+                                                    <motion.span
+                                                        key={time ?? 'none'}
+                                                        variants={reduce ? valueFade : statusRise}
+                                                        initial="enter"
+                                                        animate="center"
+                                                        exit="exit"
+                                                    >
+                                                        {value ? `Selected ${formatter.format(value)}` : 'Choose a day'}
+                                                    </motion.span>
+                                                </AnimatePresence>
+                                            </span>
+                                        </div>
+                                    </ScrollArea>
                                 </motion.div>
                             </PopoverContent>
                         )}

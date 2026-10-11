@@ -85,11 +85,17 @@ Repository setup chooses a parent folder through the native picker and discovers
 
 Repositories use independently expandable Arc `ExpandableCard` components, keyed by repository id. Show the repository name and its full folder path in the card summary, with long names and path segments wrapping inside the card. Keep every card initially closed and preserve native disclosure keyboard behavior. Arc `SearchField` filters repository names and paths without changing the settings being edited. Its local `hideLabel` option keeps the search name accessible without displaying a heading above the input.
 
+Pass repository fields as an `ExpandableCard` render function to defer mounting until the first expansion. Details stay mounted after that so closing preserves input state and reversing an animation remains smooth. Settings uses the dim dialog backdrop to avoid repainting the hub through a blur. The expanded repository layout starts with tracking and locate-folder controls, followed by history/comparison fields, fetch activity, remote, and author emails. Author emails use Arc `MultiSelect` with the local `wrapValues` option and a separate add-email popover. Its options are portaled into an Arc popover with a named scroll area to avoid card clipping.
+
 Folder import reports selection, discovery, and completed/total processing through the preload's `onRepositoryImportProgress` subscription. Unsubscribe when settings unmounts. Animate and announce the button's real progress labels through the Arc button. Do not duplicate progress in the settings footer. Use `aria-busy` rather than the button's `loading` prop here: its loading presentation hides the text behind a spinner. Cancelled selection restores the idle action without an error.
+
+`ImportProgressLabel` keeps progress copy stable and animates each changing number with tabular numerals. The import button uses the Arc stacked content slot so long labels wrap in narrow settings columns. Announce the current numbers once; hide outgoing animated numbers from assistive technology.
 
 Connected GitHub settings show the avatar and username followed by Arc `ConfirmMorph` with `confirmMode="hold"` and `tone="danger"`. Return the real disconnect promise so failure and retry stay in the control. On narrow layouts the question stays available to assistive technology while the visible confirm/cancel controls fit in the settings column.
 
 Use the Arc searchable `Combobox` for timezones. Its option list lives in a portaled Arc popover with its own named Arc scroll viewport, so opening or selecting a timezone cannot enlarge or scroll the settings pane. Keyboard navigation scrolls the options viewport. The date picker opens beside its trigger in short desktop windows to keep the whole calendar visible. Retain its normal below-trigger behavior on tall windows and phones.
+
+Center side-placed date pickers vertically beside their trigger at desktop heights up to 820px. The calendar and footer share a named Arc `ScrollArea` bounded to Radix's available popup height, retaining access in very short windows without a native scrollbar.
 
 The Combobox uses Motion for its popup animation. Disable the inherited Arc Popover CSS transition and animation on that menu, as on the date picker, so transforms have one animation owner. Use Arc `NumberField` for refresh intervals, bounded to 0–1440 minutes; 0 disables background refresh. Its width follows its grid column through the documented `--number-field-width` token.
 

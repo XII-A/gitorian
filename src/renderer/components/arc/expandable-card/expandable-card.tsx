@@ -26,7 +26,8 @@ export interface ExpandableCardProps extends Omit<
 > {
     title: string
     description?: string
-    children: ReactNode
+    /** A render function defers expensive details until the first expansion, then keeps them mounted. */
+    children: ReactNode | (() => ReactNode)
     defaultExpanded?: boolean
     /** Collapsed width cap in px. The card is centered and never wider than its container. Fills the container when omitted. */
     width?: number
@@ -105,6 +106,7 @@ export function ExpandableCard({
     ...rest
 }: ExpandableCardProps) {
     const [expanded, setExpanded] = useState(defaultExpanded)
+    const [visited, setVisited] = useState(defaultExpanded)
     const [hold, setHold] = useState(true)
     const lastToggle = useRef(0)
     // The room the card can use, measured from its centering track. Until it is known, CSS caps the width.
@@ -136,7 +138,7 @@ export function ExpandableCard({
     const widthTransition = reduceMotion ? still : boxTransition(expanded, hold)
     useLayoutEffect(() => {
         if (boxWidth === undefined) return
-        if (!placed.current) {
+        if (!placed.current || reduceMotion) {
             placed.current = true
             boxWidthValue.jump(boxWidth)
             return
@@ -156,6 +158,7 @@ export function ExpandableCard({
         setHold(now - lastToggle.current > settleTime)
         lastToggle.current = now
         setExpanded(next)
+        if (next) setVisited(true)
     }
     const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
         onKeyDown?.(event)
@@ -216,7 +219,7 @@ export function ExpandableCard({
                         animate={{ opacity: expanded ? 1 : 0 }}
                         transition={reduceMotion ? still : contentTransition(expanded)}
                     >
-                        {children}
+                        {typeof children === 'function' ? (visited ? children() : null) : children}
                     </motion.div>
                 </motion.div>
             </motion.article>
