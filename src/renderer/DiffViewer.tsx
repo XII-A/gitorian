@@ -177,45 +177,47 @@ export function DiffViewer({
                         {files.length} {files.length === 1 ? 'file' : 'files'}
                     </span>
                 </div>
-                <ScrollArea
-                    className="ws-diff-scroll"
-                    orientation="both"
-                    label={`Scrollable diff for ${path}`}
-                    fade={0}
-                >
-                    {lineCount > 4000 ? (
-                        <div className="ws-diff-empty">
-                            <p>This file has more than 4,000 diff lines.</p>
-                            <span>View the full changes at the source.</span>
-                            {sourceAction}
-                        </div>
-                    ) : active.hunks.length ? (
-                        <Diff
-                            viewType={mode === 'split' ? 'split' : 'unified'}
-                            diffType={active.type}
-                            hunks={active.hunks}
-                            tokens={displayTokens}
-                            renderToken={(token, renderDefault, index) =>
-                                token.type === 'source-line' ? (
-                                    <span
-                                        key={index}
-                                        className="ws-diff-source-line"
-                                        data-indent-characters={token.indentCharacters}
-                                        style={{ '--diff-indent': `${token.indentColumns}ch` } as CSSProperties}
-                                    >
-                                        {token.children?.map(renderDefault)}
-                                    </span>
-                                ) : (
-                                    renderDefault(token, index)
-                                )
-                            }
-                        >
-                            {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
-                        </Diff>
-                    ) : (
-                        <p>Binary file or metadata change. No text diff.</p>
-                    )}
-                </ScrollArea>
+                {lineCount > 4000 ? (
+                    <DiffEmptyState
+                        title="This file is too large to display"
+                        description="This file has more than 4,000 diff lines. View the full changes at the source."
+                        action={sourceAction}
+                    />
+                ) : (
+                    <ScrollArea
+                        className="ws-diff-scroll"
+                        orientation="both"
+                        label={`Scrollable diff for ${path}`}
+                        fade={0}
+                    >
+                        {active.hunks.length ? (
+                            <Diff
+                                viewType={mode === 'split' ? 'split' : 'unified'}
+                                diffType={active.type}
+                                hunks={active.hunks}
+                                tokens={displayTokens}
+                                renderToken={(token, renderDefault, index) =>
+                                    token.type === 'source-line' ? (
+                                        <span
+                                            key={index}
+                                            className="ws-diff-source-line"
+                                            data-indent-characters={token.indentCharacters}
+                                            style={{ '--diff-indent': `${token.indentColumns}ch` } as CSSProperties}
+                                        >
+                                            {token.children?.map(renderDefault)}
+                                        </span>
+                                    ) : (
+                                        renderDefault(token, index)
+                                    )
+                                }
+                            >
+                                {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
+                            </Diff>
+                        ) : (
+                            <p>Binary file or metadata change. No text diff.</p>
+                        )}
+                    </ScrollArea>
+                )}
             </section>
         </div>
     )

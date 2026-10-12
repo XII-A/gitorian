@@ -550,12 +550,8 @@
     color: var(--text-secondary);
     font-size: var(--text-xs);
 }
-.ws-diff-empty,
 .ws-details-content {
     padding: var(--space-6);
-}
-.ws-diff-empty span {
-    color: var(--text-secondary);
 }
 .ws-details-content h2 {
     font-size: var(--text-lg);
