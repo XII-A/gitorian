@@ -18,6 +18,31 @@ function tokenClasses(nodes: TokenNode[]): string[] {
 }
 
 describe('diff syntax highlighting', () => {
+    it('highlights SQL keywords, strings, numbers, and comments without changing either side', () => {
+        const before = ['-- Previous query', "SELECT name FROM users WHERE status = 'old' AND id = 1;"]
+        const after = ['-- Updated query', "SELECT name FROM users WHERE status = 'active' AND id = 2;"]
+        const [file] = parseDiff(patch('migration.SQL', before, after))
+        const tokens = highlightDiff(file)!
+        expect(tokens.old.map(tokenText)).toEqual(before)
+        expect(tokens.new.map(tokenText)).toEqual(after)
+        expect(tokenClasses(tokens.new.flat())).toEqual(
+            expect.arrayContaining(['keyword', 'string', 'number', 'comment'])
+        )
+    })
+    it.each(['yml', 'yaml'])(
+        'highlights %s keys and values while preserving indentation on both sides',
+        (extension) => {
+            const before = ['# Previous config', 'service:', '  name: "before"', '  enabled: false', '  retries: 1']
+            const after = ['# Updated config', 'service:', '  name: "after"', '  enabled: true', '  retries: 2']
+            const [file] = parseDiff(patch(`config.${extension}`, before, after))
+            const tokens = highlightDiff(file)!
+            expect(tokens.old.map(tokenText)).toEqual(before)
+            expect(tokens.new.map(tokenText)).toEqual(after)
+            expect(tokenClasses(tokens.new.flat())).toEqual(
+                expect.arrayContaining(['key', 'string', 'boolean', 'number', 'comment'])
+            )
+        }
+    )
     it.each(['json', 'jsonc', 'webmanifest'])(
         'highlights %s keys and values without changing either side',
         (extension) => {

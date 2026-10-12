@@ -3,11 +3,15 @@ import refractor from 'refractor/core'
 import tsx from 'refractor/lang/tsx'
 import json from 'refractor/lang/json'
 import markdown from 'refractor/lang/markdown'
+import sql from 'refractor/lang/sql'
+import yaml from 'refractor/lang/yaml'
 
 // TSX also registers JSX and TypeScript; the core includes JavaScript and CSS.
 refractor.register(tsx)
 refractor.register(json)
 refractor.register(markdown)
+refractor.register(sql)
+refractor.register(yaml)
 
 const languages: Record<string, string> = {
     js: 'javascript',
@@ -23,7 +27,10 @@ const languages: Record<string, string> = {
     jsonc: 'json',
     webmanifest: 'json',
     md: 'markdown',
-    markdown: 'markdown'
+    markdown: 'markdown',
+    sql: 'sql',
+    yml: 'yaml',
+    yaml: 'yaml'
 }
 
 export function highlightDiff(file: FileData): HunkTokens | undefined {
