@@ -70,45 +70,9 @@ export function WorkspaceInspector({
             aria-label="Activity inspector"
             aria-busy={loading}
         >
-            <header className="ws-inspector-heading">
-                <div>
-                    <span className="ws-inspector-title" title={activity.title}>
-                        {activity.title}
-                    </span>
-                    {activity.sha && (
-                        <Badge className="ws-inspector-commit" animateChanges={false} size="sm" title={activity.sha}>
-                            <code>{activity.sha.slice(0, 7)}</code>
-                        </Badge>
-                    )}
-                </div>
-                <div>
-                    {onPopout && (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={onPopout}
-                            aria-label="Pop out diff"
-                            title="Open in a separate window"
-                        >
-                            <WorkspaceIcon name="popout" />
-                            Pop out
-                        </Button>
-                    )}
-                    {onClose && (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={onClose}
-                            aria-label={reference ? 'Dock back to workspace' : 'Close inspector'}
-                        >
-                            <WorkspaceIcon name={reference ? 'back' : 'close'} />
-                            {reference && 'Dock back'}
-                        </Button>
-                    )}
-                </div>
-            </header>
             <Tabs
                 value={tab}
+                variant="underline"
                 onValueChange={(value) => {
                     setTab(value)
                     if (value === 'diff' && !hasCachedDetails(state, activity)) onInspect?.(activity, 'diff')
@@ -116,11 +80,60 @@ export function WorkspaceInspector({
                 }}
                 className="ws-inspector-tabs"
             >
-                <TabsList aria-label="Activity information" edgeToEdge>
-                    <TabsTrigger value="diff">Diff</TabsTrigger>
-                    <TabsTrigger value="details">Details</TabsTrigger>
-                    <TabsTrigger value="related">Related · {related.length}</TabsTrigger>
-                </TabsList>
+                <header className="ws-inspector-header">
+                    <div className="ws-inspector-heading">
+                        <div className="ws-inspector-summary">
+                            <span className="ws-inspector-title" title={activity.title}>
+                                {activity.title}
+                            </span>
+                            {activity.sha && (
+                                <Badge
+                                    className="ws-inspector-commit"
+                                    animateChanges={false}
+                                    size="sm"
+                                    title={activity.sha}
+                                >
+                                    <code>{activity.sha.slice(0, 7)}</code>
+                                </Badge>
+                            )}
+                        </div>
+                        <div>
+                            {onPopout && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={onPopout}
+                                    aria-label="Pop out diff"
+                                    title="Open in a separate window"
+                                >
+                                    <WorkspaceIcon name="popout" />
+                                    Pop out
+                                </Button>
+                            )}
+                            {onClose && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={onClose}
+                                    aria-label={reference ? 'Dock back to workspace' : 'Close inspector'}
+                                >
+                                    <WorkspaceIcon name={reference ? 'back' : 'close'} />
+                                    {reference && 'Dock back'}
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                    <TabsList aria-label="Activity information" className="ws-inspector-tab-list" edgeToEdge>
+                        <TabsTrigger value="diff">Diff</TabsTrigger>
+                        <TabsTrigger value="details">Details</TabsTrigger>
+                        <TabsTrigger value="related">
+                            Related{' '}
+                            <Badge size="sm" animateChanges={false}>
+                                {related.length}
+                            </Badge>
+                        </TabsTrigger>
+                    </TabsList>
+                </header>
                 <TabsContent value="diff">
                     {state.diffs[activity.id] === undefined && (loading || error) ? (
                         loading ? (

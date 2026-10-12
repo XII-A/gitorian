@@ -18,6 +18,7 @@ export interface SegmentedControlProps {
     /** Called when the pointer or focus reaches an option, before it is chosen. Use it to start loading what that option shows. */
     onOptionIntent?: (value: string) => void
     className?: string
+    size?: 'sm' | 'md'
 }
 
 export default function SegmentedControl({
@@ -26,7 +27,8 @@ export default function SegmentedControl({
     onValueChange,
     label,
     onOptionIntent,
-    className
+    className,
+    size = 'md'
 }: SegmentedControlProps) {
     const id = useId()
     const reduced = useReducedMotion()
@@ -121,7 +123,7 @@ export default function SegmentedControl({
     }
 
     return (
-        <div className={`${styles.root} ${className ?? ''}`} role="group" aria-label={label}>
+        <div className={`${styles.root} ${className ?? ''}`} data-size={size} role="group" aria-label={label}>
             <div ref={track} className={styles.track}>
                 {selection && (
                     <motion.span

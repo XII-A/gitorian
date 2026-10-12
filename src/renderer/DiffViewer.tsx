@@ -1,5 +1,5 @@
 import { Button } from './components/arc/button/button'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode, type CSSProperties } from 'react'
 import { Diff, Hunk, type FileData, type HunkTokens } from 'react-diff-view'
 import { cachedDiff, cachedDiffTokens, loadDiff, loadDiffTokens } from './diff-loader'
 import { DiffSkeleton } from './DiffSkeleton'
@@ -7,7 +7,10 @@ import SegmentedControl from './components/arc/segmented-control/segmented-contr
 import { ChangedFilePicker } from './ChangedFilePicker'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { EmptyState } from './components/arc/empty-state/empty-state'
-import { FileDiff } from 'lucide-react'
+import { FileDiff, SlidersHorizontal } from 'lucide-react'
+import { Switch } from './components/arc/switch/switch'
+import { Popover, PopoverContent, PopoverTrigger } from './components/arc/popover/popover'
+import { presentationTokens, selectedSource } from './diff-presentation'
 
 function DiffEmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
     return (
@@ -34,6 +37,8 @@ export function DiffViewer({
 }) {
     const [mode, setMode] = useState(initialSplit ? 'split' : 'unified')
     const [selected, setSelected] = useState('')
+    const [wrapLines, setWrapLines] = useState(true)
+    const [originalIndentation, setOriginalIndentation] = useState(false)
     const [parsed, setParsed] = useState<{ text: string; files: Awaited<ReturnType<typeof loadDiff>> }>()
     const [highlighted, setHighlighted] = useState<{ file: FileData; tokens?: HunkTokens }>()
     const needsParsing = text.startsWith('diff --git') && text.length <= 2_000_000
@@ -70,6 +75,14 @@ export function DiffViewer({
     const tokens = active
         ? (cachedDiffTokens(active) ?? (highlighted?.file === active ? highlighted.tokens : undefined))
         : undefined
+    const lineCount = useMemo(
+        () => active?.hunks.reduce((total, hunk) => total + hunk.changes.length, 0) ?? 0,
+        [active]
+    )
+    const displayTokens = useMemo(
+        () => (active && lineCount <= 4000 ? presentationTokens(active, tokens, !originalIndentation) : undefined),
+        [active, tokens, originalIndentation, lineCount]
+    )
     const unavailable =
         text.length > 2_000_000 || /^(Diff is too large\.|GitHub could not provide this diff)/.test(text)
     const sourceAction = onOpenSource && (
@@ -107,21 +120,57 @@ export function DiffViewer({
     if (!active) return null
     const path = active.newPath === '/dev/null' ? active.oldPath : active.newPath
     return (
-        <div className="diff-viewer ws-diff-viewer">
+        <div className="diff-viewer ws-diff-viewer" data-wrap={wrapLines}>
             <div className="ws-diff-tools">
                 <ChangedFilePicker value={path} onValueChange={setSelected} paths={paths} />
-                <SegmentedControl
-                    className="ws-diff-layout"
-                    label="Diff layout"
-                    value={mode}
-                    onValueChange={setMode}
-                    options={[
-                        { value: 'unified', label: 'Unified' },
-                        { value: 'split', label: 'Split' }
-                    ]}
-                />
+                <div className="ws-diff-actions">
+                    <SegmentedControl
+                        className="ws-diff-layout"
+                        size="sm"
+                        label="Diff layout"
+                        value={mode}
+                        onValueChange={setMode}
+                        options={[
+                            { value: 'unified', label: 'Unified' },
+                            { value: 'split', label: 'Split' }
+                        ]}
+                    />
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button
+                                className="ws-diff-settings"
+                                variant="ghost"
+                                size="sm"
+                                aria-label="Diff display options"
+                                title="Display options"
+                            >
+                                <SlidersHorizontal size={16} aria-hidden="true" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="ws-diff-options" aria-label="Diff display options">
+                            <Switch label="Wrap lines" checked={wrapLines} onCheckedChange={setWrapLines} />
+                            <Switch
+                                label="Original indentation"
+                                checked={originalIndentation}
+                                onCheckedChange={setOriginalIndentation}
+                            />
+                        </PopoverContent>
+                    </Popover>
+                </div>
             </div>
-            <section className="file-diff ws-file-diff" aria-label={`Changes in ${path}`}>
+            <section
+                className="file-diff ws-file-diff"
+                aria-label={`Changes in ${path}`}
+                onCopy={(event) => {
+                    const selection = window.getSelection()
+                    if (!selection?.rangeCount || !event.clipboardData) return
+                    const source = selectedSource(selection.getRangeAt(0), event.currentTarget)
+                    if (source !== undefined) {
+                        event.clipboardData.setData('text/plain', source)
+                        event.preventDefault()
+                    }
+                }}
+            >
                 <div className="ws-file-heading">
                     <code>{path}</code>
                     <span>
@@ -134,7 +183,7 @@ export function DiffViewer({
                     label={`Scrollable diff for ${path}`}
                     fade={0}
                 >
-                    {active.hunks.reduce((total, hunk) => total + hunk.changes.length, 0) > 4000 ? (
+                    {lineCount > 4000 ? (
                         <div className="ws-diff-empty">
                             <p>This file has more than 4,000 diff lines.</p>
                             <span>View the full changes at the source.</span>
@@ -145,7 +194,21 @@ export function DiffViewer({
                             viewType={mode === 'split' ? 'split' : 'unified'}
                             diffType={active.type}
                             hunks={active.hunks}
-                            tokens={tokens}
+                            tokens={displayTokens}
+                            renderToken={(token, renderDefault, index) =>
+                                token.type === 'source-line' ? (
+                                    <span
+                                        key={index}
+                                        className="ws-diff-source-line"
+                                        data-indent-characters={token.indentCharacters}
+                                        style={{ '--diff-indent': `${token.indentColumns}ch` } as CSSProperties}
+                                    >
+                                        {token.children?.map(renderDefault)}
+                                    </span>
+                                ) : (
+                                    renderDefault(token, index)
+                                )
+                            }
                         >
                             {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
                         </Diff>

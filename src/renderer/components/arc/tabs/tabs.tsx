@@ -9,10 +9,11 @@ import type { AnimationPlaybackControls, Variants } from 'motion/react'
 import { motionTokens } from '../lib/motion-tokens'
 import styles from './tabs.module.css'
 
-type RootProps = ComponentPropsWithoutRef<typeof TabsPrimitive.Root>
+type RootProps = ComponentPropsWithoutRef<typeof TabsPrimitive.Root> & { variant?: 'pill' | 'underline' }
 /** `direction` is +1 when the new tab sits after the old one; `panelHeightRef` holds the visible panel height so the next panel can morph from it; `leavingRectRef` pins the outgoing panel where it was on screen. */
 const TabsContext = createContext<{
     orientation: 'horizontal' | 'vertical'
+    variant: 'pill' | 'underline'
     active: string
     layoutId: string
     direction: number
@@ -20,6 +21,7 @@ const TabsContext = createContext<{
     leavingRectRef: RefObject<DOMRect | null>
 }>({
     orientation: 'horizontal',
+    variant: 'pill',
     active: '',
     layoutId: 'tabs',
     direction: 1,
@@ -33,6 +35,7 @@ export function Tabs({
     onValueChange,
     className,
     orientation = 'horizontal',
+    variant = 'pill',
     ...props
 }: RootProps) {
     const [internal, setInternal] = useState(defaultValue ?? '')
@@ -58,7 +61,9 @@ export function Tabs({
         onValueChange?.(next)
     }
     return (
-        <TabsContext.Provider value={{ orientation, active, layoutId, direction, panelHeightRef, leavingRectRef }}>
+        <TabsContext.Provider
+            value={{ orientation, variant, active, layoutId, direction, panelHeightRef, leavingRectRef }}
+        >
             <LayoutGroup id={layoutId}>
                 <TabsPrimitive.Root
                     {...props}
@@ -81,7 +86,7 @@ export function TabsList({
     /** A square strip spanning the full pane; individual tabs retain their radii. */
     edgeToEdge?: boolean
 }) {
-    const { active, orientation } = useContext(TabsContext)
+    const { active, orientation, variant } = useContext(TabsContext)
     const reduced = useReducedMotion()
     const shell = useRef<HTMLDivElement>(null)
     const viewport = useRef<HTMLDivElement>(null)
@@ -145,7 +150,9 @@ export function TabsList({
     if (orientation === 'vertical')
         return (
             <div
-                className={[styles.listShell, styles.verticalShell].join(' ')}
+                className={[styles.listShell, styles.verticalShell, variant === 'underline' && styles.underlineShell]
+                    .filter(Boolean)
+                    .join(' ')}
                 data-edge-to-edge={edgeToEdge || undefined}
             >
                 <TabsPrimitive.List {...props} className={[styles.list, className].filter(Boolean).join(' ')} />
@@ -154,7 +161,7 @@ export function TabsList({
     return (
         <div
             ref={shell}
-            className={styles.listShell}
+            className={[styles.listShell, variant === 'underline' && styles.underlineShell].filter(Boolean).join(' ')}
             data-edge-to-edge={edgeToEdge || undefined}
             data-overflow={edges.overflow}
             data-left={edges.left}
@@ -207,7 +214,7 @@ export function TabsTrigger({
     value,
     ...props
 }: ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>) {
-    const { active } = useContext(TabsContext)
+    const { active, variant } = useContext(TabsContext)
     const reduced = useReducedMotion()
     // The LayoutGroup in Tabs scopes the highlight to this instance, so it glides between triggers but never flies in from another tab set.
     return (
@@ -215,7 +222,9 @@ export function TabsTrigger({
             {...props}
             value={value}
             data-value={value}
-            className={[styles.trigger, className].filter(Boolean).join(' ')}
+            className={[styles.trigger, variant === 'underline' && styles.underlineTrigger, className]
+                .filter(Boolean)
+                .join(' ')}
         >
             {active === value && (
                 <motion.span

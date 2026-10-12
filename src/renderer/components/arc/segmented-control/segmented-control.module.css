@@ -7,6 +7,16 @@
     border-radius: var(--radius-control);
     background: var(--surface-muted);
 }
+.root[data-size='sm'] .button {
+    min-height: var(--space-6);
+    font-size: var(--text-xs);
+    padding-inline: var(--space-3);
+}
+@media (pointer: coarse) {
+    .root[data-size='sm'] .button {
+        min-height: var(--control-height-md);
+    }
+}
 /* The track owns the stacking context so the gliding highlight passes under every label, not over earlier ones. */
 .track {
     position: relative;

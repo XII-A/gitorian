@@ -118,6 +118,33 @@
     position: relative;
     z-index: 1;
 }
+.underlineShell {
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+}
+.underlineShell .list {
+    gap: var(--space-6);
+    padding: 0;
+}
+.underlineTrigger {
+    min-width: 0;
+    min-height: var(--control-height-md);
+    border-radius: 0;
+    padding: 0;
+}
+.underlineTrigger[data-state='active'] {
+    color: var(--foreground);
+}
+.underlineTrigger .selection {
+    inset: auto 0 0;
+    height: 2px;
+    border: 0;
+    border-radius: 0;
+    background: var(--foreground);
+    box-shadow: none;
+}
 .trigger:focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;

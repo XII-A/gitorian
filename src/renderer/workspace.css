@@ -326,9 +326,32 @@
     align-items: center;
     gap: var(--space-2);
 }
-.ws-inspector-heading > div:first-child {
+.ws-inspector-heading > .ws-inspector-summary {
     flex: 1;
     min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+}
+.ws-inspector-header {
+    --inspector-gutter: var(--space-4);
+    flex: none;
+}
+.ws-inspector-header .ws-inspector-heading {
+    align-items: flex-start;
+    padding-inline: var(--inspector-gutter);
+    padding-top: var(--space-4);
+}
+.ws-inspector-tabs .ws-inspector-header .ws-inspector-tab-list {
+    padding-inline: var(--inspector-gutter);
+}
+.ws-inspector-title {
+    max-width: 100%;
+}
+.ws-inspector-tab-list [role='tab'] > span:last-child {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
 }
 .ws-inspector-heading code {
     color: var(--text-secondary);
@@ -341,7 +364,8 @@
 .ws-inspector-title {
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
     font-weight: 500;
 }
 .ws-inspector-tabs {
@@ -376,11 +400,35 @@
 .ws-diff-tools {
     display: flex;
     justify-content: space-between;
-    align-items: flex-end;
+    align-items: center;
     gap: var(--space-3);
     padding: var(--space-3) var(--space-4);
     border-bottom: 1px solid var(--border);
     flex: none;
+}
+.ws-diff-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+}
+.ws-diff-settings {
+    --radius-control: var(--radius-pill);
+    width: var(--space-8);
+    min-height: var(--space-8);
+    padding: 0;
+}
+.ws-diff-tools .changed-file-picker {
+    --control-height-sm: var(--space-8);
+}
+@media (pointer: coarse) {
+    .ws-diff-settings {
+        width: var(--control-height-md);
+        min-height: var(--control-height-md);
+    }
+    .ws-diff-tools .changed-file-picker {
+        --control-height-sm: var(--control-height-md);
+    }
 }
 .ws-diff-tools > div:first-child {
     flex: 1;
@@ -388,6 +436,36 @@
 }
 .ws-diff-layout {
     --radius-control: var(--radius-pill);
+}
+.ws-diff-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+.ws-diff-source-line {
+    display: block;
+    min-height: 1lh;
+    text-indent: calc(-1 * var(--diff-indent, 0ch));
+    overflow: hidden;
+    tab-size: 4;
+}
+.ws-diff-viewer[data-wrap='true'] .diff {
+    min-width: 100%;
+}
+.ws-diff-viewer[data-wrap='false'] .diff {
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+}
+.ws-diff-viewer[data-wrap='false'] .diff-code {
+    white-space: pre;
+    word-break: normal;
+    overflow-wrap: normal;
+}
+.ws-diff-viewer[data-wrap='true'] .diff-code {
+    white-space: pre-wrap;
+    word-break: normal;
+    overflow-wrap: anywhere;
 }
 .ws-diff-layout,
 .ws-diff-layout * {
@@ -683,8 +761,13 @@
     border: 0;
 }
 .ws-reference .ws-inspector-heading {
-    padding: var(--space-3) var(--space-6);
-    border-bottom: 1px solid var(--border);
+    padding: var(--space-4) var(--inspector-gutter) var(--space-3);
+}
+.ws-reference .ws-inspector-header {
+    --inspector-gutter: var(--space-6);
+}
+.ws-reference .ws-diff-tools {
+    padding-inline: var(--space-6);
 }
 .ws-reference-entry {
     max-width: 840px;
