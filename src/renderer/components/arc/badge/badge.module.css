@@ -22,8 +22,14 @@
 
 @media (hover: hover) and (pointer: fine) {
     .badge:hover {
-        border-color: color-mix(in oklab, var(--badge-color, var(--foreground)) 32%, var(--border));
-        background: color-mix(in oklab, var(--badge-color, var(--foreground)) 10%, var(--surface));
+        border-color: var(
+            --badge-hover-border,
+            color-mix(in oklab, var(--badge-color, var(--foreground)) 32%, var(--border))
+        );
+        background: var(
+            --badge-hover-background,
+            color-mix(in oklab, var(--badge-color, var(--foreground)) 10%, var(--surface))
+        );
     }
 }
 .sm {

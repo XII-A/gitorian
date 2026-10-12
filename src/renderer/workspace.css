@@ -336,6 +336,19 @@
 .ws-inspector-header {
     --inspector-gutter: var(--space-4);
     flex: none;
+    background: var(--surface-muted);
+    --button-hover-background: color-mix(in oklab, var(--foreground) 12%, var(--surface-muted));
+    --button-hover-border: var(--border-strong);
+}
+.ws-inspector-header .ws-header-chip {
+    --badge-background: color-mix(in oklab, var(--foreground) 12%, var(--surface-muted));
+    --badge-border: var(--border-strong);
+    --badge-foreground: var(--foreground);
+    --badge-hover-background: color-mix(in oklab, var(--foreground) 16%, var(--surface-muted));
+    --badge-hover-border: var(--border-strong);
+}
+.ws-inspector-header .ws-header-chip code {
+    color: inherit;
 }
 .ws-inspector-header .ws-inspector-heading {
     align-items: flex-start;

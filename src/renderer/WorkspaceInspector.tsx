@@ -88,7 +88,7 @@ export function WorkspaceInspector({
                             </span>
                             {activity.sha && (
                                 <Badge
-                                    className="ws-inspector-commit"
+                                    className="ws-inspector-commit ws-header-chip"
                                     animateChanges={false}
                                     size="sm"
                                     title={activity.sha}
@@ -128,7 +128,7 @@ export function WorkspaceInspector({
                         <TabsTrigger value="details">Details</TabsTrigger>
                         <TabsTrigger value="related">
                             Related{' '}
-                            <Badge size="sm" animateChanges={false}>
+                            <Badge className="ws-header-chip" size="sm" animateChanges={false}>
                                 {related.length}
                             </Badge>
                         </TabsTrigger>

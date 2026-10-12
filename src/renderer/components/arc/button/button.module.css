@@ -110,7 +110,8 @@
     }
     .ghost:hover:not(:disabled) {
         color: var(--foreground);
-        background: var(--surface-muted);
+        background: var(--button-hover-background, var(--surface-muted));
+        border-color: var(--button-hover-border, transparent);
     }
     .danger:hover:not(:disabled) {
         border-color: var(--danger);
@@ -125,6 +126,10 @@
 .ghost:active:not(:disabled) {
     color: var(--foreground);
     background: var(--surface-muted);
+}
+.ghost:active:not(:disabled) {
+    background: var(--button-hover-background, var(--surface-muted));
+    border-color: var(--button-hover-border, transparent);
 }
 .danger:active:not(:disabled) {
     border-color: var(--danger);
