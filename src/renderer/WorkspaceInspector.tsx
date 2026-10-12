@@ -71,8 +71,14 @@ export function WorkspaceInspector({
         >
             <header className="ws-inspector-heading">
                 <div>
-                    <code>{activity.sha?.slice(0, 7) ?? activity.kind}</code>
-                    <span title={activity.title}>{activity.title}</span>
+                    <span className="ws-inspector-title" title={activity.title}>
+                        {activity.title}
+                    </span>
+                    {activity.sha && (
+                        <Badge className="ws-inspector-commit" animateChanges={false} size="sm" title={activity.sha}>
+                            <code>{activity.sha.slice(0, 7)}</code>
+                        </Badge>
+                    )}
                 </div>
                 <div>
                     {onPopout && (
@@ -100,14 +106,6 @@ export function WorkspaceInspector({
                     )}
                 </div>
             </header>
-            {reference && (
-                <div className="ws-reference-meta">
-                    <span>
-                        {repository?.name} · {activity.branches.join(', ') || 'No branch'}
-                    </span>
-                    <span>{activity.author}</span>
-                </div>
-            )}
             <Tabs
                 value={tab}
                 onValueChange={(value) => {
@@ -214,11 +212,9 @@ export function WorkspaceInspector({
                                 <h2>{activity.title}</h2>
                                 {isPullRequest(activity) ? (
                                     <PullRequestStatus activity={activity} activities={state.activities} />
-                                ) : (
-                                    <Badge animateChanges={false}>
-                                        {activity.kind === 'commit' ? 'Commit' : 'Review'}
-                                    </Badge>
-                                )}
+                                ) : activity.kind === 'review' ? (
+                                    <Badge animateChanges={false}>Review</Badge>
+                                ) : null}
                             </div>
                             <ActivityDetails
                                 activity={activity}
