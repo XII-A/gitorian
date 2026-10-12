@@ -9,12 +9,14 @@ export const formatDay = (date: string, options: Intl.DateTimeFormatOptions = { 
 export function filterWorkspaceActivity(
     state: State,
     start: string,
-    filters: { project: string; branch: string; kind: string; search: string }
+    filters: { project: string; branch: string; kind: string; search: string; authors?: string[] }
 ) {
     return rangeActivities(state, start, offsetDay(start, 6)).filter(
         (activity) =>
             (filters.project === 'all' || activity.repositoryId === filters.project) &&
             (filters.branch === 'all' || activity.branches.includes(filters.branch)) &&
+            (!filters.authors?.length ||
+                filters.authors.some((author) => activity.author.toLowerCase().includes(author.toLowerCase()))) &&
             (filters.kind === 'all' ||
                 (filters.kind === 'commit' ? activity.kind === 'commit' : activity.kind !== 'commit')) &&
             `${activity.title} ${activity.sha ?? ''} ${activity.description}`

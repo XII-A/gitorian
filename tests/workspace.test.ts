@@ -128,6 +128,24 @@ describe('weekly activity and sample references', () => {
             )
         ).toBe(true)
     })
+    it('matches any author tag without losing project, branch or week filters', () => {
+        const authored = {
+            ...state,
+            activities: state.activities.map((activity, index) => ({
+                ...activity,
+                author: index === 0 ? 'Alice@example.com' : 'bob@example.com'
+            }))
+        }
+        const selected = { ...filters, project: 'sample-repo-0', branch: 'feat/offline-queue' }
+        expect(
+            filterWorkspaceActivity(authored, '2026-10-05', { ...selected, authors: ['ALICE'] }).map((item) => item.id)
+        ).toEqual(['sample:2026-10-05:0'])
+        expect(filterWorkspaceActivity(authored, '2026-10-05', { ...selected, authors: ['ALICE', 'bob'] })).toEqual(
+            filterWorkspaceActivity(authored, '2026-10-05', selected)
+        )
+        expect(filterWorkspaceActivity(authored, '2026-10-12', { ...selected, authors: ['alice'] })).toEqual([])
+        expect(filterWorkspaceActivity(authored, '2026-10-05', { ...selected, authors: ['unknown'] })).toEqual([])
+    })
     it('generates a commit citation only from a web GitHub remote and preserves explicit PR links', () => {
         expect(activityLink(state.activities[0], state)).toBe(
             'https://github.com/weekly-j-example/mobile-app/commit/a3f9c218912ab0'

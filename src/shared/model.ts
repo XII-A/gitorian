@@ -307,7 +307,7 @@ export const commandSchema = z.discriminatedUnion('type', [
         repositoryId: z.string(),
         branch: z.string(),
         view: z.enum(['introduced', 'history']),
-        author: z.string(),
+        author: z.union([z.string(), z.array(z.string())]),
         since: z.string()
     }),
     z.object({ type: z.literal('details'), activityId: z.string(), content: z.enum(['files', 'diff']).optional() }),

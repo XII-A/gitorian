@@ -81,6 +81,8 @@ export interface MorphSelectProps {
     title?: string
     /** Bounds long resting labels to the toolbar space, independent of the open panel width. */
     maxTriggerWidth?: number
+    /** Keep toolbar layout stable while the floating picker still morphs. */
+    animateTriggerWidth?: boolean
 }
 
 interface Section {
@@ -198,7 +200,8 @@ export function MorphSelect({
     size = 'md',
     renderTree,
     title,
-    maxTriggerWidth
+    maxTriggerWidth,
+    animateTriggerWidth = true
 }: MorphSelectProps) {
     const reduced = useReducedFlag()
     const uid = useId()
@@ -281,12 +284,13 @@ export function MorphSelect({
             const lastH = typeof shapeH.get() === 'number' ? (shapeH.get() as number) : next.h
             const lastAnchor = typeof anchorW.get() === 'number' ? (anchorW.get() as number) : trigger
             const transition = next.w * next.h >= lastW * lastH ? GROW : SHRINK
-            animate(anchorW, trigger, trigger < lastAnchor ? NARROW : WIDTH)
+            if (animateTriggerWidth) animate(anchorW, trigger, trigger < lastAnchor ? NARROW : WIDTH)
+            else anchorW.jump(trigger)
             animate(shapeW, next.w, isOpen ? transition : next.w < lastW ? NARROW : WIDTH)
             animate(shapeH, next.h, transition)
             animate(radius, next.r, transition)
         },
-        [anchorW, radius, shapeH, shapeW]
+        [anchorW, radius, shapeH, shapeW, animateTriggerWidth]
     )
 
     useLayoutEffect(() => {
@@ -318,7 +322,7 @@ export function MorphSelect({
         observer.observe(measure)
         observer.observe(face)
         return () => observer.disconnect()
-    }, [place])
+    }, [place, selectedOption?.label])
 
     useLayoutEffect(() => {
         if (live.current.open === open) return

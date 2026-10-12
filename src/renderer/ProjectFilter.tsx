@@ -23,6 +23,9 @@ export function ProjectFilter({
                 searchable
                 searchPlaceholder="Find a project…"
                 panelWidth={280}
+                maxTriggerWidth={144}
+                animateTriggerWidth={false}
+                title={projects.find((project) => project.id === value)?.name ?? 'All projects'}
                 value={value}
                 onValueChange={onValueChange}
                 items={[

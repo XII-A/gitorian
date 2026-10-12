@@ -7,6 +7,18 @@
     border-radius: var(--radius-control);
     background: var(--surface-muted);
 }
+.root[data-full-width] {
+    display: flex;
+    width: 100%;
+}
+.root[data-full-width] .track {
+    flex: 1;
+}
+.root[data-full-width] .button {
+    flex: 1 0 0;
+    min-width: 0;
+    white-space: normal;
+}
 .root[data-size='sm'] .button {
     min-height: var(--space-6);
     font-size: var(--text-xs);

@@ -19,6 +19,8 @@ export interface SegmentedControlProps {
     onOptionIntent?: (value: string) => void
     className?: string
     size?: 'sm' | 'md'
+    /** Distribute options evenly across the available width. */
+    fullWidth?: boolean
 }
 
 export default function SegmentedControl({
@@ -28,7 +30,8 @@ export default function SegmentedControl({
     label,
     onOptionIntent,
     className,
-    size = 'md'
+    size = 'md',
+    fullWidth = false
 }: SegmentedControlProps) {
     const id = useId()
     const reduced = useReducedMotion()
@@ -123,7 +126,13 @@ export default function SegmentedControl({
     }
 
     return (
-        <div className={`${styles.root} ${className ?? ''}`} data-size={size} role="group" aria-label={label}>
+        <div
+            className={`${styles.root} ${className ?? ''}`}
+            data-size={size}
+            data-full-width={fullWidth || undefined}
+            role="group"
+            aria-label={label}
+        >
             <div ref={track} className={styles.track}>
                 {selection && (
                     <motion.span

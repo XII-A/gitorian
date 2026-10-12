@@ -676,11 +676,15 @@ export class JournalService {
                 const items = await commits(repository, command.branch, command.view, base, command.since)
                 for (const item of items) this.mergeActivity(item)
                 this.store.persist()
+                const authors = (Array.isArray(command.author) ? command.author : [command.author])
+                    .map((author) => author.trim().toLowerCase())
+                    .filter(Boolean)
                 return this.reply({
                     activityIds: items
                         .filter(
                             (item) =>
-                                (!command.author || item.author.toLowerCase().includes(command.author.toLowerCase())) &&
+                                (!authors.length ||
+                                    authors.some((author) => item.author.toLowerCase().includes(author))) &&
                                 (!command.since || item.date.slice(0, 10) >= command.since)
                         )
                         .map((item) => item.id),

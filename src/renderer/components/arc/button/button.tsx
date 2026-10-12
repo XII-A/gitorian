@@ -18,6 +18,8 @@ export interface ButtonProps extends Omit<
     size?: ButtonSize
     loading?: boolean
     contentLayout?: 'inline' | 'stack'
+    /** Disable label and width morphs when the surrounding layout animates the change. */
+    animateContent?: boolean
 }
 
 /** Icon buttons press a little deeper, wide buttons a little less, so every size reads as the same push. */
@@ -144,6 +146,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         size = 'md',
         loading = false,
         contentLayout = 'inline',
+        animateContent = true,
         disabled,
         children,
         onClick,
@@ -155,7 +158,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     const buttonRef = useRef<HTMLButtonElement | null>(null)
     const contentRef = useRef<HTMLSpanElement>(null)
     const key = labelKey(children)
-    const width = useMorphWidth(contentRef, key, reduceMotion)
+    const width = useMorphWidth(contentRef, key, reduceMotion || !animateContent)
     const setRefs = useCallback(
         (node: HTMLButtonElement | null) => {
             buttonRef.current = node
@@ -210,14 +213,22 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
             ) : (
                 <motion.span
                     className={[styles.labelSlot, loading ? styles.loadingLabel : ''].filter(Boolean).join(' ')}
-                    style={{ width }}
+                    style={{ width: animateContent ? width : 'auto' }}
                 >
                     <span ref={contentRef} className={styles.labelContent}>
-                        <AnimatePresence mode="popLayout" initial={false}>
-                            <LabelPhase key={key} icon={!/\S/.test(key.replace(/<[^>]*>/g, ''))} reduced={reduceMotion}>
-                                {children}
-                            </LabelPhase>
-                        </AnimatePresence>
+                        {animateContent ? (
+                            <AnimatePresence mode="popLayout" initial={false}>
+                                <LabelPhase
+                                    key={key}
+                                    icon={!/\S/.test(key.replace(/<[^>]*>/g, ''))}
+                                    reduced={reduceMotion}
+                                >
+                                    {children}
+                                </LabelPhase>
+                            </AnimatePresence>
+                        ) : (
+                            <span className={styles.labelPhase}>{children}</span>
+                        )}
                     </span>
                 </motion.span>
             )}

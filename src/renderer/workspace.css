@@ -983,9 +983,11 @@
     font-variant-numeric: tabular-nums;
 }
 .ws-history-chip {
+    flex: none;
+}
+.ws-history-chip:not([aria-pressed='true']) {
     width: var(--control-height-sm);
     padding-inline: 0;
-    flex: none;
 }
 .ws-action-notice {
     display: flex;

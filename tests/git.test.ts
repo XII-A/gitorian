@@ -163,6 +163,15 @@ it('keeps other authors searchable without admitting their history to the person
         })
         const other = app.store.state.activities.find((item) => item.title === 'Other author work')!
         expect(other).toBeDefined()
+        const filtered = await app.service.handle({
+            type: 'history',
+            repositoryId: app.repository.id,
+            branch: 'development',
+            view: 'history',
+            author: ['missing@example.com', ' OTHER@EXAMPLE.COM '],
+            since: ''
+        })
+        expect(filtered.activityIds).toEqual([other.id])
         expect(
             inbox(app.store.state, weekOf(new Date(), app.store.state.settings)).some((item) => item.id === other.id)
         ).toBe(false)

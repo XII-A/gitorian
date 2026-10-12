@@ -19,6 +19,7 @@
         "package": "npm run build && electron-builder",
         "package:dir": "npm run build && electron-builder --dir",
         "smoke": "electron tools/desktop-smoke.mjs",
+        "smoke:activity-filters": "electron tools/activity-filter-smoke.mjs",
         "smoke:acquisition": "electron tools/acquisition-smoke.mjs",
         "smoke:dev-reload": "node tools/dev-reload-smoke.mjs"
     },

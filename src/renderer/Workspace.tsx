@@ -8,8 +8,8 @@ import { localDate, shiftWeek, weekOf, stateSchema } from '../shared/model'
 import { offsetDay, journalWeek, rangeActivities } from './hub-model'
 import { Button } from './components/arc/button/button'
 import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
-import { Select } from './components/arc/select/select'
-import { Input } from './components/arc/input/input'
+import { Combobox } from './components/arc/combobox/combobox'
+import { TagInput } from './components/arc/tag-input/tag-input'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
@@ -28,6 +28,14 @@ import { hasCachedDetails } from './activity-cache'
 import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
 import landscape from './assets/week-landscape.jpg'
 import './workspace.css'
+
+function BrowseHistoryIcon() {
+    return <WorkspaceIcon name="branch" width="14" height="14" />
+}
+
+function ClearHistoryIcon() {
+    return <WorkspaceIcon name="close" width="14" height="14" />
+}
 
 interface Props {
     state: State
@@ -58,11 +66,12 @@ export function Workspace({
     const [project, setProject] = useState('all')
     const [branch, setBranch] = useState('all')
     const [kind, setKind] = useState('all')
+    const [authors, setAuthors] = useState<string[]>([])
     const activityViewport = useRef<HTMLDivElement>(null)
     useLayoutEffect(() => {
         // A new result set starts at the top before paint. Background refreshes keep their position.
         activityViewport.current?.scrollTo({ top: 0, behavior: 'instant' })
-    }, [week, project, branch, kind])
+    }, [week, project, branch, kind, authors])
     const [searchExpanded, setSearchExpanded] = useState(false)
     const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('diff')
     const [publishTarget, setPublishTarget] = useState<HTMLElement | null>(null)
@@ -72,8 +81,9 @@ export function Workspace({
     const [refreshing, setRefreshing] = useState(false)
     const [focus, setFocus] = useState(false)
     const [historyOpen, setHistoryOpen] = useState(false)
+    const historyButton = useRef<HTMLButtonElement>(null)
     const [historyMode, setHistoryMode] = useState('introduced')
-    const [author, setAuthor] = useState('')
+    const [historyError, setHistoryError] = useState('')
     const [historyBusy, setHistoryBusy] = useState(false)
     const [canCite, setCanCite] = useState(false)
     const [citation, setCitation] = useState<Citation>()
@@ -201,8 +211,8 @@ export function Workspace({
     const selected = state.activities.find((item) => item.id === selectedId)
     const items = useMemo(() => rangeActivities(state, week, offsetDay(week, 6)), [state, week])
     const visible = useMemo(
-        () => filterWorkspaceActivity(state, week, { project, branch, kind, search: '' }),
-        [state, week, project, branch, kind]
+        () => filterWorkspaceActivity(state, week, { project, branch, kind, authors, search: '' }),
+        [state, week, project, branch, kind, authors]
     )
     const currentWeek = weekOf(new Date(), state.settings)
     const cite = useCallback(
@@ -275,19 +285,16 @@ export function Workspace({
     const browse = async () => {
         if (project === 'all' || branch === 'all') return
         setHistoryBusy(true)
+        setHistoryError('')
         const result = await run({
             type: 'history',
             repositoryId: project,
             branch,
             view: historyMode === 'history' ? 'history' : 'introduced',
-            author,
+            author: authors,
             since: week
         })
-        setNotice(
-            result
-                ? `${result.activityIds?.length ?? 0} commits loaded. Activity is still filtered to this week.`
-                : 'Could not load branch history. Check the repository and try again.'
-        )
+        if (!result) setHistoryError('Could not load branch history. Check the repository and try again.')
         setHistoryBusy(false)
         if (result) setHistoryOpen(false)
     }
@@ -437,6 +444,7 @@ export function Workspace({
                                 variant="ghost"
                                 size="sm"
                                 className="ws-filter-chip"
+                                animateContent={false}
                                 aria-pressed={kind === value}
                                 onClick={() => setKind(value)}
                             >
@@ -467,27 +475,46 @@ export function Workspace({
                             variant="ghost"
                             size="sm"
                             className="ws-filter-chip ws-history-chip"
-                            onClick={() => setHistoryOpen(true)}
-                            aria-label="More activity filters"
-                            title="Browse branch history"
-                            aria-pressed={branch !== 'all'}
+                            animateContent={false}
+                            ref={historyButton}
+                            onClick={() => {
+                                if (branch !== 'all' || authors.length > 0) {
+                                    setProject('all')
+                                    setBranch('all')
+                                    setAuthors([])
+                                    setHistoryMode('introduced')
+                                    setHistoryError('')
+                                } else {
+                                    setHistoryError('')
+                                    setHistoryOpen(true)
+                                }
+                            }}
+                            aria-label={
+                                branch !== 'all' || authors.length > 0
+                                    ? branch !== 'all'
+                                        ? `Clear ${branch} history filters`
+                                        : 'Clear branch history filters'
+                                    : 'Browse branch history'
+                            }
+                            title={
+                                branch !== 'all' || authors.length > 0
+                                    ? branch !== 'all'
+                                        ? `Clear ${branch} history filters`
+                                        : 'Clear branch history filters'
+                                    : 'Browse branch history'
+                            }
+                            aria-pressed={branch !== 'all' || authors.length > 0}
                         >
-                            <WorkspaceIcon name="branch" width="14" height="14" />
+                            {branch !== 'all' || authors.length > 0 ? (
+                                <>
+                                    {branch !== 'all' ? branch : 'History filters'}
+                                    <ClearHistoryIcon />
+                                </>
+                            ) : (
+                                <BrowseHistoryIcon />
+                            )}
                         </Button>
                     </div>
-                    {branch !== 'all' && (
-                        <div className="ws-extra-filters">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="ws-filter-chip"
-                                onClick={() => setBranch('all')}
-                            >
-                                Clear {branch}
-                                <WorkspaceIcon name="close" width="14" height="14" />
-                            </Button>
-                        </div>
-                    )}
                     <ScrollArea
                         className="ws-activity-scroll"
                         viewportClassName="ws-activity-viewport"
@@ -617,38 +644,43 @@ export function Workspace({
                     title="Browse branch history"
                     description="Bring branch work into view. The activity list keeps the selected week."
                     className="ws-dialog"
+                    onCloseAutoFocus={(event) => {
+                        event.preventDefault()
+                        historyButton.current?.focus()
+                    }}
                 >
                     <ScrollArea className="ws-dialog-fields" label="Branch history filters" fade={16}>
-                        <Select
+                        <Combobox
                             label="Project"
-                            value={project}
+                            placeholder="Choose a project"
+                            emptyMessage="No projects found"
+                            value={project === 'all' ? '' : project}
                             onValueChange={(value) => {
-                                setProject(value)
+                                setProject(value || 'all')
                                 setBranch('all')
                             }}
-                            options={[
-                                { value: 'all', label: 'Choose a project' },
-                                ...state.repositories
-                                    .filter((repo) => !repo.removed)
-                                    .map((repo) => ({ value: repo.id, label: repo.name }))
-                            ]}
+                            options={state.repositories
+                                .filter((repo) => !repo.removed)
+                                .map((repo) => ({ value: repo.id, label: repo.name, keywords: [repo.path] }))}
                         />
-                        <Select
+                        <Combobox
                             label="Branch"
-                            value={branch}
-                            onValueChange={setBranch}
-                            options={[
-                                { value: 'all', label: 'Choose a branch' },
-                                ...(state.repositories.find((repo) => repo.id === project)?.branches ?? []).map(
-                                    (name) => ({
-                                        value: name,
-                                        label: name
-                                    })
-                                )
-                            ]}
+                            placeholder="Choose a branch"
+                            emptyMessage="No branches found. Refresh activity to update branches."
+                            disabled={project === 'all'}
+                            description={project === 'all' ? 'Choose a project first.' : undefined}
+                            value={branch === 'all' ? '' : branch}
+                            onValueChange={(value) => setBranch(value || 'all')}
+                            options={(state.repositories.find((repo) => repo.id === project)?.branches ?? []).map(
+                                (name) => ({
+                                    value: name,
+                                    label: name
+                                })
+                            )}
                         />
                         <SegmentedControl
                             label="Branch view"
+                            fullWidth
                             value={historyMode}
                             onValueChange={setHistoryMode}
                             options={[
@@ -656,12 +688,18 @@ export function Workspace({
                                 { value: 'history', label: 'Full history' }
                             ]}
                         />
-                        <Input
-                            label="Author"
+                        <TagInput
+                            label="Authors"
                             placeholder="All authors"
-                            value={author}
-                            onChange={(event) => setAuthor(event.target.value)}
+                            value={authors}
+                            onValueChange={setAuthors}
+                            description="Add author names or emails. Press Enter or comma to add each author."
                         />
+                        {historyError && (
+                            <Alert tone="danger" title="Branch history could not be loaded">
+                                {historyError}
+                            </Alert>
+                        )}
                         <Button loading={historyBusy} disabled={project === 'all' || branch === 'all'} onClick={browse}>
                             Load branch history
                         </Button>
