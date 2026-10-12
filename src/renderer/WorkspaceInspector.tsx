@@ -15,6 +15,7 @@ import { PullRequestStatus } from './PullRequestLifecycle'
 import { isPullRequest } from './pull-request'
 import { Badge } from './components/arc/badge/badge'
 import { activityLink } from './workspace-model'
+import { hasCachedDetails } from './activity-cache'
 
 interface Props {
     state: State
@@ -110,12 +111,7 @@ export function WorkspaceInspector({
                 value={tab}
                 onValueChange={(value) => {
                     setTab(value)
-                    if (
-                        value === 'diff' &&
-                        (state.diffs[activity.id] === undefined ||
-                            (activity.kind === 'pr' && activity.diffRevision !== activity.revision))
-                    )
-                        onInspect?.(activity, 'diff')
+                    if (value === 'diff' && !hasCachedDetails(state, activity)) onInspect?.(activity, 'diff')
                     if (value === 'details' && !activity.filesLoaded && !loading) onInspect?.(activity, 'details')
                 }}
                 className="ws-inspector-tabs"

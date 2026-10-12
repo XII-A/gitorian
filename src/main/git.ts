@@ -139,6 +139,7 @@ export async function commitDetails(
         '--root',
         '--no-commit-id',
         '--name-status',
+        '--diff-merges=first-parent',
         '-z',
         '-M',
         '-r',
@@ -160,7 +161,7 @@ export async function commitDetails(
         try {
             diff = await git(
                 repository.path,
-                ['show', '--format=', '--no-ext-diff', '--no-textconv', sha, '--'],
+                ['show', '--format=', '--diff-merges=first-parent', '--no-ext-diff', '--no-textconv', sha, '--'],
                 false,
                 MAX_DIFF
             )

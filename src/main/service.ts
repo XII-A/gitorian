@@ -10,6 +10,7 @@ import type { GitHub } from './github'
 import type { Notion } from './notion'
 import { forEachConcurrent } from './work-queue'
 import { filesFromDiff } from './diff-files'
+import { isCombinedDiff } from '../shared/diff-format'
 
 export class JournalService {
     private refreshing?: Promise<void>
@@ -691,6 +692,7 @@ export class JournalService {
                 const includeDiff = command.content !== 'files'
                 const cached = includeDiff
                     ? state.diffs[activity.id] !== undefined &&
+                      !isCombinedDiff(state.diffs[activity.id]) &&
                       (activity.kind !== 'pr' || activity.diffRevision === activity.revision)
                     : activity.filesLoaded
                 if (!cached) {

@@ -6,6 +6,53 @@ import { execFile } from 'node:child_process'
 import { commits, commitDetails } from '../src/main/git'
 import { workspace } from './fixtures'
 import { inbox, weekOf } from '../src/shared/model'
+import { parseDiff } from 'react-diff-view'
+import { hasCachedDetails } from '../src/renderer/activity-cache'
+
+it('loads first-parent merge changes and replaces cached combined patches', async () => {
+    const app = await workspace()
+    try {
+        await app.git('checkout', '-b', 'feature')
+        await writeFile(join(app.directory, 'work.txt'), 'feature\n')
+        await writeFile(join(app.directory, 'feature.txt'), 'new feature\n')
+        await app.git('add', 'work.txt', 'feature.txt')
+        await app.git('commit', '-m', 'Feature work')
+        await app.git('checkout', 'development')
+        await writeFile(join(app.directory, 'work.txt'), 'development\n')
+        await app.git('add', 'work.txt')
+        await app.git('commit', '-m', 'Development work')
+        await expect(app.git('merge', '--no-ff', 'feature')).rejects.toThrow()
+        await writeFile(join(app.directory, 'work.txt'), 'resolved\n')
+        await app.git('add', 'work.txt')
+        await app.git('commit', '-m', 'Resolve merge')
+        const sha = await app.git('rev-parse', 'HEAD')
+        const combined = await app.git('show', '--format=', sha)
+        expect(combined).toMatch(/^diff --cc /)
+        const activity = (await commits(app.repository, 'development', 'history')).find((item) => item.sha === sha)!
+        app.store.state.activities.push(activity)
+        app.store.state.diffs[activity.id] = combined
+        expect(hasCachedDetails(app.store.state, activity)).toBe(false)
+        const reply = await app.service.handle({ type: 'details', activityId: activity.id })
+        expect(reply.diff).toMatch(/^diff --git /)
+        expect(
+            parseDiff(reply.diff!)
+                .map((file) => file.newPath)
+                .sort()
+        ).toEqual(['feature.txt', 'work.txt'])
+        expect(activity.files).toEqual(
+            expect.arrayContaining([
+                { name: 'feature.txt', status: 'A' },
+                { name: 'work.txt', status: 'M' }
+            ])
+        )
+        expect(reply.diff).toContain('-development')
+        expect(reply.diff).toContain('+resolved')
+        expect(hasCachedDetails(app.store.state, activity)).toBe(true)
+        expect((await commitDetails(app.repository, sha, false)).files).toEqual(activity.files)
+    } finally {
+        await app.close()
+    }
+})
 
 it('preserves old and new rename paths and filenames containing whitespace in commit details', async () => {
     const app = await workspace()
