@@ -122,9 +122,12 @@
     margin: 0 auto var(--space-4);
     max-width: 72rem;
 }
-.hub-hero > p:last-child {
+.hub-hero-description {
     font-size: var(--text-sm);
     margin: 0;
+}
+.hub-hero-action {
+    margin-top: var(--space-5);
 }
 .hub-section-heading {
     display: flex;

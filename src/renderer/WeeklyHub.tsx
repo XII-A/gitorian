@@ -232,8 +232,13 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                 )}
                 <header className="hub-hero">
                     <p className="hub-period">{period}</p>
-                    <h1>A week, one day at a time.</h1>
-                    <p>A quieter place to look back, connect the dots, and write.</p>
+                    <h1>What mattered this week?</h1>
+                    <p className="hub-hero-description">
+                        Review your activity, then capture progress, decisions, and anything you want to follow up on.
+                    </p>
+                    <div className="hub-hero-action">
+                        <Button onClick={() => onWrite(start)}>Write this week’s entry →</Button>
+                    </div>
                 </header>
 
                 <>

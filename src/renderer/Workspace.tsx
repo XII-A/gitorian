@@ -323,7 +323,7 @@ export function Workspace({
                 <div className="ws-heading">
                     <Breadcrumb
                         ariaLabel="Journal breadcrumb"
-                        items={[{ label: 'Journal', onClick: () => onBack(week) }, { label: 'Weekly entry' }]}
+                        items={[{ label: 'Hub', onClick: () => onBack(week) }, { label: 'Weekly entry' }]}
                     />
                 </div>
                 <div className="ws-date">
@@ -365,7 +365,7 @@ export function Workspace({
                         aria-label="Refresh activity"
                         title="Refresh activity"
                     >
-                        <WorkspaceIcon name="refresh" />
+                        <WorkspaceIcon name="refresh" width={16} height={16} />
                     </Button>
                     <Button
                         variant="ghost"
@@ -375,7 +375,7 @@ export function Workspace({
                         aria-pressed={focus}
                         title={focus ? 'Show activity panels' : 'Focus on writing'}
                     >
-                        <WorkspaceIcon name="focus" />
+                        <WorkspaceIcon name="focus" width={17} height={17} />
                     </Button>
                     <div className="ws-publish" ref={setPublishTarget} />
                 </div>
