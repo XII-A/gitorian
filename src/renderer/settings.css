@@ -93,17 +93,6 @@
 .settings-import-button {
     white-space: normal;
 }
-.settings-emails {
-    min-width: 0;
-}
-.settings-email-actions {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
-}
 .settings-progress-number {
     display: inline-grid;
     min-width: 2ch;

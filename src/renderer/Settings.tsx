@@ -12,7 +12,7 @@ import { Input } from './components/arc/input/input'
 import { Select } from './components/arc/select/select'
 import { Combobox } from './components/arc/combobox/combobox'
 import { DatePicker } from './components/arc/date-picker/date-picker'
-import { RepositoryEmails } from './RepositoryEmails'
+import { TagInput } from './components/arc/tag-input/tag-input'
 import { ImportProgressLabel } from './ImportProgressLabel'
 import { Folder, RefreshCw } from 'lucide-react'
 import { GitHubSignIn, githubSignInFailure, type GitHubSignInFeedback } from './GitHubSignIn'
@@ -298,10 +298,12 @@ export function Settings({
                 ]}
                 onValueChange={(remote) => editRepository(repository, { remote: remote === '__local__' ? '' : remote })}
             />
-            <RepositoryEmails
-                value={repository.emails}
-                suggestions={state.repositories.find((item) => item.id === repository.id)?.emails ?? []}
-                onChange={(emails) => editRepository(repository, { emails })}
+            <TagInput
+                label="Author emails"
+                placeholder="Add an author email"
+                value={repository.emails.filter(Boolean)}
+                onValueChange={(emails) => editRepository(repository, { emails })}
+                description="Press Enter or comma to add each author email."
             />
         </div>
     )
