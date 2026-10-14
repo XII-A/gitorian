@@ -1,28 +1,32 @@
 'use client'
 
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from 'react'
-import type { ComponentPropsWithoutRef, ReactNode } from 'react'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import type { Transition } from 'motion/react'
 import { X } from 'lucide-react'
+import type { Transition } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import type { ComponentPropsWithoutRef, ReactNode } from 'react'
+import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './dialog.module.css'
 
 /** Mirrors the open state so the content can stay mounted while it animates out, and retarget mid-flight if it is reopened or closed early. */
 const OpenContext = createContext<boolean | null>(null)
 
-export function Dialog({
+export const Dialog = ({
     open: openProp,
     defaultOpen = false,
     onOpenChange,
     ...props
-}: ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) {
+}: ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) => {
     const [uncontrolled, setUncontrolled] = useState(defaultOpen)
     const open = openProp ?? uncontrolled
     const setOpen = useCallback(
         (next: boolean) => {
-            if (openProp === undefined) setUncontrolled(next)
+            if (openProp === undefined) {
+                setUncontrolled(next)
+            }
             onOpenChange?.(next)
         },
         [openProp, onOpenChange]
@@ -51,26 +55,26 @@ const fade: Transition = { duration: motionTokens.duration.instant }
 const leave: Transition = { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] }
 
 /** When the title or description changes while open, the new copy rises in and the old copy leaves upward. */
-function SwapText({ text }: { text: string }) {
+const SwapText = ({ text }: { text: string }) => {
     const reduced = useReducedMotion()
     return (
         <AnimatePresence mode="popLayout" initial={false}>
             <motion.span
                 key={text}
                 className={styles.swap}
-                initial={reduced ? false : { opacity: 0, y: '0.3em', filter: `blur(${motionTokens.blur.soft}px)` }}
-                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                initial={reduced ? false : { filter: `blur(${motionTokens.blur.soft}px)`, opacity: 0, y: '0.3em' }}
+                animate={{ filter: 'blur(0px)', opacity: 1, y: 0 }}
                 exit={
                     reduced
                         ? { opacity: 0, transition: { duration: 0 } }
                         : {
-                              opacity: 0,
-                              y: '-0.3em',
                               filter: `blur(${motionTokens.blur.subtle}px)`,
+                              opacity: 0,
                               transition: {
                                   duration: motionTokens.duration.fast,
                                   ease: [...motionTokens.ease.standard]
-                              }
+                              },
+                              y: '-0.3em'
                           }
                 }
                 transition={{ duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }}
@@ -81,7 +85,7 @@ function SwapText({ text }: { text: string }) {
     )
 }
 
-export function DialogContent({
+export const DialogContent = ({
     title,
     description,
     headerContent,
@@ -90,19 +94,20 @@ export function DialogContent({
     onPointerDownOutside,
     backdrop = 'blur',
     ...props
-}: DialogContentProps) {
+}: DialogContentProps) => {
     const open = useContext(OpenContext)
     const reduced = useReducedMotion()
     // When the open state last changed. Radix waits for the click before treating a press as outside, and a press on the trigger
     // while the dialog leaves reopens it first, so that press must not close it again.
-    const change = useRef({ open, at: 0 })
+    const change = useRef({ at: 0, open })
     useLayoutEffect(() => {
-        change.current = { open, at: performance.now() }
+        change.current = { at: performance.now(), open }
     }, [open])
     const pressOutside: DialogContentProps['onPointerDownOutside'] = (event) => {
         onPointerDownOutside?.(event)
-        if (open !== null && (!change.current.open || event.detail.originalEvent.timeStamp < change.current.at))
+        if (open !== null && (!change.current.open || event.detail.originalEvent.timeStamp < change.current.at)) {
             event.preventDefault()
+        }
     }
     const classes = [styles.content, className].filter(Boolean).join(' ')
     const inner = (
@@ -129,7 +134,7 @@ export function DialogContent({
         </>
     )
     // Under a bare Radix root the open state is unknown here, so CSS keyframes keyed off data-state animate the layers instead.
-    if (open === null)
+    if (open === null) {
         return (
             <DialogPrimitive.Portal>
                 <DialogPrimitive.Overlay data-backdrop={backdrop} className={`${styles.overlay} ${styles.keyframes}`} />
@@ -142,6 +147,7 @@ export function DialogContent({
                 </DialogPrimitive.Content>
             </DialogPrimitive.Portal>
         )
+    }
     // The overlay fades while the dialog rises 8px and scales up on a spring. Closing is shorter and quieter, and starts from wherever the entrance is.
     return (
         <AnimatePresence>
@@ -164,12 +170,12 @@ export function DialogContent({
                     <DialogPrimitive.Content {...props} onPointerDownOutside={pressOutside} asChild forceMount>
                         <motion.div
                             className={classes}
-                            initial={reduced ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.96 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 8 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={
                                 reduced
                                     ? { opacity: 0, transition: fade }
-                                    : { opacity: 0, y: 4, scale: 0.98, transition: leave }
+                                    : { opacity: 0, scale: 0.98, transition: leave, y: 4 }
                             }
                             transition={
                                 reduced

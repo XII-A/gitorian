@@ -1,15 +1,16 @@
-import { app, dialog } from 'electron'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
+import { pathToFileURL } from 'node:url'
+
+import { app, dialog } from 'electron'
 
 const directory = mkdtempSync(join(tmpdir(), 'weekly-j-acquisition-'))
 const repositories = join(directory, 'repositories')
 app.setPath('userData', directory)
-for (let index = 0; index < 24; index++) {
+for (let index = 0; index < 24; index += 1) {
     const path = join(repositories, `project-${index}`)
     mkdirSync(path, { recursive: true })
     writeFileSync(join(path, 'work.txt'), 'A real change to inspect.\n')
@@ -19,20 +20,38 @@ for (let index = 0; index < 24; index++) {
         ['config', 'user.email', 'smoke@example.com'],
         ['add', 'work.txt'],
         ['commit', '-m', 'Recorded work']
-    ])
-        execFileSync('git', args, { cwd: path, windowsHide: true, stdio: 'ignore' })
+    ]) {
+        execFileSync('git', args, { cwd: path, stdio: 'ignore', windowsHide: true })
+    }
 }
 dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [repositories] })
-const pause = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds))
+const pause = (milliseconds) =>
+    Promise.resolve(
+        (() => {
+            const { promise, resolve: done, reject } = Promise.withResolvers()
+            try {
+                setTimeout(done, milliseconds)
+            } catch (error) {
+                reject(error)
+            }
+            return promise
+        })()
+    )
 let checking = false
 app.on('browser-window-created', (_, window) => {
-    window.show = () => window.hide()
+    window.show = () => {
+        window.hide()
+    }
     window.webContents.setBackgroundThrottling(false)
     window.webContents.on('console-message', (event) => {
-        if (event.level === 'error') console.error(event.message)
+        if (event.level === 'error') {
+            console.error(event.message)
+        }
     })
     window.webContents.once('did-finish-load', async () => {
-        if (checking) return
+        if (checking) {
+            return
+        }
         checking = true
         try {
             const result = await window.webContents.executeJavaScript(`(async () => {
@@ -62,13 +81,14 @@ app.on('browser-window-created', (_, window) => {
             console.info('Import acknowledged and concurrent draft saved', JSON.stringify(result))
             const base = window.webContents.getURL().split('?')[0]
             await window.loadURL(`${base}?workspace=true&week=${result.week}`)
-            for (let attempt = 0; attempt < 100; attempt++) {
+            for (let attempt = 0; attempt < 100; attempt += 1) {
                 if (
                     await window.webContents.executeJavaScript(
                         `!!document.querySelector('[aria-label="Journal body"][contenteditable="true"]')`
                     )
-                )
+                ) {
                     break
+                }
                 await pause(50)
             }
             result.editorReady = await window.webContents.executeJavaScript(
@@ -80,24 +100,26 @@ app.on('browser-window-created', (_, window) => {
             result.typingSaved = await window.webContents.executeJavaScript(
                 `(async()=>JSON.stringify((await window.journal.invoke({type:'state'})).state.drafts[0].body).includes('Writing remains available.'))()`
             )
-            for (let attempt = 0; attempt < 200; attempt++) {
+            for (let attempt = 0; attempt < 200; attempt += 1) {
                 if (
                     await window.webContents.executeJavaScript(
                         `(async()=>{const state=(await window.journal.invoke({type:'state'})).state;return state.repositories.length===24&&state.repositoryImport.status==='done'})()`
                     )
-                )
+                ) {
                     break
+                }
                 await pause(100)
             }
             console.info('Repository import finished')
             await window.webContents.executeJavaScript(`window.journal.invoke({type:'refresh'})`)
-            for (let attempt = 0; attempt < 100; attempt++) {
+            for (let attempt = 0; attempt < 100; attempt += 1) {
                 if (
                     await window.webContents.executeJavaScript(
                         `(async()=>(await window.journal.invoke({type:'state'})).state.activities.length>=24)()`
                     )
-                )
+                ) {
                     break
+                }
                 await pause(100)
             }
             result.repositoryCount = await window.webContents.executeJavaScript(
@@ -106,10 +128,14 @@ app.on('browser-window-created', (_, window) => {
             const activityId = await window.webContents.executeJavaScript(
                 `(async()=>(await window.journal.invoke({type:'state'})).state.activities.find(item=>item.kind==='commit')?.id)()`
             )
-            if (!activityId) throw new Error('No activity acquired')
+            if (!activityId) {
+                throw new Error('No activity acquired')
+            }
             await window.loadURL(base)
-            for (let attempt = 0; attempt < 100; attempt++) {
-                if (await window.webContents.executeJavaScript(`!!document.querySelector('.hub-activity')`)) break
+            for (let attempt = 0; attempt < 100; attempt += 1) {
+                if (await window.webContents.executeJavaScript(`!!document.querySelector('.hub-activity')`)) {
+                    break
+                }
                 await pause(50)
             }
             await window.webContents.executeJavaScript(`document.querySelector('.hub-activity').click()`)
@@ -122,9 +148,10 @@ app.on('browser-window-created', (_, window) => {
                 database.prepare("SELECT count(*) AS count FROM patches WHERE id LIKE 'diff:%'").get().count === 0
             database.close()
             await window.webContents.executeJavaScript(`document.querySelector('.hub-detail-footer button').click()`)
-            for (let attempt = 0; attempt < 100; attempt++) {
-                if (await window.webContents.executeJavaScript(`!!document.querySelector('.diff-viewer .file-diff')`))
+            for (let attempt = 0; attempt < 100; attempt += 1) {
+                if (await window.webContents.executeJavaScript(`!!document.querySelector('.diff-viewer .file-diff')`)) {
                     break
+                }
                 await pause(50)
             }
             result.workerDiffRendered = await window.webContents.executeJavaScript(
@@ -149,8 +176,9 @@ app.on('browser-window-created', (_, window) => {
                 !result.hubFilesWithoutPatch ||
                 !result.workerDiffRendered ||
                 !result.cachedWorkspaceDetailsOpenImmediately
-            )
+            ) {
                 throw new Error(JSON.stringify(result))
+            }
             console.info(JSON.stringify(result))
             app.exit(0)
         } catch (error) {
@@ -161,9 +189,11 @@ app.on('browser-window-created', (_, window) => {
 })
 app.on('will-quit', () => {
     const target = resolve(directory)
-    if (!target.startsWith(resolve(tmpdir()) + sep) || !target.includes('weekly-j-acquisition-')) return
+    if (!target.startsWith(resolve(tmpdir()) + sep) || !target.includes('weekly-j-acquisition-')) {
+        return
+    }
     try {
-        rmSync(target, { recursive: true, force: true })
+        rmSync(target, { force: true, recursive: true })
     } catch {
         /* Chromium can retain locks until exit. */
     }
@@ -171,5 +201,5 @@ app.on('will-quit', () => {
 setTimeout(() => {
     console.error('Acquisition smoke timed out')
     app.exit(1)
-}, 45000).unref()
+}, 45_000).unref()
 await import(pathToFileURL(resolve('out/main/index.js')).href)

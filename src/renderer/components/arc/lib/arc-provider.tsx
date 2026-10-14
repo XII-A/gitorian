@@ -1,5 +1,8 @@
 'use client'
 
+import type { AnchorHTMLAttributes, ComponentType, ImgHTMLAttributes, ReactNode, Ref } from 'react'
+import { createContext, createElement, useContext, useMemo } from 'react'
+
 /**
  * Lets an app swap the link and image elements Arc components render (kuratlielia/arc-library#13).
  *
@@ -15,17 +18,6 @@
  * Any component that accepts these props works, such as a locale-aware Link from next-intl or a React Router Link
  * wrapped to map `href` to `to`.
  */
-import {
-    createContext,
-    createElement,
-    useContext,
-    useMemo,
-    type AnchorHTMLAttributes,
-    type ComponentType,
-    type ImgHTMLAttributes,
-    type ReactNode,
-    type Ref
-} from 'react'
 
 /** The props Arc passes to a link: an href plus ordinary anchor attributes. */
 export interface ArcLinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
@@ -57,33 +49,29 @@ export type ArcLinkComponent = ComponentType<ArcLinkProps>
 export type ArcImageComponent = ComponentType<ArcImageProps>
 
 /** The default link: a plain anchor. */
-export function ArcAnchor({ children, ...props }: ArcLinkProps) {
-    return <a {...props}>{children}</a>
-}
+export const ArcAnchor = ({ children, ...props }: ArcLinkProps) => <a {...props}>{children}</a>
 
-const fillStyle = { position: 'absolute', inset: 0, width: '100%', height: '100%' } as const
+const fillStyle = { height: '100%', inset: 0, position: 'absolute', width: '100%' } as const
 
 /** The default image: a plain, lazily decoded `<img>` that understands `fill` and `priority`. */
-export function ArcImg({ alt, fill, priority, loading, style, ...props }: ArcImageProps) {
+export const ArcImg = ({ alt, fill, priority, loading, style, ...props }: ArcImageProps) => (
     // eslint-disable-next-line @next/next/no-img-element -- the framework-free default; pass next/image through ArcProvider instead.
-    return (
-        <img
-            alt={alt}
-            decoding="async"
-            {...props}
-            loading={loading ?? (priority ? 'eager' : 'lazy')}
-            fetchPriority={priority ? 'high' : props.fetchPriority}
-            style={fill ? { ...fillStyle, ...style } : style}
-        />
-    )
-}
+    <img
+        alt={alt}
+        decoding="async"
+        {...props}
+        loading={loading ?? (priority ? 'eager' : 'lazy')}
+        fetchPriority={priority ? 'high' : props.fetchPriority}
+        style={fill ? { ...fillStyle, ...style } : style}
+    />
+)
 
 interface ArcComponents {
     link: ArcLinkComponent
     image: ArcImageComponent
 }
 
-const ArcContext = createContext<ArcComponents>({ link: ArcAnchor, image: ArcImg })
+const ArcContext = createContext<ArcComponents>({ image: ArcImg, link: ArcAnchor })
 
 export interface ArcProviderProps {
     /** The link component Arc renders for navigation, such as next/link or your own wrapped Link. Defaults to `<a>`. */
@@ -94,9 +82,9 @@ export interface ArcProviderProps {
 }
 
 /** Sets the link and image components for every Arc component inside it. Nested providers inherit what they do not set. */
-export function ArcProvider({ link, image, children }: ArcProviderProps) {
+export const ArcProvider = ({ link, image, children }: ArcProviderProps) => {
     const parent = useContext(ArcContext)
-    const value = useMemo(() => ({ link: link ?? parent.link, image: image ?? parent.image }), [link, image, parent])
+    const value = useMemo(() => ({ image: image ?? parent.image, link: link ?? parent.link }), [link, image, parent])
     return <ArcContext.Provider value={value}>{children}</ArcContext.Provider>
 }
 
@@ -106,11 +94,7 @@ export const useArcLink = () => useContext(ArcContext).link
 export const useArcImage = () => useContext(ArcContext).image
 
 /** What Arc components render for a link: the provider's link component, or a plain anchor. */
-export function ArcLink(props: ArcLinkProps) {
-    return createElement(useArcLink(), props)
-}
+export const ArcLink = (props: ArcLinkProps) => createElement(useArcLink(), props)
 
 /** What Arc components render for an image: the provider's image component, or a plain img. */
-export function ArcImage(props: ArcImageProps) {
-    return createElement(useArcImage(), props)
-}
+export const ArcImage = (props: ArcImageProps) => createElement(useArcImage(), props)

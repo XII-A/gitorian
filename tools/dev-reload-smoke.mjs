@@ -1,24 +1,38 @@
+import { spawn, execFileSync } from 'node:child_process'
+import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
+import { resolve, join, sep } from 'node:path'
+
 // Exercise shared command changes through the real development runner and Electron IPC.
 // Temporary source, builds, and user data stay isolated from the running app.
-import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
-import { spawn, execFileSync } from 'node:child_process'
-import { resolve, join, sep } from 'node:path'
 
 const root = resolve('.')
 await mkdir(join(root, '.ai-docs'), { recursive: true })
 const fixture = await mkdtemp(join(root, '.ai-docs', 'dev-reload-'))
-const packageInfo = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
-const currentModel = await readFile(join(root, 'src/shared/model.ts'), 'utf8')
-const oldModel = currentModel.replace(/\s*z\.object\(\{ type: z\.literal\('addRepositories'\) \}\),/, '')
+const packageInfo = JSON.parse(await readFile(join(root, 'package.json'), 'utf-8'))
+const currentModel = await readFile(join(root, 'src/shared/model.ts'), 'utf-8')
+const oldModel = currentModel.replace(/\s*z\.object\(\{ type: z\.literal\('addRepositories'\) \}\),/u, '')
 const modelPath = join(fixture, 'model.ts')
 const entry = join(fixture, 'out/main/main.js')
 let child
 let output = ''
-const pause = (time) => new Promise((done) => setTimeout(done, time))
+const pause = (time) =>
+    Promise.resolve(
+        (() => {
+            const { promise, resolve: done, reject } = Promise.withResolvers()
+            try {
+                setTimeout(done, time)
+            } catch (error) {
+                reject(error)
+            }
+            return promise
+        })()
+    )
 const waitFor = async (text, timeout) => {
     const start = Date.now()
     while (!output.includes(text)) {
-        if (Date.now() - start > timeout) throw new Error(`Timed out waiting for ${text}`)
+        if (Date.now() - start > timeout) {
+            throw new Error(`Timed out waiting for ${text}`)
+        }
         await pause(50)
     }
 }
@@ -63,19 +77,20 @@ try {
         process.execPath,
         [
             join(root, 'node_modules/electron-vite/bin/electron-vite.js'),
-            ...packageInfo.scripts.dev.split(/\s+/).slice(1),
+            ...packageInfo.scripts.dev.split(/\s+/u).slice(1),
             '--config',
             join(fixture, 'electron.vite.config.mjs'),
             '--entry',
             entry
         ],
-        { cwd: root, env, detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }
+        { cwd: root, detached: process.platform !== 'win32', env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }
     )
-    for (const stream of [child.stdout, child.stderr])
+    for (const stream of [child.stdout, child.stderr]) {
         stream.on('data', (chunk) => {
             output += String(chunk)
         })
-    await waitFor('[DEV-RELOAD] rejected-old-schema', 15000)
+    }
+    await waitFor('[DEV-RELOAD] rejected-old-schema', 15_000)
     console.info('Reproduced the invalid command discriminator through Electron IPC.')
     await writeFile(modelPath, currentModel)
     await waitFor('[DEV-RELOAD] accepted', 5000)
@@ -87,12 +102,14 @@ try {
 } finally {
     if (child?.pid !== undefined) {
         try {
-            if (process.platform === 'win32')
+            if (process.platform === 'win32') {
                 execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
-                    windowsHide: true,
-                    stdio: 'ignore'
+                    stdio: 'ignore',
+                    windowsHide: true
                 })
-            else process.kill(-child.pid, 'SIGTERM')
+            } else {
+                process.kill(-child.pid, 'SIGTERM')
+            }
         } catch {
             // The fixture process may already have exited.
         }
@@ -102,5 +119,7 @@ try {
     if (!target.startsWith(resolve(root, '.ai-docs') + sep) || !target.includes('dev-reload-')) {
         console.error('Unsafe fixture cleanup path')
         process.exitCode = 1
-    } else await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    } else {
+        await rm(target, { force: true, maxRetries: 5, recursive: true, retryDelay: 100 })
+    }
 }

@@ -1,9 +1,10 @@
-import { app, BrowserWindow, dialog } from 'electron'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+
+import { app, BrowserWindow, dialog } from 'electron'
 
 const directory = mkdtempSync(join(tmpdir(), 'weekly-j-desktop-'))
 app.setPath('userData', directory)
@@ -17,47 +18,81 @@ for (const name of ['first-project', 'second-project']) {
         ['config', 'user.email', 'smoke@example.com'],
         ['commit', '--allow-empty', '-m', 'Initial work'],
         ['branch', 'feature']
-    ])
-        execFileSync('git', args, { cwd: path, windowsHide: true, stdio: 'ignore' })
+    ]) {
+        execFileSync('git', args, { cwd: path, stdio: 'ignore', windowsHide: true })
+    }
     if (name === 'first-project') {
-        for (let index = 0; index < 20; index++) writeFileSync(join(path, `file-${index}.txt`), 'before\n')
-        execFileSync('git', ['add', '.'], { cwd: path, windowsHide: true, stdio: 'ignore' })
-        execFileSync('git', ['commit', '-m', 'Baseline files'], { cwd: path, windowsHide: true, stdio: 'ignore' })
-        for (let index = 0; index < 20; index++) writeFileSync(join(path, `file-${index}.txt`), 'after\n')
+        for (let index = 0; index < 20; index += 1) {
+            writeFileSync(join(path, `file-${index}.txt`), 'before\n')
+        }
+        execFileSync('git', ['add', '.'], { cwd: path, stdio: 'ignore', windowsHide: true })
+        execFileSync('git', ['commit', '-m', 'Baseline files'], { cwd: path, stdio: 'ignore', windowsHide: true })
+        for (let index = 0; index < 20; index += 1) {
+            writeFileSync(join(path, `file-${index}.txt`), 'after\n')
+        }
         writeFileSync(join(path, 'added.txt'), 'new\n')
-        execFileSync('git', ['add', '.'], { cwd: path, windowsHide: true, stdio: 'ignore' })
+        execFileSync('git', ['add', '.'], { cwd: path, stdio: 'ignore', windowsHide: true })
         execFileSync('git', ['commit', '-m', 'File filter animation fixture'], {
             cwd: path,
-            windowsHide: true,
-            stdio: 'ignore'
+            stdio: 'ignore',
+            windowsHide: true
         })
     }
 }
-const pause = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds))
+const pause = (milliseconds) =>
+    Promise.resolve(
+        (() => {
+            const { promise, resolve: done, reject } = Promise.withResolvers()
+            try {
+                setTimeout(done, milliseconds)
+            } catch (error) {
+                reject(error)
+            }
+            return promise
+        })()
+    )
 const waitForElement = async (window, selector) => {
-    for (let attempt = 0; attempt < 50; attempt++) {
-        if (await window.webContents.executeJavaScript(`!!document.querySelector(${JSON.stringify(selector)})`)) return
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+        if (await window.webContents.executeJavaScript(`!!document.querySelector(${JSON.stringify(selector)})`)) {
+            return
+        }
         await pause(100)
     }
     throw new Error(`Element did not become ready: ${selector}`)
 }
 let checking = false
 app.on('browser-window-created', (_, window) => {
-    window.show = () => window.hide()
+    window.show = () => {
+        window.hide()
+    }
     window.webContents.setBackgroundThrottling(false)
     window.webContents.on('console-message', (event) => {
-        if (event.level === 'error') console.error(event.message)
+        if (event.level === 'error') {
+            console.error(event.message)
+        }
     })
     window.webContents.once('did-finish-load', async () => {
-        if (checking || window.webContents.getURL().includes('reference=')) return
+        if (checking || window.webContents.getURL().includes('reference=')) {
+            return
+        }
         checking = true
         let passed = false
         try {
             await pause(600)
             const originalFolderPicker = dialog.showOpenDialog
             dialog.showOpenDialog = () =>
-                new Promise((resolve) =>
-                    setTimeout(() => resolve({ canceled: false, filePaths: [repositoryFolder] }), 650)
+                Promise.resolve(
+                    (() => {
+                        const { promise, resolve: resolveValue, reject } = Promise.withResolvers()
+                        try {
+                            setTimeout(() => {
+                                resolveValue({ canceled: false, filePaths: [repositoryFolder] })
+                            }, 650)
+                        } catch (error) {
+                            reject(error)
+                        }
+                        return promise
+                    })()
                 )
             const settingsResult = await window.webContents.executeJavaScript(`(async () => {
                 document.querySelector('[aria-label="Open settings"]').click()
@@ -244,7 +279,9 @@ app.on('browser-window-created', (_, window) => {
                 const newEntryUsesTemplate=document.querySelector('[aria-label="Journal body"]').textContent.includes('Template reflection.') && !!document.querySelector('[aria-label="Journal body"] h2')
                 return {opensOnHub,hubProjectChip,hubUsesArcChart,hubDialogKeepsListIdle,hubDialogArcScroll,hubDialogDimBackdrop,cachedHubDetailsOpenImmediately,hubFileFilterStaysInTrackAfterShrink,workspaceImplemented,noDraftCreated,returnsToHub,newEntryUsesTemplate,node:typeof require,version:before.state.version}
             })().catch(error => ({failure:String(error),stack:error.stack,text:document.body.innerText}))`)
-            if ('failure' in result) throw new Error(JSON.stringify(result))
+            if ('failure' in result) {
+                throw new Error(JSON.stringify(result))
+            }
             Object.assign(result, settingsResult)
             await window.webContents.insertText('The draft survives a restart.')
             await pause(700)
@@ -252,7 +289,7 @@ app.on('browser-window-created', (_, window) => {
                 `(async () => JSON.stringify((await window.journal.invoke({type:'state'})).state.drafts[0].body).includes('The draft survives a restart.'))()`
             )
             const base = window.webContents.getURL().split('?')[0]
-            await window.loadURL(base + '?workspace=true')
+            await window.loadURL(`${base}?workspace=true`)
             await waitForElement(window, '[aria-label="Journal body"]')
             result.draftRecovered = await window.webContents.executeJavaScript(
                 `document.querySelector('[aria-label="Journal body"]').textContent.includes('The draft survives a restart.')`
@@ -266,13 +303,13 @@ app.on('browser-window-created', (_, window) => {
                 const draft = {...state.drafts[0],updatedAt:new Date(Date.now()+1000).toISOString(),body:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Recovered an interrupted save.'}]}]}}
                 localStorage.setItem('weekly-j:recovery:'+(state.restoreId??'local')+':'+draft.week,JSON.stringify(draft))
             })()`)
-            await window.loadURL(base + '?workspace=true')
+            await window.loadURL(`${base}?workspace=true`)
             await waitForElement(window, '[aria-label="Journal body"]')
             await pause(250)
             result.interruptedSaveRecovered = await window.webContents.executeJavaScript(
                 `document.querySelector('[aria-label="Journal body"]').textContent.includes('Recovered an interrupted save.')`
             )
-            await window.loadURL(base + '?workspace=true&data=sample&week=2026-10-05')
+            await window.loadURL(`${base}?workspace=true&data=sample&week=2026-10-05`)
             await waitForElement(window, '[aria-label="Journal body"]')
             const realDraftsBefore = await window.webContents.executeJavaScript(
                 `(async () => (await window.journal.invoke({type:'state'})).state.drafts.length)()`
@@ -335,7 +372,9 @@ app.on('browser-window-created', (_, window) => {
             const reference = BrowserWindow.getAllWindows().find((candidate) =>
                 candidate.webContents.getURL().includes('reference=activity')
             )
-            if (!reference) throw new Error('The native diff window did not open')
+            if (!reference) {
+                throw new Error('The native diff window did not open')
+            }
             await waitForElement(reference, '.ws-inspector-footer button')
             result.nativeDiffWindow = await reference.webContents.executeJavaScript(
                 `!!document.querySelector('.ws-reference') && document.querySelector('.diff').textContent.includes('BASE_DELAY_MS')`
@@ -394,7 +433,15 @@ app.on('browser-window-created', (_, window) => {
                 `document.querySelector('[aria-label="Entry title"]').value === '' && document.querySelector('[aria-label="Journal body"]').getAttribute('contenteditable') === 'true'`
             )
             passed = Object.entries(result).every(([key, value]) =>
-                key === 'node' ? value === 'undefined' : key === 'version' ? value === 1 : value === true
+                (() => {
+                    if (key === 'node') {
+                        return value === 'undefined'
+                    }
+                    if (key === 'version') {
+                        return value === 1
+                    }
+                    return value === true
+                })()
             )
             console.info(JSON.stringify({ ...result, electron: process.versions.electron, passed }))
         } catch (error) {
@@ -406,9 +453,11 @@ app.on('browser-window-created', (_, window) => {
 app.on('will-quit', () => {
     // Check the absolute temporary target before removing smoke-test data on Windows.
     const target = resolve(directory)
-    if (!target.startsWith(resolve(tmpdir()) + '\\') || !target.includes('weekly-j-desktop-')) return
+    if (!target.startsWith(`${resolve(tmpdir())}\\`) || !target.includes('weekly-j-desktop-')) {
+        return
+    }
     try {
-        rmSync(target, { recursive: true, force: true })
+        rmSync(target, { force: true, recursive: true })
     } catch {
         /* Chromium may retain its user-data lock until exit. */
     }
@@ -416,9 +465,9 @@ app.on('will-quit', () => {
 setTimeout(() => {
     console.error('Desktop workspace smoke test timed out')
     app.exit(1)
-}, 30000).unref()
+}, 30_000).unref()
 import(pathToFileURL(resolve('out/main/index.js')).href).catch(
-    /** @param {unknown} error */ (error) => {
+    /** @param {unknown} error - Failure while loading the built desktop app. */ (error) => {
         console.error(error)
         app.exit(1)
     }

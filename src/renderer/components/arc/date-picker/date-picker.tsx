@@ -1,15 +1,20 @@
 'use client'
 
-import { useEffect, useId, useRef, useState } from 'react'
-import type { ButtonHTMLAttributes, FocusEvent, KeyboardEvent } from 'react'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import type { Variants } from 'motion/react'
 import { CalendarDays, ChevronDown } from 'lucide-react'
-import { Calendar, type CalendarDateMatcher } from '../calendar/calendar'
+import type { Variants } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import type { ButtonHTMLAttributes, FocusEvent, KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+
+import type { CalendarDateMatcher } from '../calendar/calendar'
+import { Calendar } from '../calendar/calendar'
 import { motionTokens } from '../lib/motion-tokens'
-import styles from './date-picker.module.css'
-import { Popover, PopoverTrigger, PopoverContent } from '../popover/popover'
+import { Popover, PopoverContent, PopoverTrigger } from '../popover/popover'
 import { ScrollArea } from '../scroll-area/scroll-area'
+
+import styles from './date-picker.module.css'
+
+const defaultFormat = { day: 'numeric', month: 'short', year: 'numeric' } satisfies Intl.DateTimeFormatOptions
 
 export interface DatePickerProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'value' | 'onChange'> {
     label: string
@@ -31,34 +36,34 @@ const { spring, duration, ease, blur } = motionTokens
 const instant = { duration: duration.instant }
 /** Each part of the date rolls with time: a later date rises from below, an earlier one drops from above. Parts that did not change stay still. */
 const valueRoll: Variants = {
-    enter: (direction: number) => ({ opacity: 0, y: `${direction * 0.35}em`, filter: `blur(${blur.soft}px)` }),
-    center: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: duration.standard, ease: ease.enter } },
+    center: { filter: 'blur(0px)', opacity: 1, transition: { duration: duration.standard, ease: ease.enter }, y: 0 },
+    enter: (direction: number) => ({ filter: `blur(${blur.soft}px)`, opacity: 0, y: `${direction * 0.35}em` }),
     exit: (direction: number) => ({
-        opacity: 0,
-        y: `${direction * -0.3}em`,
         filter: `blur(${blur.subtle}px)`,
-        transition: { duration: 0.14, ease: ease.standard }
+        opacity: 0,
+        transition: { duration: 0.14, ease: ease.standard },
+        y: `${direction * -0.3}em`
     })
 }
 /** Reduced motion keeps a short crossfade; resting values match the roll so server and client markup agree. */
 const valueFade: Variants = {
+    center: { filter: 'blur(0px)', opacity: 1, transition: instant, y: 0 },
     enter: { opacity: 0 },
-    center: { opacity: 1, y: 0, filter: 'blur(0px)', transition: instant },
     exit: { opacity: 0, transition: instant }
 }
 /** The footer confirms the pick: new copy rises in with a soft blur while the old line lifts away. */
 const statusRise: Variants = {
-    enter: { opacity: 0, y: '0.3em', filter: `blur(${blur.soft}px)` },
-    center: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: duration.standard, ease: ease.enter } },
+    center: { filter: 'blur(0px)', opacity: 1, transition: { duration: duration.standard, ease: ease.enter }, y: 0 },
+    enter: { filter: `blur(${blur.soft}px)`, opacity: 0, y: '0.3em' },
     exit: {
-        opacity: 0,
-        y: '-0.3em',
         filter: `blur(${blur.subtle}px)`,
-        transition: { duration: 0.14, ease: ease.standard }
+        opacity: 0,
+        transition: { duration: 0.14, ease: ease.standard },
+        y: '-0.3em'
     }
 }
 
-export function DatePicker({
+export const DatePicker = ({
     label,
     value,
     onChange,
@@ -68,18 +73,20 @@ export function DatePicker({
     maxDate,
     disabledDates,
     locale = 'en-US',
-    format = { month: 'short', day: 'numeric', year: 'numeric' },
+    format = defaultFormat,
     showToday,
     id,
     className,
     disabled,
     ...buttonProps
-}: DatePickerProps) {
+}: DatePickerProps) => {
     const generatedId = useId()
     const controlId = id ?? generatedId
     const hintId = description ? `${controlId}-description` : undefined
     const [open, setOpen] = useState(false)
     const [side, setSide] = useState<'bottom' | 'right'>('bottom')
+    const triggerRef = useRef<HTMLButtonElement>(null)
+
     useEffect(() => {
         // A side placement leaves the whole calendar visible in short desktop windows.
         const query = window.matchMedia('(max-height: 820px) and (min-width: 768px)')
@@ -98,9 +105,9 @@ export function DatePicker({
     }, [])
     const [month, setMonth] = useState(monthStart(value ?? new Date()))
     const rootRef = useRef<HTMLDivElement>(null)
-    const triggerRef = useRef<HTMLButtonElement>(null)
+
     const popoverRef = useRef<HTMLDivElement>(null)
-    const closeTimer = useRef<number | undefined>(undefined)
+    const closeTimer = useRef<number | undefined | null>(null)
     const formatter = new Intl.DateTimeFormat(locale, format)
     const reduce = useReducedMotion() ?? false
     const time = value?.getTime() ?? null
@@ -115,53 +122,71 @@ export function DatePicker({
     // Parts after a wider or narrower segment move on the same curve the new text arrives on, so they never overlap it.
     const partMotion = reduce ? { duration: 0 } : { duration: duration.standard, ease: ease.enter }
 
-    useEffect(() => () => window.clearTimeout(closeTimer.current), [])
+    useEffect(
+        () => () => {
+            window.clearTimeout(closeTimer.current ?? undefined)
+        },
+        []
+    )
 
     /** Opening moves focus to the day that owns the tab stop, so arrows work at once; a pointer open shows no ring. */
     useEffect(() => {
-        if (open)
+        if (open) {
             popoverRef.current
                 ?.querySelector<HTMLButtonElement>('[data-present] [data-date][tabindex="0"]')
                 ?.focus({ preventScroll: true })
+        }
     }, [open])
 
     /** Closing hands focus back to the trigger when it was inside the calendar, so keyboard users never land on the page body. */
     const close = () => {
-        window.clearTimeout(closeTimer.current)
-        if (popoverRef.current?.contains(document.activeElement)) triggerRef.current?.focus()
+        window.clearTimeout(closeTimer.current ?? undefined)
+        if (popoverRef.current?.contains(document.activeElement)) {
+            triggerRef.current?.focus()
+        }
         setOpen(false)
     }
     /** The calendar always opens on the month of the current value, or today's month. */
     const show = () => {
-        window.clearTimeout(closeTimer.current)
+        window.clearTimeout(closeTimer.current ?? undefined)
         setMonth(monthStart(value ?? new Date()))
         setOpen(true)
     }
     /** A picked day lets the highlight glide onto it and the footer confirm it, then the calendar returns to the field. */
-    const selectDate = (date: Date | undefined) => {
-        onChange?.(date)
-        window.clearTimeout(closeTimer.current)
-        if (reduce || !date) close()
-        else closeTimer.current = window.setTimeout(close, 300)
+    const selectDate = (date: Date | null | undefined) => {
+        onChange?.(date ?? undefined)
+        window.clearTimeout(closeTimer.current ?? undefined)
+        if (reduce || !date) {
+            close()
+        } else {
+            closeTimer.current = window.setTimeout(close, 300)
+        }
     }
     const onTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
         if ((event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') && !open) {
             event.preventDefault()
             show()
         }
-        if (event.key === 'Escape') close()
+        if (event.key === 'Escape') {
+            close()
+        }
     }
     /** Tabbing past the popover closes it; focus moving within the field keeps it open. */
     const onBlur = (event: FocusEvent<HTMLDivElement>) => {
         const next = event.relatedTarget as Node | null
         if (open && next && !rootRef.current?.contains(next) && !popoverRef.current?.contains(next)) {
-            window.clearTimeout(closeTimer.current)
+            window.clearTimeout(closeTimer.current ?? undefined)
             setOpen(false)
         }
     }
 
     return (
-        <Popover open={open} onOpenChange={(next) => (next ? show() : close())}>
+        <Popover
+            open={open}
+            onOpenChange={(next) => {
+                next ? show() : close()
+            }}
+        >
             <div className={[styles.field, className].filter(Boolean).join(' ')} ref={rootRef} onBlur={onBlur}>
                 <label className={styles.label} htmlFor={controlId}>
                     {label}
@@ -271,21 +296,21 @@ export function DatePicker({
                                             close()
                                         }
                                     }}
-                                    initial={reduce ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.95 }}
+                                    initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: -8 }}
                                     animate={{
                                         opacity: 1,
-                                        y: 0,
                                         scale: 1,
                                         transition: reduce
                                             ? instant
                                             : {
                                                   ...spring.snappy,
                                                   opacity: { duration: duration.fast, ease: ease.enter }
-                                              }
+                                              },
+                                        y: 0
                                     }}
                                     exit={{
                                         opacity: 0,
-                                        ...(reduce ? {} : { y: -6, scale: 0.97 }),
+                                        ...(reduce ? {} : { scale: 0.97, y: -6 }),
                                         transition: { duration: 0.14, ease: ease.standard }
                                     }}
                                 >
@@ -309,7 +334,9 @@ export function DatePicker({
                                         <div className={styles.footer}>
                                             <button
                                                 type="button"
-                                                onClick={() => selectDate(undefined)}
+                                                onClick={() => {
+                                                    selectDate(null)
+                                                }}
                                                 disabled={!value}
                                             >
                                                 Clear

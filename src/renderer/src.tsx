@@ -1,11 +1,14 @@
-import { createRoot } from 'react-dom/client'
-import { App } from './App'
 import '@fontsource-variable/geist'
 import '@fontsource-variable/inter'
-import './components/arc/foundation.css'
 import 'react-diff-view/style/index.css'
-import './styles.css'
+import { createRoot } from 'react-dom/client'
+
+import { required } from '../shared/required'
+import { App } from './app'
+
+import './components/arc/foundation.css'
 import './desktop.css'
+import './styles.css'
 
 const appearance = window.matchMedia('(prefers-color-scheme: dark)')
 const syncAppearance = () => {
@@ -13,4 +16,4 @@ const syncAppearance = () => {
 }
 syncAppearance()
 appearance.addEventListener('change', syncAppearance)
-createRoot(document.getElementById('root')!).render(<App />)
+createRoot(required(document.querySelector('#root'))).render(<App />)

@@ -1,20 +1,21 @@
-import { ScrollArea } from './components/arc/scroll-area/scroll-area'
-import { useEffect, useId, useRef, useState } from 'react'
-import { EditorContent, useEditor } from '@tiptap/react'
+import { TaskItem } from '@tiptap/extension-task-item'
+import { TaskList } from '@tiptap/extension-task-list'
 import type { Editor as TiptapEditor } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import TaskList from '@tiptap/extension-task-list'
-import TaskItem from '@tiptap/extension-task-item'
+import { EditorContent, useEditor } from '@tiptap/react'
+import { StarterKit } from '@tiptap/starter-kit'
+import { useEffect, useId, useRef, useState } from 'react'
+
 import type { JournalNode } from '../shared/model'
+import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 
 const blocks = [
-    { id: 'paragraph', label: 'Text', hint: 'A plain paragraph' },
-    { id: 'heading', label: 'Heading', hint: 'A heading for a new thought' },
-    { id: 'bullet', label: 'Bullet list', hint: 'A few things to remember' },
-    { id: 'ordered', label: 'Numbered list', hint: 'One thing after another' },
-    { id: 'task', label: 'Checklist', hint: 'Keep track of the next steps' },
-    { id: 'quote', label: 'Quote', hint: 'Give a thought some space' },
-    { id: 'code', label: 'Code block', hint: 'Keep a snippet of code' }
+    { hint: 'A plain paragraph', id: 'paragraph', label: 'Text' },
+    { hint: 'A heading for a new thought', id: 'heading', label: 'Heading' },
+    { hint: 'A few things to remember', id: 'bullet', label: 'Bullet list' },
+    { hint: 'One thing after another', id: 'ordered', label: 'Numbered list' },
+    { hint: 'Keep track of the next steps', id: 'task', label: 'Checklist' },
+    { hint: 'Give a thought some space', id: 'quote', label: 'Quote' },
+    { hint: 'Keep a snippet of code', id: 'code', label: 'Code block' }
 ]
 interface Menu {
     from: number
@@ -26,7 +27,7 @@ interface Menu {
 
 // Existing checklists and underlined drafts retain their full document model.
 // New documents use Arc's editor in WorkspaceDraft.
-export function Editor({
+export const Editor = ({
     value,
     onChange,
     readOnly = false,
@@ -36,18 +37,18 @@ export function Editor({
     onChange?: (body: JournalNode) => void
     readOnly?: boolean
     insertLink?: { url: string; title: string; nonce: number }
-}) {
+}) => {
     const [menu, setMenu] = useState<Menu>()
-    const menuRef = useRef<Menu | undefined>(undefined)
+    const menuRef = useRef<Menu | undefined | null>(null)
     const [active, setActive] = useState(0)
     const activeRef = useRef(0)
     const host = useRef<HTMLDivElement>(null)
-    const lastEmitted = useRef<JournalNode | undefined>(undefined)
+    const lastEmitted = useRef<JournalNode | undefined | null>(null)
     const id = useId()
     const updateMenu = (editor: TiptapEditor) => {
         const { $from, empty, from } = editor.state.selection
         const prefix = $from.parent.textBetween(0, $from.parentOffset, '\n')
-        const match = empty && !readOnly ? /(?:^|\s)\/([^/]*)$/.exec(prefix) : null
+        const match = empty && !readOnly ? /(?:^|\s)\/(?<group1>[^/]*)$/u.exec(prefix) : null
         if (!match) {
             menuRef.current = undefined
             setMenu(undefined)
@@ -57,8 +58,8 @@ export function Editor({
         const coords = editor.view.coordsAtPos(from)
         const next = {
             from: from - match[1].length - 1,
-            to: from,
             query: match[1],
+            to: from,
             x: Math.max(0, Math.min((rect?.width ?? 300) - 250, coords.left - (rect?.left ?? 0))),
             y: coords.bottom - (rect?.top ?? 0) + 8
         }
@@ -68,48 +69,52 @@ export function Editor({
         setActive(0)
     }
     const apply = (editor: TiptapEditor, block: string) => {
-        const current = menuRef.current
-        if (!current) return
+        const { current } = menuRef
+        if (!current) {
+            return
+        }
         const chain = editor.chain().focus().deleteRange({ from: current.from, to: current.to })
         switch (block) {
-            case 'heading':
+            case 'heading': {
                 chain.setHeading({ level: 2 }).run()
                 break
-            case 'bullet':
+            }
+            case 'bullet': {
                 chain.toggleBulletList().run()
                 break
-            case 'ordered':
+            }
+            case 'ordered': {
                 chain.toggleOrderedList().run()
                 break
-            case 'task':
+            }
+            case 'task': {
                 chain.toggleTaskList().run()
                 break
-            case 'quote':
+            }
+            case 'quote': {
                 chain.toggleBlockquote().run()
                 break
-            case 'code':
+            }
+            case 'code': {
                 chain.toggleCodeBlock().run()
                 break
-            default:
+            }
+            default: {
                 chain.setParagraph().run()
+            }
         }
         menuRef.current = undefined
         setMenu(undefined)
     }
     const editorRef = useRef<TiptapEditor | null>(null)
     const editor = useEditor({
-        extensions: [
-            StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: { openOnClick: false } }),
-            TaskList,
-            TaskItem.configure({ nested: true })
-        ],
         content: value,
         editable: !readOnly,
         editorProps: {
             attributes: {
                 'aria-label': readOnly ? 'Journal entry' : 'Journal body',
-                role: 'textbox',
-                'aria-multiline': 'true'
+                'aria-multiline': 'true',
+                role: 'textbox'
             },
             handleClick: (_view, _position, event) => {
                 const anchor = (event.target as HTMLElement).closest('a')
@@ -120,8 +125,10 @@ export function Editor({
                 return false
             },
             handleKeyDown: (_view, event) => {
-                const current = menuRef.current
-                if (!current || !editorRef.current) return false
+                const { current } = menuRef
+                if (!current || !editorRef.current) {
+                    return false
+                }
                 const filtered = blocks.filter((block) =>
                     block.label.toLowerCase().includes(current.query.toLowerCase())
                 )
@@ -143,13 +150,20 @@ export function Editor({
                 return false
             }
         },
+        extensions: [
+            StarterKit.configure({ heading: { levels: [1, 2, 3] }, link: { openOnClick: false } }),
+            TaskList,
+            TaskItem.configure({ nested: true })
+        ],
+        onSelectionUpdate: ({ editor: updated }) => {
+            updateMenu(updated)
+        },
         onUpdate: ({ editor: updated }) => {
             const body = updated.getJSON() as JournalNode
             lastEmitted.current = body
             onChange?.(body)
             updateMenu(updated)
-        },
-        onSelectionUpdate: ({ editor: updated }) => updateMenu(updated)
+        }
     })
     useEffect(() => {
         editorRef.current = editor
@@ -159,45 +173,51 @@ export function Editor({
             editor &&
             JSON.stringify(value) !== JSON.stringify(lastEmitted.current) &&
             JSON.stringify(value) !== JSON.stringify(editor.getJSON())
-        )
+        ) {
             editor.commands.setContent(value, { emitUpdate: false })
+        }
     }, [value, editor])
     useEffect(() => {
         editor?.setEditable(!readOnly)
     }, [editor, readOnly])
     useEffect(() => {
-        if (insertLink && editor && !readOnly)
+        if (insertLink && editor && !readOnly) {
             editor
                 .chain()
                 .focus()
                 .insertContent({
-                    type: 'text',
+                    marks: [{ attrs: { href: insertLink.url }, type: 'link' }],
                     text: insertLink.title,
-                    marks: [{ type: 'link', attrs: { href: insertLink.url } }]
+                    type: 'text'
                 })
                 .run()
+        }
     }, [insertLink, editor, readOnly])
     useEffect(() => {
-        if (!editor) return
+        if (!editor) {
+            return
+        }
         const attrs: Record<string, string> = menu
             ? {
-                  'aria-expanded': 'true',
+                  'aria-activedescendant': `${id}-block-${active}`,
                   'aria-controls': `${id}-blocks`,
-                  'aria-activedescendant': `${id}-block-${active}`
+                  'aria-expanded': 'true'
               }
             : { 'aria-expanded': 'false' }
         editor.setOptions({
             editorProps: {
                 attributes: {
                     'aria-label': readOnly ? 'Journal entry' : 'Journal body',
-                    role: 'textbox',
                     'aria-multiline': 'true',
+                    role: 'textbox',
                     ...attrs
                 }
             }
         })
     }, [editor, menu, id, active, readOnly])
-    if (!editor) return null
+    if (!editor) {
+        return null
+    }
     const filtered = blocks.filter((block) => block.label.toLowerCase().includes(menu?.query.toLowerCase() ?? ''))
     return (
         <div className="journal-editor ws-legacy-editor" ref={host}>
@@ -224,8 +244,12 @@ export function Editor({
                                     role="option"
                                     id={`${id}-block-${index}`}
                                     aria-selected={active === index}
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    onClick={() => apply(editor, block.id)}
+                                    onMouseDown={(event) => {
+                                        event.preventDefault()
+                                    }}
+                                    onClick={() => {
+                                        apply(editor, block.id)
+                                    }}
                                 >
                                     <span>{block.label}</span>
                                     <small>{block.hint}</small>

@@ -6,3 +6,5 @@
 /coverage/
 *.log
 .env*
+# Skills installs a machine-local Windows junction to the canonical agent skill.
+/.claude/skills/ultracite/

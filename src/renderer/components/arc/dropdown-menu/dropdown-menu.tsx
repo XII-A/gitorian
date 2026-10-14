@@ -1,11 +1,13 @@
 'use client'
 
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { CSSProperties, FocusEvent, ReactNode } from 'react'
 import * as DropdownPrimitive from '@radix-ui/react-dropdown-menu'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { ChevronDown } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import type { CSSProperties, FocusEvent, ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './dropdown-menu.module.css'
 
 export interface DropdownItem {
@@ -30,24 +32,30 @@ interface Highlight {
 }
 
 /** A new trigger label rises in while the old one leaves, and the trigger width springs to the measured text instead of snapping. */
-function TriggerLabel({ text }: { text: string }) {
+const TriggerLabel = ({ text }: { text: string }) => {
     const reduced = useReducedMotion()
     const measure = useRef<HTMLSpanElement>(null)
     const measured = useRef<string | null>(null)
-    const [size, setSize] = useState<{ width: number | 'auto'; animate: boolean }>({ width: 'auto', animate: false })
+    const [size, setSize] = useState<{ width: number | 'auto'; animate: boolean }>({ animate: false, width: 'auto' })
     useLayoutEffect(() => {
         const node = measure.current
-        if (!node) return
+        if (!node) {
+            return
+        }
         const observer = new ResizeObserver(([entry]) => {
-            if (!entry) return
+            if (!entry) {
+                return
+            }
             const current = node.textContent
             // Only a text change morphs; the first measure and font swaps settle instantly.
             const animate = measured.current !== null && measured.current !== current
             measured.current = current
-            setSize({ width: Math.ceil(entry.borderBoxSize?.[0]?.inlineSize ?? node.offsetWidth), animate })
+            setSize({ animate, width: Math.ceil(entry.borderBoxSize?.[0]?.inlineSize ?? node.offsetWidth) })
         })
         observer.observe(node)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [])
     return (
         <motion.span
@@ -63,19 +71,19 @@ function TriggerLabel({ text }: { text: string }) {
                 <motion.span
                     key={text}
                     className={styles.labelText}
-                    initial={reduced ? false : { opacity: 0, y: '0.3em', filter: `blur(${motionTokens.blur.soft}px)` }}
-                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                    initial={reduced ? false : { filter: `blur(${motionTokens.blur.soft}px)`, opacity: 0, y: '0.3em' }}
+                    animate={{ filter: 'blur(0px)', opacity: 1, y: 0 }}
                     exit={
                         reduced
                             ? { opacity: 0, transition: { duration: 0 } }
                             : {
-                                  opacity: 0,
-                                  y: '-0.3em',
                                   filter: `blur(${motionTokens.blur.subtle}px)`,
+                                  opacity: 0,
                                   transition: {
                                       duration: motionTokens.duration.fast,
                                       ease: [...motionTokens.ease.standard]
-                                  }
+                                  },
+                                  y: '-0.3em'
                               }
                     }
                     transition={{ duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }}
@@ -87,22 +95,32 @@ function TriggerLabel({ text }: { text: string }) {
     )
 }
 
-export function DropdownMenu({ label, items, icon }: DropdownMenuProps) {
+export const DropdownMenu = ({ label, items, icon }: DropdownMenuProps) => {
     const reduced = useReducedMotion()
     const [highlight, setHighlight] = useState<Highlight | null>(null)
     const pointer = useRef(false)
     const clearTimer = useRef(0)
-    useEffect(() => () => window.clearTimeout(clearTimer.current), [])
+    useEffect(
+        () => () => {
+            window.clearTimeout(clearTimer.current ?? undefined)
+        },
+        []
+    )
     // Radix focuses the highlighted item (pointer or keyboard) and the content when the pointer leaves an item.
-    function onMenuFocus(event: FocusEvent<HTMLDivElement>) {
+    const onMenuFocus = (event: FocusEvent<HTMLDivElement>) => {
         const item = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[role="menuitem"]') : null
-        window.clearTimeout(clearTimer.current)
+        window.clearTimeout(clearTimer.current ?? undefined)
         if (!item) {
             // A short grace period keeps the highlight gliding across separators and item gaps.
-            clearTimer.current = window.setTimeout(() => setHighlight(null), pointer.current ? 70 : 0)
+            clearTimer.current = window.setTimeout(
+                () => {
+                    setHighlight(null)
+                },
+                pointer.current ? 70 : 0
+            )
             return
         }
-        const next = { top: item.offsetTop, height: item.offsetHeight, danger: item.dataset.tone === 'danger' }
+        const next = { danger: item.dataset.tone === 'danger', height: item.offsetHeight, top: item.offsetTop }
         const glide = pointer.current
         setHighlight((current) => ({ ...next, glide: glide && current !== null }))
     }
@@ -110,7 +128,7 @@ export function DropdownMenu({ label, items, icon }: DropdownMenuProps) {
         <DropdownPrimitive.Root
             onOpenChange={(open) => {
                 if (open) {
-                    window.clearTimeout(clearTimer.current)
+                    window.clearTimeout(clearTimer.current ?? undefined)
                     setHighlight(null)
                 }
             }}
@@ -146,7 +164,7 @@ export function DropdownMenu({ label, items, icon }: DropdownMenuProps) {
                         aria-hidden="true"
                         initial={false}
                         animate={
-                            highlight ? { y: highlight.top, height: highlight.height, opacity: 1 } : { opacity: 0 }
+                            highlight ? { height: highlight.height, opacity: 1, y: highlight.top } : { opacity: 0 }
                         }
                         transition={{
                             default: highlight?.glide && !reduced ? motionTokens.spring.snappy : { duration: 0 },

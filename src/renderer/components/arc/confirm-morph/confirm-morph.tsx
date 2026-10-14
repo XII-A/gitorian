@@ -1,6 +1,19 @@
 'use client'
-/* eslint-disable jsx-a11y/no-noninteractive-element-interactions -- The labelled group handles Escape bubbled from its native face buttons and tracks hover; it is not an extra button. */
 
+import { CircleAlert, LoaderCircle } from 'lucide-react'
+import type { AnimationPlaybackControls, MotionValue, Transition, Variants } from 'motion/react'
+import {
+    AnimatePresence,
+    animate,
+    motion,
+    stagger,
+    useIsPresent,
+    useMotionValue,
+    useMotionValueEvent,
+    useReducedMotion,
+    useTransform
+} from 'motion/react'
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, PointerEvent as ReactPointerEvent, Ref } from 'react'
 import {
     useCallback,
     useEffect,
@@ -11,22 +24,13 @@ import {
     useState,
     useSyncExternalStore
 } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode, Ref } from 'react'
-import {
-    AnimatePresence,
-    animate,
-    motion,
-    useIsPresent,
-    useMotionValue,
-    useMotionValueEvent,
-    useReducedMotion,
-    stagger,
-    useTransform
-} from 'motion/react'
-import type { AnimationPlaybackControls, MotionValue, Transition, Variants } from 'motion/react'
-import { CircleAlert, LoaderCircle } from 'lucide-react'
+
+import { required } from '../../../../shared/required'
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './confirm-morph.module.css'
+
+/* eslint-disable jsx-a11y/no-noninteractive-element-interactions -- The labelled group handles Escape bubbled from its native face buttons and tracks hover; it is not an extra button. */
 
 /** Where the control is in its life: resting, asking, working, finished, or failed. */
 export type ConfirmMorphState = 'idle' | 'confirming' | 'pending' | 'done' | 'error'
@@ -102,16 +106,16 @@ const standard = [...motionTokens.ease.standard] as Bezier
 /** Duration springs restated as stiffness and damping, so a retarget mid-flight keeps the velocity it already has. */
 const physical = ({ visualDuration, bounce }: { visualDuration: number; bounce: number }): Transition => {
     const root = (2 * Math.PI) / (visualDuration * 1.2)
-    return { type: 'spring', stiffness: root * root, damping: 2 * (1 - bounce) * root, mass: 1 }
+    return { damping: 2 * (1 - bounce) * root, mass: 1, stiffness: root * root, type: 'spring' }
 }
 /** Growing follows new content with a little life; shrinking settles without overshoot. */
-const GROW = physical(motionTokens.spring.morph),
-    SHRINK = physical(motionTokens.spring.smooth)
+const GROW = physical(motionTokens.spring.morph)
+const SHRINK = physical(motionTokens.spring.smooth)
 
 const subscribe = () => () => {
     /* Hydration has no external subscription to clean up. */
 }
-function useReducedFlag() {
+const useReducedFlag = () => {
     const hydrated = useSyncExternalStore(
         subscribe,
         () => true,
@@ -126,28 +130,28 @@ function useReducedFlag() {
  * order, each clearing a small blur.
  */
 const faceVariants: Variants = {
-    hidden: { opacity: 1 },
-    shown: { opacity: 1, transition: { delayChildren: stagger(motionTokens.stagger.item, { startDelay: 0.05 }) } },
     gone: {
-        opacity: 0,
         filter: `blur(${blur.subtle}px)`,
+        opacity: 0,
         transition: { duration: motionTokens.duration.instant, ease: standard }
-    }
+    },
+    hidden: { opacity: 1 },
+    shown: { opacity: 1, transition: { delayChildren: stagger(motionTokens.stagger.item, { startDelay: 0.05 }) } }
 }
 const partVariants: Variants = {
-    hidden: { opacity: 0, filter: `blur(${blur.soft}px)` },
-    shown: { opacity: 1, filter: 'blur(0px)', transition: { duration: 0.26, ease: enter } }
+    hidden: { filter: `blur(${blur.soft}px)`, opacity: 0 },
+    shown: { filter: 'blur(0px)', opacity: 1, transition: { duration: 0.26, ease: enter } }
 }
 const reducedFace: Variants = {
+    gone: { opacity: 0, transition: { duration: 0.1 } },
     hidden: { opacity: 0 },
-    shown: { opacity: 1, transition: { duration: 0.14 } },
-    gone: { opacity: 0, transition: { duration: 0.1 } }
+    shown: { opacity: 1, transition: { duration: 0.14 } }
 }
 const reducedPart: Variants = { hidden: { opacity: 1 }, shown: { opacity: 1 } }
 
 type FaceKey = ConfirmMorphState | 'counting'
 
-function Face({
+const Face = ({
     id,
     reduced,
     onSize,
@@ -159,19 +163,27 @@ function Face({
     onSize: (id: FaceKey, width: number) => void
     children: ReactNode
     labelledBy?: string
-}) {
+}) => {
     const ref = useRef<HTMLDivElement>(null)
     const present = useIsPresent()
     useLayoutEffect(() => {
         const node = ref.current
-        if (!node || !present) return
+        if (!node || !present) {
+            return
+        }
         // Fractional widths, so the spring lands exactly where the pill's natural width is and the hand back to auto is seamless.
-        const report = () => onSize(id, node.getBoundingClientRect().width)
+        const report = () => {
+            onSize(id, node.getBoundingClientRect().width)
+        }
         report()
-        if (typeof ResizeObserver === 'undefined') return
+        if (typeof ResizeObserver === 'undefined') {
+            return
+        }
         const observer = new ResizeObserver(report)
         observer.observe(node)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [id, onSize, present])
     return (
         <motion.div
@@ -191,84 +203,76 @@ function Face({
     )
 }
 
-function Part({ reduced, className, children }: { reduced: boolean; className?: string; children: ReactNode }) {
-    return (
-        <motion.span
-            className={[styles.part, className].filter(Boolean).join(' ')}
-            variants={reduced ? reducedPart : partVariants}
-        >
-            {children}
-        </motion.span>
-    )
-}
+const Part = ({ reduced, className, children }: { reduced: boolean; className?: string; children: ReactNode }) => (
+    <motion.span
+        className={[styles.part, className].filter(Boolean).join(' ')}
+        variants={reduced ? reducedPart : partVariants}
+    >
+        {children}
+    </motion.span>
+)
 
 /** A success disc that pops in with a tick drawing across it, the moment the action lands. */
-function Check({ reduced }: { reduced: boolean }) {
-    return (
-        <svg className={styles.check} viewBox="0 0 18 18" fill="none" aria-hidden="true">
-            <motion.circle
-                className={styles.checkDisc}
-                cx="9"
-                cy="9"
-                r="8"
-                style={{ transformOrigin: '9px 9px' }}
-                initial={reduced ? false : { scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ scale: physical(motionTokens.spring.snappy), opacity: { duration: 0.12 } }}
-            />
-            <motion.path
-                className={styles.checkTick}
-                d="M5.6 9.3 7.8 11.4 12.4 6.7"
-                strokeWidth="1.9"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                initial={reduced ? false : { pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{ duration: 0.3, ease: enter, delay: 0.14 }}
-            />
-        </svg>
-    )
-}
+const Check = ({ reduced }: { reduced: boolean }) => (
+    <svg className={styles.check} viewBox="0 0 18 18" fill="none" aria-hidden="true">
+        <motion.circle
+            className={styles.checkDisc}
+            cx="9"
+            cy="9"
+            r="8"
+            style={{ transformOrigin: '9px 9px' }}
+            initial={reduced ? false : { opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ opacity: { duration: 0.12 }, scale: physical(motionTokens.spring.snappy) }}
+        />
+        <motion.path
+            className={styles.checkTick}
+            d="M5.6 9.3 7.8 11.4 12.4 6.7"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            initial={reduced ? false : { pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ delay: 0.14, duration: 0.3, ease: enter }}
+        />
+    </svg>
+)
 
 /** A ring that drains with the countdown. */
-function Ring({ progress }: { progress: MotionValue<number> }) {
-    return (
-        <svg className={styles.ring} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <circle className={styles.ringTrack} cx="8" cy="8" r="6.25" strokeWidth="1.75" />
-            <motion.circle
-                className={styles.ringFill}
-                cx="8"
-                cy="8"
-                r="6.25"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                style={{ pathLength: progress, rotate: -90, transformOrigin: '8px 8px' }}
-            />
-        </svg>
-    )
-}
+const Ring = ({ progress }: { progress: MotionValue<number> }) => (
+    <svg className={styles.ring} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle className={styles.ringTrack} cx="8" cy="8" r="6.25" strokeWidth="1.75" />
+        <motion.circle
+            className={styles.ringFill}
+            cx="8"
+            cy="8"
+            r="6.25"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            style={{ pathLength: progress, rotate: -90, transformOrigin: '8px 8px' }}
+        />
+    </svg>
+)
 
 /** Seconds that swap in place: the old digit fades up and out, the new one rises in, on tabular figures so the width holds. */
-function Seconds({ value, reduced }: { value: number; reduced: boolean }) {
-    return (
-        <span className={styles.seconds}>
-            <AnimatePresence initial={false} mode="popLayout">
-                <motion.span
-                    key={value}
-                    className={styles.digit}
-                    initial={reduced ? { opacity: 0 } : { opacity: 0, y: 6, filter: `blur(${blur.subtle}px)` }}
-                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                    exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6, filter: `blur(${blur.subtle}px)` }}
-                    transition={{ duration: 0.22, ease: enter }}
-                >
-                    {value}
-                </motion.span>
-            </AnimatePresence>
-        </span>
-    )
-}
+const Seconds = ({ value, reduced }: { value: number; reduced: boolean }) => (
+    <span className={styles.seconds}>
+        <AnimatePresence initial={false} mode="popLayout">
+            <motion.span
+                key={value}
+                className={styles.digit}
+                initial={reduced ? { opacity: 0 } : { filter: `blur(${blur.subtle}px)`, opacity: 0, y: 6 }}
+                animate={{ filter: 'blur(0px)', opacity: 1, y: 0 }}
+                exit={reduced ? { opacity: 0 } : { filter: `blur(${blur.subtle}px)`, opacity: 0, y: -6 }}
+                transition={{ duration: 0.22, ease: enter }}
+            >
+                {value}
+            </motion.span>
+        </AnimatePresence>
+    </span>
+)
 
-export function ConfirmMorph({
+export const ConfirmMorph = ({
     label,
     icon,
     prompt,
@@ -297,13 +301,13 @@ export function ConfirmMorph({
     disabled = false,
     className,
     ref
-}: ConfirmMorphProps) {
+}: ConfirmMorphProps) => {
     const reduced = useReducedFlag()
     const uid = useId()
     const promptId = `${uid}-prompt`
     const holdHintId = `${uid}-hold`
     const rootRef = useRef<HTMLDivElement>(null)
-    useImperativeHandle(ref, () => rootRef.current!, [])
+    useImperativeHandle(ref, () => required(rootRef.current), [])
 
     const [inner, setInner] = useState<ConfirmMorphState>(defaultState)
     const state = stateProp ?? inner
@@ -312,9 +316,9 @@ export function ConfirmMorph({
     const [announcement, setAnnouncement] = useState('')
     const faceKey: FaceKey = state === 'confirming' && counting ? 'counting' : state
 
-    const live = useRef({ state, onStateChange, controlled: stateProp !== undefined })
+    const live = useRef({ controlled: stateProp !== undefined, onStateChange, state })
     useLayoutEffect(() => {
-        live.current = { state, onStateChange, controlled: stateProp !== undefined }
+        live.current = { controlled: stateProp !== undefined, onStateChange, state }
     })
     const pendingFocus = useRef(false)
     const run = useRef(0)
@@ -329,11 +333,19 @@ export function ConfirmMorph({
 
     const go = useCallback(
         (next: ConfirmMorphState) => {
-            if (next !== 'confirming') setCounting(false)
-            if (next === live.current.state) return
+            if (next !== 'confirming') {
+                setCounting(false)
+            }
+            if (next === live.current.state) {
+                return
+            }
             keepFocus()
-            if (next === 'confirming') askedAt.current = performance.now()
-            if (!live.current.controlled) setInner(next)
+            if (next === 'confirming') {
+                askedAt.current = performance.now()
+            }
+            if (!live.current.controlled) {
+                setInner(next)
+            }
             live.current.state = next
             live.current.onStateChange?.(next)
         },
@@ -344,18 +356,20 @@ export function ConfirmMorph({
     const [seenState, setSeenState] = useState(state)
     if (seenState !== state) {
         setSeenState(state)
-        if (state !== 'confirming') setCounting(false)
+        if (state !== 'confirming') {
+            setCounting(false)
+        }
     }
 
     const toIdle = useCallback(() => {
-        run.current++
+        run.current += 1
         go('idle')
     }, [go])
 
     const perform = useCallback(
         async (kind: 'confirm' | 'undo') => {
             const handler = kind === 'confirm' ? onConfirm : onUndo
-            const token = ++run.current
+            const token = (run.current += 1)
             setWorking(kind)
             setCounting(false)
             let result: unknown
@@ -372,12 +386,16 @@ export function ConfirmMorph({
                 try {
                     await result
                 } catch {
-                    if (token !== run.current) return
+                    if (token !== run.current) {
+                        return
+                    }
                     go('error')
                     setAnnouncement(errorLabel)
                     return
                 }
-                if (token !== run.current) return
+                if (token !== run.current) {
+                    return
+                }
             }
             if (kind === 'undo') {
                 go('idle')
@@ -400,8 +418,11 @@ export function ConfirmMorph({
     })
     useLayoutEffect(() => {
         expire.current = () => {
-            if (live.current.state === 'confirming') cancel()
-            else toIdle()
+            if (live.current.state === 'confirming') {
+                cancel()
+            } else {
+                toIdle()
+            }
         }
     })
 
@@ -412,19 +433,25 @@ export function ConfirmMorph({
     // Only the present face reports (a leaving face stops observing), so every report is the current face's width.
     const onFaceSize = useCallback(
         (_id: FaceKey, w: number) => {
-            if (Math.abs(w - target.current) < 0.25) return
+            if (Math.abs(w - target.current) < 0.25) {
+                return
+            }
             const from = target.current
             target.current = w
             if (!from || reduced) {
-                flight.current++
+                flight.current += 1
                 width.jump('auto')
                 return
             }
             const now = width.get()
-            if (now === 'auto') width.jump(from)
-            const token = ++flight.current
+            if (now === 'auto') {
+                width.jump(from)
+            }
+            const token = (flight.current += 1)
             animate(width, w, w > (typeof now === 'number' ? now : from) ? GROW : SHRINK).then(() => {
-                if (token === flight.current) width.jump('auto')
+                if (token === flight.current) {
+                    width.jump('auto')
+                }
             })
         },
         [reduced, width]
@@ -433,18 +460,32 @@ export function ConfirmMorph({
     /* The timeout runs as an invisible clock. A pointer resting on the control holds it, and so does a hidden tab. */
     const drain = useMotionValue(1)
     const clock = useRef<AnimationPlaybackControls | null>(null)
-    const holds = useRef({ hover: false, hidden: false })
-    const timeout =
-        state === 'confirming' && !counting ? confirmTimeout : state === 'done' || state === 'error' ? resultTimeout : 0
+    const holds = useRef({ hidden: false, hover: false })
+    const timeout = (() => {
+        if (state === 'confirming' && !counting) {
+            return confirmTimeout
+        }
+        if (state === 'done' || state === 'error') {
+            return resultTimeout
+        }
+        return 0
+    })()
     const sync = useCallback(() => {
         const control = clock.current
-        if (!control) return
+        if (!control) {
+            return
+        }
         const held = holds.current.hover || holds.current.hidden
-        if (held) control.pause()
-        else control.play()
+        if (held) {
+            control.pause()
+        } else {
+            control.play()
+        }
     }, [])
     useEffect(() => {
-        if (!timeout) return
+        if (!timeout) {
+            return
+        }
         drain.jump(1)
         const control = animate(drain, 0, { duration: timeout / 1000, ease: 'linear' })
         clock.current = control
@@ -456,7 +497,9 @@ export function ConfirmMorph({
         })
         sync()
         return () => {
-            if (clock.current === control) clock.current = null
+            if (clock.current === control) {
+                clock.current = null
+            }
             control.stop()
         }
     }, [drain, state, sync, timeout])
@@ -466,7 +509,9 @@ export function ConfirmMorph({
             sync()
         }
         document.addEventListener('visibilitychange', onVisibility)
-        return () => document.removeEventListener('visibilitychange', onVisibility)
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibility)
+        }
     }, [sync])
 
     /* Countdown: a short grace period after the answer, drawn as a draining ring and ticking seconds. */
@@ -476,15 +521,21 @@ export function ConfirmMorph({
     useLayoutEffect(() => {
         performRef.current = perform
     })
-    useMotionValueEvent(remaining, 'change', (value) => setSeconds(Math.max(1, Math.ceil(value * countdown))))
+    useMotionValueEvent(remaining, 'change', (value) => {
+        setSeconds(Math.max(1, Math.ceil(value * countdown)))
+    })
     useEffect(() => {
-        if (!counting) return
+        if (!counting) {
+            return
+        }
         remaining.jump(1)
         const control = animate(remaining, 0, { duration: countdown, ease: 'linear' })
         control.then(() => {
             void performRef.current('confirm')
         })
-        return () => control.stop()
+        return () => {
+            control.stop()
+        }
     }, [counting, countdown, remaining])
 
     /* Hold: the confirm button fills with the danger colour from the left while pressed, and drains back if let go early. */
@@ -492,22 +543,28 @@ export function ConfirmMorph({
     const holding = useRef<AnimationPlaybackControls | null>(null)
     const fillClip = useTransform(hold, (value) => `inset(0 ${(1 - value) * 100}% 0 0 round 999px)`)
     const startHold = () => {
-        if (holding.current) return
+        if (holding.current) {
+            return
+        }
         const control = animate(hold, 1, { duration: (holdDuration / 1000) * (1 - hold.get()), ease: 'linear' })
         holding.current = control
         control.then(() => {
-            if (holding.current !== control) return
+            if (holding.current !== control) {
+                return
+            }
             holding.current = null
             void perform('confirm')
         })
     }
     const releaseHold = () => {
         const control = holding.current
-        if (!control) return
+        if (!control) {
+            return
+        }
         holding.current = null
         control.stop()
         if (hold.get() < 1) {
-            animate(hold, 0, reduced ? { duration: 0 } : { type: 'spring', visualDuration: 0.3, bounce: 0 })
+            animate(hold, 0, reduced ? { duration: 0 } : { bounce: 0, type: 'spring', visualDuration: 0.3 })
             setAnnouncement(`Keep holding to ${confirmLabel.toLowerCase()}`)
         }
     }
@@ -520,7 +577,9 @@ export function ConfirmMorph({
     }, [hold, state])
 
     const answer = () => {
-        if (performance.now() - askedAt.current < ARM_MS) return
+        if (performance.now() - askedAt.current < ARM_MS) {
+            return
+        }
         if (confirmMode === 'countdown') {
             keepFocus()
             setCounting(true)
@@ -532,20 +591,30 @@ export function ConfirmMorph({
 
     // An outside press answers the question with no.
     useEffect(() => {
-        if (state !== 'confirming' || !cancelOnOutsidePress) return
+        if (state !== 'confirming' || !cancelOnOutsidePress) {
+            return
+        }
         const down = (event: PointerEvent) => {
-            if (!rootRef.current?.contains(event.target as Node)) cancel()
+            if (!rootRef.current?.contains(event.target as Node)) {
+                cancel()
+            }
         }
         document.addEventListener('pointerdown', down)
-        return () => document.removeEventListener('pointerdown', down)
+        return () => {
+            document.removeEventListener('pointerdown', down)
+        }
     }, [cancel, cancelOnOutsidePress, state])
 
     // Focus moves with the morph: Confirm while asking, the root while counting or working, Undo or Retry on a result, the trigger at rest.
     useLayoutEffect(() => {
-        if (!pendingFocus.current) return
+        if (!pendingFocus.current) {
+            return
+        }
         pendingFocus.current = false
         const root = rootRef.current
-        if (!root) return
+        if (!root) {
+            return
+        }
         const face = root.querySelector<HTMLElement>(`[data-face="${faceKey}"]`)
         const autofocus = face?.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)')
         ;(autofocus ?? root).focus({ preventScroll: true })
@@ -572,20 +641,31 @@ export function ConfirmMorph({
             !(event.target instanceof HTMLButtonElement)
         ) {
             event.preventDefault()
-            if (counting) void perform('confirm')
-            else if (confirmMode !== 'hold') answer()
+            if (counting) {
+                void perform('confirm')
+            } else if (confirmMode !== 'hold') {
+                answer()
+            }
         }
     }
 
     const holdKeys = (event: ReactKeyboardEvent<HTMLButtonElement>, down: boolean) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return
+        }
         event.preventDefault()
         if (down) {
-            if (!event.repeat) startHold()
-        } else releaseHold()
+            if (!event.repeat) {
+                startHold()
+            }
+        } else {
+            releaseHold()
+        }
     }
     const holdPointer = (event: ReactPointerEvent<HTMLButtonElement>) => {
-        if (event.button !== 0) return
+        if (event.button !== 0) {
+            return
+        }
         event.currentTarget.setPointerCapture?.(event.pointerId)
         startHold()
     }
@@ -603,10 +683,16 @@ export function ConfirmMorph({
                 onPointerUp={releaseHold}
                 onPointerCancel={releaseHold}
                 onLostPointerCapture={releaseHold}
-                onKeyDown={(event) => holdKeys(event, true)}
-                onKeyUp={(event) => holdKeys(event, false)}
+                onKeyDown={(event) => {
+                    holdKeys(event, true)
+                }}
+                onKeyUp={(event) => {
+                    holdKeys(event, false)
+                }}
                 onBlur={releaseHold}
-                onContextMenu={(event) => event.preventDefault()}
+                onContextMenu={(event) => {
+                    event.preventDefault()
+                }}
             >
                 <span>{confirmLabel}</span>
                 <motion.span className={styles.fill} style={{ clipPath: fillClip }} aria-hidden="true">
@@ -620,7 +706,9 @@ export function ConfirmMorph({
                 data-autofocus
                 onClick={answer}
                 onKeyDown={(event) => {
-                    if (event.repeat) event.preventDefault()
+                    if (event.repeat) {
+                        event.preventDefault()
+                    }
                 }}
             >
                 {confirmLabel}
@@ -629,7 +717,7 @@ export function ConfirmMorph({
 
     const face = (() => {
         switch (faceKey) {
-            case 'confirming':
+            case 'confirming': {
                 return (
                     <>
                         <Part reduced={reduced} className={styles.prompt}>
@@ -648,7 +736,8 @@ export function ConfirmMorph({
                         )}
                     </>
                 )
-            case 'counting':
+            }
+            case 'counting': {
                 return (
                     <>
                         <Part reduced={reduced} className={styles.status}>
@@ -664,14 +753,16 @@ export function ConfirmMorph({
                         </Part>
                     </>
                 )
-            case 'pending':
+            }
+            case 'pending': {
                 return (
                     <Part reduced={reduced} className={styles.status}>
                         <LoaderCircle className={styles.spinner} size={16} strokeWidth={1.75} aria-hidden="true" />
                         <span className={styles.statusText}>{working === 'undo' ? undoingLabel : pendingLabel}</span>
                     </Part>
                 )
-            case 'done':
+            }
+            case 'done': {
                 return (
                     <>
                         <Part reduced={reduced} className={styles.status}>
@@ -684,7 +775,9 @@ export function ConfirmMorph({
                                     type="button"
                                     className={styles.secondary}
                                     data-autofocus
-                                    onClick={() => void perform('undo')}
+                                    onClick={() => {
+                                        perform('undo')
+                                    }}
                                 >
                                     {undoLabel}
                                 </button>
@@ -692,7 +785,8 @@ export function ConfirmMorph({
                         )}
                     </>
                 )
-            case 'error':
+            }
+            case 'error': {
                 return (
                     <>
                         <Part reduced={reduced} className={styles.status}>
@@ -704,14 +798,17 @@ export function ConfirmMorph({
                                 type="button"
                                 className={styles.secondary}
                                 data-autofocus
-                                onClick={() => void perform(working)}
+                                onClick={() => {
+                                    perform(working)
+                                }}
                             >
                                 {retryLabel}
                             </button>
                         </Part>
                     </>
                 )
-            default:
+            }
+            default: {
                 return (
                     <Part reduced={reduced}>
                         <button
@@ -733,6 +830,7 @@ export function ConfirmMorph({
                         </button>
                     </Part>
                 )
+            }
         }
     })()
 

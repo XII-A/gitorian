@@ -1,11 +1,16 @@
 'use client'
 
-import { useId, useRef, useState } from 'react'
-import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { ChevronRight, File, Folder, FolderOpen } from 'lucide-react'
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react'
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
+import { useId, useRef, useState } from 'react'
+
+import { required } from '../../../../shared/required'
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './tree-view.module.css'
+
+const defaultDefaultExpandedIds: never[] = []
 
 export interface TreeNode {
     id: string
@@ -50,52 +55,59 @@ const fadeIn = { duration: motionTokens.duration.fast, ease: [...motionTokens.ea
 const fadeOut = { duration: motionTokens.duration.instant, ease: [...motionTokens.ease.standard] } as const
 const blur = (px: number) => `blur(${px}px)`
 
-function flatten(nodes: TreeNode[], expanded: ReadonlySet<string>, depth = 1, parentId?: string): VisibleNode[] {
-    return nodes.flatMap((node, index) => [
-        { node, depth, parentId, position: index + 1, setSize: nodes.length },
+const flatten = (nodes: TreeNode[], expanded: ReadonlySet<string>, depth = 1, parentId?: string): VisibleNode[] =>
+    nodes.flatMap((node, index) => [
+        { depth, node, parentId, position: index + 1, setSize: nodes.length },
         ...(node.children && expanded.has(node.id) ? flatten(node.children, expanded, depth + 1, node.id) : [])
     ])
-}
 
-function fileTone(label: string, classNames: Record<string, string>) {
+const fileTone = (label: string, classNames: Record<string, string>) => {
     const name = label.toLowerCase()
-    if (name.endsWith('.tsx') || name.endsWith('.ts')) return classNames.typescript
-    if (name.endsWith('.css')) return classNames.stylesheet
-    if (name.endsWith('.md')) return classNames.markdown
-    if (name.endsWith('.json')) return classNames.json
+    if (name.endsWith('.tsx') || name.endsWith('.ts')) {
+        return classNames.typescript
+    }
+    if (name.endsWith('.css')) {
+        return classNames.stylesheet
+    }
+    if (name.endsWith('.md')) {
+        return classNames.markdown
+    }
+    if (name.endsWith('.json')) {
+        return classNames.json
+    }
     return classNames.file
 }
 
 /** Same markup with or without reduced motion, so the server render always hydrates cleanly; only the transition changes. */
-function FolderIcon({ open, reduced }: { open: boolean; reduced: boolean }) {
-    return (
-        <AnimatePresence initial={false} mode="popLayout">
-            <motion.span
-                key={open ? 'open' : 'closed'}
-                className={styles.folderGlyph}
-                initial={reduced ? false : { opacity: 0, scale: 0.6, filter: blur(motionTokens.blur.subtle) }}
-                animate={{ opacity: 1, scale: 1, filter: blur(0) }}
-                exit={
-                    reduced
-                        ? { opacity: 0, transition: still }
-                        : { opacity: 0, scale: 0.6, filter: blur(motionTokens.blur.subtle), transition: fadeOut }
-                }
-                transition={reduced ? still : { ...motionTokens.spring.snappy, opacity: fadeIn, filter: fadeIn }}
-            >
-                {open ? <FolderOpen size={16} strokeWidth={1.7} /> : <Folder size={16} strokeWidth={1.7} />}
-            </motion.span>
-        </AnimatePresence>
-    )
-}
+const FolderIcon = ({ open, reduced }: { open: boolean; reduced: boolean }) => (
+    <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+            key={open ? 'open' : 'closed'}
+            className={styles.folderGlyph}
+            initial={reduced ? false : { filter: blur(motionTokens.blur.subtle), opacity: 0, scale: 0.6 }}
+            animate={{ filter: blur(0), opacity: 1, scale: 1 }}
+            exit={
+                reduced
+                    ? { opacity: 0, transition: still }
+                    : { filter: blur(motionTokens.blur.subtle), opacity: 0, scale: 0.6, transition: fadeOut }
+            }
+            transition={reduced ? still : { ...motionTokens.spring.snappy, filter: fadeIn, opacity: fadeIn }}
+        >
+            {open ? <FolderOpen size={16} strokeWidth={1.7} /> : <Folder size={16} strokeWidth={1.7} />}
+        </motion.span>
+    </AnimatePresence>
+)
 
 /**
  * The selection fill glides between rows through a shared layoutId. A row that is leaving drops its fill at once: left
  * in place, it held the row's exit open, so the row stayed in the tree with pointer events off and the next click on it
  * after reopening its folder did nothing.
  */
-function Selection({ layoutId, reduced }: { layoutId: string; reduced: boolean }) {
+const Selection = ({ layoutId, reduced }: { layoutId: string; reduced: boolean }) => {
     const present = useIsPresent()
-    if (!present) return null
+    if (!present) {
+        return null
+    }
     return (
         <motion.span
             aria-hidden="true"
@@ -106,9 +118,9 @@ function Selection({ layoutId, reduced }: { layoutId: string; reduced: boolean }
     )
 }
 
-export function TreeView({
+export const TreeView = ({
     nodes,
-    defaultExpandedIds = [],
+    defaultExpandedIds = defaultDefaultExpandedIds,
     expandedIds,
     onExpandedChange,
     onSelect,
@@ -119,14 +131,14 @@ export function TreeView({
     wrapLabels = false,
     animateExpansion = true,
     onEscape
-}: TreeViewProps) {
+}: TreeViewProps) => {
     const reduced = useReducedMotion() ?? false
     const rowReduced = reduced || !animateExpansion
     const selectionLayoutId = `tree-selection-${useId()}`
     const [internalExpanded, setInternalExpanded] = useState(() => new Set(defaultExpandedIds))
     const [focusedId, setFocusedId] = useState<string | null>(nodes[0]?.id ?? null)
     const [internalSelectedId, setSelectedId] = useState<string | null>(null)
-    const selectedId = controlledSelectedId !== undefined ? controlledSelectedId : internalSelectedId
+    const selectedId = controlledSelectedId === undefined ? internalSelectedId : controlledSelectedId
     /** The folder that opened last; its new children fade in one after another, then everything else stays still. */
     const [openedId, setOpenedId] = useState<string | null>(null)
     const refs = useRef(new Map<string, HTMLButtonElement>())
@@ -135,35 +147,45 @@ export function TreeView({
     const focusableId = visible.some(({ node }) => node.id === focusedId) ? focusedId : (visible[0]?.node.id ?? null)
     const openedIndex = visible.findIndex(({ node }) => node.id === openedId)
 
-    function setExpanded(next: Set<string>) {
-        if (!expandedIds) setInternalExpanded(next)
+    const setExpanded = (next: Set<string>) => {
+        if (!expandedIds) {
+            setInternalExpanded(next)
+        }
         onExpandedChange?.([...next])
     }
 
-    function toggle(node: TreeNode) {
-        if (!node.children?.length) return
+    const toggle = (node: TreeNode) => {
+        if (!node.children?.length) {
+            return
+        }
         const next = new Set(expanded)
-        if (next.has(node.id)) next.delete(node.id)
-        else {
+        if (next.has(node.id)) {
+            next.delete(node.id)
+        } else {
             next.add(node.id)
             setOpenedId(node.id)
         }
         setExpanded(next)
     }
 
-    function focus(id: string) {
-        setFocusedId(id)
-        const row = refs.current.get(id)
-        if (row) row.focus()
-        else requestAnimationFrame(() => refs.current.get(id)?.focus())
+    const focus = (idValue: string) => {
+        setFocusedId(idValue)
+        const row = refs.current.get(idValue)
+        if (row) {
+            row.focus()
+        } else {
+            requestAnimationFrame(() => refs.current.get(idValue)?.focus())
+        }
     }
 
-    function select(node: TreeNode) {
-        if (controlledSelectedId === undefined) setSelectedId(node.id)
+    const select = (node: TreeNode) => {
+        if (controlledSelectedId === undefined) {
+            setSelectedId(node.id)
+        }
         onSelect?.(node)
     }
 
-    function onKeyDown(event: KeyboardEvent<HTMLButtonElement>, item: VisibleNode, index: number) {
+    const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, item: VisibleNode, index: number) => {
         const { node } = item
         if (event.key === 'Escape' && onEscape) {
             event.preventDefault()
@@ -188,25 +210,33 @@ export function TreeView({
         }
         if (event.key === 'End') {
             event.preventDefault()
-            focus(visible[visible.length - 1].node.id)
+            focus(required(visible.at(-1)).node.id)
             return
         }
         if (event.key === 'ArrowRight' && node.children?.length) {
             event.preventDefault()
-            if (!expanded.has(node.id)) toggle(node)
-            else if (visible[index + 1]?.parentId === node.id) focus(visible[index + 1].node.id)
+            if (!expanded.has(node.id)) {
+                toggle(node)
+            } else if (visible[index + 1]?.parentId === node.id) {
+                focus(visible[index + 1].node.id)
+            }
             return
         }
         if (event.key === 'ArrowLeft') {
             event.preventDefault()
-            if (node.children?.length && expanded.has(node.id)) toggle(node)
-            else if (item.parentId) focus(item.parentId)
+            if (node.children?.length && expanded.has(node.id)) {
+                toggle(node)
+            } else if (item.parentId) {
+                focus(item.parentId)
+            }
             return
         }
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
             select(node)
-            if (node.children?.length) toggle(node)
+            if (node.children?.length) {
+                toggle(node)
+            }
         }
     }
 
@@ -227,7 +257,7 @@ export function TreeView({
                     const isSelected = selectedId === item.node.id
                     // Only rows that mount use this delay: the space opens in one motion and the new children follow in order.
                     const delay =
-                        openedIndex >= 0 && index > openedIndex
+                        openedIndex !== -1 && index > openedIndex
                             ? Math.min(index - openedIndex - 1, 7) * motionTokens.stagger.item
                             : 0
                     return (
@@ -235,26 +265,26 @@ export function TreeView({
                             key={item.node.id}
                             className={styles.row}
                             layout={rowReduced ? false : 'position'}
-                            initial={rowReduced ? false : { height: 0, opacity: 0, x: -6, overflow: 'hidden' }}
+                            initial={rowReduced ? false : { height: 0, opacity: 0, overflow: 'hidden', x: -6 }}
                             animate={{
                                 height: wrapLabels ? 'auto' : rowHeight,
                                 opacity: 1,
-                                x: 0,
                                 pointerEvents: 'auto',
-                                transitionEnd: { overflow: 'visible' },
                                 transition: rowReduced
                                     ? still
                                     : {
                                           height: motionTokens.spring.smooth,
                                           opacity: { ...fadeIn, delay },
                                           x: { ...motionTokens.spring.smooth, delay }
-                                      }
+                                      },
+                                transitionEnd: { overflow: 'visible' },
+                                x: 0
                             }}
                             exit={
                                 rowReduced
                                     ? {
-                                          opacity: 0,
                                           height: 0,
+                                          opacity: 0,
                                           overflow: 'hidden',
                                           pointerEvents: 'none',
                                           transition: still
@@ -262,22 +292,25 @@ export function TreeView({
                                     : {
                                           height: 0,
                                           opacity: 0,
-                                          x: -4,
                                           overflow: 'hidden',
                                           pointerEvents: 'none',
                                           transition: {
                                               height: motionTokens.spring.smooth,
                                               opacity: fadeOut,
                                               x: fadeOut
-                                          }
+                                          },
+                                          x: -4
                                       }
                             }
                             transition={rowReduced ? still : { layout: motionTokens.spring.smooth }}
                         >
                             <button
                                 ref={(element) => {
-                                    if (element) refs.current.set(item.node.id, element)
-                                    else refs.current.delete(item.node.id)
+                                    if (element) {
+                                        refs.current.set(item.node.id, element)
+                                    } else {
+                                        refs.current.delete(item.node.id)
+                                    }
                                 }}
                                 type="button"
                                 className={styles.item}
@@ -290,12 +323,18 @@ export function TreeView({
                                 aria-selected={isSelected}
                                 tabIndex={focusableId === item.node.id ? 0 : -1}
                                 style={{ '--tree-depth': item.depth } as CSSProperties}
-                                onFocus={() => setFocusedId(item.node.id)}
-                                onKeyDown={(event) => onKeyDown(event, item, index)}
+                                onFocus={() => {
+                                    setFocusedId(item.node.id)
+                                }}
+                                onKeyDown={(event) => {
+                                    onKeyDown(event, item, index)
+                                }}
                                 onClick={() => {
                                     setFocusedId(item.node.id)
                                     select(item.node)
-                                    if (hasChildren) toggle(item.node)
+                                    if (hasChildren) {
+                                        toggle(item.node)
+                                    }
                                 }}
                             >
                                 {isSelected && <Selection layoutId={selectionLayoutId} reduced={reduced} />}
@@ -309,9 +348,9 @@ export function TreeView({
                                             reduced
                                                 ? still
                                                 : {
+                                                      delay,
                                                       duration: motionTokens.duration.standard,
-                                                      ease: [...motionTokens.ease.enter],
-                                                      delay
+                                                      ease: [...motionTokens.ease.enter]
                                                   }
                                         }
                                     />

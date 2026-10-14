@@ -1,22 +1,19 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { HTMLAttributes, ReactNode } from 'react'
-import {
-    AnimatePresence,
-    animate,
-    motion,
-    useIsPresent,
-    useMotionValue,
-    useReducedMotion,
-    type AnimationPlaybackControls,
-    type HTMLMotionProps,
-    type MotionProps,
-    type TargetAndTransition,
-    type Transition
+import { Check, Info as InfoCircle, TriangleAlert as WarningTriangle, X, CircleX as XmarkCircle } from 'lucide-react'
+import type {
+    AnimationPlaybackControls,
+    HTMLMotionProps,
+    MotionProps,
+    TargetAndTransition,
+    Transition
 } from 'motion/react'
-import { Check, Info as InfoCircle, TriangleAlert as WarningTriangle, CircleX as XmarkCircle, X } from 'lucide-react'
+import { AnimatePresence, animate, motion, useIsPresent, useMotionValue, useReducedMotion } from 'motion/react'
+import type { HTMLAttributes, ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './alert.module.css'
 
 export type AlertTone = 'info' | 'success' | 'warning' | 'danger'
@@ -31,27 +28,27 @@ export interface AlertProps extends HTMLAttributes<HTMLDivElement> {
 }
 type AlertBoxProps = Omit<AlertProps, 'open'> & { reduce: boolean | null; animateIcon?: boolean }
 
-const icons = { info: InfoCircle, success: Check, warning: WarningTriangle, danger: XmarkCircle }
+const icons = { danger: XmarkCircle, info: InfoCircle, success: Check, warning: WarningTriangle }
 const exitFast: Transition = { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] }
-const textIn: TargetAndTransition = { opacity: 0, y: '0.3em', filter: `blur(${motionTokens.blur.soft}px)` }
+const textIn: TargetAndTransition = { filter: `blur(${motionTokens.blur.soft}px)`, opacity: 0, y: '0.3em' }
 const textOut: TargetAndTransition = {
-    opacity: 0,
-    y: '-0.3em',
     filter: `blur(${motionTokens.blur.subtle}px)`,
-    transition: exitFast
+    opacity: 0,
+    transition: exitFast,
+    y: '-0.3em'
 }
-const iconIn: TargetAndTransition = { opacity: 0, scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }
-const shown: TargetAndTransition = { opacity: 1, y: '0em', scale: 1, filter: 'blur(0px)' }
+const iconIn: TargetAndTransition = { filter: `blur(${motionTokens.blur.subtle}px)`, opacity: 0, scale: 0.6 }
+const shown: TargetAndTransition = { filter: 'blur(0px)', opacity: 1, scale: 1, y: '0em' }
 const fadeOut: TargetAndTransition = { opacity: 0, transition: { duration: motionTokens.duration.instant } }
 
 /** Outgoing copies are hidden from assistive tech while they fade, so the live region reads only the current text. */
-function Swap(props: HTMLMotionProps<'span'>) {
+const Swap = (props: HTMLMotionProps<'span'>) => {
     const present = useIsPresent()
     return <motion.span {...props} aria-hidden={present ? props['aria-hidden'] : true} />
 }
 
 /** Follows its content height. After `morphKey` changes, the height springs from the old size to the new one and then returns to auto, so passive reflows (a resize, a font swap) follow instantly. It clips only while moving, so focus rings stay visible at rest. */
-function HeightFrame({
+const HeightFrame = ({
     className,
     reduce,
     morphKey,
@@ -61,7 +58,7 @@ function HeightFrame({
     reduce: boolean | null
     morphKey: string
     children: ReactNode
-}) {
+}) => {
     const frame = useRef<HTMLDivElement>(null)
     const content = useRef<HTMLDivElement>(null)
     const height = useMotionValue<number | 'auto'>('auto')
@@ -71,15 +68,21 @@ function HeightFrame({
     }, [morphKey])
     useEffect(() => {
         const node = content.current
-        if (!node || typeof ResizeObserver === 'undefined') return
+        if (!node || typeof ResizeObserver === 'undefined') {
+            return
+        }
         let last: number | undefined
         let controls: AnimationPlaybackControls | undefined
         const settle = () => {
             height.jump('auto')
-            if (frame.current) Object.assign(frame.current.style, { overflow: '', height: 'auto' })
+            if (frame.current) {
+                Object.assign(frame.current.style, { height: 'auto', overflow: '' })
+            }
         }
         const observer = new ResizeObserver(([entry]) => {
-            if (!entry) return
+            if (!entry) {
+                return
+            }
             const next = entry.borderBoxSize?.[0]?.blockSize ?? node.offsetHeight
             const current = height.get()
             const from = typeof current === 'number' ? current : last
@@ -90,7 +93,9 @@ function HeightFrame({
                 return
             }
             // Pin the old height before this frame paints, then spring to the new one.
-            if (frame.current) Object.assign(frame.current.style, { overflow: 'hidden', height: `${from}px` })
+            if (frame.current) {
+                Object.assign(frame.current.style, { height: `${from}px`, overflow: 'hidden' })
+            }
             controls = animate(height, [from, next], { ...motionTokens.spring.smooth, onComplete: settle })
         })
         observer.observe(node)
@@ -108,7 +113,7 @@ function HeightFrame({
     )
 }
 
-function AlertBox({
+const AlertBox = ({
     tone = 'info',
     title,
     children,
@@ -117,7 +122,7 @@ function AlertBox({
     onDismiss,
     animateIcon = false,
     ...props
-}: AlertBoxProps) {
+}: AlertBoxProps) => {
     const Icon = icons[tone]
     const text = typeof children === 'string' || typeof children === 'number' ? String(children) : null
     const hasDetails = children !== undefined && children !== null && children !== false && children !== ''
@@ -125,9 +130,9 @@ function AlertBox({
         ? { duration: motionTokens.duration.instant }
         : { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
     const swap: MotionProps = {
-        initial: reduce ? { opacity: 0 } : textIn,
         animate: shown,
         exit: reduce ? fadeOut : textOut,
+        initial: reduce ? { opacity: 0 } : textIn,
         transition: enter
     }
     return (
@@ -190,16 +195,24 @@ function AlertBox({
     )
 }
 
-export function Alert({ open, onDismiss, ...props }: AlertProps) {
+export const Alert = ({ open, onDismiss, ...props }: AlertProps) => {
     const reduce = useReducedMotion()
     const [dismissed, setDismissed] = useState(false)
     const shell = useRef<HTMLDivElement>(null)
     const setClip = (value: string) => {
-        if (shell.current) shell.current.style.overflow = value
+        if (shell.current) {
+            shell.current.style.overflow = value
+        }
     }
-    if (open === undefined && !onDismiss) return <AlertBox {...props} reduce={reduce} />
+    if (open === undefined && !onDismiss) {
+        return <AlertBox {...props} reduce={reduce} />
+    }
     const isOpen = open ?? !dismissed
-    const dismiss = onDismiss && (() => (open === undefined ? setDismissed(true) : onDismiss()))
+    const dismiss =
+        onDismiss &&
+        (() => {
+            open === undefined ? setDismissed(true) : onDismiss()
+        })
     const presence: Transition = reduce
         ? { duration: 0 }
         : {
@@ -216,7 +229,9 @@ export function Alert({ open, onDismiss, ...props }: AlertProps) {
         <AnimatePresence
             initial={false}
             onExitComplete={() => {
-                if (open === undefined) onDismiss?.()
+                if (open === undefined) {
+                    onDismiss?.()
+                }
             }}
         >
             {isOpen && (
@@ -228,8 +243,12 @@ export function Alert({ open, onDismiss, ...props }: AlertProps) {
                     exit={exit}
                     transition={presence}
                     ref={shell}
-                    onAnimationStart={() => setClip('hidden')}
-                    onAnimationComplete={() => setClip('')}
+                    onAnimationStart={() => {
+                        setClip('hidden')
+                    }}
+                    onAnimationComplete={() => {
+                        setClip('')
+                    }}
                 >
                     <AlertBox {...props} reduce={reduce} onDismiss={dismiss} animateIcon />
                 </motion.div>

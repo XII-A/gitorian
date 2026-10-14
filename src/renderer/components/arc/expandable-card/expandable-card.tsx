@@ -1,11 +1,13 @@
 'use client'
 
-import { useId, useLayoutEffect, useRef, useState } from 'react'
-import type { ComponentPropsWithoutRef, CSSProperties, KeyboardEvent, ReactNode } from 'react'
-import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
-import type { Transition, Variants } from 'motion/react'
 import { ChevronDown as NavArrowDown } from 'lucide-react'
+import type { Transition, Variants } from 'motion/react'
+import { animate, AnimatePresence, motion, useMotionValue, useReducedMotion } from 'motion/react'
+import type { ComponentPropsWithoutRef, CSSProperties, KeyboardEvent, ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './expandable-card.module.css'
 
 export interface ExpandableCardProps extends Omit<
@@ -48,52 +50,50 @@ const boxTransition = (expanded: boolean, hold: boolean): Transition =>
     expanded || !hold ? morph : { ...morph, delay: closeHold }
 const contentTransition = (expanded: boolean): Transition =>
     expanded
-        ? { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.standard], delay: 0.12 }
+        ? { delay: 0.12, duration: motionTokens.duration.standard, ease: [...motionTokens.ease.standard] }
         : { duration: 0.1, ease: [...motionTokens.ease.standard] }
 const still: Transition = { duration: 0 }
 
 /** Changed words in the summary rise in; unchanged words hold still. */
 const wordMotion: Variants = {
-    enter: { opacity: 0, y: '.35em', filter: `blur(${motionTokens.blur.soft}px)` },
     center: {
-        opacity: 1,
-        y: 0,
         filter: 'blur(0px)',
-        transition: { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
+        opacity: 1,
+        transition: { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] },
+        y: 0
     },
+    enter: { filter: `blur(${motionTokens.blur.soft}px)`, opacity: 0, y: '.35em' },
     exit: {
-        opacity: 0,
-        y: '-.3em',
         filter: `blur(${motionTokens.blur.subtle}px)`,
-        transition: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] }
+        opacity: 0,
+        transition: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] },
+        y: '-.3em'
     }
 }
 
-function RollingText({ text, reduced }: { text: string; reduced: boolean }) {
-    return (
-        <span className={styles.roll}>
-            <span className={styles.srOnly}>{text}</span>
-            <span aria-hidden="true">
-                <AnimatePresence mode="popLayout" initial={false}>
-                    {text.split(/(\s+)/).map((word, index) => (
-                        <motion.span
-                            key={`${index}:${word}`}
-                            className={styles.word}
-                            variants={wordMotion}
-                            initial={reduced ? false : 'enter'}
-                            animate="center"
-                            exit={reduced ? undefined : 'exit'}
-                        >
-                            {word}
-                        </motion.span>
-                    ))}
-                </AnimatePresence>
-            </span>
+const RollingText = ({ text, reduced }: { text: string; reduced: boolean }) => (
+    <span className={styles.roll}>
+        <span className={styles.srOnly}>{text}</span>
+        <span aria-hidden="true">
+            <AnimatePresence mode="popLayout" initial={false}>
+                {text.split(/(?<group1>\s+)/u).map((word, index) => (
+                    <motion.span
+                        key={`${index}:${word}`}
+                        className={styles.word}
+                        variants={wordMotion}
+                        initial={reduced ? false : 'enter'}
+                        animate="center"
+                        exit={reduced ? undefined : 'exit'}
+                    >
+                        {word}
+                    </motion.span>
+                ))}
+            </AnimatePresence>
         </span>
-    )
-}
+    </span>
+)
 
-export function ExpandableCard({
+export const ExpandableCard = ({
     title,
     description,
     children,
@@ -104,7 +104,7 @@ export function ExpandableCard({
     style,
     onKeyDown,
     ...rest
-}: ExpandableCardProps) {
+}: ExpandableCardProps) => {
     const [expanded, setExpanded] = useState(defaultExpanded)
     const [visited, setVisited] = useState(defaultExpanded)
     const [hold, setHold] = useState(true)
@@ -118,12 +118,18 @@ export function ExpandableCard({
 
     useLayoutEffect(() => {
         const track = trackRef.current
-        if (!track) return
-        const measure = () => setRoom(track.clientWidth)
+        if (!track) {
+            return
+        }
+        const measure = () => {
+            setRoom(track.clientWidth)
+        }
         measure()
         const observer = new ResizeObserver(measure)
         observer.observe(track)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [])
 
     const openCap = expandedWidth ?? width
@@ -137,20 +143,24 @@ export function ExpandableCard({
     const placed = useRef(false)
     const widthTransition = reduceMotion ? still : boxTransition(expanded, hold)
     useLayoutEffect(() => {
-        if (boxWidth === undefined) return
+        if (boxWidth === undefined) {
+            return
+        }
         if (!placed.current || reduceMotion) {
             placed.current = true
             boxWidthValue.jump(boxWidth)
             return
         }
         const controls = animate(boxWidthValue, boxWidth, widthTransition)
-        return () => controls.stop()
+        return () => {
+            controls.stop()
+        }
     }, [boxWidth, boxWidthValue]) // eslint-disable-line react-hooks/exhaustive-deps
 
     // Caps for the first paint, before the room is measured.
     const capVars = {
-        '--expandable-card-width': width ? `${width}px` : undefined,
-        '--expandable-card-expanded-width': openCap ? `${openCap}px` : undefined
+        '--expandable-card-expanded-width': openCap ? `${openCap}px` : undefined,
+        '--expandable-card-width': width ? `${width}px` : undefined
     } as CSSProperties
 
     const toggle = (next: boolean) => {
@@ -158,11 +168,15 @@ export function ExpandableCard({
         setHold(now - lastToggle.current > settleTime)
         lastToggle.current = now
         setExpanded(next)
-        if (next) setVisited(true)
+        if (next) {
+            setVisited(true)
+        }
     }
     const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
         onKeyDown?.(event)
-        if (event.defaultPrevented || event.key !== 'Escape' || !expanded) return
+        if (event.defaultPrevented || event.key !== 'Escape' || !expanded) {
+            return
+        }
         event.preventDefault()
         toggle(false)
         triggerRef.current?.focus()
@@ -184,7 +198,9 @@ export function ExpandableCard({
                     className={styles.trigger}
                     aria-expanded={expanded}
                     aria-controls={panelId}
-                    onClick={() => toggle(!expanded)}
+                    onClick={() => {
+                        toggle(!expanded)
+                    }}
                 >
                     <span className={styles.copy}>
                         <strong>{title}</strong>

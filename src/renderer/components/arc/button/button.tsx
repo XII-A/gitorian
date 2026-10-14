@@ -1,10 +1,12 @@
 'use client'
 
-import { forwardRef, isValidElement, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
-import type { ButtonHTMLAttributes, ReactNode, Ref, RefObject } from 'react'
-import { AnimatePresence, animate, motion, useIsPresent, useMotionValue, useReducedMotion } from 'motion/react'
 import type { TargetAndTransition, Variants } from 'motion/react'
+import { AnimatePresence, animate, motion, useIsPresent, useMotionValue, useReducedMotion } from 'motion/react'
+import type { ButtonHTMLAttributes, ForwardRefRenderFunction, ReactNode, Ref, RefObject } from 'react'
+import { forwardRef, isValidElement, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './button.module.css'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
@@ -27,26 +29,34 @@ const pressVariants: Variants = {
     pressed: (button: RefObject<HTMLButtonElement | null>) => {
         const width = button.current?.offsetWidth ?? 0
         return {
-            scale: width > 220 ? 0.985 : width && width <= 48 ? 0.96 : 0.97,
+            scale: (() => {
+                if (width > 220) {
+                    return 0.985
+                }
+                if (width && width <= 48) {
+                    return 0.96
+                }
+                return 0.97
+            })(),
             transition: { duration: motionTokens.duration.instant, ease: [...motionTokens.ease.standard] }
         }
     }
 }
 
-const rest: TargetAndTransition = { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }
+const rest: TargetAndTransition = { filter: 'blur(0px)', opacity: 1, scale: 1, y: 0 }
 /** Text rises about .3em out of a soft blur; the outgoing label lifts away a little faster. */
-const textIn: TargetAndTransition = { opacity: 0, y: 4, filter: `blur(${motionTokens.blur.soft}px)` }
+const textIn: TargetAndTransition = { filter: `blur(${motionTokens.blur.soft}px)`, opacity: 0, y: 4 }
 const textOut: TargetAndTransition = {
-    opacity: 0,
-    y: -3,
     filter: `blur(${motionTokens.blur.soft}px)`,
-    transition: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] }
+    opacity: 0,
+    transition: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] },
+    y: -3
 }
-const iconIn: TargetAndTransition = { opacity: 0, scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }
+const iconIn: TargetAndTransition = { filter: `blur(${motionTokens.blur.subtle}px)`, opacity: 0, scale: 0.6 }
 const iconOut: TargetAndTransition = {
+    filter: `blur(${motionTokens.blur.subtle}px)`,
     opacity: 0,
     scale: 0.6,
-    filter: `blur(${motionTokens.blur.subtle}px)`,
     transition: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] }
 }
 const fadeIn: TargetAndTransition = { ...rest, opacity: 0 }
@@ -54,35 +64,47 @@ const fadeOut: TargetAndTransition = { opacity: 0, transition: { duration: motio
 /** Scale rides the spring; opacity and blur tween so blur never overshoots below zero. */
 const iconEnter = {
     ...motionTokens.spring.snappy,
-    opacity: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] },
-    filter: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] }
+    filter: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] },
+    opacity: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] }
 } as const
 
 /** A key for the label content: text plus element names, so a new label or icon crossfades while prop-only updates stay in place. */
-function labelKey(node: ReactNode): string {
-    if (node == null || typeof node === 'boolean') return ''
-    if (typeof node === 'string' || typeof node === 'number' || typeof node === 'bigint') return String(node)
-    if (Array.isArray(node)) return node.map(labelKey).join('')
-    if (!isValidElement(node)) return ''
+const labelKey = (node: ReactNode): string => {
+    if (node == null || typeof node === 'boolean') {
+        return ''
+    }
+    if (typeof node === 'string' || typeof node === 'number' || typeof node === 'bigint') {
+        return String(node)
+    }
+    if (Array.isArray(node)) {
+        return node.map(labelKey).join('')
+    }
+    if (!isValidElement(node)) {
+        return ''
+    }
     const type = node.type as string | { displayName?: string; name?: string }
     return `<${typeof type === 'string' ? type : (type?.displayName ?? type?.name ?? '')}>${labelKey((node.props as { children?: ReactNode }).children)}`
 }
 
 /** Springs the slot to the natural width of the incoming label when it changes, so a new label never snaps the button's size.
  *  The outgoing label is popped out of flow at once, so it never holds the old width. Other resizes (a late web font, a parent reflow) jump straight to the new width, so nothing wobbles on first paint. */
-function useMorphWidth(content: RefObject<HTMLElement | null>, key: string, reduced: boolean) {
+const useMorphWidth = (content: RefObject<HTMLElement | null>, key: string, reduced: boolean) => {
     const width = useMotionValue<number | 'auto'>('auto')
-    const lastKey = useRef(key),
-        armedUntil = useRef(0)
+    const lastKey = useRef(key)
+    const armedUntil = useRef(0)
     useLayoutEffect(() => {
-        if (lastKey.current === key) return
+        if (lastKey.current === key) {
+            return
+        }
         lastKey.current = key
         armedUntil.current = performance.now() + 700
     }, [key])
     useEffect(() => {
-        const node = content.current,
-            slot = node?.parentElement
-        if (!node || !slot || typeof ResizeObserver === 'undefined') return
+        const node = content.current
+        const slot = node?.parentElement
+        if (!node || !slot || typeof ResizeObserver === 'undefined') {
+            return
+        }
         let measured = false
         const observer = new ResizeObserver(([entry]) => {
             const next = entry.contentRect.width
@@ -101,12 +123,14 @@ function useMorphWidth(content: RefObject<HTMLElement | null>, key: string, redu
             })
         })
         observer.observe(node)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [content, reduced, width])
     return width
 }
 
-function LabelPhase({
+const LabelPhase = ({
     children,
     icon,
     reduced,
@@ -116,30 +140,48 @@ function LabelPhase({
     icon: boolean
     reduced: boolean
     ref?: Ref<HTMLSpanElement>
-}) {
+}) => {
     const present = useIsPresent()
     return (
         <motion.span
             ref={ref}
             className={styles.labelPhase}
             aria-hidden={present ? undefined : true}
-            initial={reduced ? fadeIn : icon ? iconIn : textIn}
+            initial={(() => {
+                if (reduced) {
+                    return fadeIn
+                }
+                if (icon) {
+                    return iconIn
+                }
+                return textIn
+            })()}
             animate={rest}
-            exit={reduced ? fadeOut : icon ? iconOut : textOut}
-            transition={
-                reduced
-                    ? { duration: motionTokens.duration.instant }
-                    : icon
-                      ? iconEnter
-                      : { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
-            }
+            exit={(() => {
+                if (reduced) {
+                    return fadeOut
+                }
+                if (icon) {
+                    return iconOut
+                }
+                return textOut
+            })()}
+            transition={(() => {
+                if (reduced) {
+                    return { duration: motionTokens.duration.instant }
+                }
+                if (icon) {
+                    return iconEnter
+                }
+                return { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
+            })()}
         >
             {children}
         </motion.span>
     )
 }
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+const ButtonRender: ForwardRefRenderFunction<HTMLButtonElement, ButtonProps> = (
     {
         className,
         variant = 'primary',
@@ -153,7 +195,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         ...props
     },
     ref
-) {
+) => {
     const reduceMotion = useReducedMotion() ?? false
     const buttonRef = useRef<HTMLButtonElement | null>(null)
     const contentRef = useRef<HTMLSpanElement>(null)
@@ -162,8 +204,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     const setRefs = useCallback(
         (node: HTMLButtonElement | null) => {
             buttonRef.current = node
-            if (typeof ref === 'function') ref(node)
-            else if (ref) ref.current = node
+            if (typeof ref === 'function') {
+                ref(node)
+            } else if (ref) {
+                ref.current = node
+            }
         },
         [ref]
     )
@@ -191,7 +236,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
             {...props}
             // Loading keeps the button focusable (a disabled button would drop keyboard focus mid-action) and swallows presses instead.
             aria-disabled={loading || props['aria-disabled'] || undefined}
-            onClick={loading ? (event) => event.preventDefault() : onClick}
+            onClick={
+                loading
+                    ? (event) => {
+                          event.preventDefault()
+                      }
+                    : onClick
+            }
         >
             <AnimatePresence initial={false}>
                 {loading ? (
@@ -220,7 +271,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
                             <AnimatePresence mode="popLayout" initial={false}>
                                 <LabelPhase
                                     key={key}
-                                    icon={!/\S/.test(key.replace(/<[^>]*>/g, ''))}
+                                    icon={!/\S/u.test(key.replaceAll(/<[^>]*>/gu, ''))}
                                     reduced={reduceMotion}
                                 >
                                     {children}
@@ -234,7 +285,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
             )}
         </motion.button>
     )
-})
+}
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(ButtonRender)
 
 Button.displayName = 'Button'
 

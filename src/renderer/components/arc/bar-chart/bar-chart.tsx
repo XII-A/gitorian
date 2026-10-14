@@ -1,16 +1,6 @@
 'use client'
 
-import {
-    useEffect,
-    useId,
-    useLayoutEffect,
-    useMemo,
-    useRef,
-    useState,
-    useSyncExternalStore,
-    type KeyboardEvent,
-    type PointerEvent
-} from 'react'
+import type { MotionValue, Variants } from 'motion/react'
 import {
     AnimatePresence,
     animate,
@@ -21,11 +11,13 @@ import {
     useMotionValue,
     usePresence,
     useReducedMotion,
-    useTransform,
-    type MotionValue,
-    type Variants
+    useTransform
 } from 'motion/react'
+import type { KeyboardEvent, PointerEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './bar-chart.module.css'
 
 export interface BarChartDatum {
@@ -73,11 +65,11 @@ const { spring, duration, ease, blur, stagger } = motionTokens
 const physical = ({ visualDuration, bounce }: { visualDuration: number; bounce: number }, restDelta = 0.01) => {
     const root = (2 * Math.PI) / (visualDuration * 1.2)
     return {
-        type: 'spring' as const,
-        stiffness: root * root,
         damping: 2 * (1 - bounce) * root,
         restDelta,
-        restSpeed: restDelta * 2
+        restSpeed: restDelta * 2,
+        stiffness: root * root,
+        type: 'spring' as const
     }
 }
 const settle = physical(spring.smooth)
@@ -85,10 +77,10 @@ const grow = physical(spring.morph)
 const glide = physical(spring.snappy)
 /** The zoom runs in fractions of the plot, so it rests far below a pixel. */
 const zoom = physical(spring.smooth, 0.00001)
-const collapse = physical({ visualDuration: duration.standard, bounce: 0 })
+const collapse = physical({ bounce: 0, visualDuration: duration.standard })
 const fadeFast = { duration: duration.instant, ease: [...ease.standard] } as const
 /** Starts animations on the next frame, so the render that caused them never swallows a spring's first frames. Returns a cleanup. */
-function soon(start: () => { stop: () => void }) {
+const soon = (start: () => { stop: () => void }) => {
     let controls: { stop: () => void } | null = null
     const run = () => {
         controls = start()
@@ -101,39 +93,46 @@ function soon(start: () => { stop: () => void }) {
 }
 
 /** Room above the top gridline, the share of each slot a bar fills, its widest size, and the radius of its data end. */
-const TOP = 12,
-    FILL = 0.58,
-    MAX_BAR = 28,
-    RADIUS = 4
+const FILL = 0.58
+const MAX_BAR = 28
+const RADIUS = 4
+const TOP = 12
 const grouped = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
+const formatDefaultValue = (value: number) => grouped.format(value)
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
 
 /** Clean gridlines: the smallest step of 1, 2, 3, or 5 that covers the data in four rows or fewer, so shared steps survive a range change. */
-function scaleFor(max: number) {
+const scaleFor = (max: number) => {
     const safe = Math.max(max, 1)
     const magnitude = 10 ** Math.floor(Math.log10(safe / 4))
     for (const factor of [1, 2, 3, 5, 10]) {
-        const step = factor * magnitude,
-            rows = Math.ceil(safe / step)
-        if (rows <= 4) return { top: rows * step, ticks: Array.from({ length: rows + 1 }, (_, row) => row * step) }
+        const step = factor * magnitude
+        const rows = Math.ceil(safe / step)
+        if (rows <= 4) {
+            return { ticks: Array.from({ length: rows + 1 }, (_, row) => row * step), top: rows * step }
+        }
     }
-    return { top: safe, ticks: [0, safe] }
+    return { ticks: [0, safe], top: safe }
 }
 
 /** A column that grows from a square baseline to a softly rounded data end. */
-function barPath(x: number, w: number, h: number, base: number) {
-    if (w <= 0 || h <= 0.01) return `M${x.toFixed(2)} ${base}H${(x + Math.max(w, 0)).toFixed(2)}Z`
-    const r = Math.min(RADIUS, w / 2, h),
-        top = base - h,
-        f = (value: number) => value.toFixed(2)
+const barPath = (x: number, w: number, h: number, base: number) => {
+    if (w <= 0 || h <= 0.01) {
+        return `M${x.toFixed(2)} ${base}H${(x + Math.max(w, 0)).toFixed(2)}Z`
+    }
+    const r = Math.min(RADIUS, w / 2, h)
+    const top = base - h
+    const f = (value: number) => value.toFixed(2)
     return `M${f(x)} ${base}V${f(top + r)}A${f(r)} ${f(r)} 0 0 1 ${f(x + r)} ${f(top)}H${f(x + w - r)}A${f(r)} ${f(r)} 0 0 1 ${f(x + w)} ${f(top + r)}V${base}Z`
 }
 
 /** Slots count back from the latest bar, so the newest day stays pinned right while a longer range zooms out to the left. */
-function usePlace(place: number, reduced: boolean) {
+const usePlace = (place: number, reduced: boolean) => {
     const value = useMotionValue(place)
     useEffect(() => {
-        if (value.get() === place) return
+        if (value.get() === place) {
+            return
+        }
         if (reduced) {
             value.jump(place)
             return
@@ -149,14 +148,14 @@ interface Frame {
 }
 const centerOf = ({ width, unit }: Frame, place: number) => width.get() - (place + 0.5) * width.get() * unit.get()
 
-function Bar({
+const Bar = ({
     id,
     place,
     value,
     delay,
     shown,
     active,
-    frame,
+    frame: frameValue,
     scale,
     height,
     reduced
@@ -171,7 +170,7 @@ function Bar({
     scale: MotionValue<number>
     height: number
     reduced: boolean
-}) {
+}) => {
     const [isPresent, safeToRemove] = usePresence()
     const amount = useMotionValue(0)
     const slot = usePlace(place, reduced)
@@ -184,13 +183,17 @@ function Bar({
 
     // A bar grows once it is seen, each a beat after its neighbour; later values settle without a delay.
     useEffect(() => {
-        if (!isPresent) return
+        if (!isPresent) {
+            return
+        }
         if (reduced) {
             amount.jump(value)
             grown.current = true
             return
         }
-        if (!shown) return
+        if (!shown) {
+            return
+        }
         const first = !grown.current
         grown.current = true
         return soon(() => animate(amount, value, first ? { ...grow, delay: firstDelay } : settle))
@@ -198,7 +201,9 @@ function Bar({
 
     // A leaving bar sinks into the baseline, faster than a bar grows, while the zoom carries it out of the plot.
     useEffect(() => {
-        if (isPresent) return
+        if (isPresent) {
+            return
+        }
         if (reduced) {
             remove.current?.()
             return
@@ -207,22 +212,23 @@ function Bar({
     }, [amount, isPresent, reduced])
 
     const d = useTransform(() => {
-        const w = frame.width.get() * frame.unit.get(),
-            size = Math.min(w * FILL, MAX_BAR),
-            center = centerOf(frame, slot.get())
+        const w = frameValue.width.get() * frameValue.unit.get()
+        const size = Math.min(w * FILL, MAX_BAR)
+        const center = centerOf(frameValue, slot.get())
         return barPath(center - size / 2, size, (amount.get() / scale.get()) * (height - TOP), height)
     })
     return <motion.path className={styles.bar} data-key={id} data-active={active || undefined} d={d} />
 }
 
 /** A value on the axis: its gridline and label ride the scale, so a taller range slides them down while new rows fade in above. */
-function useRowY(value: number, scale: MotionValue<number>, height: number) {
-    return useTransform(() => Math.round(height - (value / scale.get()) * (height - TOP)) + 0.5)
-}
+const useRowY = (value: number, scale: MotionValue<number>, height: number) =>
+    useTransform(() => Math.round(height - (value / scale.get()) * (height - TOP)) + 0.5)
 
-function Gridline({ value, scale, height }: { value: number; scale: MotionValue<number>; height: number }) {
+const Gridline = ({ value, scale, height }: { value: number; scale: MotionValue<number>; height: number }) => {
     const y = useRowY(value, scale, height)
-    if (value === 0) return null
+    if (value === 0) {
+        return null
+    }
     return (
         <motion.line
             className={styles.grid}
@@ -238,7 +244,7 @@ function Gridline({ value, scale, height }: { value: number; scale: MotionValue<
     )
 }
 
-function TickLabel({
+const TickLabel = ({
     value,
     scale,
     height,
@@ -250,7 +256,7 @@ function TickLabel({
     height: number
     avoid: MotionValue<number> | null
     format: (value: number) => string
-}) {
+}) => {
     const y = useRowY(value, scale, height)
     // A tick label makes way where the average label sits beside it.
     const opacity = useTransform(() => (avoid ? clamp((Math.abs(y.get() - avoid.get()) - 10) / 6, 0, 1) : 1))
@@ -270,12 +276,12 @@ function TickLabel({
     )
 }
 
-function AxisLabel({
+const AxisLabel = ({
     text,
     size,
     shift,
     place,
-    frame,
+    frame: frameValue,
     reduced
 }: {
     text: string
@@ -284,10 +290,10 @@ function AxisLabel({
     place: number
     frame: Frame
     reduced: boolean
-}) {
+}) => {
     const slot = usePlace(place, reduced)
     // Centred under its bar and carried by the zoom. A label at either end keeps the nudge that holds it inside the settled plot.
-    const x = useTransform(() => centerOf(frame, slot.get()) - size / 2 + shift)
+    const x = useTransform(() => centerOf(frameValue, slot.get()) - size / 2 + shift)
     return (
         <motion.span
             className={styles.axisLabel}
@@ -303,25 +309,31 @@ function AxisLabel({
 }
 
 /** Axis labels that fit once the range has settled: every label, else every second, third, and so on, counted back from the latest so the newest date always shows and spacing stays even. */
-function fittingLabels(data: BarChartDatum[], width: number, sizes: Record<string, number>) {
+const fittingLabels = (data: BarChartDatum[], width: number, sizes: Record<string, number>) => {
     const fitting = new Map<string, number>()
-    if (!width) return fitting
+    if (!width) {
+        return fitting
+    }
     const count = Math.max(1, data.length)
     const labels = data
         .flatMap((item, index) => {
             const size = item.axisLabel ? sizes[item.axisLabel] : undefined
-            if (size === undefined) return []
+            if (size === undefined) {
+                return []
+            }
             const natural = width - (data.length - 1 - index + 0.5) * (width / count) - size / 2
-            return [{ key: item.key, size, natural, left: clamp(natural, 0, Math.max(0, width - size)) }]
+            return [{ key: item.key, left: clamp(natural, 0, Math.max(0, width - size)), natural, size }]
         })
-        .reverse()
-    for (let stride = 1; stride <= labels.length; stride++) {
+        .toReversed()
+    for (let stride = 1; stride <= labels.length; stride += 1) {
         const picked = labels.filter((_, rank) => rank % stride === 0)
         if (
             stride === labels.length ||
             picked.every((label, rank) => rank === 0 || label.left + label.size + 10 <= picked[rank - 1].left)
         ) {
-            picked.forEach((label) => fitting.set(label.key, label.left - label.natural))
+            for (const label of picked) {
+                fitting.set(label.key, label.left - label.natural)
+            }
             break
         }
     }
@@ -330,63 +342,68 @@ function fittingLabels(data: BarChartDatum[], width: number, sizes: Record<strin
 
 /** Changed text rises from a soft blur in the direction it moved, and leaves a little faster than it arrives. */
 const rise: Variants = {
-    hidden: (direction: number) => ({ opacity: 0, y: `${0.3 * direction}em`, filter: `blur(${blur.soft}px)` }),
-    shown: {
-        opacity: 1,
-        y: 0,
-        filter: 'blur(0px)',
-        transition: { duration: duration.standard, ease: [...ease.enter] }
-    },
     gone: (direction: number) => ({
-        opacity: 0,
-        y: `${-0.3 * direction}em`,
         filter: `blur(${blur.subtle}px)`,
-        transition: { duration: duration.instant, ease: [...ease.standard] }
-    })
+        opacity: 0,
+        transition: { duration: duration.instant, ease: [...ease.standard] },
+        y: `${-0.3 * direction}em`
+    }),
+    hidden: (direction: number) => ({ filter: `blur(${blur.soft}px)`, opacity: 0, y: `${0.3 * direction}em` }),
+    shown: {
+        filter: 'blur(0px)',
+        opacity: 1,
+        transition: { duration: duration.standard, ease: [...ease.enter] },
+        y: 0
+    }
 }
 const fade: Variants = {
-    hidden: { opacity: 0, y: 0, filter: 'blur(0px)' },
-    shown: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: duration.fast } },
-    gone: { opacity: 0, y: 0, filter: 'blur(0px)', transition: { duration: duration.instant } }
+    gone: { filter: 'blur(0px)', opacity: 0, transition: { duration: duration.instant }, y: 0 },
+    hidden: { filter: 'blur(0px)', opacity: 0, y: 0 },
+    shown: { filter: 'blur(0px)', opacity: 1, transition: { duration: duration.fast }, y: 0 }
 }
 
-function Swap({ text, direction, reduced }: { text: string; direction: number; reduced: boolean }) {
-    return (
-        <span className={styles.swap}>
-            <AnimatePresence mode="popLayout" initial={false} custom={direction}>
-                <motion.span
-                    key={text}
-                    className={styles.swapText}
-                    custom={direction}
-                    variants={reduced ? fade : rise}
-                    initial="hidden"
-                    animate="shown"
-                    exit="gone"
-                >
-                    {text}
-                </motion.span>
-            </AnimatePresence>
-        </span>
-    )
-}
+const Swap = ({ text, direction, reduced }: { text: string; direction: number; reduced: boolean }) => (
+    <span className={styles.swap}>
+        <AnimatePresence mode="popLayout" initial={false} custom={direction}>
+            <motion.span
+                key={text}
+                className={styles.swapText}
+                custom={direction}
+                variants={reduced ? fade : rise}
+                initial="hidden"
+                animate="shown"
+                exit="gone"
+            >
+                {text}
+            </motion.span>
+        </AnimatePresence>
+    </span>
+)
 
 /** A number rolls digit by digit, keyed by place from the right, so unchanged digits hold still. Its width springs to fit, so the unit beside it glides instead of jumping. */
-function Roll({ text, direction, reduced }: { text: string; direction: number; reduced: boolean }) {
+const Roll = ({ text, direction, reduced }: { text: string; direction: number; reduced: boolean }) => {
     const sizer = useRef<HTMLSpanElement>(null)
     const width = useMotionValue<number | 'auto'>('auto')
     useLayoutEffect(() => {
         const node = sizer.current
-        if (!node || typeof ResizeObserver === 'undefined') return
+        if (!node || typeof ResizeObserver === 'undefined') {
+            return
+        }
         let measured: string | null = null
         // Only a new value springs; a late web font or a resize jumps straight to fit.
         const observer = new ResizeObserver(() => {
             const next = node.offsetWidth
-            if (measured !== null && measured !== node.textContent && !reduced) animate(width, next, grow)
-            else width.jump(next)
+            if (measured !== null && measured !== node.textContent && !reduced) {
+                animate(width, next, grow)
+            } else {
+                width.jump(next)
+            }
             measured = node.textContent
         })
         observer.observe(node)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [reduced, width])
     const chars = Array.from(
         new Intl.Segmenter('en-US', { granularity: 'grapheme' }).segment(text),
@@ -435,7 +452,7 @@ const subscribeNothing = () => () => {
     /* Hydration is the only change; there is no external source to unsubscribe from. */
 }
 /** Reduced motion is only known in the browser, so the first client render matches the server before it takes effect. */
-function useReducedMotionSafe() {
+const useReducedMotionSafe = () => {
     const hydrated = useSyncExternalStore(
         subscribeNothing,
         () => true,
@@ -444,7 +461,7 @@ function useReducedMotionSafe() {
     return !!useReducedMotion() && hydrated
 }
 
-export function BarChart({
+export const BarChart = ({
     data,
     label,
     period,
@@ -454,19 +471,19 @@ export function BarChart({
     categoryLabel = 'Day',
     showAverage = true,
     height = 176,
-    formatValue = (value) => grouped.format(value),
+    formatValue = formatDefaultValue,
     compact = false,
     onActiveChange,
     onDatumSelect,
     'aria-describedby': describedBy
-}: BarChartProps) {
+}: BarChartProps) => {
     const reduced = useReducedMotionSafe()
     const figure = useRef<HTMLElement>(null)
     const plot = useRef<HTMLDivElement>(null)
-    const inView = useInView(figure, { once: true, amount: 0.35 })
+    const inView = useInView(figure, { amount: 0.35, once: true })
     const titleId = useId()
-    const count = Math.max(data.length, 1),
-        last = data.length - 1
+    const count = Math.max(data.length, 1)
+    const last = data.length - 1
     const average = data.length ? data.reduce((sum, item) => sum + item.value, 0) / data.length : 0
     const peak = data.reduce((max, item) => Math.max(max, item.value), 0)
     const { top, ticks } = useMemo(() => scaleFor(peak), [peak])
@@ -475,23 +492,23 @@ export function BarChart({
 
     // Bars that join an existing chart grow outward from the ones that stayed; the first reveal runs left to right.
     const [known, setKnown] = useState(() => ({
-        signature,
-        keys: new Set(data.map((item) => item.key)),
+        changes: 0,
         fresh: new Map<string, number>(),
-        changes: 0
+        keys: new Set(data.map((item) => item.key)),
+        signature
     }))
     const [active, setActive] = useState<number | null>(null)
     if (known.signature !== signature) {
         const incoming = data
             .map((item, index) => ({ key: item.key, place: last - index }))
             .filter((item) => !known.keys.has(item.key))
-            .sort((a, b) => a.place - b.place)
+            .toSorted((a, b) => a.place - b.place)
         const step = Math.min(stagger.item, 0.32 / Math.max(1, incoming.length))
         setKnown({
-            signature,
-            keys: new Set(data.map((item) => item.key)),
+            changes: known.changes + 1,
             fresh: new Map(incoming.map((item, rank) => [item.key, rank * step])),
-            changes: known.changes + 1
+            keys: new Set(data.map((item) => item.key)),
+            signature
         })
         setActive(null)
     }
@@ -500,21 +517,30 @@ export function BarChart({
     const scrubbing = index !== null && last >= 0
     const shownValue = scrubbing ? data[index].value : average
     // Headline copy moves the way the data did: a larger value rises from below, a later day arrives from below too.
-    const [trend, setTrend] = useState({ value: shownValue, index, valueWay: 1, indexWay: 1 })
-    if (trend.value !== shownValue || trend.index !== index)
+    const [trend, setTrend] = useState({ index, indexWay: 1, value: shownValue, valueWay: 1 })
+    if (trend.value !== shownValue || trend.index !== index) {
         setTrend({
-            value: shownValue,
             index,
-            valueWay: shownValue === trend.value ? trend.valueWay : shownValue > trend.value ? 1 : -1,
-            indexWay: index === null || trend.index === null ? 1 : Math.sign(index - trend.index) || 1
+            indexWay: index === null || trend.index === null ? 1 : Math.sign(index - trend.index) || 1,
+            value: shownValue,
+            valueWay: (() => {
+                if (shownValue === trend.value) {
+                    return trend.valueWay
+                }
+                if (shownValue > trend.value) {
+                    return 1
+                }
+                return -1
+            })()
         })
+    }
 
     const width = useMotionValue(0)
     const unitShare = useMotionValue(1 / count)
     const scale = useMotionValue(top)
     const mean = useMotionValue(0)
     const cursor = useMotionValue(0)
-    const frame = useMemo(() => ({ width, unit: unitShare }), [width, unitShare])
+    const frameValue = useMemo(() => ({ unit: unitShare, width }), [width, unitShare])
 
     // The chart draws in its own pixels; the width is read before paint and followed on resize. Axis labels wait for it, then thin out where they would collide.
     const [plotWidth, setPlotWidth] = useState(0)
@@ -524,26 +550,32 @@ export function BarChart({
         '\n'
     )
     useLayoutEffect(() => {
-        const node = plot.current,
-            ruler = measure.current
-        if (!node || !ruler) return
+        const node = plot.current
+        const ruler = measure.current
+        if (!node || !ruler) {
+            return
+        }
         const read = () => {
             width.set(node.clientWidth)
             setPlotWidth(node.clientWidth)
             const sizes: Record<string, number> = {}
-            ruler.querySelectorAll<HTMLElement>('[data-text]').forEach((item) => {
+            for (const item of ruler.querySelectorAll<HTMLElement>('[data-text]')) {
                 sizes[item.dataset.text ?? ''] = item.offsetWidth
-            })
+            }
             setLabelSizes((current) =>
                 Object.keys(sizes).every((text) => current[text] === sizes[text]) ? current : sizes
             )
         }
         read()
-        if (typeof ResizeObserver === 'undefined') return
+        if (typeof ResizeObserver === 'undefined') {
+            return
+        }
         const observer = new ResizeObserver(read)
         observer.observe(node)
         observer.observe(ruler)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [labelTexts, width])
     const shownLabels = useMemo(() => fittingLabels(data, plotWidth, labelSizes), [data, plotWidth, labelSizes])
 
@@ -556,7 +588,13 @@ export function BarChart({
         }
         return soon(() => {
             const controls = [animate(unitShare, 1 / count, zoom), animate(scale, top, settle)]
-            return { stop: () => controls.forEach((control) => control.stop()) }
+            return {
+                stop: () => {
+                    for (const control of controls) {
+                        control.stop()
+                    }
+                }
+            }
         })
     }, [count, reduced, scale, top, unitShare])
     // The average rises with the first bars, then springs to each new range.
@@ -566,7 +604,9 @@ export function BarChart({
             mean.jump(average)
             return
         }
-        if (!inView) return
+        if (!inView) {
+            return
+        }
         const first = !meanStarted.current
         meanStarted.current = true
         return soon(() => animate(mean, average, first ? { ...settle, delay: 0.12 } : settle))
@@ -580,20 +620,28 @@ export function BarChart({
             return
         }
         const place = last - index
-        if (reduced || !wasScrubbing.current) cursor.jump(place)
+        if (reduced || !wasScrubbing.current) {
+            cursor.jump(place)
+        }
         wasScrubbing.current = true
-        if (reduced) return
+        if (reduced) {
+            return
+        }
         const controls = animate(cursor, place, glide)
-        return () => controls.stop()
+        return () => {
+            controls.stop()
+        }
     }, [cursor, index, last, reduced])
 
-    const cursorX = useTransform(() => Math.round(centerOf(frame, cursor.get())) + 0.5)
+    const cursorX = useTransform(() => Math.round(centerOf(frameValue, cursor.get())) + 0.5)
     const meanY = useTransform(() => Math.round(height - (mean.get() / scale.get()) * (height - TOP)) + 0.5)
     const meanText = useTransform(() => `Avg ${formatValue(Math.round(mean.get()))}`)
 
     const pointAt = (clientX: number) => {
         const rect = plot.current?.getBoundingClientRect()
-        if (!rect?.width) return last
+        if (!rect?.width) {
+            return last
+        }
         const place = Math.floor(((rect.right - clientX) / rect.width) * count)
         return clamp(last - place, 0, last)
     }
@@ -611,35 +659,45 @@ export function BarChart({
             setActive(null)
             return
         }
-        const from = index ?? last + 1,
-            page = Math.min(7, count)
+        const from = index ?? last + 1
+        const page = Math.min(7, count)
         const next = (
             {
-                ArrowLeft: from - 1,
                 ArrowDown: from - 1,
+                ArrowLeft: from - 1,
                 ArrowRight: index === null ? last : from + 1,
                 ArrowUp: index === null ? last : from + 1,
-                PageDown: from - page,
-                PageUp: from + page,
+                End: last,
                 Home: 0,
-                End: last
+                PageDown: from - page,
+                PageUp: from + page
             } as Record<string, number>
         )[event.key]
-        if (next === undefined || last < 0) return
+        if (next === undefined || last < 0) {
+            return
+        }
         event.preventDefault()
         setActive(clamp(next, 0, last))
     }
     const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-        if (event.pointerType !== 'mouse') event.currentTarget.setPointerCapture?.(event.pointerId)
+        if (event.pointerType !== 'mouse') {
+            event.currentTarget.setPointerCapture?.(event.pointerId)
+        }
         setActive(pointAt(event.clientX))
     }
     const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-        if (event.pointerType === 'mouse' || event.buttons) setActive(pointAt(event.clientX))
+        if (event.pointerType === 'mouse' || event.buttons) {
+            setActive(pointAt(event.clientX))
+        }
     }
     const release = (event: PointerEvent<HTMLDivElement>) => {
         const datum = data[pointAt(event.clientX)]
-        if (datum) onDatumSelect?.(datum)
-        if (event.pointerType !== 'mouse') setActive(null)
+        if (datum) {
+            onDatumSelect?.(datum)
+        }
+        if (event.pointerType !== 'mouse') {
+            setActive(null)
+        }
     }
 
     const scrubbed = scrubbing ? data[index] : null
@@ -715,7 +773,7 @@ export function BarChart({
                                     delay={known.fresh.get(item.key) ?? at * revealStep}
                                     shown={shown}
                                     active={index === at}
-                                    frame={frame}
+                                    frame={frameValue}
                                     scale={scale}
                                     height={height}
                                     reduced={reduced}
@@ -732,7 +790,7 @@ export function BarChart({
                                 y2={meanY}
                                 initial={false}
                                 animate={{ opacity: shown ? 1 : 0 }}
-                                transition={reduced ? { duration: 0 } : { duration: duration.standard, delay: 0.12 }}
+                                transition={reduced ? { duration: 0 } : { delay: 0.12, duration: duration.standard }}
                             />
                         )}
                     </svg>
@@ -756,7 +814,7 @@ export function BarChart({
                             style={{ y: meanY }}
                             initial={false}
                             animate={{ opacity: shown ? 1 : 0 }}
-                            transition={reduced ? { duration: 0 } : { duration: duration.standard, delay: 0.12 }}
+                            transition={reduced ? { duration: 0 } : { delay: 0.12, duration: duration.standard }}
                         >
                             <motion.span className={styles.tickText}>{meanText}</motion.span>
                         </motion.span>
@@ -772,7 +830,7 @@ export function BarChart({
                                     size={labelSizes[item.axisLabel] ?? 0}
                                     shift={shownLabels.get(item.key) ?? 0}
                                     place={last - at}
-                                    frame={frame}
+                                    frame={frameValue}
                                     reduced={reduced}
                                 />
                             ) : null
@@ -804,15 +862,22 @@ export function BarChart({
                     onPointerDown={onPointerDown}
                     onPointerMove={onPointerMove}
                     onPointerUp={release}
-                    onPointerCancel={() => setActive(null)}
+                    onPointerCancel={() => {
+                        setActive(null)
+                    }}
                     onPointerLeave={(event) => {
-                        if (event.pointerType === 'mouse') setActive(null)
+                        if (event.pointerType === 'mouse') {
+                            setActive(null)
+                        }
                     }}
                     onKeyDown={onKeyDown}
-                    onBlur={() => setActive(null)}
+                    onBlur={() => {
+                        setActive(null)
+                    }}
                     onFocus={(event) => {
-                        if (event.currentTarget.matches(':focus-visible') && last >= 0)
+                        if (event.currentTarget.matches(':focus-visible') && last >= 0) {
                             setActive((current) => current ?? last)
+                        }
                     }}
                 />
             </div>

@@ -1,15 +1,12 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react'
-import {
-    AnimatePresence,
-    animate,
-    motion,
-    useMotionValue,
-    useReducedMotion,
-    type AnimationPlaybackControls
-} from 'motion/react'
+import type { AnimationPlaybackControls } from 'motion/react'
+import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
+import type { CSSProperties, ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './skeleton.module.css'
 
 export interface SkeletonProps {
@@ -24,7 +21,7 @@ export interface SkeletonProps {
 }
 
 /** Follows its content height. After `morphKey` changes, the height springs from the old size to the new one and then returns to auto, so passive reflows (a resize, a font swap) follow instantly. It clips only while moving, so focus rings stay visible at rest. */
-function HeightFrame({
+const HeightFrame = ({
     className,
     busy,
     reduce,
@@ -34,7 +31,7 @@ function HeightFrame({
     busy: boolean
     reduce: boolean | null
     children: ReactNode
-}) {
+}) => {
     const frame = useRef<HTMLDivElement>(null)
     const content = useRef<HTMLDivElement>(null)
     const height = useMotionValue<number | 'auto'>('auto')
@@ -44,15 +41,21 @@ function HeightFrame({
     }, [busy])
     useEffect(() => {
         const node = content.current
-        if (!node || typeof ResizeObserver === 'undefined') return
+        if (!node || typeof ResizeObserver === 'undefined') {
+            return
+        }
         let last: number | undefined
         let controls: AnimationPlaybackControls | undefined
         const settle = () => {
             height.jump('auto')
-            if (frame.current) Object.assign(frame.current.style, { overflow: '', height: 'auto' })
+            if (frame.current) {
+                Object.assign(frame.current.style, { height: 'auto', overflow: '' })
+            }
         }
         const observer = new ResizeObserver(([entry]) => {
-            if (!entry) return
+            if (!entry) {
+                return
+            }
             const next = entry.borderBoxSize?.[0]?.blockSize ?? node.offsetHeight
             const current = height.get()
             const from = typeof current === 'number' ? current : last
@@ -63,7 +66,9 @@ function HeightFrame({
                 return
             }
             // Pin the old height before this frame paints, then spring to the new one.
-            if (frame.current) Object.assign(frame.current.style, { overflow: 'hidden', height: `${from}px` })
+            if (frame.current) {
+                Object.assign(frame.current.style, { height: `${from}px`, overflow: 'hidden' })
+            }
             controls = animate(height, [from, next], { ...motionTokens.spring.smooth, onComplete: settle })
         })
         observer.observe(node)
@@ -81,14 +86,14 @@ function HeightFrame({
     )
 }
 
-export function Skeleton({
+export const Skeleton = ({
     label = 'Loading content',
     lines = 3,
     avatar = false,
     className,
     children,
     loading = true
-}: SkeletonProps) {
+}: SkeletonProps) => {
     const reduce = useReducedMotion()
     const count = Math.min(Math.max(Math.floor(lines), 1), 6)
     // Each block pulses a beat after the one above it, so the wait reads as one calm wave.
@@ -111,7 +116,9 @@ export function Skeleton({
             </span>
         </div>
     )
-    if (children === undefined) return placeholder(className)
+    if (children === undefined) {
+        return placeholder(className)
+    }
     return (
         <HeightFrame className={className} busy={loading} reduce={reduce}>
             <AnimatePresence mode="popLayout" initial={false}>

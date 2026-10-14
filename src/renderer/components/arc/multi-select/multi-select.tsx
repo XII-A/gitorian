@@ -1,13 +1,17 @@
 'use client'
 
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import type { Variants } from 'motion/react'
 import { ChevronDown, X } from 'lucide-react'
+import type { Variants } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+
+import { motionTokens } from '../lib/motion-tokens'
 import { Popover, PopoverContent, PopoverTrigger } from '../popover/popover'
 import { ScrollArea } from '../scroll-area/scroll-area'
-import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './multi-select.module.css'
+
+const defaultDefaultValue: never[] = []
 
 export interface MultiSelectOption {
     value: string
@@ -30,117 +34,115 @@ export interface MultiSelectProps {
     wrapValues?: boolean
 }
 
-const enter = motionTokens.ease.enter
-const standard = motionTokens.ease.standard
+const { enter } = motionTokens.ease
+const { standard } = motionTokens.ease
 /** Each chip sits in a slot whose width opens and collapses on a spring, so neighbours travel with it and nothing overlaps. */
 const slot: Variants = {
-    hidden: { width: 0, opacity: 0 },
-    shown: {
-        width: 'auto',
-        opacity: 1,
-        transition: {
-            width: motionTokens.spring.smooth,
-            opacity: { duration: motionTokens.duration.fast, ease: enter }
-        }
-    },
     gone: {
-        width: 0,
         opacity: 0,
         transition: {
-            width: motionTokens.spring.smooth,
-            opacity: { duration: motionTokens.duration.instant, ease: standard }
-        }
+            opacity: { duration: motionTokens.duration.instant, ease: standard },
+            width: motionTokens.spring.smooth
+        },
+        width: 0
+    },
+    hidden: { opacity: 0, width: 0 },
+    shown: {
+        opacity: 1,
+        transition: {
+            opacity: { duration: motionTokens.duration.fast, ease: enter },
+            width: motionTokens.spring.smooth
+        },
+        width: 'auto'
     }
 }
 /** The chip itself grows in from .9 with a soft blur and shrinks back as it leaves. */
 const chip: Variants = {
-    hidden: { scale: 0.9, filter: `blur(${motionTokens.blur.soft}px)` },
-    shown: {
-        scale: 1,
-        filter: 'blur(0px)',
-        transition: { ...motionTokens.spring.snappy, filter: { duration: motionTokens.duration.standard, ease: enter } }
-    },
     gone: {
-        scale: 0.9,
         filter: `blur(${motionTokens.blur.subtle}px)`,
+        scale: 0.9,
         transition: { duration: motionTokens.duration.instant, ease: standard }
+    },
+    hidden: { filter: `blur(${motionTokens.blur.soft}px)`, scale: 0.9 },
+    shown: {
+        filter: 'blur(0px)',
+        scale: 1,
+        transition: { ...motionTokens.spring.snappy, filter: { duration: motionTokens.duration.standard, ease: enter } }
     }
 }
 /** Reduced motion keeps short crossfades; resting states match the moving variants so server and client markup agree. */
 const fade: Variants = {
+    gone: { opacity: 0, transition: { duration: motionTokens.duration.instant } },
     hidden: { opacity: 0 },
-    shown: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: motionTokens.duration.instant } },
-    gone: { opacity: 0, transition: { duration: motionTokens.duration.instant } }
+    shown: { filter: 'blur(0px)', opacity: 1, transition: { duration: motionTokens.duration.instant }, y: 0 }
 }
 const slotFade: Variants = {
+    gone: { opacity: 0, transition: { duration: motionTokens.duration.instant } },
     hidden: { opacity: 0 },
-    shown: { width: 'auto', opacity: 1, transition: { duration: motionTokens.duration.instant } },
-    gone: { opacity: 0, transition: { duration: motionTokens.duration.instant } }
+    shown: { opacity: 1, transition: { duration: motionTokens.duration.instant }, width: 'auto' }
 }
 const chipStill: Variants = {
-    hidden: { scale: 1, filter: 'blur(0px)' },
-    shown: { scale: 1, filter: 'blur(0px)' },
-    gone: { scale: 1, filter: 'blur(0px)' }
+    gone: { filter: 'blur(0px)', scale: 1 },
+    hidden: { filter: 'blur(0px)', scale: 1 },
+    shown: { filter: 'blur(0px)', scale: 1 }
 }
 /** The overflow count rolls: a larger number rises from below, a smaller one drops from above. */
 const roll: Variants = {
-    hidden: (direction: number) => ({
+    gone: (direction: number) => ({
+        filter: `blur(${motionTokens.blur.subtle}px)`,
         opacity: 0,
-        y: `${direction * 0.5}em`,
-        filter: `blur(${motionTokens.blur.subtle}px)`
+        transition: { duration: motionTokens.duration.instant, ease: standard },
+        y: `${direction * -0.5}em`
+    }),
+    hidden: (direction: number) => ({
+        filter: `blur(${motionTokens.blur.subtle}px)`,
+        opacity: 0,
+        y: `${direction * 0.5}em`
     }),
     shown: {
-        opacity: 1,
-        y: 0,
         filter: 'blur(0px)',
-        transition: { duration: motionTokens.duration.standard, ease: enter }
-    },
-    gone: (direction: number) => ({
-        opacity: 0,
-        y: `${direction * -0.5}em`,
-        filter: `blur(${motionTokens.blur.subtle}px)`,
-        transition: { duration: motionTokens.duration.instant, ease: standard }
-    })
+        opacity: 1,
+        transition: { duration: motionTokens.duration.standard, ease: enter },
+        y: 0
+    }
 }
 
 /** A check that draws itself when an option is picked and retracts when it is removed. */
-function CheckMark({ reduce }: { reduce: boolean | null }) {
-    return (
-        <svg
-            className={styles.check}
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-        >
-            <motion.path
-                d="M4 12.5 9 17.5 20 6.5"
-                initial={reduce ? { opacity: 0 } : { pathLength: 0, opacity: 0 }}
-                animate={{ pathLength: 1, opacity: 1 }}
-                exit={reduce ? { opacity: 0 } : { pathLength: 0, opacity: 0 }}
-                transition={
-                    reduce
-                        ? { duration: motionTokens.duration.instant }
-                        : {
-                              pathLength: { duration: motionTokens.duration.standard, ease: enter },
-                              opacity: { duration: motionTokens.duration.instant }
-                          }
-                }
-            />
-        </svg>
-    )
-}
+const CheckMark = ({ reduce }: { reduce: boolean | null }) => (
+    <svg
+        className={styles.check}
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <motion.path
+            d="M4 12.5 9 17.5 20 6.5"
+            initial={reduce ? { opacity: 0 } : { opacity: 0, pathLength: 0 }}
+            animate={{ opacity: 1, pathLength: 1 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, pathLength: 0 }}
+            transition={
+                reduce
+                    ? { duration: motionTokens.duration.instant }
+                    : {
+                          opacity: { duration: motionTokens.duration.instant },
+                          pathLength: { duration: motionTokens.duration.standard, ease: enter }
+                      }
+            }
+        />
+    </svg>
+)
 
-export function MultiSelect({
+export const MultiSelect = ({
     label,
     options,
     value,
-    defaultValue = [],
+    defaultValue = defaultDefaultValue,
     onValueChange,
     placeholder = 'Select options',
     description,
@@ -148,7 +150,7 @@ export function MultiSelect({
     disabled = false,
     className,
     wrapValues = false
-}: MultiSelectProps) {
+}: MultiSelectProps) => {
     const id = useId()
     const labelId = `${id}-label`
     const valueId = `${id}-value`
@@ -159,13 +161,15 @@ export function MultiSelect({
     const selected = value ?? internal
     const selectedSet = useMemo(() => new Set(selected), [selected])
     const labelFor = (item: string) => options.find((option) => option.value === item)?.label ?? item
-    const visible = selected.slice(0, maxVisible).map((item) => ({ value: item, label: labelFor(item) }))
+    const visible = selected.slice(0, maxVisible).map((item) => ({ label: labelFor(item), value: item }))
     const remaining = Math.max(0, selected.length - visible.length)
     // A closed menu forgets its highlight, so the next open starts clean instead of on a stale hovered row.
     const [wasOpen, setWasOpen] = useState(open)
     if (wasOpen !== open) {
         setWasOpen(open)
-        if (!open) setActiveIndex(-1)
+        if (!open) {
+            setActiveIndex(-1)
+        }
     }
     const [previousRemaining, setPreviousRemaining] = useState(remaining)
     const [countDirection, setCountDirection] = useState(1)
@@ -175,11 +179,15 @@ export function MultiSelect({
     }
 
     const update = (next: string[]) => {
-        if (value === undefined) setInternal(next)
+        if (value === undefined) {
+            setInternal(next)
+        }
         onValueChange?.(next)
     }
     const toggle = (option: MultiSelectOption) => {
-        if (disabled || option.disabled) return
+        if (disabled || option.disabled) {
+            return
+        }
         update(
             selectedSet.has(option.value)
                 ? selected.filter((item) => item !== option.value)
@@ -192,7 +200,9 @@ export function MultiSelect({
     }
     const enabled = options.map((option, index) => (option.disabled ? -1 : index)).filter((index) => index >= 0)
     const onKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-        if (disabled) return
+        if (disabled) {
+            return
+        }
         if ((event.key === 'Enter' || event.key === ' ') && open && activeIndex >= 0) {
             event.preventDefault()
             toggle(options[activeIndex])
@@ -212,21 +222,26 @@ export function MultiSelect({
             event.preventDefault()
             setOpen(true)
             const current = enabled.indexOf(activeIndex)
-            const next =
-                current < 0
-                    ? event.key === 'ArrowDown'
-                        ? 0
-                        : enabled.length - 1
-                    : event.key === 'ArrowDown'
-                      ? (current + 1) % enabled.length
-                      : (current - 1 + enabled.length) % enabled.length
+            const next = (() => {
+                if (current === -1) {
+                    if (event.key === 'ArrowDown') {
+                        return 0
+                    }
+                    return enabled.length - 1
+                }
+                if (event.key === 'ArrowDown') {
+                    return (current + 1) % enabled.length
+                }
+                return (current - 1 + enabled.length) % enabled.length
+            })()
             setActiveIndex(enabled[next])
         }
     }
     const reduce = useReducedMotion()
     useEffect(() => {
-        if (open && activeIndex >= 0)
+        if (open && activeIndex >= 0) {
             document.getElementById(`${id}-option-${activeIndex}`)?.scrollIntoView({ block: 'nearest' })
+        }
     }, [open, activeIndex, id])
 
     return (
@@ -331,12 +346,12 @@ export function MultiSelect({
                                 initial={
                                     reduce
                                         ? { opacity: 0 }
-                                        : { opacity: 0, scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }
+                                        : { filter: `blur(${motionTokens.blur.subtle}px)`, opacity: 0, scale: 0.6 }
                                 }
                                 animate={{
+                                    filter: 'blur(0px)',
                                     opacity: 1,
                                     scale: 1,
-                                    filter: 'blur(0px)',
                                     transition: reduce
                                         ? { duration: motionTokens.duration.instant }
                                         : {
@@ -346,7 +361,7 @@ export function MultiSelect({
                                 }}
                                 exit={{
                                     opacity: 0,
-                                    ...(reduce ? {} : { scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }),
+                                    ...(reduce ? {} : { filter: `blur(${motionTokens.blur.subtle}px)`, scale: 0.6 }),
                                     transition: { duration: motionTokens.duration.instant, ease: standard }
                                 }}
                                 whileTap={{
@@ -360,28 +375,34 @@ export function MultiSelect({
                     </AnimatePresence>
                     <AnimatePresence initial={false}>
                         {open && (
-                            <PopoverContent asChild forceMount onOpenAutoFocus={(event) => event.preventDefault()}>
+                            <PopoverContent
+                                asChild
+                                forceMount
+                                onOpenAutoFocus={(event) => {
+                                    event.preventDefault()
+                                }}
+                            >
                                 <motion.div
                                     id={`${id}-listbox`}
                                     className={styles.menu}
                                     role="listbox"
                                     aria-label={label}
                                     aria-multiselectable="true"
-                                    initial={reduce ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
+                                    initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -6 }}
                                     animate={{
                                         opacity: 1,
-                                        y: 0,
                                         scale: 1,
                                         transition: reduce
                                             ? { duration: motionTokens.duration.instant }
                                             : {
                                                   ...motionTokens.spring.snappy,
                                                   opacity: { duration: motionTokens.duration.fast, ease: enter }
-                                              }
+                                              },
+                                        y: 0
                                     }}
                                     exit={{
                                         opacity: 0,
-                                        ...(reduce ? {} : { y: -4, scale: 0.98 }),
+                                        ...(reduce ? {} : { scale: 0.98, y: -4 }),
                                         transition: { duration: motionTokens.duration.instant, ease: standard }
                                     }}
                                 >
@@ -402,9 +423,13 @@ export function MultiSelect({
                                                 data-active={activeIndex === index}
                                                 disabled={option.disabled}
                                                 onPointerMove={() => {
-                                                    if (activeIndex !== index) setActiveIndex(index)
+                                                    if (activeIndex !== index) {
+                                                        setActiveIndex(index)
+                                                    }
                                                 }}
-                                                onClick={() => toggle(option)}
+                                                onClick={() => {
+                                                    toggle(option)
+                                                }}
                                             >
                                                 <span>{option.label}</span>
                                                 <AnimatePresence initial={false}>

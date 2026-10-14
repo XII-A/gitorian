@@ -1,16 +1,7 @@
 'use client'
 
-import {
-    createContext,
-    useCallback,
-    useContext,
-    useEffect,
-    useLayoutEffect,
-    useRef,
-    useState,
-    useSyncExternalStore
-} from 'react'
-import type { FocusEvent, KeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import { CircleCheck, CircleX, Info, TriangleAlert, X } from 'lucide-react'
+import type { HTMLMotionProps, MotionProps, TargetAndTransition, Transition } from 'motion/react'
 import {
     AnimatePresence,
     animate,
@@ -21,9 +12,20 @@ import {
     useReducedMotion,
     useTransform
 } from 'motion/react'
-import type { HTMLMotionProps, MotionProps, TargetAndTransition, Transition } from 'motion/react'
-import { CircleCheck, CircleX, Info, TriangleAlert, X } from 'lucide-react'
+import type { FocusEvent, KeyboardEvent, MouseEvent, ReactNode, PointerEvent as ReactPointerEvent } from 'react'
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+    useSyncExternalStore
+} from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './toast-stack.module.css'
 
 export type ToastType = 'success' | 'info' | 'warning' | 'error' | 'loading'
@@ -115,13 +117,13 @@ const BORDER = 2
 const SWIPE_FADE = 280
 const EMPTY: ToastRecord[] = []
 const typeLabels: Record<ToastType, string> = {
-    success: 'Success',
-    info: 'Info',
-    warning: 'Warning',
     error: 'Error',
-    loading: 'In progress'
+    info: 'Info',
+    loading: 'In progress',
+    success: 'Success',
+    warning: 'Warning'
 }
-const icons = { success: CircleCheck, info: Info, warning: TriangleAlert, error: CircleX }
+const icons = { error: CircleX, info: Info, success: CircleCheck, warning: TriangleAlert }
 
 const standard = [...motionTokens.ease.standard] as [number, number, number, number]
 const enterEase = [...motionTokens.ease.enter] as [number, number, number, number]
@@ -129,44 +131,54 @@ const fade: Transition = { duration: motionTokens.duration.fast, ease: standard 
 const enterFade: Transition = { duration: motionTokens.duration.standard, ease: enterEase }
 const reducedFade: Transition = { duration: motionTokens.duration.fast, ease: standard }
 const exitFast: Transition = { duration: motionTokens.duration.fast, ease: standard }
-const textIn: TargetAndTransition = { opacity: 0, y: '0.3em', filter: `blur(${motionTokens.blur.soft}px)` }
+const textIn: TargetAndTransition = { filter: `blur(${motionTokens.blur.soft}px)`, opacity: 0, y: '0.3em' }
 const textOut: TargetAndTransition = {
-    opacity: 0,
-    y: '-0.3em',
     filter: `blur(${motionTokens.blur.subtle}px)`,
-    transition: exitFast
+    opacity: 0,
+    transition: exitFast,
+    y: '-0.3em'
 }
-const iconIn: TargetAndTransition = { opacity: 0, scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }
-const shown: TargetAndTransition = { opacity: 1, y: '0em', scale: 1, filter: 'blur(0px)' }
+const iconIn: TargetAndTransition = { filter: `blur(${motionTokens.blur.subtle}px)`, opacity: 0, scale: 0.6 }
+const shown: TargetAndTransition = { filter: 'blur(0px)', opacity: 1, scale: 1, y: '0em' }
 const fadeOnly: MotionProps = {
-    initial: { opacity: 0 },
     animate: { opacity: 1 },
     exit: { opacity: 0, transition: reducedFade },
+    initial: { opacity: 0 },
     transition: reducedFade
 }
 const textSwap: MotionProps = {
-    initial: textIn,
     animate: shown,
     exit: textOut,
+    initial: textIn,
     transition: { duration: motionTokens.duration.standard, ease: enterEase }
 }
 /** Scale rides the spring; opacity and blur tween so the blur never overshoots below zero. */
 const iconSwap: MotionProps = {
-    initial: iconIn,
     animate: shown,
     exit: { ...iconIn, transition: exitFast },
-    transition: { ...motionTokens.spring.snappy, opacity: fade, filter: fade }
+    initial: iconIn,
+    transition: { ...motionTokens.spring.snappy, filter: fade, opacity: fade }
 }
 
 const durationFor = (type: ToastType, base: number) =>
-    type === 'loading' ? Infinity : type === 'warning' || type === 'error' ? base * 1.6 : base
+    (() => {
+        if (type === 'loading') {
+            return Infinity
+        }
+        if (type === 'warning' || type === 'error') {
+            return base * 1.6
+        }
+        return base
+    })()
 /** Where a release at this velocity would come to rest, using a fast scroll deceleration. */
 const project = (velocity: number) => ((velocity / 1000) * 0.99) / (1 - 0.99)
 /** Resistance past an edge: the pull keeps moving, but less and less, the way a scroll view overscrolls. */
 const rubberBand = (distance: number, dimension: number) => (1 - 1 / ((distance * 0.55) / dimension + 1)) * dimension
 const subscribeVisibility = (listener: () => void) => {
     document.addEventListener('visibilitychange', listener)
-    return () => document.removeEventListener('visibilitychange', listener)
+    return () => {
+        document.removeEventListener('visibilitychange', listener)
+    }
 }
 const getServerSnapshot = () => EMPTY
 const focusVisible = (element: Element) => {
@@ -181,7 +193,12 @@ const focusVisible = (element: Element) => {
  * Closed, tucked toasts take the front toast's height so their edges line up; open, each takes its own and they stack with a gap.
  * The list is the hover target and is sized to cover the gaps, so moving between open toasts never collapses the stack.
  */
-function layoutStack(toasts: ToastRecord[], heights: Record<string, number>, expanded: boolean, visibleToasts: number) {
+const layoutStack = (
+    toasts: ToastRecord[],
+    heights: Record<string, number>,
+    expanded: boolean,
+    visibleToasts: number
+) => {
     const front = toasts.length ? (heights[toasts[0].id] ?? 0) : 0
     const tops = toasts.reduce<number[]>(
         (sum, item, index) => [...sum, sum[index] + (index < visibleToasts ? (heights[item.id] ?? 0) + GAP : 0)],
@@ -191,40 +208,48 @@ function layoutStack(toasts: ToastRecord[], heights: Record<string, number>, exp
         const visible = index < visibleToasts
         const depth = Math.min(index, visibleToasts)
         return expanded
-            ? { y: -tops[index], scale: 1, height: heights[item.id] ?? 0, opacity: visible ? 1 : 0, content: 1 }
+            ? { content: 1, height: heights[item.id] ?? 0, opacity: visible ? 1 : 0, scale: 1, y: -tops[index] }
             : {
-                  y: -PEEK * depth,
-                  scale: 1 - STEP * depth,
+                  content: index === 0 ? 1 : 0,
                   height: index === 0 ? (heights[item.id] ?? 0) : front,
                   opacity: visible ? 1 : 0,
-                  content: index === 0 ? 1 : 0
+                  scale: 1 - STEP * depth,
+                  y: -PEEK * depth
               }
     })
-    const listHeight = !toasts.length
-        ? 0
-        : expanded
-          ? tops[toasts.length] - GAP
-          : front + PEEK * (Math.min(toasts.length, visibleToasts) - 1)
-    return { targets, listHeight }
+    const listHeight = (() => {
+        if (toasts.length) {
+            if (expanded) {
+                return tops[toasts.length] - GAP
+            }
+            return front + PEEK * (Math.min(toasts.length, visibleToasts) - 1)
+        }
+        return 0
+    })()
+    return { listHeight, targets }
 }
 
-function createToastStore(base: number, limit: number): ToastStore {
+const createToastStore = (base: number, limit: number): ToastStore => {
     let toasts: ToastRecord[] = []
     let seq = 0
     const listeners = new Set<() => void>()
     const commit = (next: ToastRecord[]) => {
         toasts = next
-        listeners.forEach((listener) => listener())
+        for (const listener of listeners) {
+            listener()
+        }
     }
     const update: ToastStackApi['update'] = (id, patch) => {
         const found = toasts.find((item) => item.id === id)
-        if (!found) return
+        if (!found) {
+            return
+        }
         const type = patch.type ?? found.type
         const record: ToastRecord = {
             ...found,
             ...patch,
-            type,
             duration: patch.duration ?? durationFor(type, base),
+            type,
             version: found.version + 1
         }
         commit(toasts.map((item) => (item.id === id ? record : item)))
@@ -238,10 +263,10 @@ function createToastStore(base: number, limit: number): ToastStore {
         seq += 1
         const record: ToastRecord = {
             ...options,
-            id: id ?? `toast-${seq}`,
-            type,
             duration: options.duration ?? durationFor(type, base),
+            id: id ?? `toast-${seq}`,
             seq,
+            type,
             version: 0
         }
         commit([record, ...toasts].slice(0, limit))
@@ -249,21 +274,28 @@ function createToastStore(base: number, limit: number): ToastStore {
     }
     const dismiss: ToastStackApi['dismiss'] = (id) => {
         if (id === undefined) {
-            if (toasts.length) commit([])
+            if (toasts.length) {
+                commit([])
+            }
             return
         }
-        if (toasts.some((item) => item.id === id)) commit(toasts.filter((item) => item.id !== id))
+        if (toasts.some((item) => item.id === id)) {
+            commit(toasts.filter((item) => item.id !== id))
+        }
     }
     const runAction = (id: string) => {
         const found = toasts.find((item) => item.id === id)
-        if (!found?.action) return
+        if (!found?.action) {
+            return
+        }
         found.action.onClick(id)
-        if (toasts.find((item) => item.id === id)?.version === found.version) dismiss(id)
+        if (toasts.find((item) => item.id === id)?.version === found.version) {
+            dismiss(id)
+        }
     }
     return {
-        toast,
-        update,
         dismiss,
+        getSnapshot: () => toasts,
         runAction,
         subscribe: (listener) => {
             listeners.add(listener)
@@ -271,37 +303,40 @@ function createToastStore(base: number, limit: number): ToastStore {
                 listeners.delete(listener)
             }
         },
-        getSnapshot: () => toasts
+        toast,
+        update
     }
 }
 
 const ToastStackContext = createContext<ToastStore | null>(null)
 
-function useStore() {
+const useStore = () => {
     const store = useContext(ToastStackContext)
-    if (!store) throw new Error('Render toast stack consumers inside <ToastStackProvider>.')
+    if (!store) {
+        throw new Error('Render toast stack consumers inside <ToastStackProvider>.')
+    }
     return store
 }
 
 /** Scopes a toast queue to its subtree, so two stacks on one page never share toasts. */
-export function ToastStackProvider({ children, duration = 5000, limit = 12 }: ToastStackProviderProps) {
+export const ToastStackProvider = ({ children, duration = 5000, limit = 12 }: ToastStackProviderProps) => {
     const [store] = useState(() => createToastStore(duration, limit))
     return <ToastStackContext.Provider value={store}>{children}</ToastStackContext.Provider>
 }
 
 /** Shows, updates, and dismisses toasts from anywhere inside the provider. `count` is how many toasts are queued. */
-export function useToastStack(): ToastStackApi & { count: number } {
+export const useToastStack = (): ToastStackApi & { count: number } => {
     const store = useStore()
     const count = useSyncExternalStore(
         store.subscribe,
         () => store.getSnapshot().length,
         () => 0
     )
-    return { toast: store.toast, update: store.update, dismiss: store.dismiss, count }
+    return { count, dismiss: store.dismiss, toast: store.toast, update: store.update }
 }
 
 /** Outgoing copies are hidden from assistive tech while they fade, so the live region reads only the current text. */
-function Swap(props: HTMLMotionProps<'span'>) {
+const Swap = (props: HTMLMotionProps<'span'>) => {
     const present = useIsPresent()
     return <motion.span {...props} aria-hidden={present ? props['aria-hidden'] : true} />
 }
@@ -330,7 +365,7 @@ interface ToastItemProps {
     onHandOff: (leaving: HTMLElement, keyboard: boolean) => void
 }
 
-function ToastItem({
+const ToastItem = ({
     toast,
     target,
     expanded,
@@ -343,7 +378,7 @@ function ToastItem({
     onDragChange,
     onTap,
     onHandOff
-}: ToastItemProps) {
+}: ToastItemProps) => {
     const { id } = toast
     const [isPresent, safeToRemove] = usePresence()
     const itemRef = useRef<HTMLLIElement>(null)
@@ -370,17 +405,27 @@ function ToastItem({
     // Measure before the first paint, so the toast enters from exactly its own height below the edge.
     useLayoutEffect(() => {
         const node = contentRef.current
-        if (!node) return
+        if (!node) {
+            return
+        }
         onMeasure(id, node.offsetHeight + BORDER)
-        if (typeof ResizeObserver === 'undefined') return
-        const observer = new ResizeObserver(() => onMeasure(id, node.offsetHeight + BORDER))
+        if (typeof ResizeObserver === 'undefined') {
+            return
+        }
+        const observer = new ResizeObserver(() => {
+            onMeasure(id, node.offsetHeight + BORDER)
+        })
         observer.observe(node)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [id, onMeasure])
 
     // Every stack change retargets the running springs from wherever they are, so rapid toasts and hover changes never queue.
     useLayoutEffect(() => {
-        if (!isPresent || target.height <= 0) return
+        if (!isPresent || target.height <= 0) {
+            return
+        }
         const entering = applied.current === null
         const morph = !entering && applied.current !== expanded
         applied.current = expanded
@@ -402,7 +447,9 @@ function ToastItem({
         const spring = morph ? motionTokens.spring.morph : motionTokens.spring.smooth
         animate(y, target.y, spring)
         animate(scale, target.scale, spring)
-        if (!entering) animate(height, target.height, spring)
+        if (!entering) {
+            animate(height, target.height, spring)
+        }
         animate(opacity, target.opacity, entering ? enterFade : fade)
         animate(contentOpacity, target.content, fade)
     }, [
@@ -426,9 +473,16 @@ function ToastItem({
         remaining.current = toast.duration
     }, [toast.version, toast.duration])
     useEffect(() => {
-        if (!isPresent || paused || !Number.isFinite(remaining.current) || toast.duration <= 0) return
+        if (!isPresent || paused || !Number.isFinite(remaining.current) || toast.duration <= 0) {
+            return
+        }
         const started = performance.now()
-        const timer = window.setTimeout(() => store.dismiss(id), Math.max(remaining.current, 0))
+        const timer = window.setTimeout(
+            () => {
+                store.dismiss(id)
+            },
+            Math.max(remaining.current, 0)
+        )
         return () => {
             window.clearTimeout(timer)
             remaining.current -= performance.now() - started
@@ -437,14 +491,20 @@ function ToastItem({
 
     // Leaving: hand focus on before the toast turns inert, then fade out quickly. A closed toast sinks toward its edge; a thrown one keeps flying.
     useEffect(() => {
-        if (isPresent) return
+        if (isPresent) {
+            return
+        }
         const node = itemRef.current
         if (node) {
             const active = document.activeElement
-            if (active instanceof HTMLElement && node.contains(active)) onHandOff(node, focusVisible(active))
+            if (active instanceof HTMLElement && node.contains(active)) {
+                onHandOff(node, focusVisible(active))
+            }
             node.setAttribute('inert', '')
         }
-        const done = () => safeToRemove?.()
+        const done = () => {
+            safeToRemove?.()
+        }
         if (reduce) {
             animate(opacity, 0, reducedFade).then(done)
             return
@@ -456,29 +516,35 @@ function ToastItem({
         animate(opacity, 0, { duration: swiped.current ? 0.22 : motionTokens.duration.exit, ease: standard }).then(done)
     }, [isPresent, onHandOff, opacity, reduce, safeToRemove, scale, y])
 
-    function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
         pointerType.current = event.pointerType
         suppressClick.current = false
-        if (event.button !== 0 || !isPresent || (event.target as Element).closest('button, a')) return
+        if (event.button !== 0 || !isPresent || (event.target as Element).closest('button, a')) {
+            return
+        }
         // Catch a toast that is still springing back, from exactly where it is.
         x.stop()
         gesture.current = {
-            pointerId: event.pointerId,
-            startX: event.clientX,
-            startY: event.clientY,
-            origin: x.get(),
             active: false,
-            samples: []
+            origin: x.get(),
+            pointerId: event.pointerId,
+            samples: [],
+            startX: event.clientX,
+            startY: event.clientY
         }
     }
 
-    function onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
-        const current = gesture.current
-        if (!current || current.pointerId !== event.pointerId) return
+    const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const { current } = gesture
+        if (!current || current.pointerId !== event.pointerId) {
+            return
+        }
         if (!current.active) {
-            const dx = event.clientX - current.startX,
-                dy = event.clientY - current.startY
-            if (Math.hypot(dx, dy) < 6) return
+            const dx = event.clientX - current.startX
+            const dy = event.clientY - current.startY
+            if (Math.hypot(dx, dy) < 6) {
+                return
+            }
             if (Math.abs(dy) > Math.abs(dx)) {
                 gesture.current = null
                 return
@@ -496,18 +562,24 @@ function ToastItem({
         // Right follows the finger 1:1; left is the wrong way, so it resists like an overscroll.
         x.set(raw >= 0 ? raw : -rubberBand(-raw, event.currentTarget.offsetWidth))
         current.samples.push({ t: event.timeStamp, x: raw })
-        while (current.samples.length > 2 && event.timeStamp - current.samples[0].t > 100) current.samples.shift()
+        while (current.samples.length > 2 && event.timeStamp - current.samples[0].t > 100) {
+            current.samples.shift()
+        }
     }
 
-    function onPointerEnd(event: ReactPointerEvent<HTMLDivElement>, cancelled: boolean) {
-        const current = gesture.current
-        if (!current || current.pointerId !== event.pointerId) return
+    const onPointerEnd = (event: ReactPointerEvent<HTMLDivElement>, cancelled: boolean) => {
+        const { current } = gesture
+        if (!current || current.pointerId !== event.pointerId) {
+            return
+        }
         gesture.current = null
-        if (!current.active) return
+        if (!current.active) {
+            return
+        }
         delete event.currentTarget.dataset.dragging
         onDragChange(false)
-        const first = current.samples[0],
-            last = current.samples[current.samples.length - 1]
+        const [first] = current.samples
+        const last = current.samples.at(-1)
         // A finger that stopped before lifting carries no throw.
         const velocity =
             cancelled || !first || !last || last.t === first.t || event.timeStamp - last.t > 60
@@ -517,44 +589,56 @@ function ToastItem({
         const offset = x.get()
         if (!cancelled && offset > 0 && velocity > -200 && offset + project(velocity) > width * 0.4) {
             swiped.current = true
-            if (!reduce)
+            if (!reduce) {
                 animate(x, width + 40, {
-                    type: 'spring',
-                    visualDuration: 0.32,
                     bounce: 0,
-                    velocity: Math.max(velocity, 0)
+                    type: 'spring',
+                    velocity: Math.max(velocity, 0),
+                    visualDuration: 0.32
                 })
+            }
             store.dismiss(id)
             return
         }
-        if (reduce) x.jump(0)
-        else animate(x, 0, { ...motionTokens.spring.snappy, velocity: offset < 0 ? velocity * 0.3 : velocity })
+        if (reduce) {
+            x.jump(0)
+        } else {
+            animate(x, 0, { ...motionTokens.spring.snappy, velocity: offset < 0 ? velocity * 0.3 : velocity })
+        }
     }
 
-    function onCardClick(event: MouseEvent<HTMLDivElement>) {
+    const onCardClick = (event: MouseEvent<HTMLDivElement>) => {
         if (suppressClick.current) {
             suppressClick.current = false
             return
         }
         // Touch has no hover, so a tap on the card opens or closes the stack instead.
-        if (pointerType.current !== 'mouse' && !(event.target as Element).closest('button, a')) onTap()
+        if (pointerType.current !== 'mouse' && !(event.target as Element).closest('button, a')) {
+            onTap()
+        }
     }
 
     // An action that updates its toast usually folds itself away; keyboard focus lands on the close button instead of the page.
-    function runAction(event: MouseEvent<HTMLButtonElement>) {
+    const runAction = (event: MouseEvent<HTMLButtonElement>) => {
         const keyboard = focusVisible(event.currentTarget)
         store.runAction(id)
-        if (keyboard && !store.getSnapshot().find((item) => item.id === id)?.action) closeRef.current?.focus()
+        if (keyboard && !store.getSnapshot().find((item) => item.id === id)?.action) {
+            closeRef.current?.focus()
+        }
     }
 
-    function onKeyDown(event: KeyboardEvent<HTMLLIElement>) {
-        if (event.key !== 'Escape') return
+    const onKeyDown = (event: KeyboardEvent<HTMLLIElement>) => {
+        if (event.key !== 'Escape') {
+            return
+        }
         event.stopPropagation()
         store.dismiss(id)
     }
 
     const markMoving = (moving: boolean) => {
-        if (actionRef.current) actionRef.current.dataset.moving = moving ? 'true' : 'false'
+        if (actionRef.current) {
+            actionRef.current.dataset.moving = moving ? 'true' : 'false'
+        }
     }
     const Icon = toast.type === 'loading' ? null : icons[toast.type]
     const swap = reduce ? fadeOnly : textSwap
@@ -563,7 +647,7 @@ function ToastItem({
         <motion.li
             ref={itemRef}
             className={styles.item}
-            style={{ y, scale, height, opacity, zIndex: toast.seq }}
+            style={{ height, opacity, scale, y, zIndex: toast.seq }}
             data-front={front}
             data-expanded={expanded}
             inert={hidden}
@@ -572,11 +656,15 @@ function ToastItem({
             <motion.div
                 ref={cardRef}
                 className={styles.card}
-                style={{ x, opacity: swipeFade }}
+                style={{ opacity: swipeFade, x }}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
-                onPointerUp={(event) => onPointerEnd(event, false)}
-                onPointerCancel={(event) => onPointerEnd(event, true)}
+                onPointerUp={(event) => {
+                    onPointerEnd(event, false)
+                }}
+                onPointerCancel={(event) => {
+                    onPointerEnd(event, true)
+                }}
                 onClick={onCardClick}
             >
                 <motion.div ref={contentRef} className={styles.content} style={{ opacity: contentOpacity }}>
@@ -616,12 +704,16 @@ function ToastItem({
                                 key="action"
                                 ref={actionRef}
                                 className={styles.actionSlot}
-                                initial={reduce ? { opacity: 0 } : { width: 0, opacity: 0 }}
-                                animate={{ width: 'auto', opacity: 1 }}
-                                exit={reduce ? { opacity: 0 } : { width: 0, opacity: 0 }}
-                                transition={reduce ? reducedFade : { width: motionTokens.spring.smooth, opacity: fade }}
-                                onAnimationStart={() => markMoving(true)}
-                                onAnimationComplete={() => markMoving(false)}
+                                initial={reduce ? { opacity: 0 } : { opacity: 0, width: 0 }}
+                                animate={{ opacity: 1, width: 'auto' }}
+                                exit={reduce ? { opacity: 0 } : { opacity: 0, width: 0 }}
+                                transition={reduce ? reducedFade : { opacity: fade, width: motionTokens.spring.smooth }}
+                                onAnimationStart={() => {
+                                    markMoving(true)
+                                }}
+                                onAnimationComplete={() => {
+                                    markMoving(false)
+                                }}
                             >
                                 <button type="button" className={styles.action} onClick={runAction}>
                                     {toast.action.label}
@@ -634,7 +726,9 @@ function ToastItem({
                         type="button"
                         className={styles.close}
                         aria-label="Dismiss notification"
-                        onClick={() => store.dismiss(id)}
+                        onClick={() => {
+                            store.dismiss(id)
+                        }}
                     >
                         <X width={16} height={16} strokeWidth={1.75} aria-hidden="true" />
                     </button>
@@ -644,14 +738,14 @@ function ToastItem({
     )
 }
 
-export function ToastStack({
+export const ToastStack = ({
     label = 'Notifications',
     position = 'bottom-right',
     contained = false,
     visibleToasts = 3,
     hotkey = true,
     className
-}: ToastStackProps) {
+}: ToastStackProps) => {
     const store = useStore()
     const toasts = useSyncExternalStore(store.subscribe, store.getSnapshot, getServerSnapshot)
     const reduce = !!useReducedMotion()
@@ -668,47 +762,57 @@ export function ToastStack({
     const regionRef = useRef<HTMLElement>(null)
     const listRef = useRef<HTMLOListElement>(null)
     const returnFocus = useRef<HTMLElement | null>(null)
-    if (tapped && toasts.length === 0) setTapped(false)
+    if (tapped && toasts.length === 0) {
+        setTapped(false)
+    }
     const expanded = toasts.length > 0 && (hovered || focused || tapped)
     const paused = expanded || dragging || pageHidden
 
-    const measure = useCallback(
-        (id: string, height: number) =>
-            setHeights((current) => (current[id] === height ? current : { ...current, [id]: height })),
-        []
-    )
-    const prune = useCallback(
-        () =>
-            setHeights((current) =>
-                Object.fromEntries(
-                    store
-                        .getSnapshot()
-                        .filter((item) => item.id in current)
-                        .map((item) => [item.id, current[item.id]])
-                )
-            ),
-        [store]
-    )
-    const toggleTap = useCallback(() => setTapped((open) => !open), [])
+    const measure = useCallback((id: string, height: number) => {
+        setHeights((current) => (current[id] === height ? current : { ...current, [id]: height }))
+    }, [])
+    const prune = useCallback(() => {
+        setHeights((current) =>
+            Object.fromEntries(
+                store
+                    .getSnapshot()
+                    .filter((item) => item.id in current)
+                    .map((item) => [item.id, current[item.id]])
+            )
+        )
+    }, [store])
+    const toggleTap = useCallback(() => {
+        setTapped((open) => !open)
+    }, [])
 
     /** Keyboard users land on the next toast; with none left they return to where they were before entering the stack. */
     const handOff = useCallback((leaving: HTMLElement, keyboard: boolean) => {
-        const items = Array.from(listRef.current?.children ?? []) as HTMLElement[]
+        const items = [...(listRef.current?.children ?? [])] as HTMLElement[]
         const at = items.indexOf(leaving)
         const candidates = items.filter((item) => item !== leaving && !item.hasAttribute('inert'))
-        const next = candidates.find((item) => items.indexOf(item) > at) ?? candidates[candidates.length - 1]
+        const next = candidates.find((item) => items.indexOf(item) > at) ?? candidates.at(-1)
         const button = next?.querySelector<HTMLElement>('button')
-        if (keyboard && button) button.focus()
-        else if (keyboard && returnFocus.current?.isConnected) returnFocus.current.focus()
-        else (document.activeElement as HTMLElement | null)?.blur()
+        if (keyboard && button) {
+            button.focus()
+        } else if (keyboard && returnFocus.current?.isConnected) {
+            returnFocus.current.focus()
+        } else {
+            ;(document.activeElement as HTMLElement | null)?.blur()
+        }
     }, [])
 
     useEffect(() => {
-        if (!hotkey) return
+        if (!hotkey) {
+            return
+        }
         const onKey = (event: globalThis.KeyboardEvent) => {
-            if (!event.altKey || event.metaKey || event.ctrlKey || event.code !== 'KeyT') return
+            if (!event.altKey || event.metaKey || event.ctrlKey || event.code !== 'KeyT') {
+                return
+            }
             const target = listRef.current?.querySelector<HTMLElement>(':scope > li:not([inert]) button')
-            if (!target) return
+            if (!target) {
+                return
+            }
             event.preventDefault()
             // Browsers skip the focus ring after a modifier shortcut, so the hotkey asks for it and opens the stack itself.
             const focusOptions: FocusOptions & { focusVisible: boolean } = { focusVisible: true }
@@ -716,31 +820,43 @@ export function ToastStack({
             setFocused(true)
         }
         document.addEventListener('keydown', onKey)
-        return () => document.removeEventListener('keydown', onKey)
+        return () => {
+            document.removeEventListener('keydown', onKey)
+        }
     }, [hotkey])
 
     useEffect(() => {
-        if (!tapped) return
+        if (!tapped) {
+            return
+        }
         const onDown = (event: PointerEvent) => {
-            if (!regionRef.current?.contains(event.target as Node)) setTapped(false)
+            if (!regionRef.current?.contains(event.target as Node)) {
+                setTapped(false)
+            }
         }
         document.addEventListener('pointerdown', onDown)
-        return () => document.removeEventListener('pointerdown', onDown)
+        return () => {
+            document.removeEventListener('pointerdown', onDown)
+        }
     }, [tapped])
 
     const { targets, listHeight } = layoutStack(toasts, heights, expanded, visibleToasts)
 
-    function onFocus(event: FocusEvent<HTMLElement>) {
+    const onFocus = (event: FocusEvent<HTMLElement>) => {
         const from = event.relatedTarget
-        if (!(from instanceof Node) || !event.currentTarget.contains(from))
+        if (!(from instanceof Node) || !event.currentTarget.contains(from)) {
             returnFocus.current = from instanceof HTMLElement ? from : null
+        }
         // Only keyboard focus opens the stack; a mouse click on a button should not pin it open.
-        if (focusVisible(event.target)) setFocused(true)
+        if (focusVisible(event.target)) {
+            setFocused(true)
+        }
     }
 
-    function onBlur(event: FocusEvent<HTMLElement>) {
-        if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget))
+    const onBlur = (event: FocusEvent<HTMLElement>) => {
+        if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) {
             setFocused(false)
+        }
     }
 
     return (
@@ -762,13 +878,19 @@ export function ToastStack({
                 style={{ height: listHeight }}
                 data-expanded={expanded}
                 onPointerEnter={(event) => {
-                    if (event.pointerType === 'mouse') setHovered(true)
+                    if (event.pointerType === 'mouse') {
+                        setHovered(true)
+                    }
                 }}
                 onPointerMove={(event) => {
-                    if (event.pointerType === 'mouse' && !hovered) setHovered(true)
+                    if (event.pointerType === 'mouse' && !hovered) {
+                        setHovered(true)
+                    }
                 }}
                 onPointerLeave={(event) => {
-                    if (event.pointerType === 'mouse') setHovered(false)
+                    if (event.pointerType === 'mouse') {
+                        setHovered(false)
+                    }
                 }}
             >
                 <AnimatePresence onExitComplete={prune}>

@@ -1,8 +1,7 @@
 'use client'
 
-import { useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import type { AnimationPlaybackControls, MotionValue, Variants } from 'motion/react'
 import {
     animate,
     AnimatePresence,
@@ -12,8 +11,11 @@ import {
     useReducedMotion,
     useTransform
 } from 'motion/react'
-import type { AnimationPlaybackControls, MotionValue, Variants } from 'motion/react'
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
+import { useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './calendar.module.css'
 
 export type CalendarDateMatcher = (date: Date) => boolean
@@ -60,7 +62,9 @@ const fromKey = (key: string) => {
 /** Every month shows six weeks, so the grid keeps one height and never jumps while months change. */
 const makeWeeks = (month: Date) => {
     const start = addDays(month, -month.getDay())
-    return Array.from({ length: 6 }, (_, week) => Array.from({ length: 7 }, (_, day) => addDays(start, week * 7 + day)))
+    return Array.from({ length: 6 }, (_, week) =>
+        Array.from({ length: 7 }, (_Value, day) => addDays(start, week * 7 + day))
+    )
 }
 
 /** Today turns over at local midnight; returning to the tab or waking the device reads it again. */
@@ -77,7 +81,9 @@ const subscribeToday = (notify: () => void) => {
         )
     }
     const onVisible = () => {
-        if (document.visibilityState === 'visible') notify()
+        if (document.visibilityState === 'visible') {
+            notify()
+        }
     }
     schedule()
     document.addEventListener('visibilitychange', onVisible)
@@ -96,31 +102,31 @@ const subscribeNothing = () => () => {
 const clientSnapshot = () => true
 const serverSnapshot = () => false
 /** The viewer's local date. Undefined on the server and during hydration, so markup never depends on the server clock or time zone; afterwards it follows the real date across midnight. */
-export function useToday() {
+export const useToday = () => {
     const key = useSyncExternalStore(subscribeToday, readToday, serverToday)
     return useMemo(() => (key ? fromKey(key) : undefined), [key])
 }
 
 const { spring, duration, ease } = motionTokens
 /** Months sit side by side on one strip. Rapid clicks retarget the same spring, so the strip never queues or stacks panes. */
-const stripSpring = { type: 'spring', visualDuration: 0.36, bounce: 0, restDelta: 0.002 } as const
+const stripSpring = { bounce: 0, restDelta: 0.002, type: 'spring', visualDuration: 0.36 } as const
 const monthIndex = (date: Date) => date.getFullYear() * 12 + date.getMonth()
 const fromIndex = (index: number) => new Date(Math.floor(index / 12), ((index % 12) + 12) % 12, 1)
 
 /** The title crossfades in place: the old month leaves toward the side the strip travels to while the new one arrives from the other. */
 const titleSlide: Variants = {
+    center: { opacity: 1, transition: { duration: duration.standard, ease: ease.enter }, x: 0 },
     enter: (direction: number) => ({ opacity: 0, x: direction * 12 }),
-    center: { opacity: 1, x: 0, transition: { duration: duration.standard, ease: ease.enter } },
     exit: (direction: number) => ({
         opacity: 0,
-        x: direction * -12,
-        transition: { duration: 0.14, ease: ease.standard }
+        transition: { duration: 0.14, ease: ease.standard },
+        x: direction * -12
     })
 }
 /** Reduced motion swaps the title in place, with no travel and no blank frame. */
 const titleFade: Variants = {
+    center: { opacity: 1, transition: { duration: 0 }, x: 0 },
     enter: { opacity: 1, x: 0 },
-    center: { opacity: 1, x: 0, transition: { duration: 0 } },
     exit: { opacity: 0, transition: { duration: 0 } }
 }
 
@@ -129,7 +135,7 @@ const titleFade: Variants = {
  * line between any two days, keeps gliding while the strip slides, and retargets mid-flight on a new pick.
  * It only grows in or fades out when the selection enters or leaves this month.
  */
-function SelectionDisc({ cell, reduced }: { cell: number; reduced: boolean }) {
+const SelectionDisc = ({ cell, reduced }: { cell: number; reduced: boolean }) => {
     const visible = cell >= 0
     const col = useMotionValue(visible ? cell % 7 : 0)
     const row = useMotionValue(visible ? Math.floor(cell / 7) : 0)
@@ -145,31 +151,41 @@ function SelectionDisc({ cell, reduced }: { cell: number; reduced: boolean }) {
             hidden.current = true
             const fade = reduced ? { duration: 0 } : { duration: 0.14, ease: ease.standard }
             const controls = [animate(opacity, 0, fade), animate(scale, 0.6, fade)]
-            return () => controls.forEach((control) => control.stop())
+            return () => {
+                for (const control of controls) {
+                    control.stop()
+                }
+            }
         }
-        const nextCol = cell % 7,
-            nextRow = Math.floor(cell / 7)
+        const nextCol = cell % 7
+        const nextRow = Math.floor(cell / 7)
         const controls: AnimationPlaybackControls[] = []
         if (hidden.current || reduced) {
             col.jump(nextCol)
             row.jump(nextRow)
-        } else controls.push(animate(col, nextCol, spring.morph), animate(row, nextRow, spring.morph))
+        } else {
+            controls.push(animate(col, nextCol, spring.morph), animate(row, nextRow, spring.morph))
+        }
         hidden.current = false
         controls.push(
             animate(opacity, 1, reduced ? { duration: 0 } : { duration: duration.fast, ease: ease.enter }),
             animate(scale, 1, reduced ? { duration: 0 } : spring.snappy)
         )
-        return () => controls.forEach((control) => control.stop())
+        return () => {
+            for (const control of controls) {
+                control.stop()
+            }
+        }
     }, [cell, visible, reduced, col, row, opacity, scale])
     return (
-        <motion.span className={styles.highlight} style={{ transform, opacity }} aria-hidden="true">
+        <motion.span className={styles.highlight} style={{ opacity, transform }} aria-hidden="true">
             <span className={styles.highlightFill} />
         </motion.span>
     )
 }
 
 /** One month on the strip. Only the month being navigated to is focusable and exposed; the one sliding past is inert. */
-function MonthPane({
+const MonthPane = ({
     index,
     position,
     present,
@@ -179,13 +195,13 @@ function MonthPane({
     position: MotionValue<number>
     present: boolean
     children: ReactNode
-}) {
+}) => {
     const x = useTransform(position, (value) => `calc(${(index - value) * 100}% + ${(index - value) * 16}px)`)
     const opacity = useTransform(position, (value) => 1 - Math.min(1, Math.abs(index - value)) * 0.6)
     return (
         <motion.div
             className={styles.monthBody}
-            style={{ x, opacity }}
+            style={{ opacity, x }}
             data-present={present || undefined}
             aria-hidden={present ? undefined : true}
             inert={!present}
@@ -195,7 +211,7 @@ function MonthPane({
     )
 }
 
-export function Calendar({
+export const Calendar = ({
     value,
     onChange,
     month: controlledMonth,
@@ -206,7 +222,7 @@ export function Calendar({
     locale = 'en-US',
     className,
     showToday = false
-}: CalendarProps) {
+}: CalendarProps) => {
     const titleId = useId()
     const today = useToday()
     // Motion preference only counts after hydration, so server and client markup agree.
@@ -219,7 +235,9 @@ export function Calendar({
     // Without a value or month the calendar waits for the client's today, then settles on that month once.
     const fallback = value ?? today
     const month = controlledMonth ? monthStart(controlledMonth) : (internalMonth ?? (fallback && monthStart(fallback)))
-    if (!controlledMonth && !internalMonth && month) setInternalMonth(month)
+    if (!controlledMonth && !internalMonth && month) {
+        setInternalMonth(month)
+    }
     const monthTime = month?.getTime()
     const monthKey = month ? dateKey(month) : 'pending'
     // Direction is read from the month itself, so arrows, keys, Today, and a controlled month all travel the same way.
@@ -227,23 +245,37 @@ export function Calendar({
     const [direction, setDirection] = useState(0)
     if (shownMonth !== monthTime) {
         setShownMonth(monthTime)
-        setDirection(shownMonth === undefined || monthTime === undefined ? 0 : monthTime > shownMonth ? 1 : -1)
+        setDirection(
+            (() => {
+                if (shownMonth === undefined || monthTime === undefined) {
+                    return 0
+                }
+                if (monthTime > shownMonth) {
+                    return 1
+                }
+                return -1
+            })()
+        )
     }
     const weeks = useMemo(() => (monthTime === undefined ? [] : makeWeeks(new Date(monthTime))), [monthTime])
     // The strip position is measured in months. The panes on either side of it render, plus the month being navigated to.
     const target = month ? monthIndex(month) : 0
     const position = useMotionValue(target)
     const [span, setSpan] = useState<[number, number]>([target, target])
-    useMotionValueEvent(position, 'change', (value) => {
-        const next: [number, number] = [Math.floor(value + 1e-3), Math.ceil(value - 1e-3)]
+    useMotionValueEvent(position, 'change', (valueValue) => {
+        const next: [number, number] = [Math.floor(valueValue + 1e-3), Math.ceil(valueValue - 1e-3)]
         setSpan((current) => (current[0] === next[0] && current[1] === next[1] ? current : next))
     })
     const ready = month !== undefined
     const placed = useRef(ready)
     useLayoutEffect(() => {
-        if (!ready) return
+        if (!ready) {
+            return
+        }
         const from = position.get()
-        if (from === target) return
+        if (from === target) {
+            return
+        }
         // The first month and reduced motion land in place; everything else slides on the strip.
         if (!placed.current || reducedMotion) {
             placed.current = true
@@ -251,11 +283,15 @@ export function Calendar({
             return
         }
         // Long jumps (Today, a year with Shift) start one month away, so the strip never scrolls through the months between.
-        if (Math.abs(target - from) > 2) position.jump(target - Math.sign(target - from))
+        if (Math.abs(target - from) > 2) {
+            position.jump(target - Math.sign(target - from))
+        }
         const controls = animate(position, target, stripSpring)
-        return () => controls.stop()
+        return () => {
+            controls.stop()
+        }
     }, [ready, target, reducedMotion, position])
-    const paneIndexes = Array.from(new Set([span[0], span[1], target])).sort((a, b) => a - b)
+    const paneIndexes = [...new Set([span[0], span[1], target])].toSorted((a, b) => a - b)
     const formatter = useMemo(() => new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }), [locale])
     const weekdayFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { weekday: 'short' }), [locale])
     const weekdays = useMemo(
@@ -266,17 +302,19 @@ export function Calendar({
     // The selected disc glides between days, so each number flips color as the disc actually passes it:
     // the day it leaves waits longer on short hops, the day it lands on waits longer on long ones.
     const valueKey = value ? dateKey(value) : ''
-    const [last, setLast] = useState({ key: valueKey, date: value })
-    const [handoff, setHandoff] = useState({ from: '', to: '', distance: 0 })
+    const [last, setLast] = useState({ date: value, key: valueKey })
+    const [handoff, setHandoff] = useState({ distance: 0, from: '', to: '' })
     if (last.key !== valueKey) {
         const days =
             last.date && value ? Math.round((startOfDay(value).getTime() - startOfDay(last.date).getTime()) / 864e5) : 0
         const columns = last.date && value ? value.getDay() - last.date.getDay() : 0
-        setLast({ key: valueKey, date: value })
-        setHandoff({ from: last.key, to: valueKey, distance: Math.hypot(columns, (days - columns) / 7) })
+        setLast({ date: value, key: valueKey })
+        setHandoff({ distance: Math.hypot(columns, (days - columns) / 7), from: last.key, to: valueKey })
     }
     const numberDelay = (key: string): CSSProperties | undefined => {
-        if (!handoff.distance || reducedMotion || (key !== handoff.to && key !== handoff.from)) return undefined
+        if (!handoff.distance || reducedMotion || (key !== handoff.to && key !== handoff.from)) {
+            return undefined
+        }
         const delay =
             key === handoff.to
                 ? Math.min(260, 95 + 85 * Math.log(handoff.distance))
@@ -306,16 +344,20 @@ export function Calendar({
         )
     })()
 
-    const changeMonth = (target: Date) => {
-        const normalized = monthStart(target)
-        if (!controlledMonth) setInternalMonth(normalized)
+    const changeMonth = (targetValue: Date) => {
+        const normalized = monthStart(targetValue)
+        if (!controlledMonth) {
+            setInternalMonth(normalized)
+        }
         onMonthChange?.(normalized)
     }
 
     /** Keyboard focus lands on the new day in the same frame the month starts to slide. */
     useLayoutEffect(() => {
         const key = focusRequest.current
-        if (!key) return
+        if (!key) {
+            return
+        }
         const button = viewportRef.current?.querySelector<HTMLButtonElement>(`[data-present] [data-date="${key}"]`)
         if (button) {
             focusRequest.current = null
@@ -324,53 +366,74 @@ export function Calendar({
     })
 
     /** Clamps a keyboard move to the allowed range and steps past blocked days in the direction of travel. */
-    const moveFocus = (from: Date, target: Date, step: number) => {
-        let next =
-            isBefore(target, minDate) && minDate
-                ? startOfDay(minDate)
-                : isAfter(target, maxDate) && maxDate
-                  ? startOfDay(maxDate)
-                  : target
-        for (let tries = 0; tries < 42 && isDisabled(next); tries += 1) next = addDays(next, step)
-        if (isDisabled(next) || sameDay(next, from)) return
+    const moveFocus = (from: Date, targetValue: Date, step: number) => {
+        let next = (() => {
+            if (isBefore(targetValue, minDate) && minDate) {
+                return startOfDay(minDate)
+            }
+            if (isAfter(targetValue, maxDate) && maxDate) {
+                return startOfDay(maxDate)
+            }
+            return targetValue
+        })()
+        for (let tries = 0; tries < 42 && isDisabled(next); tries += 1) {
+            next = addDays(next, step)
+        }
+        if (isDisabled(next) || sameDay(next, from)) {
+            return
+        }
         setFocusedDate(next)
         focusRequest.current = dateKey(next)
-        if (!sameMonth(next, month)) changeMonth(next)
+        if (!sameMonth(next, month)) {
+            changeMonth(next)
+        }
     }
 
     const onDayKeyDown = (event: KeyboardEvent<HTMLButtonElement>, date: Date) => {
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
-            if (!isDisabled(date)) onChange?.(date)
+            if (!isDisabled(date)) {
+                onChange?.(date)
+            }
             return
         }
         const moves: Record<string, [Date, number]> = {
+            ArrowDown: [addDays(date, 7), 1],
             ArrowLeft: [addDays(date, -1), -1],
             ArrowRight: [addDays(date, 1), 1],
             ArrowUp: [addDays(date, -7), -1],
-            ArrowDown: [addDays(date, 7), 1],
-            Home: [addDays(date, -date.getDay()), 1],
             End: [addDays(date, 6 - date.getDay()), -1],
-            PageUp: [shiftMonths(date, event.shiftKey ? -12 : -1), -1],
-            PageDown: [shiftMonths(date, event.shiftKey ? 12 : 1), 1]
+            Home: [addDays(date, -date.getDay()), 1],
+            PageDown: [shiftMonths(date, event.shiftKey ? 12 : 1), 1],
+            PageUp: [shiftMonths(date, event.shiftKey ? -12 : -1), -1]
         }
         const move = moves[event.key]
-        if (!move) return
+        if (!move) {
+            return
+        }
         event.preventDefault()
         moveFocus(date, move[0], move[1])
     }
 
     const goToToday = () => {
-        if (!today || !month || todayIdle) return
+        if (!today || !month || todayIdle) {
+            return
+        }
         setFocusedDate(today)
-        if (!sameMonth(today, month)) changeMonth(today)
-        if (todaySelectable && !sameDay(value, today)) onChange?.(today)
+        if (!sameMonth(today, month)) {
+            changeMonth(today)
+        }
+        if (todaySelectable && !sameDay(value, today)) {
+            onChange?.(today)
+        }
     }
 
     const cx = (...names: (string | false | undefined)[]) => names.filter(Boolean).join(' ')
     // Six fixed weeks per month, so a day's cell is its distance from the first day on the grid.
     const cellOf = (paneMonth: Date) => {
-        if (!value) return -1
+        if (!value) {
+            return -1
+        }
         const first = addDays(paneMonth, -paneMonth.getDay())
         const index = Math.round((startOfDay(value).getTime() - first.getTime()) / 864e5)
         return index >= 0 && index < 42 ? index : -1
@@ -404,8 +467,12 @@ export function Calendar({
                                         selected && styles.selected,
                                         isToday && styles.today
                                     )}
-                                    onFocus={() => setFocusedDate(date)}
-                                    onKeyDown={(event) => onDayKeyDown(event, date)}
+                                    onFocus={() => {
+                                        setFocusedDate(date)
+                                    }}
+                                    onKeyDown={(event) => {
+                                        onDayKeyDown(event, date)
+                                    }}
                                     onClick={() => onChange?.(date)}
                                 >
                                     <span className={styles.dayNumber}>{date.getDate()}</span>
@@ -464,7 +531,9 @@ export function Calendar({
                         aria-label="Previous month"
                         aria-disabled={previousDisabled || undefined}
                         onClick={() => {
-                            if (!previousDisabled && previousMonth) changeMonth(previousMonth)
+                            if (!previousDisabled && previousMonth) {
+                                changeMonth(previousMonth)
+                            }
                         }}
                     >
                         <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -475,7 +544,9 @@ export function Calendar({
                         aria-label="Next month"
                         aria-disabled={nextDisabled || undefined}
                         onClick={() => {
-                            if (!nextDisabled && nextMonth) changeMonth(nextMonth)
+                            if (!nextDisabled && nextMonth) {
+                                changeMonth(nextMonth)
+                            }
                         }}
                     >
                         <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -499,7 +570,7 @@ export function Calendar({
                         <div className={styles.grid}>
                             {Array.from({ length: 6 }, (_, week) => (
                                 <div key={week} className={styles.week}>
-                                    {Array.from({ length: 7 }, (_, day) => (
+                                    {Array.from({ length: 7 }, (_Value, day) => (
                                         <span key={day} className={styles.placeholderDay} />
                                     ))}
                                 </div>

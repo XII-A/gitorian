@@ -1,5 +1,5 @@
-import { initialState } from '../shared/model'
 import type { Activity, State } from '../shared/model'
+import { initialState } from '../shared/model'
 import { offsetDay } from './hub-model'
 
 const patch = `diff --git a/sync/retry.ts b/sync/retry.ts
@@ -74,31 +74,79 @@ const titles = [
     'Clarify empty survey states',
     'Start the persistent upload queue'
 ]
-export function sampleState(week: string): State {
+export const sampleState = (week: string): State => {
     const state = initialState()
     state.settings.timezone = 'Europe/Istanbul'
     state.repositories = ['mobile-app', 'survey-builder', 'developer-docs'].map((name, index) => ({
+        available: true,
+        base: 'main',
+        branchBases: {},
+        branches: ['main', 'feat/offline-queue', 'fix/rtl-toolbar'],
+        emails: ['molham@example.com'],
         id: `sample-repo-${index}`,
         name,
         path: '',
         remote: `https://github.com/weekly-j-example/${name}`,
-        base: 'main',
-        trackingStart: week,
-        emails: ['molham@example.com'],
-        available: true,
         removed: false,
-        branches: ['main', 'feat/offline-queue', 'fix/rtl-toolbar'],
-        branchBases: {}
+        trackingStart: week
     }))
     state.activities = titles.map((title, index): Activity => ({
         id: `sample:${week}:${index}`,
-        repositoryId: `sample-repo-${index < 8 ? 0 : index < 18 ? 1 : 2}`,
-        kind:
-            index === 1 ? 'merged' : [5, 12].includes(index) ? 'review' : [8, 15, 22].includes(index) ? 'pr' : 'commit',
+        repositoryId: `sample-repo-${(() => {
+            if (index < 8) {
+                return 0
+            }
+            if (index < 18) {
+                return 1
+            }
+            return 2
+        })()}`,
+        kind: (() => {
+            if (index === 1) {
+                return 'merged'
+            }
+            if ([5, 12].includes(index)) {
+                return 'review'
+            }
+            if ([8, 15, 22].includes(index)) {
+                return 'pr'
+            }
+
+            return 'commit'
+        })(),
         title,
-        date: `${offsetDay(week, index < 3 ? 4 : index < 8 ? 3 : index < 14 ? 2 : index < 19 ? 1 : 0)}T${String(14 - (index % 6)).padStart(2, '0')}:14:00+03:00`,
+        date: `${offsetDay(
+            week,
+            (() => {
+                if (index < 3) {
+                    return 4
+                }
+                if (index < 8) {
+                    return 3
+                }
+                if (index < 14) {
+                    return 2
+                }
+
+                if (index < 19) {
+                    return 1
+                }
+
+                return 0
+            })()
+        )}T${String(14 - (index % 6)).padStart(2, '0')}:14:00+03:00`,
         author: 'Molham',
-        branches: [index < 8 ? 'feat/offline-queue' : index < 18 ? 'fix/rtl-toolbar' : 'main'],
+        branches: [
+            (() => {
+                if (index < 8) {
+                    return 'feat/offline-queue'
+                }
+                if (index < 18) {
+                    return 'fix/rtl-toolbar'
+                }
+                return 'main'
+            })()
+        ],
         sha: index === 0 ? 'a3f9c218912ab0' : `7be01d${index.toString(16)}8912ab0`,
         ...(index === 1 || [8, 15, 22].includes(index)
             ? {
@@ -123,97 +171,97 @@ export function sampleState(week: string): State {
     state.diffs = Object.fromEntries(state.activities.map((activity) => [activity.id, patch]))
     state.features = [
         {
-            id: 'sample-offline',
-            name: 'Offline reliability',
             archived: false,
-            members: state.activities.slice(0, 8).map((activity) => activity.id)
+            id: 'sample-offline',
+            members: state.activities.slice(0, 8).map((activity) => activity.id),
+            name: 'Offline reliability'
         }
     ]
     state.drafts = [
         {
-            id: `sample-draft-${week}`,
-            week,
-            title: 'The week the sync finally held',
-            selections: [],
-            updatedAt: `${week}T12:00:00Z`,
             body: {
-                type: 'doc',
                 content: [
                     {
-                        type: 'paragraph',
                         content: [
                             {
-                                type: 'text',
-                                text: 'Most of the week went to one stubborn problem: uploads that quietly died on flaky connections. I started Monday with a vague theory and ended Friday with a retry strategy I actually trust.'
+                                text: 'Most of the week went to one stubborn problem: uploads that quietly died on flaky connections. I started Monday with a vague theory and ended Friday with a retry strategy I actually trust.',
+                                type: 'text'
                             }
-                        ]
+                        ],
+                        type: 'paragraph'
                     },
                     {
-                        type: 'paragraph',
                         content: [
                             {
-                                type: 'text',
-                                text: 'Retry failed sync batches',
                                 marks: [
                                     {
-                                        type: 'link',
                                         attrs: {
                                             href: 'https://github.com/weekly-j-example/mobile-app/commit/a3f9c218912ab0'
-                                        }
+                                        },
+                                        type: 'link'
                                     }
-                                ]
+                                ],
+                                text: 'Retry failed sync batches',
+                                type: 'text'
                             },
                             {
-                                type: 'text',
-                                text: ' is the change that finally made it behave. The offline queue landed this morning, so queued uploads now survive a restart.'
+                                text: ' is the change that finally made it behave. The offline queue landed this morning, so queued uploads now survive a restart.',
+                                type: 'text'
                             }
-                        ]
+                        ],
+                        type: 'paragraph'
                     },
-                    { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'A useful detour' }] },
+                    { attrs: { level: 2 }, content: [{ text: 'A useful detour', type: 'text' }], type: 'heading' },
                     {
-                        type: 'paragraph',
                         content: [
                             {
-                                type: 'text',
-                                text: 'The detour I didn’t plan for was RTL. Mirroring the builder toolbar exposed three layout assumptions I’d baked in months ago. Annoying, but better found now than by a user.'
+                                text: 'The detour I didn’t plan for was RTL. Mirroring the builder toolbar exposed three layout assumptions I’d baked in months ago. Annoying, but better found now than by a user.',
+                                type: 'text'
                             }
-                        ]
+                        ],
+                        type: 'paragraph'
                     },
                     {
-                        type: 'paragraph',
                         content: [
                             {
-                                type: 'text',
-                                text: 'What surprised me about the backoff was how little code it took once I stopped treating every failure the same. A dropped connection and a rejected payload want different answers, and the first version of the retry loop pretended otherwise.'
+                                text: 'What surprised me about the backoff was how little code it took once I stopped treating every failure the same. A dropped connection and a rejected payload want different answers, and the first version of the retry loop pretended otherwise.',
+                                type: 'text'
                             }
-                        ]
+                        ],
+                        type: 'paragraph'
                     },
                     { type: 'paragraph' }
-                ]
-            }
+                ],
+                type: 'doc'
+            },
+            id: `sample-draft-${week}`,
+            selections: [],
+            title: 'The week the sync finally held',
+            updatedAt: `${week}T12:00:00Z`,
+            week
         }
     ]
     state.entries = [
         {
-            id: 'sample-entry',
-            title: 'Making space for offline work',
-            date: offsetDay(week, -7),
-            url: 'https://notion.so/example',
             body: {
-                type: 'doc',
                 content: [
                     {
-                        type: 'paragraph',
                         content: [
                             {
-                                type: 'text',
-                                text: 'Last week I mapped the places where a weak connection interrupted a survey. This week is about giving those answers somewhere safe to wait.'
+                                text: 'Last week I mapped the places where a weak connection interrupted a survey. This week is about giving those answers somewhere safe to wait.',
+                                type: 'text'
                             }
-                        ]
+                        ],
+                        type: 'paragraph'
                     }
-                ]
+                ],
+                type: 'doc'
             },
-            refreshedAt: `${week}T12:00:00Z`
+            date: offsetDay(week, -7),
+            id: 'sample-entry',
+            refreshedAt: `${week}T12:00:00Z`,
+            title: 'Making space for offline work',
+            url: 'https://notion.so/example'
         }
     ]
     return state

@@ -1,10 +1,14 @@
 'use client'
-import { forwardRef, useId, useRef } from 'react'
-import type { InputHTMLAttributes } from 'react'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+
 import { Search, X as Xmark } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import type { ForwardRefRenderFunction, InputHTMLAttributes } from 'react'
+import { forwardRef, useId, useRef } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './search-field.module.css'
+
 export interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
     label: string
     /** Keep the field's name available to assistive technology without a visible label. */
@@ -12,21 +16,24 @@ export interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElem
     value: string
     onValueChange: (value: string) => void
 }
-export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(function SearchField(
+const SearchFieldRender: ForwardRefRenderFunction<HTMLInputElement, SearchFieldProps> = (
     { label, hideLabel = false, value, onValueChange, id, className, ...props },
     ref
-) {
+) => {
     const generated = useId()
     const controlId = id ?? generated
     const reduced = useReducedMotion()
     const inputRef = useRef<HTMLInputElement | null>(null)
     const setRefs = (node: HTMLInputElement | null) => {
         inputRef.current = node
-        if (typeof ref === 'function') ref(node)
-        else if (ref) ref.current = node
+        if (typeof ref === 'function') {
+            ref(node)
+        } else if (ref) {
+            ref.current = node
+        }
     }
     // Clearing returns focus to the field, since the clear button unmounts under the pointer.
-    function clear() {
+    const clear = () => {
         onValueChange('')
         inputRef.current?.focus()
     }
@@ -43,7 +50,9 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
                     id={controlId}
                     type="search"
                     value={value}
-                    onChange={(event) => onValueChange(event.target.value)}
+                    onChange={(event) => {
+                        onValueChange(event.target.value)
+                    }}
                     className={[styles.input, className].filter(Boolean).join(' ')}
                 />
                 {/* The clear button has a reserved slot, so the field never changes width when it appears or leaves. */}
@@ -59,16 +68,16 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
                                 initial={
                                     reduced
                                         ? { opacity: 0 }
-                                        : { opacity: 0, scale: 0.8, filter: `blur(${motionTokens.blur.subtle}px)` }
+                                        : { filter: `blur(${motionTokens.blur.subtle}px)`, opacity: 0, scale: 0.8 }
                                 }
-                                animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                                animate={{ filter: 'blur(0px)', opacity: 1, scale: 1 }}
                                 exit={
                                     reduced
                                         ? { opacity: 0, transition: { duration: 0 } }
                                         : {
+                                              filter: `blur(${motionTokens.blur.subtle}px)`,
                                               opacity: 0,
                                               scale: 0.8,
-                                              filter: `blur(${motionTokens.blur.subtle}px)`,
                                               transition: {
                                                   duration: motionTokens.duration.instant,
                                                   ease: [...motionTokens.ease.standard]
@@ -91,8 +100,8 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
                                         ? { duration: motionTokens.duration.instant }
                                         : {
                                               ...motionTokens.spring.snappy,
-                                              opacity: { duration: motionTokens.duration.fast },
-                                              filter: { duration: motionTokens.duration.fast }
+                                              filter: { duration: motionTokens.duration.fast },
+                                              opacity: { duration: motionTokens.duration.fast }
                                           }
                                 }
                             >
@@ -104,4 +113,5 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
             </div>
         </div>
     )
-})
+}
+export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(SearchFieldRender)

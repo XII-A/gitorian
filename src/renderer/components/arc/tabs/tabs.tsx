@@ -1,12 +1,14 @@
 'use client'
 
 import * as TabsPrimitive from '@radix-ui/react-tabs'
-import { createContext, useCallback, useContext, useId, useLayoutEffect, useRef, useState } from 'react'
-import type { ComponentPropsWithoutRef, RefObject } from 'react'
 import { ChevronLeft as NavArrowLeft, ChevronRight as NavArrowRight } from 'lucide-react'
-import { AnimatePresence, LayoutGroup, animate, motion, useReducedMotion } from 'motion/react'
 import type { AnimationPlaybackControls, Variants } from 'motion/react'
+import { AnimatePresence, LayoutGroup, animate, motion, useReducedMotion } from 'motion/react'
+import type { ComponentPropsWithoutRef, RefObject } from 'react'
+import { createContext, useCallback, useContext, useId, useLayoutEffect, useRef, useState } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './tabs.module.css'
 
 type RootProps = ComponentPropsWithoutRef<typeof TabsPrimitive.Root> & { variant?: 'pill' | 'underline' }
@@ -20,16 +22,16 @@ const TabsContext = createContext<{
     panelHeightRef: RefObject<number | null>
     leavingRectRef: RefObject<DOMRect | null>
 }>({
-    orientation: 'horizontal',
-    variant: 'pill',
     active: '',
-    layoutId: 'tabs',
     direction: 1,
+    layoutId: 'tabs',
+    leavingRectRef: { current: null },
+    orientation: 'horizontal',
     panelHeightRef: { current: null },
-    leavingRectRef: { current: null }
+    variant: 'pill'
 })
 
-export function Tabs({
+export const Tabs = ({
     value,
     defaultValue,
     onValueChange,
@@ -37,7 +39,7 @@ export function Tabs({
     orientation = 'horizontal',
     variant = 'pill',
     ...props
-}: RootProps) {
+}: RootProps) => {
     const [internal, setInternal] = useState(defaultValue ?? '')
     const [direction, setDirection] = useState(1)
     const active = value ?? internal
@@ -45,24 +47,28 @@ export function Tabs({
     const root = useRef<HTMLDivElement>(null)
     const panelHeightRef = useRef<number | null>(null)
     const leavingRectRef = useRef<DOMRect | null>(null)
-    function handleChange(next: string) {
+    const handleChange = (next: string) => {
         const frame = root.current
         leavingRectRef.current =
             frame?.querySelector(':scope > [role="tabpanel"][data-state="active"]')?.getBoundingClientRect() ?? null
         const order = frame
-            ? Array.from(frame.querySelectorAll<HTMLElement>('[role="tab"][data-value]'))
+            ? [...frame.querySelectorAll<HTMLElement>('[role="tab"][data-value]')]
                   .filter((tab) => tab.closest(`.${styles.root}`) === frame)
                   .map((tab) => tab.dataset.value)
             : []
-        const from = order.indexOf(active),
-            to = order.indexOf(next)
-        if (from >= 0 && to >= 0 && from !== to) setDirection(to > from ? 1 : -1)
-        if (value === undefined) setInternal(next)
+        const from = order.indexOf(active)
+        const to = order.indexOf(next)
+        if (from !== -1 && to !== -1 && from !== to) {
+            setDirection(to > from ? 1 : -1)
+        }
+        if (value === undefined) {
+            setInternal(next)
+        }
         onValueChange?.(next)
     }
     return (
         <TabsContext.Provider
-            value={{ orientation, variant, active, layoutId, direction, panelHeightRef, leavingRectRef }}
+            value={{ active, direction, layoutId, leavingRectRef, orientation, panelHeightRef, variant }}
         >
             <LayoutGroup id={layoutId}>
                 <TabsPrimitive.Root
@@ -78,28 +84,30 @@ export function Tabs({
     )
 }
 
-export function TabsList({
+export const TabsList = ({
     className,
     edgeToEdge,
     ...props
 }: ComponentPropsWithoutRef<typeof TabsPrimitive.List> & {
     /** A square strip spanning the full pane; individual tabs retain their radii. */
     edgeToEdge?: boolean
-}) {
+}) => {
     const { active, orientation, variant } = useContext(TabsContext)
     const reduced = useReducedMotion()
     const shell = useRef<HTMLDivElement>(null)
     const viewport = useRef<HTMLDivElement>(null)
     const list = useRef<HTMLDivElement>(null)
-    const [edges, setEdges] = useState({ overflow: false, left: false, right: false })
+    const [edges, setEdges] = useState({ left: false, overflow: false, right: false })
     const update = useCallback(() => {
         const frame = shell.current
         const scroll = viewport.current
-        if (!frame || !scroll) return
+        if (!frame || !scroll) {
+            return
+        }
         const max = Math.max(0, scroll.scrollWidth - scroll.clientWidth)
         const next = {
-            overflow: scroll.scrollWidth > frame.clientWidth + 1,
             left: scroll.scrollLeft > 1,
+            overflow: scroll.scrollWidth > frame.clientWidth + 1,
             right: scroll.scrollLeft < max - 1
         }
         setEdges((previous) =>
@@ -111,14 +119,26 @@ export function TabsList({
     const reveal = useCallback(
         (tab: HTMLElement | null) => {
             const scroll = viewport.current
-            if (!scroll || !tab) return
+            if (!scroll || !tab) {
+                return
+            }
             const frame = scroll.getBoundingClientRect()
             const item = tab.getBoundingClientRect()
             const max = Math.max(0, scroll.scrollWidth - scroll.clientWidth)
             const left = frame.left + (scroll.scrollLeft > 1 ? 34 : 0)
             const right = frame.right - (scroll.scrollLeft < max - 1 ? 34 : 0)
-            const delta = item.left < left ? item.left - left : item.right > right ? item.right - right : 0
-            if (delta) scroll.scrollBy({ left: delta, behavior: reduced ? 'instant' : 'smooth' })
+            const delta = (() => {
+                if (item.left < left) {
+                    return item.left - left
+                }
+                if (item.right > right) {
+                    return item.right - right
+                }
+                return 0
+            })()
+            if (delta) {
+                scroll.scrollBy({ behavior: reduced ? 'instant' : 'smooth', left: delta })
+            }
         },
         [reduced]
     )
@@ -126,7 +146,9 @@ export function TabsList({
         const frame = shell.current
         const scroll = viewport.current
         const content = list.current
-        if (!frame || !scroll || !content || orientation === 'vertical') return
+        if (!frame || !scroll || !content || orientation === 'vertical') {
+            return
+        }
         const observer = new ResizeObserver(update)
         observer.observe(frame)
         observer.observe(scroll)
@@ -139,15 +161,17 @@ export function TabsList({
         }
     }, [update, orientation])
     useLayoutEffect(() => {
-        if (orientation === 'vertical') return
+        if (orientation === 'vertical') {
+            return
+        }
         reveal(list.current?.querySelector<HTMLElement>('[role="tab"][data-state="active"]') ?? null)
     }, [active, reveal, orientation])
     const scrollTabs = (direction: number) =>
         viewport.current?.scrollBy({
-            left: direction * (viewport.current?.clientWidth ?? 0) * 0.75,
-            behavior: reduced ? 'instant' : 'smooth'
+            behavior: reduced ? 'instant' : 'smooth',
+            left: direction * (viewport.current?.clientWidth ?? 0) * 0.75
         })
-    if (orientation === 'vertical')
+    if (orientation === 'vertical') {
         return (
             <div
                 className={[styles.listShell, styles.verticalShell, variant === 'underline' && styles.underlineShell]
@@ -158,6 +182,7 @@ export function TabsList({
                 <TabsPrimitive.List {...props} className={[styles.list, className].filter(Boolean).join(' ')} />
             </div>
         )
+    }
     return (
         <div
             ref={shell}
@@ -183,8 +208,9 @@ export function TabsList({
                 layoutScroll
                 className={styles.viewport}
                 onFocusCapture={(event) => {
-                    if (event.target instanceof HTMLElement && event.target.getAttribute('role') === 'tab')
+                    if (event.target instanceof HTMLElement && event.target.getAttribute('role') === 'tab') {
                         reveal(event.target)
+                    }
                 }}
             >
                 <TabsPrimitive.List
@@ -208,12 +234,12 @@ export function TabsList({
     )
 }
 
-export function TabsTrigger({
+export const TabsTrigger = ({
     className,
     children,
     value,
     ...props
-}: ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>) {
+}: ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>) => {
     const { active, variant } = useContext(TabsContext)
     const reduced = useReducedMotion()
     // The LayoutGroup in Tabs scopes the highlight to this instance, so it glides between triggers but never flies in from another tab set.
@@ -241,35 +267,35 @@ export function TabsTrigger({
 }
 
 const panelMotion: Variants = {
-    enter: (direction: number) => ({ opacity: 0, x: direction * 8 }),
     center: {
         opacity: 1,
-        x: 0,
         transition: {
             opacity: { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] },
             x: motionTokens.spring.smooth
-        }
+        },
+        x: 0
     },
+    enter: (direction: number) => ({ opacity: 0, x: direction * 8 }),
     exit: (direction: number) => ({
         opacity: 0,
-        x: direction * -6,
-        transition: { duration: motionTokens.duration.instant, ease: [...motionTokens.ease.standard] }
+        transition: { duration: motionTokens.duration.instant, ease: [...motionTokens.ease.standard] },
+        x: direction * -6
     })
 }
 /** Reduced motion: a short crossfade in place. Keys match panelMotion so server and client render identical styles. */
 const panelFade: Variants = {
+    center: { opacity: 1, transition: { duration: motionTokens.duration.instant }, x: 0 },
     enter: { opacity: 0, x: 0 },
-    center: { opacity: 1, x: 0, transition: { duration: motionTokens.duration.instant } },
-    exit: { opacity: 0, x: 0, transition: { duration: 0.1 } }
+    exit: { opacity: 0, transition: { duration: 0.1 }, x: 0 }
 }
 
-export function TabsContent({
+export const TabsContent = ({
     className,
     value,
     forceMount,
     children,
     ...props
-}: ComponentPropsWithoutRef<typeof TabsPrimitive.Content>) {
+}: ComponentPropsWithoutRef<typeof TabsPrimitive.Content>) => {
     const { active, orientation, direction, panelHeightRef, leavingRectRef } = useContext(TabsContext)
     const reduced = useReducedMotion()
     const panel = useRef<HTMLDivElement>(null)
@@ -278,14 +304,20 @@ export function TabsContent({
     // The incoming panel starts at the outgoing panel's height and settles at its own, so content below glides instead of jumping.
     useLayoutEffect(() => {
         const node = panel.current
-        if (!node || forceMount) return
+        if (!node || forceMount) {
+            return
+        }
         node.inert = !selected
-        if (orientation === 'vertical') return
+        if (orientation === 'vertical') {
+            return
+        }
         // Outgoing: the tab root may have changed size around it, so pin the panel to where it was while it fades.
         if (!selected) {
             const before = leavingRectRef.current
             const now = node.getBoundingClientRect()
-            if (before) node.style.translate = `${before.left - now.left}px ${before.top - now.top}px`
+            if (before) {
+                node.style.translate = `${before.left - now.left}px ${before.top - now.top}px`
+            }
             node.inert = true
             return
         }
@@ -299,7 +331,9 @@ export function TabsContent({
             node.style.overflow = ''
         }
         if (from !== null && Math.abs(from - to) > 1 && !reduced) {
-            if (to > from) node.style.overflow = 'clip'
+            if (to > from) {
+                node.style.overflow = 'clip'
+            }
             controls = animate(node, { height: [from, to] }, { ...motionTokens.spring.smooth, onComplete: release })
         }
         panelHeightRef.current = controls && from !== null ? from : to
@@ -313,12 +347,13 @@ export function TabsContent({
             release()
         }
     }, [selected, reduced, forceMount, orientation, panelHeightRef, leavingRectRef])
-    if (forceMount)
+    if (forceMount) {
         return (
             <TabsPrimitive.Content {...props} value={value} forceMount className={classes}>
                 {children}
             </TabsPrimitive.Content>
         )
+    }
     return (
         <AnimatePresence initial={false} mode="popLayout" custom={direction}>
             {selected && (

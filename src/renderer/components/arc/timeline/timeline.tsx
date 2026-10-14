@@ -1,5 +1,9 @@
 'use client'
 
+import { ChevronDown } from 'lucide-react'
+import type { Transition } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import {
     createContext,
     useCallback,
@@ -11,12 +15,13 @@ import {
     useState,
     useSyncExternalStore
 } from 'react'
-import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import type { Transition } from 'motion/react'
-import { ChevronDown } from 'lucide-react'
+
+import { required } from '../../../../shared/required'
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './timeline.module.css'
+
+const defaultDefaultExpanded: never[] = []
 
 export interface TimelineEvent {
     id: string
@@ -78,10 +83,12 @@ const enter = [...motionTokens.ease.enter] as [number, number, number, number]
 const standard = [...motionTokens.ease.standard] as [number, number, number, number]
 /** Seconds between rows revealed together, so the line reads as drawing downward. */
 const STEP = 0.09
-const noopSubscribe = () => () => undefined
+const noopSubscribe = () => () => {
+    /* empty */
+}
 
 /** Reduced motion only after hydration, so the server and the first client render agree. */
-function useReducedMotionSafe() {
+const useReducedMotionSafe = () => {
     const hydrated = useSyncExternalStore(
         noopSubscribe,
         () => true,
@@ -100,49 +107,49 @@ interface Clock {
 const RevealClock = createContext<Clock | null>(null)
 
 /** Text that changes in place: the new value rises in from a soft blur while the old one lifts away a little faster. */
-function RiseText({ text, reduced, direction = 1 }: { text: string; reduced: boolean; direction?: number }) {
-    return (
-        <span className={styles.rise} aria-hidden="true">
-            <AnimatePresence mode="popLayout" initial={false} custom={direction}>
-                <motion.span
-                    key={text}
-                    className={styles.riseLine}
-                    custom={direction}
-                    variants={{
-                        from: (dir: number) =>
-                            reduced
-                                ? { opacity: 0 }
-                                : { opacity: 0, y: `${0.3 * dir}em`, filter: `blur(${motionTokens.blur.soft}px)` },
-                        to: { opacity: 1, y: '0em', filter: 'blur(0px)' },
-                        gone: (dir: number) =>
-                            reduced
-                                ? { opacity: 0, transition: { duration: 0 } }
-                                : {
-                                      opacity: 0,
-                                      y: `${-0.3 * dir}em`,
-                                      filter: `blur(${motionTokens.blur.subtle}px)`,
-                                      transition: { duration: motionTokens.duration.fast, ease: standard }
-                                  }
-                    }}
-                    initial="from"
-                    animate="to"
-                    exit="gone"
-                    transition={{
-                        duration: reduced ? motionTokens.duration.instant : motionTokens.duration.standard,
-                        ease: enter
-                    }}
-                >
-                    {text}
-                </motion.span>
-            </AnimatePresence>
-        </span>
-    )
-}
+const RiseText = ({ text, reduced, direction = 1 }: { text: string; reduced: boolean; direction?: number }) => (
+    <span className={styles.rise} aria-hidden="true">
+        <AnimatePresence mode="popLayout" initial={false} custom={direction}>
+            <motion.span
+                key={text}
+                className={styles.riseLine}
+                custom={direction}
+                variants={{
+                    from: (dir: number) =>
+                        reduced
+                            ? { opacity: 0 }
+                            : { filter: `blur(${motionTokens.blur.soft}px)`, opacity: 0, y: `${0.3 * dir}em` },
+                    gone: (dir: number) =>
+                        reduced
+                            ? { opacity: 0, transition: { duration: 0 } }
+                            : {
+                                  filter: `blur(${motionTokens.blur.subtle}px)`,
+                                  opacity: 0,
+                                  transition: { duration: motionTokens.duration.fast, ease: standard },
+                                  y: `${-0.3 * dir}em`
+                              },
+                    to: { filter: 'blur(0px)', opacity: 1, y: '0em' }
+                }}
+                initial="from"
+                animate="to"
+                exit="gone"
+                transition={{
+                    duration: reduced ? motionTokens.duration.instant : motionTokens.duration.standard,
+                    ease: enter
+                }}
+            >
+                {text}
+            </motion.span>
+        </AnimatePresence>
+    </span>
+)
 
 /** The day's update count rolls digit by digit in the direction it moved. */
-function RollingCount({ value, reduced }: { value: number; reduced: boolean }) {
-    const [state, setState] = useState({ value, direction: 1 })
-    if (state.value !== value) setState({ value, direction: value > state.value ? 1 : -1 })
+const RollingCount = ({ value, reduced }: { value: number; reduced: boolean }) => {
+    const [state, setState] = useState({ direction: 1, value })
+    if (state.value !== value) {
+        setState({ direction: value > state.value ? 1 : -1, value })
+    }
     const chars = String(value).split('')
     return (
         <span className={styles.rolling} aria-hidden="true">
@@ -155,27 +162,31 @@ function RollingCount({ value, reduced }: { value: number; reduced: boolean }) {
     )
 }
 
-function dayKey(time: number, timeZone: string) {
+const dayKey = (time: number, timeZone: string) => {
     const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone,
-        year: 'numeric',
+        day: '2-digit',
         month: '2-digit',
-        day: '2-digit'
+        timeZone,
+        year: 'numeric'
     }).formatToParts(new Date(time))
     const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
     return `${get('year')}-${get('month')}-${get('day')}`
 }
 
-function relative(time: number, now: number) {
+const relative = (time: number, now: number) => {
     const minutes = Math.max(0, Math.floor((now - time) / 60_000))
-    if (minutes < 1) return { short: 'Now', long: 'just now' }
-    if (minutes < 60) return { short: `${minutes}m`, long: `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago` }
+    if (minutes < 1) {
+        return { long: 'just now', short: 'Now' }
+    }
+    if (minutes < 60) {
+        return { long: `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`, short: `${minutes}m` }
+    }
     const hours = Math.floor(minutes / 60)
-    return { short: `${hours}h`, long: `${hours} ${hours === 1 ? 'hour' : 'hours'} ago` }
+    return { long: `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`, short: `${hours}h` }
 }
 
 /** A day's section. A new day opens from nothing and pushes the older days down; it clips only while it grows. */
-function DaySection({
+const DaySection = ({
     id,
     fresh,
     reduced,
@@ -185,7 +196,7 @@ function DaySection({
     fresh: boolean
     reduced: boolean
     children: ReactNode
-}) {
+}) => {
     const [entering, setEntering] = useState(fresh)
     return (
         <motion.section
@@ -210,14 +221,16 @@ function DaySection({
                           opacity: { duration: motionTokens.duration.standard, ease: enter }
                       }
             }
-            onAnimationComplete={() => setEntering(false)}
+            onAnimationComplete={() => {
+                setEntering(false)
+            }}
         >
             {children}
         </motion.section>
     )
 }
 
-function TimelineRow({
+const TimelineRow = ({
     row,
     last,
     expanded,
@@ -231,8 +244,8 @@ function TimelineRow({
     onToggle: () => void
     timeLabel: string
     timeFull: string
-}) {
-    const clock = useContext(RevealClock)!
+}) => {
+    const clock = required(useContext(RevealClock))
     const { reduced } = clock
     const detailId = useId()
     // The row reveals once, the first time it scrolls into view: its marker pops, then its line draws toward the next row.
@@ -245,14 +258,14 @@ function TimelineRow({
         ? { duration: 0, opacity: { duration: 0.15 } }
         : {
               ...motionTokens.spring.morph,
-              visualDuration: 0.36,
               bounce: 0.32,
               delay,
-              opacity: { duration: motionTokens.duration.fast, ease: enter, delay }
+              opacity: { delay, duration: motionTokens.duration.fast, ease: enter },
+              visualDuration: 0.36
           }
     const draw: Transition = reduced
         ? { duration: 0 }
-        : { ...motionTokens.spring.smooth, visualDuration: 0.34, delay: delay + 0.1 }
+        : { ...motionTokens.spring.smooth, delay: delay + 0.1, visualDuration: 0.34 }
     const tone = row.avatar ? undefined : (row.tone ?? 'neutral')
     const Trigger = row.detail ? 'button' : 'div'
 
@@ -270,16 +283,20 @@ function TimelineRow({
                     : { height: { ...motionTokens.spring.smooth, visualDuration: 0.3 }, opacity: { duration: 0.12 } }
             }}
             transition={reduced ? { duration: 0 } : motionTokens.spring.smooth}
-            onAnimationComplete={() => setEntering(false)}
-            onViewportEnter={() => setRevealDelay((current) => current ?? clock.schedule())}
-            viewport={{ once: true, amount: 0.2 }}
+            onAnimationComplete={() => {
+                setEntering(false)
+            }}
+            onViewportEnter={() => {
+                setRevealDelay((current) => current ?? clock.schedule())
+            }}
+            viewport={{ amount: 0.2, once: true }}
         >
             <motion.span
                 className={styles.marker}
                 data-tone={tone}
                 aria-hidden="true"
-                initial={{ scale: 0.4, opacity: 0 }}
-                animate={shown ? { scale: 1, opacity: 1 } : undefined}
+                initial={{ opacity: 0, scale: 0.4 }}
+                animate={shown ? { opacity: 1, scale: 1 } : undefined}
                 transition={pop}
             >
                 {/* eslint-disable-next-line @next/next/no-img-element -- registry components stay framework agnostic */}
@@ -296,21 +313,23 @@ function TimelineRow({
             )}
             <motion.div
                 className={styles.content}
-                initial={
-                    fresh
-                        ? reduced
-                            ? { opacity: 0 }
-                            : { opacity: 0, y: -10, filter: `blur(${motionTokens.blur.soft}px)` }
-                        : false
-                }
-                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                initial={(() => {
+                    if (fresh) {
+                        if (reduced) {
+                            return { opacity: 0 }
+                        }
+                        return { filter: `blur(${motionTokens.blur.soft}px)`, opacity: 0, y: -10 }
+                    }
+                    return false
+                })()}
+                animate={{ filter: 'blur(0px)', opacity: 1, y: 0 }}
                 transition={
                     reduced
                         ? { duration: 0.15 }
                         : {
-                              y: motionTokens.spring.smooth,
-                              opacity: { duration: motionTokens.duration.standard, ease: enter, delay: 0.05 },
-                              filter: { duration: motionTokens.duration.standard, ease: enter, delay: 0.05 }
+                              filter: { delay: 0.05, duration: motionTokens.duration.standard, ease: enter },
+                              opacity: { delay: 0.05, duration: motionTokens.duration.standard, ease: enter },
+                              y: motionTokens.spring.smooth
                           }
                 }
             >
@@ -318,11 +337,11 @@ function TimelineRow({
                     className={styles.trigger}
                     {...(row.detail
                         ? {
-                              type: 'button' as const,
-                              'data-timeline-trigger': '',
-                              'aria-expanded': expanded,
                               'aria-controls': expanded ? detailId : undefined,
-                              onClick: onToggle
+                              'aria-expanded': expanded,
+                              'data-timeline-trigger': '',
+                              onClick: onToggle,
+                              type: 'button' as const
                           }
                         : {})}
                 >
@@ -371,9 +390,9 @@ function TimelineRow({
                                 initial={
                                     reduced
                                         ? { opacity: 0 }
-                                        : { opacity: 0, y: -4, filter: `blur(${motionTokens.blur.soft}px)` }
+                                        : { filter: `blur(${motionTokens.blur.soft}px)`, opacity: 0, y: -4 }
                                 }
-                                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                                animate={{ filter: 'blur(0px)', opacity: 1, y: 0 }}
                                 exit={{
                                     opacity: 0,
                                     transition: { duration: motionTokens.duration.instant, ease: standard }
@@ -381,7 +400,7 @@ function TimelineRow({
                                 transition={
                                     reduced
                                         ? { duration: 0.15 }
-                                        : { duration: motionTokens.duration.standard, ease: enter, delay: 0.06 }
+                                        : { delay: 0.06, duration: motionTokens.duration.standard, ease: enter }
                                 }
                             >
                                 {row.detail}
@@ -394,7 +413,7 @@ function TimelineRow({
     )
 }
 
-export function Timeline({
+export const Timeline = ({
     events,
     now,
     label,
@@ -403,10 +422,10 @@ export function Timeline({
     groupByDay = true,
     maxHeight,
     scrollToNew = true,
-    defaultExpanded = [],
+    defaultExpanded = defaultDefaultExpanded,
     headingLevel = 3,
     className
-}: TimelineProps) {
+}: TimelineProps) => {
     const reduced = useReducedMotionSafe()
     const id = useId()
     const scrollerRef = useRef<HTMLDivElement>(null)
@@ -415,32 +434,37 @@ export function Timeline({
     // Rows added after the first render are fresh: they slide in and the rest glide down. Their titles are announced.
     const ids = events.map((event) => event.id).join('|')
     const [known, setKnown] = useState(() => ({
-        ids,
-        set: new Set(events.map((event) => event.id)),
+        announcement: '',
         fresh: new Set<string>(),
-        announcement: ''
+        ids,
+        set: new Set(events.map((event) => event.id))
     }))
     if (known.ids !== ids) {
         const added = events.filter((event) => !known.set.has(event.id))
         setKnown({
-            ids,
-            set: new Set(events.map((event) => event.id)),
-            fresh: new Set([...known.fresh, ...added.map((event) => event.id)]),
             announcement: added.length
                 ? `New update: ${added.map((event) => [event.actor, event.title].filter(Boolean).join(' ')).join('. ')}`
-                : known.announcement
+                : known.announcement,
+            fresh: new Set([...known.fresh, ...added.map((event) => event.id)]),
+            ids,
+            set: new Set(events.map((event) => event.id))
         })
     }
     // The bottom edge feathers while more updates wait below, and clears once the end is in view.
     const trackRef = useRef<HTMLDivElement>(null)
     const scrolls = maxHeight !== undefined
     useEffect(() => {
-        const scroller = scrollerRef.current,
-            track = trackRef.current
-        if (!scrolls || !scroller || !track || typeof ResizeObserver === 'undefined') return
+        const scroller = scrollerRef.current
+        const track = trackRef.current
+        if (!scrolls || !scroller || !track || typeof ResizeObserver === 'undefined') {
+            return
+        }
         const update = () => {
-            if (scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop > 2) scroller.dataset.more = ''
-            else delete scroller.dataset.more
+            if (scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop > 2) {
+                scroller.dataset.more = ''
+            } else {
+                delete scroller.dataset.more
+            }
         }
         update()
         scroller.addEventListener('scroll', update, { passive: true })
@@ -459,8 +483,10 @@ export function Timeline({
     )?.id
     useEffect(() => {
         const scroller = scrollerRef.current
-        if (!scrollToNew || !scroller || scroller.scrollTop < 1) return
-        scroller.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' })
+        if (!scrollToNew || !scroller || scroller.scrollTop < 1) {
+            return
+        }
+        scroller.scrollTo({ behavior: reduced ? 'auto' : 'smooth', top: 0 })
     }, [newestId, scrollToNew, reduced])
 
     const [initialDays] = useState(() => new Set(events.map((event) => dayKey(new Date(event.at).getTime(), timeZone))))
@@ -468,47 +494,59 @@ export function Timeline({
         const rows = events
             .map((event) => {
                 const time = new Date(event.at).getTime()
-                return { ...event, time, day: dayKey(time, timeZone) }
+                return { ...event, day: dayKey(time, timeZone), time }
             })
-            .sort((a, b) => b.time - a.time)
-        if (!groupByDay) return rows.length ? [{ day: 'lifecycle', label: '', rows }] : []
-        const today = dayKey(now, timeZone),
-            yesterday = dayKey(now - 24 * HOUR, timeZone)
-        const heading = new Intl.DateTimeFormat(locale, { weekday: 'long', month: 'long', day: 'numeric', timeZone })
+            .toSorted((a, b) => b.time - a.time)
+        if (!groupByDay) {
+            return rows.length ? [{ day: 'lifecycle', label: '', rows }] : []
+        }
+        const today = dayKey(now, timeZone)
+        const yesterday = dayKey(now - 24 * HOUR, timeZone)
+        const heading = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', timeZone, weekday: 'long' })
         const byDay = new Map<string, Row[]>()
-        rows.forEach((row) => byDay.set(row.day, [...(byDay.get(row.day) ?? []), row]))
-        return [...byDay].map(([day, rows]) => ({
+        for (const row of rows) {
+            byDay.set(row.day, [...(byDay.get(row.day) ?? []), row])
+        }
+        return [...byDay].map(([day, rowsValue]) => ({
             day,
-            rows,
-            label: day === today ? 'Today' : day === yesterday ? 'Yesterday' : heading.format(new Date(rows[0].time))
+            label: (() => {
+                if (day === today) {
+                    return 'Today'
+                }
+                if (day === yesterday) {
+                    return 'Yesterday'
+                }
+                return heading.format(new Date(rowsValue[0].time))
+            })(),
+            rows: rowsValue
         }))
     }, [events, now, timeZone, locale, groupByDay])
     const formats = useMemo(
         () => ({
             clock: new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone }),
             dateClock: new Intl.DateTimeFormat(locale, {
-                month: 'short',
                 day: 'numeric',
                 hour: 'numeric',
                 minute: '2-digit',
+                month: 'short',
                 timeZone
             }),
             dateClockYear: new Intl.DateTimeFormat(locale, {
-                month: 'short',
                 day: 'numeric',
-                year: 'numeric',
                 hour: 'numeric',
                 minute: '2-digit',
-                timeZone
+                month: 'short',
+                timeZone,
+                year: 'numeric'
             }),
             full: new Intl.DateTimeFormat(locale, {
-                weekday: 'long',
-                month: 'long',
                 day: 'numeric',
-                year: 'numeric',
                 hour: 'numeric',
                 minute: '2-digit',
-                timeZone
+                month: 'long',
+                timeZone,
+                weekday: 'long',
+                year: 'numeric'
             })
         }),
         [locale, timeZone]
@@ -517,34 +555,46 @@ export function Timeline({
     // Rows that come into view together are spaced a beat apart, so the line reads as drawing down the feed.
     const nextReveal = useRef(0)
     const schedule = useCallback(() => {
-        if (reduced) return 0
+        if (reduced) {
+            return 0
+        }
         const current = performance.now() / 1000
         const start = Math.min(Math.max(current, nextReveal.current), current + 0.45)
         nextReveal.current = start + STEP
         return start - current
     }, [reduced])
-    const clock = useMemo<Clock>(() => ({ schedule, reduced, fresh: known.fresh }), [schedule, reduced, known.fresh])
+    const clock = useMemo<Clock>(() => ({ fresh: known.fresh, reduced, schedule }), [schedule, reduced, known.fresh])
 
-    function toggle(id: string) {
+    const toggle = (idValue: string) => {
         setExpanded((current) => {
             const next = new Set(current)
-            if (next.has(id)) next.delete(id)
-            else next.add(id)
+            if (next.has(idValue)) {
+                next.delete(idValue)
+            } else {
+                next.add(idValue)
+            }
             return next
         })
     }
-    function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+            return
+        }
         const triggers = [...(scrollerRef.current?.querySelectorAll<HTMLElement>('[data-timeline-trigger]') ?? [])]
         const index = triggers.indexOf(document.activeElement as HTMLElement)
-        if (index < 0) return
+        if (index === -1) {
+            return
+        }
         event.preventDefault()
-        const next =
-            event.key === 'Home'
-                ? 0
-                : event.key === 'End'
-                  ? triggers.length - 1
-                  : Math.min(Math.max(index + (event.key === 'ArrowDown' ? 1 : -1), 0), triggers.length - 1)
+        const next = (() => {
+            if (event.key === 'Home') {
+                return 0
+            }
+            if (event.key === 'End') {
+                return triggers.length - 1
+            }
+            return Math.min(Math.max(index + (event.key === 'ArrowDown' ? 1 : -1), 0), triggers.length - 1)
+        })()
         triggers[next]?.focus()
     }
 
@@ -600,14 +650,19 @@ export function Timeline({
                                                 const time = today
                                                     ? relative(row.time, now)
                                                     : {
-                                                          short: (groupByDay
-                                                              ? formats.clock
-                                                              : row.day.slice(0, 4) ===
+                                                          long: '',
+                                                          short: (() => {
+                                                              if (groupByDay) {
+                                                                  return formats.clock
+                                                              }
+                                                              if (
+                                                                  row.day.slice(0, 4) ===
                                                                   dayKey(now, timeZone).slice(0, 4)
-                                                                ? formats.dateClock
-                                                                : formats.dateClockYear
-                                                          ).format(new Date(row.time)),
-                                                          long: ''
+                                                              ) {
+                                                                  return formats.dateClock
+                                                              }
+                                                              return formats.dateClockYear
+                                                          })().format(new Date(row.time))
                                                       }
                                                 return (
                                                     <TimelineRow
@@ -615,7 +670,9 @@ export function Timeline({
                                                         row={row}
                                                         last={index === group.rows.length - 1}
                                                         expanded={expanded.has(row.id)}
-                                                        onToggle={() => toggle(row.id)}
+                                                        onToggle={() => {
+                                                            toggle(row.id)
+                                                        }}
                                                         timeLabel={time.short}
                                                         timeFull={
                                                             today

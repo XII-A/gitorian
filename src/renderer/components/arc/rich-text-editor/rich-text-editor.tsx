@@ -1,7 +1,40 @@
 'use client'
 
-/* eslint-disable typescript/no-deprecated -- The upstream Arc editor uses execCommand for browser formatting and its own undo history. */
-
+import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft'
+import { CheckIcon as Check } from '@phosphor-icons/react/dist/csr/Check'
+import { CodeIcon as Code } from '@phosphor-icons/react/dist/csr/Code'
+import { CodeBlockIcon as SquareCode } from '@phosphor-icons/react/dist/csr/CodeBlock'
+import { LinkIcon as Link } from '@phosphor-icons/react/dist/csr/Link'
+import { LinkBreakIcon as Unlink } from '@phosphor-icons/react/dist/csr/LinkBreak'
+import { ListBulletsIcon as List } from '@phosphor-icons/react/dist/csr/ListBullets'
+import { ListNumbersIcon as ListOrdered } from '@phosphor-icons/react/dist/csr/ListNumbers'
+import { MinusIcon as Minus } from '@phosphor-icons/react/dist/csr/Minus'
+import { ParagraphIcon as Pilcrow } from '@phosphor-icons/react/dist/csr/Paragraph'
+import { QuotesIcon as Quote } from '@phosphor-icons/react/dist/csr/Quotes'
+import { TextBIcon as Bold } from '@phosphor-icons/react/dist/csr/TextB'
+import { TextHOneIcon as Heading1 } from '@phosphor-icons/react/dist/csr/TextHOne'
+import { TextHThreeIcon as Heading3 } from '@phosphor-icons/react/dist/csr/TextHThree'
+import { TextHTwoIcon as Heading2 } from '@phosphor-icons/react/dist/csr/TextHTwo'
+import { TextItalicIcon as Italic } from '@phosphor-icons/react/dist/csr/TextItalic'
+import { TextStrikethroughIcon as Strikethrough } from '@phosphor-icons/react/dist/csr/TextStrikethrough'
+import type { Transition, Variants } from 'motion/react'
+import {
+    AnimatePresence,
+    animate,
+    motion,
+    useIsPresent,
+    useMotionValue,
+    useReducedMotion,
+    useTransform
+} from 'motion/react'
+import type {
+    CSSProperties,
+    FormEvent,
+    ForwardRefRenderFunction,
+    ClipboardEvent as ReactClipboardEvent,
+    KeyboardEvent as ReactKeyboardEvent,
+    ReactNode
+} from 'react'
 import {
     forwardRef,
     useCallback,
@@ -13,43 +46,14 @@ import {
     useRef,
     useState
 } from 'react'
-import type {
-    ClipboardEvent as ReactClipboardEvent,
-    CSSProperties,
-    FormEvent,
-    KeyboardEvent as ReactKeyboardEvent,
-    ReactNode
-} from 'react'
-import {
-    AnimatePresence,
-    animate,
-    motion,
-    useIsPresent,
-    useMotionValue,
-    useReducedMotion,
-    useTransform
-} from 'motion/react'
-import type { Transition, Variants } from 'motion/react'
-import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft'
-import { TextBIcon as Bold } from '@phosphor-icons/react/dist/csr/TextB'
-import { CheckIcon as Check } from '@phosphor-icons/react/dist/csr/Check'
-import { CodeIcon as Code } from '@phosphor-icons/react/dist/csr/Code'
-import { TextHOneIcon as Heading1 } from '@phosphor-icons/react/dist/csr/TextHOne'
-import { TextHTwoIcon as Heading2 } from '@phosphor-icons/react/dist/csr/TextHTwo'
-import { TextHThreeIcon as Heading3 } from '@phosphor-icons/react/dist/csr/TextHThree'
-import { TextItalicIcon as Italic } from '@phosphor-icons/react/dist/csr/TextItalic'
-import { LinkIcon as Link } from '@phosphor-icons/react/dist/csr/Link'
-import { ListBulletsIcon as List } from '@phosphor-icons/react/dist/csr/ListBullets'
-import { ListNumbersIcon as ListOrdered } from '@phosphor-icons/react/dist/csr/ListNumbers'
-import { MinusIcon as Minus } from '@phosphor-icons/react/dist/csr/Minus'
-import { ParagraphIcon as Pilcrow } from '@phosphor-icons/react/dist/csr/Paragraph'
-import { QuotesIcon as Quote } from '@phosphor-icons/react/dist/csr/Quotes'
-import { CodeBlockIcon as SquareCode } from '@phosphor-icons/react/dist/csr/CodeBlock'
-import { TextStrikethroughIcon as Strikethrough } from '@phosphor-icons/react/dist/csr/TextStrikethrough'
-import { LinkBreakIcon as Unlink } from '@phosphor-icons/react/dist/csr/LinkBreak'
+
+import { required } from '../../../../shared/required'
 import { motionTokens } from '../lib/motion-tokens'
-import styles from './rich-text-editor.module.css'
 import { ScrollArea } from '../scroll-area/scroll-area'
+
+import styles from './rich-text-editor.module.css'
+
+/* eslint-disable typescript/no-deprecated -- The upstream Arc editor uses execCommand for browser formatting and its own undo history. */
 
 /* ------------------------------------------------------------------------------------------------
  * Markdown and HTML. Small, dependency free converters for the subset the editor writes.
@@ -57,60 +61,79 @@ import { ScrollArea } from '../scroll-area/scroll-area'
 
 export type BlockType = 'p' | 'h1' | 'h2' | 'h3' | 'ul' | 'ol' | 'blockquote' | 'pre' | 'hr'
 
-const ZWSP = /\u200b/g
+const ZWSP = /\u200B/gu
 const escapeHtml = (value: string) =>
-    value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-const safeUrl = (url: string) => /^(https?:|mailto:|tel:|\/|#)/i.test(url.trim())
+    value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
+const safeUrl = (url: string) => /^(?<group1>https?:|mailto:|tel:|\/|#)/iu.test(url.trim())
 
 /** Adds a scheme to bare domains so `example.com/docs` becomes a working link. */
-export function normalizeUrl(input: string) {
+export const normalizeUrl = (input: string) => {
     const url = input.trim()
-    if (!url) return ''
-    if (/^[a-z][a-z\d+.-]*:/i.test(url) || url.startsWith('/') || url.startsWith('#')) return url
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(url)) return `mailto:${url}`
+    if (!url) {
+        return ''
+    }
+    if (/^[a-z][a-z\d+.-]*:/iu.test(url) || url.startsWith('/') || url.startsWith('#')) {
+        return url
+    }
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(url)) {
+        return `mailto:${url}`
+    }
     return `https://${url}`
 }
 
-function inlineMarkdown(text: string) {
+const inlineMarkdown = (text: string) => {
     const codes: string[] = []
-    let out = escapeHtml(text).replace(/`([^`]+)`/g, (_, code: string) => `\u0000${codes.push(code) - 1}\u0000`)
-    out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, url: string) =>
+    let out = escapeHtml(text).replaceAll(
+        /`(?<group1>[^`]+)`/gu,
+        (_, code: string) => `\u0000${codes.push(code) - 1}\u0000`
+    )
+    out = out.replaceAll(/\[(?<group1>[^\]]+)\]\((?<group2>[^)\s]+)\)/gu, (_, label: string, url: string) =>
         safeUrl(url) ? `<a href="${url}">${label}</a>` : label
     )
-    out = out.replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, '<strong>$2</strong>')
-    out = out.replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<s>$1</s>')
-    out = out.replace(/(^|[^\w*])\*(?=\S)([^*]*?\S)\*(?!\*)/g, '$1<em>$2</em>')
-    out = out.replace(/(^|[^\w_])_(?=\S)([^_]*?\S)_(?![\w_])/g, '$1<em>$2</em>')
+    out = out.replaceAll(/(?<group1>\*\*|__)(?=\S)(?<group2>[\s\S]*?\S)\1/gu, '<strong>$2</strong>')
+    out = out.replaceAll(/~~(?=\S)(?<group1>[\s\S]*?\S)~~/gu, '<s>$1</s>')
+    out = out.replaceAll(/(?<group1>^|[^\w*])\*(?=\S)(?<group2>[^*]*?\S)\*(?!\*)/gu, '$1<em>$2</em>')
+    out = out.replaceAll(/(?<group1>^|[^\w_])_(?=\S)(?<group2>[^_]*?\S)_(?![\w_])/gu, '$1<em>$2</em>')
     // eslint-disable-next-line no-control-regex -- Internal sentinel characters protect inline code during Markdown conversion.
-    return out.replace(/\u0000(\d+)\u0000/g, (_, index: string) => `<code>${codes[Number(index)]}</code>`)
+    return out.replaceAll(/\u0000(?<group1>\d+)\u0000/gu, (_, index: string) => `<code>${codes[Number(index)]}</code>`)
 }
 
-function listMarkdown(lines: string[]) {
+const listMarkdown = (lines: string[]) => {
     const items = lines.map((line) => {
-        const match = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(line)!
-        return { indent: match[1].replace(/\t/g, '  ').length, tag: /\d/.test(match[2]) ? 'ol' : 'ul', text: match[3] }
+        const match = required(/^(?<group1>\s*)(?<group2>[-*+]|\d+[.)])\s+(?<group3>.*)$/u.exec(line))
+        return {
+            indent: match[1].replaceAll('	', '  ').length,
+            tag: /\d/u.test(match[2]) ? 'ol' : 'ul',
+            text: match[3]
+        }
     })
     let html = ''
     const stack: { indent: number; tag: string }[] = []
     for (const item of items) {
-        while (stack.length > 1 && item.indent < stack[stack.length - 1].indent) html += `</li></${stack.pop()!.tag}>`
-        const top = stack[stack.length - 1]
+        while (stack.length > 1 && item.indent < required(stack.at(-1)).indent) {
+            html += `</li></${required(stack.pop()).tag}>`
+        }
+        const top = stack.at(-1)
         if (!top || item.indent > top.indent) {
             html += `<${item.tag}><li>`
             stack.push({ indent: item.indent, tag: item.tag })
-        } else if (top.tag !== item.tag) {
+        } else if (top.tag === item.tag) {
+            html += '</li><li>'
+        } else {
             html += `</li></${top.tag}><${item.tag}><li>`
             top.tag = item.tag
-        } else html += '</li><li>'
+        }
         html += inlineMarkdown(item.text)
     }
-    while (stack.length) html += `</li></${stack.pop()!.tag}>`
+    while (stack.length) {
+        html += `</li></${required(stack.pop()).tag}>`
+    }
     return html
 }
 
 /** Converts Markdown to the editor's HTML: headings (three levels), lists, quotes, fenced code, rules, and inline marks. */
-export function markdownToHtml(markdown: string) {
-    const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
+export const markdownToHtml = (markdown: string) => {
+    const lines = markdown.replaceAll(/\r\n?/gu, '\n').split('\n')
     const out: string[] = []
     const paragraph: string[] = []
     const flush = () => {
@@ -119,113 +142,128 @@ export function markdownToHtml(markdown: string) {
             paragraph.length = 0
         }
     }
-    const isItem = (line: string) => /^\s*([-*+]|\d+[.)])\s+/.test(line)
+    const isItem = (line: string) => /^\s*(?<group1>[-*+]|\d+[.)])\s+/u.test(line)
     for (let index = 0; index < lines.length;) {
         const line = lines[index]
-        if (/^\s*```/.test(line)) {
+        if (/^\s*```/u.test(line)) {
             flush()
             const code: string[] = []
-            index++
-            while (index < lines.length && !/^\s*```/.test(lines[index])) code.push(lines[index++])
-            index++
+            index += 1
+            while (index < lines.length && !/^\s*```/u.test(lines[index])) {
+                code.push(lines[(index += 1) - 1])
+            }
+            index += 1
             out.push(`<pre>${escapeHtml(code.join('\n')) || '<br>'}</pre>`)
             continue
         }
         if (!line.trim()) {
             flush()
-            index++
+            index += 1
             continue
         }
-        const heading = /^(#{1,6})\s+(.*)$/.exec(line)
+        const heading = /^(?<group1>#{1,6})\s+(?<group2>.*)$/u.exec(line)
         if (heading) {
             flush()
             const level = Math.min(3, heading[1].length)
             out.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`)
-            index++
+            index += 1
             continue
         }
-        if (/^ {0,3}([-*_])( *\1){2,} *$/.test(line)) {
+        if (/^ {0,3}(?<group1>[-*_])(?<group2> *\1){2,} *$/u.test(line)) {
             flush()
             out.push('<hr>')
-            index++
+            index += 1
             continue
         }
-        if (/^\s*>/.test(line)) {
+        if (/^\s*>/u.test(line)) {
             flush()
             const quote: string[] = []
-            while (index < lines.length && /^\s*>/.test(lines[index]))
-                quote.push(lines[index++].replace(/^\s*>\s?/, ''))
+            while (index < lines.length && /^\s*>/u.test(lines[index])) {
+                quote.push(lines[(index += 1) - 1].replace(/^\s*>\s?/u, ''))
+            }
             out.push(`<blockquote>${quote.map(inlineMarkdown).join('<br>')}</blockquote>`)
             continue
         }
         if (isItem(line)) {
             flush()
             const items: string[] = []
-            while (index < lines.length && isItem(lines[index])) items.push(lines[index++])
+            while (index < lines.length && isItem(lines[index])) {
+                items.push(lines[(index += 1) - 1])
+            }
             out.push(listMarkdown(items))
             continue
         }
         paragraph.push(line.trim())
-        index++
+        index += 1
     }
     flush()
     return out.join('') || '<p><br></p>'
 }
 
-function wrapMark(inner: string, mark: string) {
-    const match = /^(\s*)([\s\S]*?)(\s*)$/.exec(inner)!
+const wrapMark = (inner: string, mark: string) => {
+    const match = required(/^(?<group1>\s*)(?<group2>[\s\S]*?)(?<group3>\s*)$/u.exec(inner))
     return match[2] ? `${match[1]}${mark}${match[2]}${mark}${match[3]}` : inner
 }
 
-function inlineToMarkdown(node: Node): string {
+const inlineToMarkdown = (node: Node): string => {
     let out = ''
     node.childNodes.forEach((child) => {
         if (child.nodeType === Node.TEXT_NODE) {
             out += (child as Text).data.replace(ZWSP, '')
             return
         }
-        if (child.nodeType !== Node.ELEMENT_NODE) return
+        if (child.nodeType !== Node.ELEMENT_NODE) {
+            return
+        }
         const element = child as HTMLElement
         switch (element.nodeName) {
-            case 'BR':
+            case 'BR': {
                 out += '\n'
                 break
+            }
             case 'STRONG':
-            case 'B':
+            case 'B': {
                 out += wrapMark(inlineToMarkdown(element), '**')
                 break
+            }
             case 'EM':
-            case 'I':
+            case 'I': {
                 out += wrapMark(inlineToMarkdown(element), '_')
                 break
+            }
             case 'S':
             case 'STRIKE':
-            case 'DEL':
+            case 'DEL': {
                 out += wrapMark(inlineToMarkdown(element), '~~')
                 break
-            case 'CODE':
+            }
+            case 'CODE': {
                 out += `\`${(element.textContent ?? '').replace(ZWSP, '')}\``
                 break
-            case 'A':
+            }
+            case 'A': {
                 out += `[${inlineToMarkdown(element)}](${element.getAttribute('href') ?? ''})`
                 break
+            }
             case 'UL':
-            case 'OL':
+            case 'OL': {
                 break
-            default:
+            }
+            default: {
                 out += inlineToMarkdown(element)
+            }
         }
     })
     return out
 }
 
-function listToMarkdown(list: Element, indent: string): string {
+const listToMarkdown = (list: Element, indent: string): string => {
     let number = 1
-    return Array.from(list.children)
+    return [...list.children]
         .filter((item) => item.nodeName === 'LI')
         .map((item) => {
-            const marker = list.nodeName === 'OL' ? `${number++}. ` : '- '
-            const nested = Array.from(item.children)
+            const marker = list.nodeName === 'OL' ? `${(number += 1) - 1}. ` : '- '
+            const nested = [...item.children]
                 .filter((child) => child.nodeName === 'UL' || child.nodeName === 'OL')
                 .map((child) => listToMarkdown(child, indent + ' '.repeat(marker.length)))
             return [`${indent}${marker}${inlineToMarkdown(item).trim()}`, ...nested].join('\n')
@@ -233,94 +271,114 @@ function listToMarkdown(list: Element, indent: string): string {
         .join('\n')
 }
 
-function blockToMarkdown(node: Node): string {
-    if (node.nodeType === Node.TEXT_NODE) return (node as Text).data.replace(ZWSP, '').trim()
-    if (node.nodeType !== Node.ELEMENT_NODE) return ''
+const BLOCK_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'LI', 'PRE', 'BLOCKQUOTE', 'DIV', 'UL', 'OL', 'HR'])
+
+const blockToMarkdown = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) {
+        return (node as Text).data.replace(ZWSP, '').trim()
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+        return ''
+    }
     const element = node as HTMLElement
     switch (element.nodeName) {
-        case 'H1':
+        case 'H1': {
             return `# ${inlineToMarkdown(element).trim()}`
-        case 'H2':
+        }
+        case 'H2': {
             return `## ${inlineToMarkdown(element).trim()}`
-        case 'H3':
+        }
+        case 'H3': {
             return `### ${inlineToMarkdown(element).trim()}`
-        case 'HR':
+        }
+        case 'HR': {
             return '---'
-        case 'PRE':
-            return `\`\`\`\n${(element.textContent ?? '').replace(ZWSP, '').replace(/\n$/, '')}\n\`\`\``
+        }
+        case 'PRE': {
+            return `\`\`\`\n${(element.textContent ?? '').replace(ZWSP, '').replace(/\n$/u, '')}\n\`\`\``
+        }
         case 'UL':
-        case 'OL':
+        case 'OL': {
             return listToMarkdown(element, '')
+        }
         case 'BLOCKQUOTE': {
-            const blocks = Array.from(element.children).some((child) => BLOCK_TAGS.has(child.nodeName))
+            const blocks = [...element.children].some((child) => BLOCK_TAGS.has(child.nodeName))
             const body = blocks
-                ? Array.from(element.childNodes).map(blockToMarkdown).filter(Boolean).join('\n\n')
+                ? [...element.childNodes].map(blockToMarkdown).filter(Boolean).join('\n\n')
                 : inlineToMarkdown(element).trim()
             return body
                 .split('\n')
                 .map((line) => (line ? `> ${line}` : '>'))
                 .join('\n')
         }
-        default:
+        default: {
             return inlineToMarkdown(element).trim()
+        }
     }
 }
 
 /** Converts editor HTML (or an element) to Markdown. */
-export function htmlToMarkdown(input: string | HTMLElement) {
-    const root = typeof input === 'string' ? parseHtml(input) : input
-    return Array.from(root.childNodes).map(blockToMarkdown).filter(Boolean).join('\n\n')
-}
-
-function parseHtml(html: string) {
+const parseHtml = (html: string) => {
     const template = document.createElement('template')
     template.innerHTML = html
     const root = document.createElement('div')
-    root.appendChild(template.content)
+    root.append(template.content)
     return root
+}
+
+export const htmlToMarkdown = (input: string | HTMLElement) => {
+    const root = typeof input === 'string' ? parseHtml(input) : input
+    return [...root.childNodes].map(blockToMarkdown).filter(Boolean).join('\n\n')
 }
 
 const insertAfter = (reference: Node, ...nodes: Node[]) => {
     let at = reference
-    nodes.forEach((node) => {
-        at.parentNode!.insertBefore(node, at.nextSibling)
+    for (const node of nodes) {
+        required(at.parentNode).insertBefore(node, at.nextSibling)
         at = node
-    })
+    }
 }
-const insertBefore = (reference: Node, ...nodes: Node[]) =>
-    nodes.forEach((node) => reference.parentNode!.insertBefore(node, reference))
+const insertBefore = (reference: Node, ...nodes: Node[]) => {
+    for (const node of nodes) {
+        required(reference.parentNode).insertBefore(node, reference)
+    }
+}
 const replaceNode = (old: Node, ...nodes: Node[]) => {
     insertBefore(old, ...nodes)
-    old.parentNode!.removeChild(old)
+    required(old.parentNode).removeChild(old)
 }
-const appendNodes = (parent: Node, ...nodes: Node[]) => nodes.forEach((node) => parent.appendChild(node))
+const appendNodes = (parent: Node, ...nodes: Node[]) => {
+    for (const node of nodes) {
+        parent.insertBefore(node, null)
+    }
+}
 
 const INLINE_MAP: Record<string, string> = {
+    A: 'a',
     B: 'strong',
-    STRONG: 'strong',
-    I: 'em',
+    BR: 'br',
+    CODE: 'code',
+    DEL: 's',
     EM: 'em',
+    I: 'em',
     S: 's',
     STRIKE: 's',
-    DEL: 's',
-    CODE: 'code',
-    A: 'a',
-    BR: 'br'
+    STRONG: 'strong'
 }
 const BLOCK_MAP: Record<string, string> = {
-    P: 'p',
+    BLOCKQUOTE: 'blockquote',
     H1: 'h1',
     H2: 'h2',
     H3: 'h3',
     H4: 'h3',
     H5: 'h3',
     H6: 'h3',
-    UL: 'ul',
-    OL: 'ol',
+    HR: 'hr',
     LI: 'li',
-    BLOCKQUOTE: 'blockquote',
+    OL: 'ol',
+    P: 'p',
     PRE: 'pre',
-    HR: 'hr'
+    UL: 'ul'
 }
 const DROP = new Set([
     'SCRIPT',
@@ -343,32 +401,46 @@ const DROP = new Set([
     'TEXTAREA',
     'HEAD'
 ])
-const BLOCK_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'LI', 'PRE', 'BLOCKQUOTE', 'DIV', 'UL', 'OL', 'HR'])
 
 /** Keeps only the tags the editor understands and drops every attribute except safe link targets. Bold and italic spans from other editors become marks. */
-export function sanitizeHtml(html: string) {
+const isText = (node: Node | null): node is Text => !!node && node.nodeType === Node.TEXT_NODE
+
+export const sanitizeHtml = (html: string) => {
     const source = new DOMParser().parseFromString(html, 'text/html').body
     const out = document.createElement('div')
     const convert = (from: Node, into: Node) => {
         from.childNodes.forEach((child) => {
             if (child.nodeType === Node.TEXT_NODE) {
-                into.appendChild(document.createTextNode((child as Text).data))
+                into.insertBefore(document.createTextNode((child as Text).data), null)
                 return
             }
-            if (child.nodeType !== Node.ELEMENT_NODE) return
+            if (child.nodeType !== Node.ELEMENT_NODE) {
+                return
+            }
             const element = child as HTMLElement
-            if (DROP.has(element.nodeName)) return
+            if (DROP.has(element.nodeName)) {
+                return
+            }
             const style = element.getAttribute('style') ?? ''
             let tag = INLINE_MAP[element.nodeName] ?? BLOCK_MAP[element.nodeName]
-            if (element.nodeName === 'B' && /font-weight:\s*(normal|[1-4]00)/.test(style)) tag = ''
-            if (element.nodeName === 'SPAN')
-                tag = /font-weight:\s*(bold|[6-9]00)/.test(style)
-                    ? 'strong'
-                    : /font-style:\s*italic/.test(style)
-                      ? 'em'
-                      : style.includes('line-through')
-                        ? 's'
-                        : ''
+            if (element.nodeName === 'B' && /font-weight:\s*(?<group1>normal|[1-4]00)/u.test(style)) {
+                tag = ''
+            }
+            if (element.nodeName === 'SPAN') {
+                tag = (() => {
+                    if (/font-weight:\s*(?<group1>bold|[6-9]00)/u.test(style)) {
+                        return 'strong'
+                    }
+                    if (/font-style:\s*italic/u.test(style)) {
+                        return 'em'
+                    }
+                    if (style.includes('line-through')) {
+                        return 's'
+                    }
+
+                    return ''
+                })()
+            }
             if (!tag) {
                 convert(element, into)
                 return
@@ -382,33 +454,39 @@ export function sanitizeHtml(html: string) {
                 }
                 next.setAttribute('href', href)
             }
-            if (tag === 'pre') next.textContent = element.textContent ?? ''
-            else if (tag !== 'br' && tag !== 'hr') convert(element, next)
-            into.appendChild(next)
+            if (tag === 'pre') {
+                next.textContent = element.textContent ?? ''
+            } else if (tag !== 'br' && tag !== 'hr') {
+                convert(element, next)
+            }
+            into.insertBefore(next, null)
         })
     }
     convert(source, out)
     // Inline runs at the top level become paragraphs; whitespace between blocks disappears.
     const fixed = document.createElement('div')
     let run: HTMLElement | null = null
-    Array.from(out.childNodes).forEach((node) => {
+    for (const node of [...out.childNodes]) {
         const block = node.nodeType === Node.ELEMENT_NODE && BLOCK_TAGS.has(node.nodeName)
         if (block) {
             run = null
-            fixed.appendChild(node)
-            return
+            fixed.append(node)
+            continue
         }
-        if (node.nodeType === Node.TEXT_NODE && !(node as Text).data.trim() && !run) return
+        if (node.nodeType === Node.TEXT_NODE && !(node as Text).data.trim() && !run) {
+            continue
+        }
         if (!run) {
             run = document.createElement('p')
-            fixed.appendChild(run)
+            fixed.append(run)
         }
-        run.appendChild(node)
-    })
-    fixed.querySelectorAll('li > p').forEach((paragraph) => replaceNode(paragraph, ...Array.from(paragraph.childNodes)))
-    // The editor keeps typed whitespace, so formatting whitespace between blocks and list items has to go.
-    ;[fixed, ...Array.from(fixed.querySelectorAll('ul, ol, blockquote, li'))].forEach((parent) =>
-        Array.from(parent.childNodes).forEach((node) => {
+        run.append(node)
+    }
+    for (const paragraph of fixed.querySelectorAll('li > p')) {
+        replaceNode(paragraph, ...paragraph.childNodes)
+    }
+    for (const parent of [fixed, ...[...fixed.querySelectorAll('ul, ol, blockquote, li')]]) {
+        for (const node of [...parent.childNodes]) {
             if (
                 isText(node) &&
                 !node.data.trim() &&
@@ -417,10 +495,11 @@ export function sanitizeHtml(html: string) {
                     parent.nodeName === 'OL' ||
                     (node.previousSibling && BLOCK_TAGS.has(node.previousSibling.nodeName)) ||
                     (node.nextSibling && BLOCK_TAGS.has(node.nextSibling.nodeName)))
-            )
+            ) {
                 node.remove()
-        })
-    )
+            }
+        }
+    }
     return fixed.innerHTML
 }
 
@@ -431,41 +510,57 @@ export function sanitizeHtml(html: string) {
 
 const COUNTED = new Set(['P', 'H1', 'H2', 'H3', 'LI', 'PRE', 'BLOCKQUOTE', 'DIV'])
 const isElement = (node: Node | null): node is HTMLElement => !!node && node.nodeType === Node.ELEMENT_NODE
-const isText = (node: Node | null): node is Text => !!node && node.nodeType === Node.TEXT_NODE
 
-function pointToOffset(root: Node, container: Node, offset: number) {
-    let count = 0,
-        found = -1
+const pointToOffset = (root: Node, container: Node, offset: number) => {
+    let count = 0
+    let found = -1
     const visit = (node: Node) => {
-        if (found >= 0) return
-        if (isText(node)) {
-            if (node === container) found = count + offset
-            else count += node.data.length
+        if (found >= 0) {
             return
         }
-        if (!isElement(node)) return
-        if (node !== root && COUNTED.has(node.nodeName)) count += 1
-        if (node.nodeName === 'BR' || node.nodeName === 'HR') count += 1
+        if (isText(node)) {
+            if (node === container) {
+                found = count + offset
+            } else {
+                count += node.data.length
+            }
+            return
+        }
+        if (!isElement(node)) {
+            return
+        }
+        if (node !== root && COUNTED.has(node.nodeName)) {
+            count += 1
+        }
+        if (node.nodeName === 'BR' || node.nodeName === 'HR') {
+            count += 1
+        }
         const children = node.childNodes
-        for (let index = 0; index < children.length; index++) {
+        for (let index = 0; index < children.length; index += 1) {
             if (node === container && index === offset) {
                 found = count
                 return
             }
             visit(children[index])
-            if (found >= 0) return
+            if (found >= 0) {
+                return
+            }
         }
-        if (node === container) found = count
+        if (node === container) {
+            found = count
+        }
     }
     visit(root)
     return found < 0 ? count : found
 }
 
-function offsetToPoint(root: Node, target: number): [Node, number] {
+const offsetToPoint = (root: Node, target: number): [Node, number] => {
     let count = 0
     let result: [Node, number] | null = null
     const visit = (node: Node) => {
-        if (result) return
+        if (result) {
+            return
+        }
         if (isText(node)) {
             if (target <= count + node.data.length) {
                 result = [node, Math.max(0, target - count)]
@@ -474,8 +569,12 @@ function offsetToPoint(root: Node, target: number): [Node, number] {
             count += node.data.length
             return
         }
-        if (!isElement(node)) return
-        if (node !== root && COUNTED.has(node.nodeName)) count += 1
+        if (!isElement(node)) {
+            return
+        }
+        if (node !== root && COUNTED.has(node.nodeName)) {
+            count += 1
+        }
         if (node.nodeName === 'BR' || node.nodeName === 'HR') {
             if (count === target && node.parentNode) {
                 result = [node.parentNode, Array.prototype.indexOf.call(node.parentNode.childNodes, node)]
@@ -485,11 +584,14 @@ function offsetToPoint(root: Node, target: number): [Node, number] {
             return
         }
         node.childNodes.forEach(visit)
-        if (!result && count === target && node !== root && COUNTED.has(node.nodeName))
+        if (!result && count === target && node !== root && COUNTED.has(node.nodeName)) {
             result = [node, node.childNodes.length]
+        }
     }
     visit(root)
-    if (result) return result
+    if (result) {
+        return result
+    }
     const last = root.lastChild
     return last && isElement(last) && last.nodeName !== 'HR'
         ? [last, last.childNodes.length]
@@ -501,39 +603,45 @@ interface Offsets {
     end: number
 }
 
-function readOffsets(root: HTMLElement): Offsets | null {
+const readOffsets = (root: HTMLElement): Offsets | null => {
     const selection = window.getSelection()
-    if (!selection?.rangeCount) return null
+    if (!selection?.rangeCount) {
+        return null
+    }
     const range = selection.getRangeAt(0)
-    if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null
+    if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) {
+        return null
+    }
     return {
-        start: pointToOffset(root, range.startContainer, range.startOffset),
-        end: pointToOffset(root, range.endContainer, range.endOffset)
+        end: pointToOffset(root, range.endContainer, range.endOffset),
+        start: pointToOffset(root, range.startContainer, range.startOffset)
     }
 }
 
-function writeOffsets(root: HTMLElement, offsets: Offsets | null) {
+const writeOffsets = (root: HTMLElement, offsets: Offsets | null) => {
     const selection = window.getSelection()
-    if (!selection) return
+    if (!selection) {
+        return
+    }
     const range = document.createRange()
-    if (!offsets) {
-        range.selectNodeContents(root.lastElementChild ?? root)
-        range.collapse(false)
-    } else {
+    if (offsets) {
         const [startNode, startOffset] = offsetToPoint(root, offsets.start)
         const [endNode, endOffset] =
             offsets.end === offsets.start ? [startNode, startOffset] : offsetToPoint(root, offsets.end)
         range.setStart(startNode, startOffset)
         range.setEnd(endNode, endOffset)
+    } else {
+        range.selectNodeContents(root.lastElementChild ?? root)
+        range.collapse(false)
     }
     selection.removeAllRanges()
     selection.addRange(range)
 }
 
 /** The visible band of the nearest scrolling or clipping ancestor, so floating layers flip before they get cut off. */
-function clipBand(element: HTMLElement) {
-    let top = 0,
-        bottom = window.innerHeight
+const clipBand = (element: HTMLElement) => {
+    let top = 0
+    let bottom = window.innerHeight
     for (let node = element.parentElement; node; node = node.parentElement) {
         const style = getComputedStyle(node)
         if (style.overflowY !== 'visible' || style.overflowX !== 'visible') {
@@ -542,12 +650,14 @@ function clipBand(element: HTMLElement) {
             bottom = Math.min(bottom, rect.bottom)
         }
     }
-    return { top, bottom }
+    return { bottom, top }
 }
 
-function placeCaret(node: Node, offset: number) {
+const placeCaret = (node: Node, offset: number) => {
     const selection = window.getSelection()
-    if (!selection) return
+    if (!selection) {
+        return
+    }
     const range = document.createRange()
     range.setStart(node, offset)
     range.collapse(true)
@@ -555,18 +665,23 @@ function placeCaret(node: Node, offset: number) {
     selection.addRange(range)
 }
 
-function placeAtStart(element: HTMLElement) {
+const placeAtStart = (element: HTMLElement) => {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
     const first = walker.nextNode()
-    if (first) placeCaret(first, 0)
-    else placeCaret(element, 0)
+    if (first) {
+        placeCaret(first, 0)
+    } else {
+        placeCaret(element, 0)
+    }
 }
 
 /** The nearest block around a node: a paragraph, heading, list item, quote, or code block. */
-function blockAt(root: HTMLElement, node: Node | null): HTMLElement | null {
+const blockAt = (root: HTMLElement, node: Node | null): HTMLElement | null => {
     let current: Node | null = node
     while (current && current !== root) {
-        if (isElement(current) && COUNTED.has(current.nodeName)) return current
+        if (isElement(current) && COUNTED.has(current.nodeName)) {
+            return current
+        }
         current = current.parentNode
     }
     return null
@@ -574,59 +689,70 @@ function blockAt(root: HTMLElement, node: Node | null): HTMLElement | null {
 
 const visibleText = (element: Node) => (element.textContent ?? '').replace(ZWSP, '')
 
-function ensureFilled(element: HTMLElement) {
-    if (element.nodeName === 'HR') return
-    if (!visibleText(element) && !element.querySelector('br, hr, ul, ol'))
-        element.appendChild(document.createElement('br'))
+const ensureFilled = (element: HTMLElement) => {
+    if (element.nodeName === 'HR') {
+        return
+    }
+    if (!visibleText(element) && !element.querySelector('br, hr, ul, ol')) {
+        element.append(document.createElement('br'))
+    }
 }
 
-function textBefore(block: HTMLElement, range: Range) {
+const textBefore = (block: HTMLElement, range: Range) => {
     const before = document.createRange()
     before.setStart(block, 0)
     before.setEnd(range.startContainer, range.startOffset)
-    return before
-        .toString()
-        .replace(ZWSP, '')
-        .replace(/\u00a0/g, ' ')
+    return before.toString().replace(ZWSP, '').replaceAll('\u00A0', ' ')
 }
 
-function atBlockStart(block: HTMLElement, range: Range) {
-    if (!range.collapsed) return false
+const atBlockStart = (block: HTMLElement, range: Range) => {
+    if (!range.collapsed) {
+        return false
+    }
     const before = document.createRange()
     before.setStart(block, 0)
     before.setEnd(range.startContainer, range.startOffset)
     return !before.toString().replace(ZWSP, '') && !before.cloneContents().querySelector('br, hr')
 }
 
-function moveChildren(from: Node, to: Node) {
-    while (from.firstChild) to.appendChild(from.firstChild)
+const moveChildren = (from: Node, to: Node) => {
+    while (from.firstChild) {
+        to.insertBefore(from.firstChild, null)
+    }
 }
 
 /** Plain text of a block, with line breaks for `<br>`, for moving content into a code block. */
-function plainText(element: HTMLElement) {
+const plainText = (element: HTMLElement) => {
     let out = ''
-    const walk = (node: Node) =>
-        node.childNodes.forEach((child) => {
-            if (isText(child)) out += child.data.replace(ZWSP, '')
-            else if (child.nodeName === 'BR') out += '\n'
-            else walk(child)
-        })
+    const walk = (node: Node) => {
+        for (const child of node.childNodes) {
+            if (isText(child)) {
+                out += child.data.replace(ZWSP, '')
+            } else if (child.nodeName === 'BR') {
+                out += '\n'
+            } else {
+                walk(child)
+            }
+        }
+    }
     walk(element)
-    return out.replace(/\n$/, '')
+    return out.replace(/\n$/u, '')
 }
 
-function linesToNodes(text: string) {
+const linesToNodes = (text: string) => {
     const nodes: Node[] = []
-    text.replace(/\n$/, '')
-        .split('\n')
-        .forEach((line, index) => {
-            if (index) nodes.push(document.createElement('br'))
-            if (line) nodes.push(document.createTextNode(line))
-        })
+    for (const [index, line] of text.replace(/\n$/u, '').split('\n').entries()) {
+        if (index) {
+            nodes.push(document.createElement('br'))
+        }
+        if (line) {
+            nodes.push(document.createTextNode(line))
+        }
+    }
     return nodes
 }
 
-function mergeAdjacentLists(list: HTMLElement) {
+const mergeAdjacentLists = (list: HTMLElement) => {
     const next = list.nextElementSibling
     if (next && next.nodeName === list.nodeName) {
         moveChildren(next, list)
@@ -642,61 +768,83 @@ function mergeAdjacentLists(list: HTMLElement) {
 }
 
 /** Moves a list item one level out. A top level item leaves the list and becomes a paragraph between its halves. */
-function outdent(item: HTMLElement): HTMLElement {
-    const list = item.parentElement!
+const outdent = (item: HTMLElement): HTMLElement => {
+    const list = required(item.parentElement)
     const parentItem = list.parentElement
     const following: Node[] = []
-    for (let node = item.nextSibling; node; node = node.nextSibling) following.push(node)
+    for (let node = item.nextSibling; node; node = node.nextSibling) {
+        following.push(node)
+    }
     if (parentItem?.nodeName === 'LI') {
         if (following.length) {
             const sub = document.createElement(list.nodeName.toLowerCase())
-            following.forEach((node) => sub.appendChild(node))
-            item.appendChild(sub)
+            for (const node of following) {
+                sub.append(node)
+            }
+            item.append(sub)
         }
         insertAfter(parentItem, item)
-        if (!list.children.length) list.remove()
+        if (!list.children.length) {
+            list.remove()
+        }
         return item
     }
     const paragraph = document.createElement('p')
     const nested: Node[] = []
-    Array.from(item.childNodes).forEach((child) => {
-        if (child.nodeName === 'UL' || child.nodeName === 'OL') nested.push(child)
-        else paragraph.appendChild(child)
-    })
+    for (const child of [...item.childNodes]) {
+        if (child.nodeName === 'UL' || child.nodeName === 'OL') {
+            nested.push(child)
+        } else {
+            paragraph.append(child)
+        }
+    }
     ensureFilled(paragraph)
     const tail = following.length || nested.length ? document.createElement(list.nodeName.toLowerCase()) : null
     if (tail) {
-        nested.forEach(
-            (sub) => sub.childNodes.length && Array.from(sub.childNodes).forEach((node) => tail.appendChild(node))
-        )
-        following.forEach((node) => tail.appendChild(node))
+        for (const sub of nested) {
+            sub.childNodes.length &&
+                [...sub.childNodes].forEach((node) => {
+                    tail.append(node)
+                })
+        }
+        for (const node of following) {
+            tail.append(node)
+        }
     }
     insertAfter(list, paragraph)
-    if (tail) insertAfter(paragraph, tail)
+    if (tail) {
+        insertAfter(paragraph, tail)
+    }
     item.remove()
-    if (!list.children.length) list.remove()
+    if (!list.children.length) {
+        list.remove()
+    }
     return paragraph
 }
 
-function indent(item: HTMLElement) {
+const indent = (item: HTMLElement) => {
     const previous = item.previousElementSibling as HTMLElement | null
-    if (!previous || previous.nodeName !== 'LI') return false
-    const listTag = item.parentElement!.nodeName
+    if (!previous || previous.nodeName !== 'LI') {
+        return false
+    }
+    const listTag = required(item.parentElement).nodeName
     let sub = previous.lastElementChild as HTMLElement | null
     if (!sub || (sub.nodeName !== 'UL' && sub.nodeName !== 'OL')) {
         sub = document.createElement(listTag.toLowerCase())
-        previous.appendChild(sub)
+        previous.append(sub)
     }
-    sub.appendChild(item)
+    sub.append(item)
     return true
 }
 
 /** Turns one block into another type, keeping its content. Choosing the type a block already has turns it back into a paragraph. */
-function convertBlock(block: HTMLElement, type: Exclude<BlockType, 'hr'>): HTMLElement {
+const convertBlock = (block: HTMLElement, type: Exclude<BlockType, 'hr'>): HTMLElement => {
     if (block.nodeName === 'LI') {
-        const list = block.parentElement!
+        const list = required(block.parentElement)
         if (type === 'ul' || type === 'ol') {
-            if (list.nodeName.toLowerCase() === type) return outdent(block)
+            if (list.nodeName.toLowerCase() === type) {
+                return outdent(block)
+            }
             const swapped = document.createElement(type)
             moveChildren(list, swapped)
             replaceNode(list, swapped)
@@ -707,121 +855,147 @@ function convertBlock(block: HTMLElement, type: Exclude<BlockType, 'hr'>): HTMLE
     }
     if (type === 'ul' || type === 'ol') {
         const item = document.createElement('li')
-        if (block.nodeName === 'PRE') appendNodes(item, ...linesToNodes(block.textContent ?? ''))
-        else moveChildren(block, item)
+        if (block.nodeName === 'PRE') {
+            appendNodes(item, ...linesToNodes(block.textContent ?? ''))
+        } else {
+            moveChildren(block, item)
+        }
         ensureFilled(item)
         const list = document.createElement(type)
-        list.appendChild(item)
+        list.append(item)
         replaceNode(block, list)
         mergeAdjacentLists(list)
         return item
     }
     const tag = block.nodeName.toLowerCase() === type ? 'p' : type
     const next = document.createElement(tag)
-    if (tag === 'pre') next.textContent = plainText(block)
-    else if (block.nodeName === 'PRE') appendNodes(next, ...linesToNodes(block.textContent ?? ''))
-    else moveChildren(block, next)
+    if (tag === 'pre') {
+        next.textContent = plainText(block)
+    } else if (block.nodeName === 'PRE') {
+        appendNodes(next, ...linesToNodes(block.textContent ?? ''))
+    } else {
+        moveChildren(block, next)
+    }
     ensureFilled(next)
     replaceNode(block, next)
     return next
 }
 
 /** Makes sure a paragraph follows a block the caret cannot type after, such as a rule or a code block at the end. */
-function paragraphAfter(block: Element) {
+const paragraphAfter = (block: Element) => {
     const next = block.nextElementSibling
-    if (next && next.nodeName === 'P') return next as HTMLElement
+    if (next && next.nodeName === 'P') {
+        return next as HTMLElement
+    }
     const paragraph = document.createElement('p')
-    paragraph.appendChild(document.createElement('br'))
+    paragraph.append(document.createElement('br'))
     insertAfter(block, paragraph)
     return paragraph
 }
 
 /** Repairs what browsers leave behind: styled spans from merges, stray inline content at the top level, and an empty root. */
-function tidy(root: HTMLElement) {
-    const loose = Array.from(root.childNodes).some(
+const tidy = (root: HTMLElement) => {
+    const loose = [...root.childNodes].some(
         (node) => (isText(node) && node.data.trim()) || (isElement(node) && !BLOCK_TAGS.has(node.nodeName))
     )
     const dirty = loose || !root.firstChild || root.querySelector('span, font, [style], div, b, i, strike')
-    if (!dirty) return
+    if (!dirty) {
+        return
+    }
     const offsets = readOffsets(root)
-    root.querySelectorAll('[style]').forEach((element) => {
+    for (const element of root.querySelectorAll('[style]')) {
         const style = element.getAttribute('style') ?? ''
-        if (element.nodeName === 'SPAN' && /font-weight:\s*(bold|[6-9]00)/.test(style))
+        if (element.nodeName === 'SPAN' && /font-weight:\s*(?<group1>bold|[6-9]00)/u.test(style)) {
             replaceNode(element, Object.assign(document.createElement('strong'), { innerHTML: element.innerHTML }))
-        else element.removeAttribute('style')
-    })
-    const rename = (selector: string, tag: string) =>
-        root.querySelectorAll(selector).forEach((element) => {
+        } else {
+            element.removeAttribute('style')
+        }
+    }
+    const rename = (selector: string, tag: string) => {
+        for (const element of root.querySelectorAll(selector)) {
             const next = document.createElement(tag)
             moveChildren(element, next)
             replaceNode(element, next)
-        })
+        }
+    }
     rename('b', 'strong')
     rename('i', 'em')
     rename('strike', 's')
     rename(':scope > div', 'p')
-    root.querySelectorAll('span, font, div').forEach((element) =>
-        replaceNode(element, ...Array.from(element.childNodes))
-    )
+    for (const element of root.querySelectorAll('span, font, div')) {
+        replaceNode(element, ...element.childNodes)
+    }
     let run: HTMLElement | null = null
-    Array.from(root.childNodes).forEach((node) => {
+    for (const node of [...root.childNodes]) {
         if (isElement(node) && BLOCK_TAGS.has(node.nodeName)) {
             run = null
-            return
+            continue
         }
         if (isText(node) && !node.data.trim() && !run) {
             node.remove()
-            return
+            continue
         }
         if (!run) {
             run = document.createElement('p')
             insertBefore(node, run)
         }
-        run.appendChild(node)
-    })
-    if (!root.firstChild) root.innerHTML = '<p><br></p>'
-    if (root.contains(document.activeElement) || document.activeElement === root) writeOffsets(root, offsets)
+        run.append(node)
+    }
+    if (!root.firstChild) {
+        root.innerHTML = '<p><br></p>'
+    }
+    if (root.contains(document.activeElement) || document.activeElement === root) {
+        writeOffsets(root, offsets)
+    }
 }
 
 /** A clean copy for output: canonical tags, no attributes but links, no invisible helpers, no trailing empty lines. */
-function cleanClone(root: HTMLElement) {
+const cleanClone = (root: HTMLElement) => {
     const clone = root.cloneNode(true) as HTMLElement
-    clone.querySelectorAll('*').forEach((element) => {
-        Array.from(element.attributes).forEach((attribute) => {
-            if (!(element.nodeName === 'A' && attribute.name === 'href')) element.removeAttribute(attribute.name)
-        })
-    })
+    for (const element of clone.querySelectorAll('*')) {
+        for (const attribute of [...element.attributes]) {
+            if (!(element.nodeName === 'A' && attribute.name === 'href')) {
+                element.removeAttribute(attribute.name)
+            }
+        }
+    }
     const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT)
     const empty: Text[] = []
     for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
         node.data = node.data.replace(ZWSP, '')
-        if (!node.data) empty.push(node)
+        if (!node.data) {
+            empty.push(node)
+        }
     }
-    empty.forEach((node) => node.remove())
-    clone.querySelectorAll('p, h1, h2, h3, li, blockquote').forEach((block) => {
+    for (const node of empty) {
+        node.remove()
+    }
+    for (const block of clone.querySelectorAll('p, h1, h2, h3, li, blockquote')) {
         const last = block.lastChild
-        if (last?.nodeName === 'BR' && visibleText(block)) last.remove()
-    })
-    clone.querySelectorAll('pre').forEach((pre) => {
-        pre.textContent = (pre.textContent ?? '').replace(/\n$/, '')
-    })
+        if (last?.nodeName === 'BR' && visibleText(block)) {
+            last.remove()
+        }
+    }
+    for (const pre of clone.querySelectorAll('pre')) {
+        pre.textContent = (pre.textContent ?? '').replace(/\n$/u, '')
+    }
     while (
         clone.lastElementChild &&
         clone.lastElementChild.nodeName !== 'HR' &&
         !visibleText(clone.lastElementChild) &&
         clone.children.length > 1
-    )
+    ) {
         clone.lastElementChild.remove()
+    }
     return clone
 }
 
-function plainOutput(clone: HTMLElement) {
-    return Array.from(clone.querySelectorAll('p, h1, h2, h3, li, blockquote, pre'))
+const plainOutput = (clone: HTMLElement) =>
+    [...clone.querySelectorAll('p, h1, h2, h3, li, blockquote, pre')]
         .filter((block) => !block.querySelector('p, li'))
         .map((block) => (block.textContent ?? '').trim())
         .filter(Boolean)
         .join('\n')
-}
 
 /* ------------------------------------------------------------------------------------------------
  * Component
@@ -897,35 +1071,35 @@ interface Snapshot {
     at: number
 }
 
-const icon = { size: 16, weight: 'bold', 'aria-hidden': true } as const
+const icon = { 'aria-hidden': true, size: 16, weight: 'bold' } as const
 const SLASH_ITEMS: SlashItem[] = [
-    { type: 'p', label: 'Text', hint: '', keywords: 'paragraph plain body', icon: <Pilcrow {...icon} /> },
-    { type: 'h1', label: 'Heading 1', hint: '#', keywords: 'title h1 large', icon: <Heading1 {...icon} /> },
-    { type: 'h2', label: 'Heading 2', hint: '##', keywords: 'subtitle h2 section', icon: <Heading2 {...icon} /> },
-    { type: 'h3', label: 'Heading 3', hint: '###', keywords: 'h3 small', icon: <Heading3 {...icon} /> },
-    { type: 'ul', label: 'Bulleted list', hint: '-', keywords: 'bullet unordered ul points', icon: <List {...icon} /> },
+    { hint: '', icon: <Pilcrow {...icon} />, keywords: 'paragraph plain body', label: 'Text', type: 'p' },
+    { hint: '#', icon: <Heading1 {...icon} />, keywords: 'title h1 large', label: 'Heading 1', type: 'h1' },
+    { hint: '##', icon: <Heading2 {...icon} />, keywords: 'subtitle h2 section', label: 'Heading 2', type: 'h2' },
+    { hint: '###', icon: <Heading3 {...icon} />, keywords: 'h3 small', label: 'Heading 3', type: 'h3' },
+    { hint: '-', icon: <List {...icon} />, keywords: 'bullet unordered ul points', label: 'Bulleted list', type: 'ul' },
     {
-        type: 'ol',
-        label: 'Numbered list',
         hint: '1.',
+        icon: <ListOrdered {...icon} />,
         keywords: 'ordered ol steps numbers',
-        icon: <ListOrdered {...icon} />
+        label: 'Numbered list',
+        type: 'ol'
     },
     {
-        type: 'blockquote',
-        label: 'Quote',
         hint: '>',
+        icon: <Quote {...icon} />,
         keywords: 'blockquote citation callout',
-        icon: <Quote {...icon} />
+        label: 'Quote',
+        type: 'blockquote'
     },
     {
-        type: 'pre',
-        label: 'Code block',
         hint: '```',
+        icon: <SquareCode {...icon} />,
         keywords: 'pre snippet monospace',
-        icon: <SquareCode {...icon} />
+        label: 'Code block',
+        type: 'pre'
     },
-    { type: 'hr', label: 'Divider', hint: '---', keywords: 'rule hr line separator', icon: <Minus {...icon} /> }
+    { hint: '---', icon: <Minus {...icon} />, keywords: 'rule hr line separator', label: 'Divider', type: 'hr' }
 ]
 
 const { spring, duration, ease, blur } = motionTokens
@@ -933,44 +1107,44 @@ const enter = [...ease.enter] as [number, number, number, number]
 const standard = [...ease.standard] as [number, number, number, number]
 const physical = (visualDuration: number, bounce: number): Transition => {
     const root = (2 * Math.PI) / (visualDuration * 1.2)
-    return { type: 'spring', stiffness: root * root, damping: 2 * (1 - bounce) * root, mass: 1 }
+    return { damping: 2 * (1 - bounce) * root, mass: 1, stiffness: root * root, type: 'spring' }
 }
-const MORPH = physical(spring.morph.visualDuration, 0.12),
-    GLIDE = physical(0.3, 0.08),
-    GROW = physical(spring.smooth.visualDuration, 0)
+const MORPH = physical(spring.morph.visualDuration, 0.12)
+const GLIDE = physical(0.3, 0.08)
+const GROW = physical(spring.smooth.visualDuration, 0)
 const TRAVEL = 18
 
 const faceVariants: Variants = {
-    hidden: (direction: number) => ({ opacity: 0, x: direction * TRAVEL, filter: `blur(${blur.subtle}px)` }),
-    shown: {
-        opacity: 1,
-        x: 0,
-        filter: 'blur(0px)',
-        transition: {
-            x: MORPH,
-            opacity: { duration: 0.2, ease: enter, delay: 0.03 },
-            filter: { duration: 0.2, ease: enter, delay: 0.03 }
-        }
-    },
     gone: (direction: number) => ({
-        opacity: 0,
-        x: direction * -TRAVEL,
         filter: `blur(${blur.subtle}px)`,
+        opacity: 0,
         transition: {
-            x: MORPH,
+            filter: { duration: 0.12, ease: standard },
             opacity: { duration: 0.12, ease: standard },
-            filter: { duration: 0.12, ease: standard }
-        }
-    })
+            x: MORPH
+        },
+        x: direction * -TRAVEL
+    }),
+    hidden: (direction: number) => ({ filter: `blur(${blur.subtle}px)`, opacity: 0, x: direction * TRAVEL }),
+    shown: {
+        filter: 'blur(0px)',
+        opacity: 1,
+        transition: {
+            filter: { delay: 0.03, duration: 0.2, ease: enter },
+            opacity: { delay: 0.03, duration: 0.2, ease: enter },
+            x: MORPH
+        },
+        x: 0
+    }
 }
 const fadeVariants: Variants = {
+    gone: { opacity: 0, transition: { duration: 0.1 } },
     hidden: { opacity: 0 },
-    shown: { opacity: 1, transition: { duration: 0.14 } },
-    gone: { opacity: 0, transition: { duration: 0.1 } }
+    shown: { opacity: 1, transition: { duration: 0.14 } }
 }
 
 /** A toolbar face reports its natural size while current, so the shared surface can spring to it. */
-function Face({
+const Face = ({
     direction,
     reduced,
     onSize,
@@ -980,18 +1154,26 @@ function Face({
     reduced: boolean
     onSize: (width: number, height: number) => void
     children: ReactNode
-}) {
+}) => {
     const ref = useRef<HTMLDivElement>(null)
     const present = useIsPresent()
     useLayoutEffect(() => {
         const node = ref.current
-        if (!node || !present) return
-        const report = () => onSize(node.offsetWidth, node.offsetHeight)
+        if (!node || !present) {
+            return
+        }
+        const report = () => {
+            onSize(node.offsetWidth, node.offsetHeight)
+        }
         report()
-        if (typeof ResizeObserver === 'undefined') return
+        if (typeof ResizeObserver === 'undefined') {
+            return
+        }
         const observer = new ResizeObserver(report)
         observer.observe(node)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [onSize, present])
     return (
         <motion.div
@@ -1009,7 +1191,7 @@ function Face({
     )
 }
 
-function ToolButton({
+const ToolButton = ({
     label,
     pressed,
     shortcut,
@@ -1021,27 +1203,27 @@ function ToolButton({
     shortcut?: string
     onPress: () => void
     children: ReactNode
-}) {
-    return (
-        <button
-            type="button"
-            className={styles.tool}
-            aria-label={label}
-            aria-pressed={pressed}
-            title={shortcut ? `${label} (${shortcut})` : label}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={onPress}
-        >
-            {children}
-        </button>
-    )
-}
+}) => (
+    <button
+        type="button"
+        className={styles.tool}
+        aria-label={label}
+        aria-pressed={pressed}
+        title={shortcut ? `${label} (${shortcut})` : label}
+        onMouseDown={(event) => {
+            event.preventDefault()
+        }}
+        onClick={onPress}
+    >
+        {children}
+    </button>
+)
 
 /**
  * A light rich text editor on contentEditable. Markdown shortcuts as you type, a floating selection toolbar that morphs into a link field,
  * a slash menu for blocks, its own undo history, and HTML plus Markdown output. No dependencies beyond Motion and icons.
  */
-export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(function RichTextEditor(
+const RichTextEditorRender: ForwardRefRenderFunction<RichTextEditorHandle, RichTextEditorProps> = (
     {
         value,
         defaultValue,
@@ -1057,7 +1239,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         style
     },
     ref
-) {
+) => {
     const reduced = !!useReducedMotion()
     const uid = useId()
     const rootRef = useRef<HTMLDivElement>(null)
@@ -1066,7 +1248,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     const dragging = useRef(false)
     const lastInput = useRef('')
     const lastEmitted = useRef<string | null>(null)
-    const history = useRef<{ stack: Snapshot[]; index: number }>({ stack: [], index: -1 })
+    const history = useRef<{ stack: Snapshot[]; index: number }>({ index: -1, stack: [] })
     const callbacks = useRef({ onChange, onHistoryChange })
     useEffect(() => {
         callbacks.current = { onChange, onHistoryChange }
@@ -1074,12 +1256,12 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
 
     const [empty, setEmpty] = useState(true)
     const [formats, setFormats] = useState<Formats>({
+        block: 'p',
         bold: false,
-        italic: false,
-        strike: false,
         code: false,
+        italic: false,
         link: null,
-        block: 'p'
+        strike: false
     })
     const [bar, setBar] = useState<{ x: number; y: number; below: boolean } | null>(null)
     const [face, setFace] = useState<'format' | 'link'>('format')
@@ -1102,30 +1284,34 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     /* Output and history. */
     const emit = useCallback(() => {
         const editor = editorRef.current
-        if (!editor) return
+        if (!editor) {
+            return
+        }
         const clone = cleanClone(editor)
         const html = clone.innerHTML
         const text = plainOutput(clone)
         const isEmpty = !text && !clone.querySelector('hr')
         lastEmitted.current = html
         setEmpty(isEmpty)
-        callbacks.current.onChange?.({ html, markdown: htmlToMarkdown(clone), text, empty: isEmpty })
+        callbacks.current.onChange?.({ empty: isEmpty, html, markdown: htmlToMarkdown(clone), text })
     }, [])
 
     const reportHistory = useCallback(() => {
         const { stack, index } = history.current
-        callbacks.current.onHistoryChange?.({ canUndo: index > 0, canRedo: index < stack.length - 1 })
+        callbacks.current.onHistoryChange?.({ canRedo: index < stack.length - 1, canUndo: index > 0 })
     }, [])
 
     const record = useCallback(
         (kind: Snapshot['kind'], boundary = false) => {
             const editor = editorRef.current
-            if (!editor) return
+            if (!editor) {
+                return
+            }
             const snap: Snapshot = {
-                html: editor.innerHTML.replace(/ data-hint=""/g, ''),
-                selection: readOffsets(editor),
+                at: Date.now(),
+                html: editor.innerHTML.replaceAll(' data-hint=""', ''),
                 kind,
-                at: Date.now()
+                selection: readOffsets(editor)
             }
             const state = history.current
             const top = state.stack[state.index]
@@ -1138,7 +1324,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             } else {
                 state.stack = state.stack.slice(0, state.index + 1)
                 state.stack.push(snap)
-                if (state.stack.length > 300) state.stack.shift()
+                if (state.stack.length > 300) {
+                    state.stack.shift()
+                }
                 state.index = state.stack.length - 1
             }
             reportHistory()
@@ -1149,7 +1337,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     const restore = useCallback(
         (snap: Snapshot) => {
             const editor = editorRef.current
-            if (!editor) return
+            if (!editor) {
+                return
+            }
             editor.innerHTML = snap.html
             hinted.current = null
             editor.focus({ preventScroll: true })
@@ -1162,7 +1352,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
 
     const undo = useCallback(() => {
         const state = history.current
-        if (state.index <= 0) return
+        if (state.index <= 0) {
+            return
+        }
         state.index -= 1
         setSlash(null)
         restore(state.stack[state.index])
@@ -1170,7 +1362,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     }, [restore])
     const redo = useCallback(() => {
         const state = history.current
-        if (state.index >= state.stack.length - 1) return
+        if (state.index >= state.stack.length - 1) {
+            return
+        }
         state.index += 1
         setSlash(null)
         restore(state.stack[state.index])
@@ -1179,9 +1373,11 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
 
     /* Selection driven chrome: block hint, active formats, the slash query, and the toolbar. */
     const sync = useCallback(() => {
-        const editor = editorRef.current,
-            root = rootRef.current
-        if (!editor || !root || busy.current) return
+        const editor = editorRef.current
+        const root = rootRef.current
+        if (!editor || !root || busy.current) {
+            return
+        }
         const selection = window.getSelection()
         const inside = !!selection?.rangeCount && editor.contains(selection.anchorNode)
         const range = inside ? selection.getRangeAt(0) : null
@@ -1189,13 +1385,15 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         const block = range ? blockAt(editor, range.startContainer) : null
         const hint = range?.collapsed && block && !visibleText(block) && block.nodeName !== 'PRE' ? block : null
         if (hinted.current !== hint) {
-            hinted.current?.removeAttribute('data-hint')
+            delete hinted.current?.dataset.hint
             hint?.setAttribute('data-hint', '')
             hinted.current = hint
         }
 
         if (!range) {
-            if (faceRef.current !== 'link') setBar(null)
+            if (faceRef.current !== 'link') {
+                setBar(null)
+            }
             setSlash(null)
             return
         }
@@ -1208,12 +1406,12 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         const anchor = start?.closest('a')
         const listItem = block?.nodeName === 'LI' ? (block.parentElement?.nodeName.toLowerCase() ?? 'ul') : null
         const next: Formats = {
+            block: listItem ?? block?.nodeName.toLowerCase() ?? 'p',
             bold: within('strong, b'),
-            italic: within('em, i'),
-            strike: within('s, strike, del'),
             code: within('code') && !within('pre'),
+            italic: within('em, i'),
             link: anchor && editor.contains(anchor) ? anchor.getAttribute('href') : null,
-            block: listItem ?? block?.nodeName.toLowerCase() ?? 'p'
+            strike: within('s, strike, del')
         }
         setFormats((current) =>
             (Object.keys(next) as (keyof Formats)[]).every((key) => current[key] === next[key]) ? current : next
@@ -1227,13 +1425,18 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 range.startOffset > open.offset &&
                 open.node.data[open.offset] === '/'
             const query = valid ? open.node.data.slice(open.offset + 1, range.startOffset) : ''
-            if (!valid || query.length > 24 || /^\s/.test(query) || /\s\s/.test(query)) setSlash(null)
-            else if (query !== open.query) setSlash({ ...open, query })
+            if (!valid || query.length > 24 || /^\s/u.test(query) || /\s\s/u.test(query)) {
+                setSlash(null)
+            } else if (query !== open.query) {
+                setSlash({ ...open, query })
+            }
         }
 
         const inCode = !!start?.closest('pre')
         if (range.collapsed || dragging.current || inCode || slashRef.current || readOnly) {
-            if (faceRef.current !== 'link') setBar(null)
+            if (faceRef.current !== 'link') {
+                setBar(null)
+            }
             return
         }
         const rects = range.getClientRects()
@@ -1242,16 +1445,18 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         const box = root.getBoundingClientRect()
         const below = rect.top - clipBand(root).top < 60
         setBar({
+            below,
             x: whole.left + whole.width / 2 - box.left,
-            y: below ? whole.bottom - box.top + 8 : rect.top - box.top - 8,
-            below
+            y: below ? whole.bottom - box.top + 8 : rect.top - box.top - 8
         })
     }, [readOnly])
 
     const run = useCallback(
         (change: () => void) => {
             const editor = editorRef.current
-            if (!editor) return
+            if (!editor) {
+                return
+            }
             busy.current = true
             try {
                 change()
@@ -1269,25 +1474,29 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     /* Content in and out. */
     const load = useCallback((html: string) => {
         const editor = editorRef.current
-        if (!editor) return
+        if (!editor) {
+            return
+        }
         editor.innerHTML = sanitizeHtml(html) || '<p><br></p>'
-        editor
-            .querySelectorAll('p, h1, h2, h3, li, blockquote, pre')
-            .forEach((block) => ensureFilled(block as HTMLElement))
+        for (const block of editor.querySelectorAll('p, h1, h2, h3, li, blockquote, pre')) {
+            ensureFilled(block as HTMLElement)
+        }
         hinted.current = null
     }, [])
 
-    const initial = useRef({ value, defaultValue, defaultMarkdown, autoFocus })
+    const initial = useRef({ autoFocus, defaultMarkdown, defaultValue, value })
     useLayoutEffect(() => {
         const editor = editorRef.current
-        if (!editor) return
+        if (!editor) {
+            return
+        }
         const start = initial.current
         load(
             start.value ??
                 start.defaultValue ??
-                (start.defaultMarkdown !== undefined ? markdownToHtml(start.defaultMarkdown) : '<p><br></p>')
+                (start.defaultMarkdown === undefined ? '<p><br></p>' : markdownToHtml(start.defaultMarkdown))
         )
-        history.current = { stack: [{ html: editor.innerHTML, selection: null, kind: 'command', at: 0 }], index: 0 }
+        history.current = { index: 0, stack: [{ at: 0, html: editor.innerHTML, kind: 'command', selection: null }] }
         emit()
         reportHistory()
         if (start.autoFocus) {
@@ -1297,7 +1506,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     }, [emit, load, reportHistory])
 
     useEffect(() => {
-        if (value === undefined || value === lastEmitted.current) return
+        if (value === undefined || value === lastEmitted.current) {
+            return
+        }
         load(value)
         record('command')
         emit()
@@ -1307,22 +1518,28 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     const shortcut = useCallback((data: string | null) => {
         const editor = editorRef.current
         const selection = window.getSelection()
-        if (!editor || !data || !selection?.rangeCount) return false
+        if (!editor || !data || !selection?.rangeCount) {
+            return false
+        }
         const range = selection.getRangeAt(0)
-        if (!range.collapsed) return false
+        if (!range.collapsed) {
+            return false
+        }
         const block = blockAt(editor, range.startContainer)
-        if (!block || block.nodeName === 'PRE') return false
+        if (!block || block.nodeName === 'PRE') {
+            return false
+        }
         const before = textBefore(block, range)
         const plainBlock = block.nodeName === 'P' || block.nodeName === 'DIV'
 
         if (data === ' ' && plainBlock && block.parentElement === editor) {
             const rule: [RegExp, Exclude<BlockType, 'hr'>][] = [
-                [/^# $/, 'h1'],
-                [/^## $/, 'h2'],
-                [/^### $/, 'h3'],
-                [/^[-*+] $/, 'ul'],
-                [/^\d+[.)] $/, 'ol'],
-                [/^> $/, 'blockquote']
+                [/^# $/u, 'h1'],
+                [/^## $/u, 'h2'],
+                [/^### $/u, 'h3'],
+                [/^[-*+] $/u, 'ul'],
+                [/^\d+[.)] $/u, 'ol'],
+                [/^> $/u, 'blockquote']
             ]
             const match = rule.find(([pattern]) => pattern.test(before))
             if (match) {
@@ -1360,20 +1577,37 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             return true
         }
         const node = range.startContainer
-        if (!isText(node) || node.parentElement?.closest('code')) return false
+        if (!isText(node) || node.parentElement?.closest('code')) {
+            return false
+        }
         const text = node.data.slice(0, range.startOffset)
         const inline: [RegExp, string][] = [
-            [/(\*\*|__)([^*_\s](?:[^*_]*[^*_\s])?)\1$/, 'strong'],
-            [/~~([^~\s](?:[^~]*[^~\s])?)~~$/, 's'],
-            [/`([^`]+)`$/, 'code'],
-            [/(?:^|[^*\w])(\*([^*\s](?:[^*]*[^*\s])?)\*)$/, 'em'],
-            [/(?:^|[^_\w])(_([^_\s](?:[^_]*[^_\s])?)_)$/, 'em']
+            [/(?<group1>\*\*|__)(?<group2>[^*_\s](?:[^*_]*[^*_\s])?)\1$/u, 'strong'],
+            [/~~(?<group1>[^~\s](?:[^~]*[^~\s])?)~~$/u, 's'],
+            [/`(?<group1>[^`]+)`$/u, 'code'],
+            [/(?:^|[^*\w])(?<group1>\*(?<group2>[^*\s](?:[^*]*[^*\s])?)\*)$/u, 'em'],
+            [/(?:^|[^_\w])(?<group1>_(?<group2>[^_\s](?:[^_]*[^_\s])?)_)$/u, 'em']
         ]
         for (const [pattern, tag] of inline) {
             const match = pattern.exec(text)
-            if (!match) continue
+            if (!match) {
+                continue
+            }
             const whole = tag === 'em' ? match[1] : match[0]
-            const inner = tag === 'em' ? match[2] : tag === 'code' ? match[1] : tag === 's' ? match[1] : match[2]
+            const inner = (() => {
+                if (tag === 'em') {
+                    return match[2]
+                }
+                if (tag === 'code') {
+                    return match[1]
+                }
+
+                if (tag === 's') {
+                    return match[1]
+                }
+
+                return match[2]
+            })()
             const from = range.startOffset - whole.length
             node.splitText(range.startOffset)
             const middle = node.splitText(from)
@@ -1381,7 +1615,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             element.textContent = inner
             replaceNode(middle, element)
             // A zero width space after the mark keeps the next keystroke outside it; output strips it.
-            const exit = document.createTextNode('\u200b')
+            const exit = document.createTextNode('\u200B')
             insertAfter(element, exit)
             placeCaret(exit, 1)
             return true
@@ -1390,31 +1624,37 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     }, [])
 
     const openSlashIfTyped = useCallback((data: string | null) => {
-        const editor = editorRef.current,
-            root = rootRef.current
+        const editor = editorRef.current
+        const root = rootRef.current
         const selection = window.getSelection()
-        if (data !== '/' || !editor || !root || !selection?.rangeCount) return
+        if (data !== '/' || !editor || !root || !selection?.rangeCount) {
+            return
+        }
         const range = selection.getRangeAt(0)
         const node = range.startContainer
-        if (!range.collapsed || !isText(node) || node.parentElement?.closest('pre, code')) return
+        if (!range.collapsed || !isText(node) || node.parentElement?.closest('pre, code')) {
+            return
+        }
         const offset = range.startOffset - 1
-        if (node.data[offset] !== '/' || (offset > 0 && !/[\s\u00a0\u200b]/.test(node.data[offset - 1]))) return
+        if (node.data[offset] !== '/' || (offset > 0 && !/[\s\u00A0\u200B]/u.test(node.data[offset - 1]))) {
+            return
+        }
         const mark = document.createRange()
         mark.setStart(node, offset)
         mark.setEnd(node, offset + 1)
-        const rect = mark.getBoundingClientRect(),
-            box = root.getBoundingClientRect()
+        const rect = mark.getBoundingClientRect()
+        const box = root.getBoundingClientRect()
         const band = clipBand(root)
         const above = band.bottom - rect.bottom < 330 && rect.top - band.top > band.bottom - rect.bottom
         const room = above ? rect.top - band.top - 12 : band.bottom - rect.bottom - 12
         setSlash({
+            above,
+            max: Math.max(150, room),
             node,
             offset,
             query: '',
             x: Math.max(0, Math.min(rect.left - box.left - 8, box.width - 244)),
-            y: above ? rect.top - box.top - 6 : rect.bottom - box.top + 6,
-            above,
-            max: Math.max(150, room)
+            y: above ? rect.top - box.top - 6 : rect.bottom - box.top + 6
         })
         setSlashActive(0)
         setBar(null)
@@ -1422,12 +1662,14 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
 
     const slashResults = useMemo(() => {
         const query = slash?.query.trim().toLowerCase() ?? ''
-        if (!query) return SLASH_ITEMS
+        if (!query) {
+            return SLASH_ITEMS
+        }
         return SLASH_ITEMS.filter(
             (item) =>
                 `${item.label} ${item.keywords}`
                     .toLowerCase()
-                    .split(/\s+/)
+                    .split(/\s+/u)
                     .some((word) => word.startsWith(query)) || item.label.toLowerCase().includes(query)
         )
     }, [slash?.query])
@@ -1437,45 +1679,59 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     const applyBlock = useCallback((type: BlockType, target?: HTMLElement | null) => {
         const editor = editorRef.current
         const selection = window.getSelection()
-        if (!editor || !selection?.rangeCount) return
+        if (!editor || !selection?.rangeCount) {
+            return
+        }
         const range = selection.getRangeAt(0)
         const offsets = readOffsets(editor)
         const block = target ?? blockAt(editor, range.startContainer)
-        if (!block) return
+        if (!block) {
+            return
+        }
         if (type === 'hr') {
-            const top = block.nodeName === 'LI' ? block.closest('ul, ol')! : block
+            const top = block.nodeName === 'LI' ? required(block.closest('ul, ol')) : block
             const rule = document.createElement('hr')
-            if (!visibleText(block) && block.nodeName !== 'LI') replaceNode(block, rule)
-            else insertAfter(top, rule)
+            if (!visibleText(block) && block.nodeName !== 'LI') {
+                replaceNode(block, rule)
+            } else {
+                insertAfter(top, rule)
+            }
             placeAtStart(paragraphAfter(rule))
             return
         }
         // Several selected blocks turn together; if every one already has the type, they all turn back into paragraphs.
         const blocks = range.collapsed
             ? [block]
-            : Array.from(editor.querySelectorAll<HTMLElement>('p, h1, h2, h3, li, blockquote, pre')).filter(
+            : [...editor.querySelectorAll<HTMLElement>('p, h1, h2, h3, li, blockquote, pre')].filter(
                   (candidate) => range.intersectsNode(candidate) && !candidate.querySelector('p, li')
               )
         const current = (candidate: HTMLElement) =>
             candidate.nodeName === 'LI'
-                ? candidate.parentElement!.nodeName.toLowerCase()
+                ? required(candidate.parentElement).nodeName.toLowerCase()
                 : candidate.nodeName.toLowerCase()
         const allSame = blocks.every((candidate) => current(candidate) === type)
-        blocks.forEach((candidate) => {
-            if (allSame) convertBlock(candidate, type)
-            else if (current(candidate) !== type) convertBlock(candidate, type)
-        })
+        for (const candidate of blocks) {
+            if (allSame) {
+                convertBlock(candidate, type)
+            } else if (current(candidate) !== type) {
+                convertBlock(candidate, type)
+            }
+        }
         writeOffsets(editor, offsets)
         if (type === 'pre') {
             const pre = blockAt(editor, window.getSelection()?.anchorNode ?? null)
-            if (pre && !pre.nextElementSibling) paragraphAfter(pre)
+            if (pre && !pre.nextElementSibling) {
+                paragraphAfter(pre)
+            }
         }
     }, [])
 
     const chooseSlash = (item: SlashItem | undefined) => {
         const open = slashRef.current
         const editor = editorRef.current
-        if (!item || !open || !editor) return
+        if (!item || !open || !editor) {
+            return
+        }
         const selection = window.getSelection()
         const caret =
             selection?.rangeCount && selection.getRangeAt(0).startContainer === open.node
@@ -1495,11 +1751,13 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     }
 
     /* Inline marks and links. */
-    const toggleMark = (mark: 'bold' | 'italic' | 'strike' | 'code') =>
+    const toggleMark = (mark: 'bold' | 'italic' | 'strike' | 'code') => {
         run(() => {
-            const editor = editorRef.current!
+            const editor = required(editorRef.current)
             const selection = window.getSelection()
-            if (!selection?.rangeCount) return
+            if (!selection?.rangeCount) {
+                return
+            }
             const range = selection.getRangeAt(0)
             if (mark !== 'code') {
                 document.execCommand('styleWithCSS', false, 'false')
@@ -1519,7 +1777,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 selection.addRange(next)
                 return
             }
-            if (range.collapsed || blockAt(editor, range.startContainer) !== blockAt(editor, range.endContainer)) return
+            if (range.collapsed || blockAt(editor, range.startContainer) !== blockAt(editor, range.endContainer)) {
+                return
+            }
             const element = document.createElement('code')
             element.textContent = range.toString()
             range.deleteContents()
@@ -1529,11 +1789,14 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             selection.removeAllRanges()
             selection.addRange(next)
         })
+    }
 
     const openLink = () => {
         const editor = editorRef.current
         const selection = window.getSelection()
-        if (!editor || !selection?.rangeCount) return
+        if (!editor || !selection?.rangeCount) {
+            return
+        }
         let range = selection.getRangeAt(0)
         const startElement = isElement(range.startContainer) ? range.startContainer : range.startContainer.parentElement
         const existing = startElement?.closest('a')
@@ -1543,7 +1806,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             selection.removeAllRanges()
             selection.addRange(range)
         }
-        if (range.collapsed) return
+        if (range.collapsed) {
+            return
+        }
         savedRange.current = range.cloneRange()
         setLinkDraft(existing?.getAttribute('href') ?? '')
         setFace('link')
@@ -1555,8 +1820,8 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     const closeLink = (focusEditor = true) => {
         setFace('format')
         faceRef.current = 'format'
-        const editor = editorRef.current,
-            range = savedRange.current
+        const editor = editorRef.current
+        const range = savedRange.current
         savedRange.current = null
         if (focusEditor && editor && range) {
             editor.focus({ preventScroll: true })
@@ -1576,7 +1841,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             return
         }
         editor.focus({ preventScroll: true })
-        const selection = window.getSelection()!
+        const selection = required(window.getSelection())
         selection.removeAllRanges()
         selection.addRange(range)
         run(() => {
@@ -1585,8 +1850,11 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 : range.startContainer.parentElement
             const existing = startElement?.closest('a')
             if (remove || !url) {
-                if (existing && editor.contains(existing)) replaceNode(existing, ...Array.from(existing.childNodes))
-                else document.execCommand('unlink')
+                if (existing && editor.contains(existing)) {
+                    replaceNode(existing, ...existing.childNodes)
+                } else {
+                    document.execCommand('unlink')
+                }
                 return
             }
             if (existing && editor.contains(existing) && range.toString() === existing.textContent) {
@@ -1598,10 +1866,12 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 return
             }
             const contents = range.extractContents()
-            contents.querySelectorAll('a').forEach((anchor) => replaceNode(anchor, ...Array.from(anchor.childNodes)))
+            for (const anchor of contents.querySelectorAll('a')) {
+                replaceNode(anchor, ...anchor.childNodes)
+            }
             const anchor = document.createElement('a')
             anchor.setAttribute('href', url)
-            anchor.appendChild(contents)
+            anchor.append(contents)
             range.insertNode(anchor)
             const after = document.createRange()
             after.setStartAfter(anchor)
@@ -1618,41 +1888,46 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
 
     /* Keyboard. Enter, Backspace at a block edge, and history go through beforeinput so mobile keyboards behave the same. */
     const enterKey = useCallback((soft: boolean) => {
-        const editor = editorRef.current!
+        const editor = required(editorRef.current)
         const selection = window.getSelection()
-        if (!selection?.rangeCount) return
+        if (!selection?.rangeCount) {
+            return
+        }
         let range = selection.getRangeAt(0)
         if (!range.collapsed) {
             range.deleteContents()
             range = selection.getRangeAt(0)
         }
         const block = blockAt(editor, range.startContainer)
-        if (!block) return
+        if (!block) {
+            return
+        }
 
         if (block.nodeName === 'PRE') {
             const full = block.textContent ?? ''
             const caret = textBefore(block, range).length
-            const head = full.slice(0, caret),
-                tail = full.slice(caret)
-            if (!tail.replace(/\n$/, '') && head.endsWith('\n') && !soft) {
+            const head = full.slice(0, caret)
+            const tail = full.slice(caret)
+            if (!tail.replace(/\n$/u, '') && head.endsWith('\n') && !soft) {
                 block.textContent = head.slice(0, -1) || ''
                 ensureFilled(block)
                 const paragraph = document.createElement('p')
-                paragraph.appendChild(document.createElement('br'))
+                paragraph.append(document.createElement('br'))
                 insertAfter(block, paragraph)
                 placeAtStart(paragraph)
                 return
             }
-            block.textContent = head + '\n' + (tail || '\n')
-            placeCaret(block.firstChild!, caret + 1)
+            block.textContent = `${head}\n${tail || '\n'}`
+            placeCaret(required(block.firstChild), caret + 1)
             return
         }
 
         if (soft) {
             const br = document.createElement('br')
             range.insertNode(br)
-            if (!br.nextSibling || (isText(br.nextSibling) && !br.nextSibling.data && !br.nextSibling.nextSibling))
+            if (!br.nextSibling || (isText(br.nextSibling) && !br.nextSibling.data && !br.nextSibling.nextSibling)) {
                 insertAfter(br, document.createElement('br'))
+            }
             const after = document.createRange()
             after.setStartAfter(br)
             after.collapse(true)
@@ -1674,34 +1949,47 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         tail.setStart(range.startContainer, range.startOffset)
         tail.setEnd(block, block.childNodes.length)
         const atEnd = !tail.toString().replace(ZWSP, '') && !tail.cloneContents().querySelector('ul, ol')
-        const heading = /^H[1-3]$/.test(block.nodeName)
+        const heading = /^H[1-3]$/u.test(block.nodeName)
         const fragment = tail.extractContents()
         const next = document.createElement(heading && atEnd ? 'p' : block.nodeName.toLowerCase())
-        if (!(heading && atEnd)) next.appendChild(fragment)
+        if (!(heading && atEnd)) {
+            next.append(fragment)
+        }
         // Formatting open at the caret carries into the new line only when there is text to carry.
-        if (heading && atEnd) next.appendChild(document.createElement('br'))
+        if (heading && atEnd) {
+            next.append(document.createElement('br'))
+        }
         insertAfter(block, next)
-        block.querySelectorAll(':scope > br:last-child').forEach((br) => {
-            if (visibleText(block)) br.remove()
-        })
+        for (const br of block.querySelectorAll(':scope > br:last-child')) {
+            if (visibleText(block)) {
+                br.remove()
+            }
+        }
         ensureFilled(block)
         ensureFilled(next)
-        if (!visibleText(next))
-            next.querySelectorAll('strong, em, s, code, a').forEach((element) => {
-                if (!visibleText(element)) element.remove()
-            })
+        if (!visibleText(next)) {
+            for (const element of next.querySelectorAll('strong, em, s, code, a')) {
+                if (!visibleText(element)) {
+                    element.remove()
+                }
+            }
+        }
         ensureFilled(next)
         placeAtStart(next)
     }, [])
 
     const backspaceAtStart = useCallback(() => {
-        const editor = editorRef.current!
+        const editor = required(editorRef.current)
         const selection = window.getSelection()
-        if (!selection?.rangeCount) return false
+        if (!selection?.rangeCount) {
+            return false
+        }
         const range = selection.getRangeAt(0)
         const block = blockAt(editor, range.startContainer)
-        if (!block || !atBlockStart(block, range)) return false
-        if (/^(H[1-3]|BLOCKQUOTE|PRE)$/.test(block.nodeName)) {
+        if (!block || !atBlockStart(block, range)) {
+            return false
+        }
+        if (/^(?<group1>H[1-3]|BLOCKQUOTE|PRE)$/u.test(block.nodeName)) {
             placeAtStart(convertBlock(block, 'p'))
             return true
         }
@@ -1725,27 +2013,40 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
 
     useEffect(() => {
         const editor = editorRef.current
-        if (!editor) return
+        if (!editor) {
+            return
+        }
         const onBeforeInput = (event: InputEvent) => {
-            if (readOnly) return
+            if (readOnly) {
+                return
+            }
             switch (event.inputType) {
-                case 'historyUndo':
+                case 'historyUndo': {
                     event.preventDefault()
                     undo()
                     return
-                case 'historyRedo':
+                }
+                case 'historyRedo': {
                     event.preventDefault()
                     redo()
                     return
+                }
                 case 'insertParagraph':
-                case 'insertLineBreak':
+                case 'insertLineBreak': {
                     event.preventDefault()
-                    if (slashRef.current) return
-                    run(() => enterKey(event.inputType === 'insertLineBreak'))
+                    if (slashRef.current) {
+                        return
+                    }
+                    run(() => {
+                        enterKey(event.inputType === 'insertLineBreak')
+                    })
                     return
+                }
                 case 'deleteContentBackward': {
                     const selection = window.getSelection()
-                    if (!selection?.rangeCount || !selection.getRangeAt(0).collapsed) return
+                    if (!selection?.rangeCount || !selection.getRangeAt(0).collapsed) {
+                        return
+                    }
                     busy.current = true
                     let handled = false
                     try {
@@ -1769,12 +2070,13 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                         !selection?.rangeCount ||
                         blockAt(editor, selection.anchorNode) ||
                         editor.querySelector('p, h1, h2, h3, li, pre, blockquote')
-                    )
+                    ) {
                         return
+                    }
                     event.preventDefault()
                     const paragraph = document.createElement('p')
                     const text = document.createTextNode(event.data ?? '')
-                    paragraph.appendChild(text)
+                    paragraph.append(text)
                     editor.replaceChildren(paragraph)
                     placeCaret(text, text.length)
                     record('type')
@@ -1782,28 +2084,37 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                     sync()
                     return
                 }
-                case 'insertFromDrop':
+                case 'insertFromDrop': {
                     event.preventDefault()
                     return
-                case 'formatUnderline':
+                }
+                case 'formatUnderline': {
                     event.preventDefault()
-                    return
+                }
             }
         }
         editor.addEventListener('beforeinput', onBeforeInput)
-        return () => editor.removeEventListener('beforeinput', onBeforeInput)
+        return () => {
+            editor.removeEventListener('beforeinput', onBeforeInput)
+        }
     }, [backspaceAtStart, emit, enterKey, readOnly, record, redo, run, sync, undo])
 
     const onInput = (event: FormEvent<HTMLDivElement>) => {
-        if (busy.current) return
-        const editor = editorRef.current!
+        if (busy.current) {
+            return
+        }
+        const editor = required(editorRef.current)
         const native = event.nativeEvent as InputEvent
-        if (native.isComposing) return
+        if (native.isComposing) {
+            return
+        }
         busy.current = true
         let converted = false
         try {
             tidy(editor)
-            if (native.inputType === 'insertText') converted = shortcut(native.data)
+            if (native.inputType === 'insertText') {
+                converted = shortcut(native.data)
+            }
         } finally {
             busy.current = false
         }
@@ -1811,17 +2122,23 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             tidy(editor)
             record('command')
             setAnnounce('Formatted')
-        } else record('type', native.data === ' ' || native.inputType !== lastInput.current)
+        } else {
+            record('type', native.data === ' ' || native.inputType !== lastInput.current)
+        }
         lastInput.current = native.inputType
         emit()
-        if (!converted && native.inputType === 'insertText') openSlashIfTyped(native.data)
+        if (!converted && native.inputType === 'insertText') {
+            openSlashIfTyped(native.data)
+        }
         sync()
     }
 
     const focusToolbar = () => rootRef.current?.querySelector<HTMLElement>(`[data-toolbar="${uid}"] button`)?.focus()
 
     const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-        if (readOnly) return
+        if (readOnly) {
+            return
+        }
         const mod = event.metaKey || event.ctrlKey
         const key = event.key.toLowerCase()
         if (slashOpen) {
@@ -1846,8 +2163,11 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         }
         if (mod && key === 'z') {
             event.preventDefault()
-            if (event.shiftKey) redo()
-            else undo()
+            if (event.shiftKey) {
+                redo()
+            } else {
+                undo()
+            }
             return
         }
         if (mod && key === 'y') {
@@ -1890,21 +2210,24 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             return
         }
         if (event.key === 'Tab') {
-            const editor = editorRef.current!
+            const editor = required(editorRef.current)
             const selection = window.getSelection()
             const block = selection?.rangeCount ? blockAt(editor, selection.anchorNode) : null
             if (block?.nodeName === 'LI') {
                 event.preventDefault()
                 run(() => {
                     const offsets = readOffsets(editor)
-                    if (event.shiftKey) outdent(block)
-                    else indent(block)
+                    if (event.shiftKey) {
+                        outdent(block)
+                    } else {
+                        indent(block)
+                    }
                     writeOffsets(editor, offsets)
                 })
             } else if (block?.nodeName === 'PRE' && !event.shiftKey) {
                 event.preventDefault()
                 run(() => {
-                    const range = selection!.getRangeAt(0)
+                    const range = required(selection).getRangeAt(0)
                     range.deleteContents()
                     const spaces = document.createTextNode('  ')
                     range.insertNode(spaces)
@@ -1916,34 +2239,51 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     }
 
     const onPaste = (event: ReactClipboardEvent<HTMLDivElement>) => {
-        if (readOnly) return
+        if (readOnly) {
+            return
+        }
         event.preventDefault()
-        const editor = editorRef.current!
+        const editor = required(editorRef.current)
         const html = event.clipboardData.getData('text/html')
         const text = event.clipboardData.getData('text/plain')
         run(() => {
             const selection = window.getSelection()
-            if (!selection?.rangeCount) return
+            if (!selection?.rangeCount) {
+                return
+            }
             const range = selection.getRangeAt(0)
             range.deleteContents()
             const block = blockAt(editor, range.startContainer)
-            const markdownish = /(^|\n)\s*(#{1,3}\s|[-*+]\s|\d+[.)]\s|>|```)|\*\*|`[^`]+`|\[[^\]]+\]\(/.test(text)
-            const source = html ? sanitizeHtml(html) : markdownish || text.includes('\n\n') ? markdownToHtml(text) : ''
+            const markdownish =
+                /(?<group1>^|\n)\s*(?<group2>#{1,3}\s|[-*+]\s|\d+[.)]\s|>|```)|\*\*|`[^`]+`|\[[^\]]+\]\(/u.test(text)
+            const source = (() => {
+                if (html) {
+                    return sanitizeHtml(html)
+                }
+                if (markdownish || text.includes('\n\n')) {
+                    return markdownToHtml(text)
+                }
+
+                return ''
+            })()
             const fragment = source ? parseHtml(source) : null
-            const single = fragment && fragment.children.length === 1 && fragment.firstElementChild!.nodeName === 'P'
+            const single =
+                fragment && fragment.children.length === 1 && required(fragment.firstElementChild).nodeName === 'P'
             // Plain text, code blocks, and list items take the text as it is; everything else keeps its structure.
             if (!fragment || !block || block.nodeName === 'PRE' || (block.nodeName === 'LI' && !single)) {
-                const plain = block?.nodeName === 'PRE' ? text : text.replace(/\s*\n\s*/g, ' ')
+                const plain = block?.nodeName === 'PRE' ? text : text.replaceAll(/\s*\n\s*/gu, ' ')
                 const node = document.createTextNode(plain)
                 range.insertNode(node)
                 placeCaret(node, node.length)
                 return
             }
             if (single) {
-                const nodes = Array.from(fragment.firstElementChild!.childNodes)
-                const last = nodes[nodes.length - 1]
+                const nodes = [...required(fragment.firstElementChild).childNodes]
+                const last = nodes.at(-1)
                 const holder = document.createDocumentFragment()
-                nodes.forEach((node) => holder.appendChild(node))
+                for (const node of nodes) {
+                    holder.append(node)
+                }
                 range.insertNode(holder)
                 if (last) {
                     const after = document.createRange()
@@ -1958,19 +2298,23 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             tail.setStart(range.startContainer, range.startOffset)
             tail.setEnd(block, block.childNodes.length)
             const rest = document.createElement(block.nodeName === 'LI' ? 'p' : block.nodeName.toLowerCase())
-            rest.appendChild(tail.extractContents())
-            const top = block.nodeName === 'LI' ? block.closest('ul, ol')! : block
-            const blocks = Array.from(fragment.childNodes)
+            rest.append(tail.extractContents())
+            const top = block.nodeName === 'LI' ? required(block.closest('ul, ol')) : block
+            const blocks = [...fragment.childNodes]
             let anchor: Element = top
-            blocks.forEach((node) => {
+            for (const node of blocks) {
                 insertAfter(anchor, node)
-                if (isElement(node)) anchor = node
-            })
+                if (isElement(node)) {
+                    anchor = node
+                }
+            }
             if (visibleText(rest) || rest.querySelector('br')) {
                 insertAfter(anchor, rest)
                 ensureFilled(rest)
             }
-            if (!visibleText(block) && block.nodeName === 'P') block.remove()
+            if (!visibleText(block) && block.nodeName === 'P') {
+                block.remove()
+            }
             const end = document.createRange()
             end.selectNodeContents(anchor)
             end.collapse(false)
@@ -1982,26 +2326,30 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     /* Selection events. */
     useEffect(() => {
         let frame = 0
-        const onChange = () => {
+        const onChangeValue = () => {
             cancelAnimationFrame(frame)
             frame = requestAnimationFrame(sync)
         }
         const onUp = () => {
-            if (!dragging.current) return
+            if (!dragging.current) {
+                return
+            }
             dragging.current = false
-            onChange()
+            onChangeValue()
         }
-        document.addEventListener('selectionchange', onChange)
+        document.addEventListener('selectionchange', onChangeValue)
         document.addEventListener('pointerup', onUp)
         return () => {
             cancelAnimationFrame(frame)
-            document.removeEventListener('selectionchange', onChange)
+            document.removeEventListener('selectionchange', onChangeValue)
             document.removeEventListener('pointerup', onUp)
         }
     }, [sync])
 
     useEffect(() => {
-        if (face !== 'link') return
+        if (face !== 'link') {
+            return
+        }
         const down = (event: PointerEvent) => {
             if (!rootRef.current?.querySelector(`[data-toolbar="${uid}"]`)?.contains(event.target as Node)) {
                 savedRange.current = null
@@ -2011,16 +2359,27 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             }
         }
         document.addEventListener('pointerdown', down)
-        return () => document.removeEventListener('pointerdown', down)
+        return () => {
+            document.removeEventListener('pointerdown', down)
+        }
     }, [face, uid])
 
     useImperativeHandle(
         ref,
         () => ({
+            clear: () => {
+                load('<p><br></p>')
+                record('command')
+                emit()
+            },
+            get element() {
+                return editorRef.current
+            },
             focus: () => editorRef.current?.focus(),
             getHTML: () => (editorRef.current ? cleanClone(editorRef.current).innerHTML : ''),
             getMarkdown: () => (editorRef.current ? htmlToMarkdown(cleanClone(editorRef.current)) : ''),
             getText: () => (editorRef.current ? plainOutput(cleanClone(editorRef.current)) : ''),
+            redo,
             setHTML: (html) => {
                 load(html)
                 record('command')
@@ -2031,32 +2390,23 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 record('command')
                 emit()
             },
-            clear: () => {
-                load('<p><br></p>')
-                record('command')
-                emit()
-            },
-            undo,
-            redo,
-            get element() {
-                return editorRef.current
-            }
+            undo
         }),
         [emit, load, record, redo, undo]
     )
 
     /* Toolbar geometry: one surface whose size springs between faces and whose position glides with the selection. */
-    const tx = useMotionValue(0),
-        ty = useMotionValue(0),
-        tw = useMotionValue(0),
-        th = useMotionValue(0)
+    const tx = useMotionValue(0)
+    const ty = useMotionValue(0)
+    const tw = useMotionValue(0)
+    const th = useMotionValue(0)
     const shown = useRef(false)
     /* Until a face has reported its size the surface has nothing to show, so it stays hidden rather than flashing a 1px dot. */
     const toolbarVisibility = useTransform(tw, (width) => (width > 0 ? 'visible' : 'hidden'))
-    const targetSize = useRef({ width: 0, height: 0 })
+    const targetSize = useRef({ height: 0, width: 0 })
     const onFaceSize = useCallback(
         (width: number, height: number) => {
-            targetSize.current = { width, height }
+            targetSize.current = { height, width }
             if (!shown.current || reduced || tw.get() === 0) {
                 tw.jump(width)
                 th.jump(height)
@@ -2076,10 +2426,16 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     const placement = useRef<{ x: number; y: number } | null>(null)
     const place = useCallback(() => {
         const at = placement.current
-        if (!at) return
+        if (!at) {
+            return
+        }
         const { width, height } = targetSize.current
-        if (tx.get() !== at.x) tx.jump(at.x)
-        if (ty.get() !== at.y) ty.jump(at.y)
+        if (tx.get() !== at.x) {
+            tx.jump(at.x)
+        }
+        if (ty.get() !== at.y) {
+            ty.jump(at.y)
+        }
         if (width && tw.get() !== width) {
             tw.jump(width)
             th.jump(height)
@@ -2110,16 +2466,23 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         animate(ty, bar.y, GLIDE)
     }, [bar, place, reduced, tx, ty])
     useEffect(() => {
-        if (bar) place()
+        if (bar) {
+            place()
+        }
     }, [bar, place])
-    useEffect(() => () => cancelAnimationFrame(placedFrame.current), [])
+    useEffect(
+        () => () => {
+            cancelAnimationFrame(placedFrame.current)
+        },
+        []
+    )
     const direction = face === 'link' ? 1 : -1
 
     /* Slash menu geometry: the highlight glides between rows and the panel springs to its rows. */
     const listRef = useRef<HTMLUListElement>(null)
-    const hy = useMotionValue(0),
-        hh = useMotionValue(0),
-        panelHeight = useMotionValue<number | 'auto'>('auto')
+    const hy = useMotionValue(0)
+    const hh = useMotionValue(0)
+    const panelHeight = useMotionValue<number | 'auto'>('auto')
     const panelBody = useRef<HTMLDivElement>(null)
     const slashPanel = useRef<HTMLDivElement>(null)
     const slashMax = slash?.max ?? 320
@@ -2127,15 +2490,19 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     const highlightPlaced = useRef(false)
     useLayoutEffect(() => {
         const row = listRef.current?.querySelector<HTMLElement>(`[data-index="${slashIndex}"]`)
-        if (!row) return
+        if (!row) {
+            return
+        }
         // A short panel scrolls to keep the active row in view.
         const panel = slashPanel.current
         if (panel) {
-            const top = row.offsetTop + 6,
-                bottom = top + row.offsetHeight
-            if (top - 6 < panel.scrollTop) panel.scrollTop = top - 6
-            else if (bottom + 6 > panel.scrollTop + panel.clientHeight)
+            const top = row.offsetTop + 6
+            const bottom = top + row.offsetHeight
+            if (top - 6 < panel.scrollTop) {
+                panel.scrollTop = top - 6
+            } else if (bottom + 6 > panel.scrollTop + panel.clientHeight) {
                 panel.scrollTop = bottom + 6 - panel.clientHeight
+            }
         }
         if (reduced || !highlightPlaced.current || hh.get() === 0) {
             hy.jump(row.offsetTop)
@@ -2154,7 +2521,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             return
         }
         const body = panelBody.current
-        if (!body) return
+        if (!body) {
+            return
+        }
         const fit = () => {
             const target = Math.min(body.offsetHeight, slashMax)
             if (!panelSized.current || reduced) {
@@ -2165,15 +2534,21 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             animate(panelHeight, target, GROW)
         }
         fit()
-        if (typeof ResizeObserver === 'undefined') return
+        if (typeof ResizeObserver === 'undefined') {
+            return
+        }
         const observer = new ResizeObserver(fit)
         observer.observe(body)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [hh, panelHeight, reduced, slashMax, slashOpen])
 
     const onToolbarKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-        if (face !== 'format') return
-        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'))
+        if (face !== 'format') {
+            return
+        }
+        const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')]
         const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
         if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
             event.preventDefault()
@@ -2187,8 +2562,8 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
 
     const optionId = (index: number) => `${uid}-slash-${index}`
     const cssVars = {
-        '--placeholder': JSON.stringify(placeholder),
-        '--hint': JSON.stringify(blockHint)
+        '--hint': JSON.stringify(blockHint),
+        '--placeholder': JSON.stringify(placeholder)
     } as CSSProperties
 
     return (
@@ -2211,7 +2586,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 onInput={onInput}
                 onKeyDown={onKeyDown}
                 onPaste={onPaste}
-                onDrop={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                    event.preventDefault()
+                }}
                 onPointerDown={() => {
                     dragging.current = true
                 }}
@@ -2234,12 +2611,12 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                         className={styles.toolbar}
                         data-below={bar.below || undefined}
                         style={{
+                            height: th,
                             left: tx,
                             top: ty,
-                            width: tw,
-                            height: th,
+                            transformOrigin: bar.below ? '50% 0' : '50% 100%',
                             visibility: toolbarVisibility,
-                            transformOrigin: bar.below ? '50% 0' : '50% 100%'
+                            width: tw
                         }}
                         initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.94, y: bar.below ? -4 : 4 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -2267,7 +2644,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                                             label="Bold"
                                             pressed={formats.bold}
                                             shortcut="âB"
-                                            onPress={() => toggleMark('bold')}
+                                            onPress={() => {
+                                                toggleMark('bold')
+                                            }}
                                         >
                                             <Bold {...icon} />
                                         </ToolButton>
@@ -2275,7 +2654,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                                             label="Italic"
                                             pressed={formats.italic}
                                             shortcut="âI"
-                                            onPress={() => toggleMark('italic')}
+                                            onPress={() => {
+                                                toggleMark('italic')
+                                            }}
                                         >
                                             <Italic {...icon} />
                                         </ToolButton>
@@ -2283,7 +2664,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                                             label="Strikethrough"
                                             pressed={formats.strike}
                                             shortcut="ââ§X"
-                                            onPress={() => toggleMark('strike')}
+                                            onPress={() => {
+                                                toggleMark('strike')
+                                            }}
                                         >
                                             <Strikethrough {...icon} />
                                         </ToolButton>
@@ -2291,7 +2674,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                                             label="Inline code"
                                             pressed={formats.code}
                                             shortcut="âE"
-                                            onPress={() => toggleMark('code')}
+                                            onPress={() => {
+                                                toggleMark('code')
+                                            }}
                                         >
                                             <Code {...icon} />
                                         </ToolButton>
@@ -2308,21 +2693,27 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                                             <ToolButton
                                                 label="Heading 1"
                                                 pressed={formats.block === 'h1'}
-                                                onPress={() => run(() => applyBlock('h1'))}
+                                                onPress={() => {
+                                                    run(() => applyBlock('h1'))
+                                                }}
                                             >
                                                 <Heading1 {...icon} />
                                             </ToolButton>
                                             <ToolButton
                                                 label="Heading 2"
                                                 pressed={formats.block === 'h2'}
-                                                onPress={() => run(() => applyBlock('h2'))}
+                                                onPress={() => {
+                                                    run(() => applyBlock('h2'))
+                                                }}
                                             >
                                                 <Heading2 {...icon} />
                                             </ToolButton>
                                             <ToolButton
                                                 label="Quote"
                                                 pressed={formats.block === 'blockquote'}
-                                                onPress={() => run(() => applyBlock('blockquote'))}
+                                                onPress={() => {
+                                                    run(() => applyBlock('blockquote'))
+                                                }}
                                             >
                                                 <Quote {...icon} />
                                             </ToolButton>
@@ -2342,7 +2733,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                                             type="button"
                                             className={styles.tool}
                                             aria-label="Back to formatting"
-                                            onClick={() => closeLink()}
+                                            onClick={() => {
+                                                closeLink()
+                                            }}
                                         >
                                             <ArrowLeft {...icon} />
                                         </button>
@@ -2350,7 +2743,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                                             ref={linkInputRef}
                                             className={styles.linkInput}
                                             value={linkDraft}
-                                            onChange={(event) => setLinkDraft(event.target.value)}
+                                            onChange={(event) => {
+                                                setLinkDraft(event.target.value)
+                                            }}
                                             onKeyDown={(event) => {
                                                 if (event.key === 'Escape') {
                                                     event.preventDefault()
@@ -2369,7 +2764,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                                                 type="button"
                                                 className={styles.tool}
                                                 aria-label="Remove link"
-                                                onClick={() => applyLink(true)}
+                                                onClick={() => {
+                                                    applyLink(true)
+                                                }}
                                             >
                                                 <Unlink {...icon} />
                                             </button>
@@ -2397,10 +2794,10 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                         className={styles.slash}
                         data-above={slash.above || undefined}
                         style={{
-                            left: slash.x,
-                            top: slash.y,
                             height: panelHeight,
+                            left: slash.x,
                             maxHeight: slashMax,
+                            top: slash.y,
                             transformOrigin: slash.above ? '16px 100%' : '16px 0'
                         }}
                         initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: slash.above ? 4 : -4 }}
@@ -2419,7 +2816,9 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                                 ? { duration: duration.fast }
                                 : { ...spring.snappy, opacity: { duration: duration.fast, ease: enter } }
                         }
-                        onMouseDown={(event) => event.preventDefault()}
+                        onMouseDown={(event) => {
+                            event.preventDefault()
+                        }}
                     >
                         <ScrollArea
                             className={styles.slashScroll}
@@ -2438,7 +2837,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                                     <motion.li
                                         aria-hidden="true"
                                         className={styles.slashHighlight}
-                                        style={{ y: hy, height: hh }}
+                                        style={{ height: hh, y: hy }}
                                     />
                                     {slashResults.map((item, index) => (
                                         <li
@@ -2449,9 +2848,13 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                                             data-index={index}
                                             className={styles.slashOption}
                                             onPointerMove={() => {
-                                                if (index !== slashIndex) setSlashActive(index)
+                                                if (index !== slashIndex) {
+                                                    setSlashActive(index)
+                                                }
                                             }}
-                                            onClick={() => chooseSlash(item)}
+                                            onClick={() => {
+                                                chooseSlash(item)
+                                            }}
                                             onKeyDown={(event) => {
                                                 if (event.key === 'Enter' || event.key === ' ') {
                                                     event.preventDefault()
@@ -2472,6 +2875,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             </AnimatePresence>
         </div>
     )
-})
+}
+export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(RichTextEditorRender)
 
 export default RichTextEditor

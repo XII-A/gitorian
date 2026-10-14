@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
-import { ActivityRow } from '../src/renderer/ActivityRow'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+
+import { ActivityRow } from '../src/renderer/activity-row'
 import { sampleState } from '../src/renderer/workspace-sample'
 
 describe('activity row pull request references', () => {
@@ -19,9 +20,11 @@ describe('activity row pull request references', () => {
             container.innerHTML = renderToStaticMarkup(
                 createElement(ActivityRow, { activity, repositoryName: 'gitea-slick-erp' })
             )
-            expect(container.querySelector('.activity-row-reference')?.textContent).toBe('#602')
-            expect(container.querySelector('.activity-row-title')?.textContent).toBe(activity.title)
-            expect(container.textContent).not.toContain(prId)
+            expect([
+                Object.is(container.querySelector('.activity-row-reference')?.textContent, '#602'),
+                Object.is(container.querySelector('.activity-row-title')?.textContent, activity.title),
+                container.textContent?.includes(prId)
+            ]).toStrictEqual([true, true, false])
         }
     )
 })

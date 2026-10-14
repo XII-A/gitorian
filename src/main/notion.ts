@@ -1,6 +1,6 @@
-import { fromNotion, toNotion } from '../shared/notion-format'
-import type { NotionBlock } from '../shared/notion-format'
 import type { Destination, Entry, State } from '../shared/model'
+import type { NotionBlock } from '../shared/notion-format'
+import { fromNotion, toNotion } from '../shared/notion-format'
 import type { Http } from './http'
 import { HttpError } from './http'
 
@@ -16,14 +16,18 @@ interface List<T> {
     next_cursor: string | null
 }
 export class Notion {
-    constructor(
-        private readonly http: Http,
-        private readonly token: () => string
-    ) {}
-    private request<T>(path: string, init?: RequestInit): Promise<T> {
+    private readonly http: Http
+    private readonly token: () => string
+    constructor(http: Http, token: () => string) {
+        this.http = http
+        this.token = token
+    }
+    private async request<T>(path: string, init?: RequestInit): Promise<T> {
         const token = this.token()
-        if (!token) throw new Error('Connect Notion to publish or refresh')
-        return this.http.request<T>(`https://api.notion.com/v1/${path}`, token, init)
+        if (!token) {
+            throw new Error('Connect Notion to publish or refresh')
+        }
+        return await this.http.request<T>(`https://api.notion.com/v1/${path}`, token, init)
     }
     async verify(): Promise<void> {
         await this.request('users/me')
@@ -35,9 +39,10 @@ export class Notion {
             const response: List<NotionBlock> = await this.request(
                 `blocks/${encodeURIComponent(id)}/children?page_size=100${cursor ? `&start_cursor=${cursor}` : ''}`
             )
-            for (const block of response.results) {
-                if (block.has_children && block.id && block.type !== 'child_page' && block.type !== 'child_database')
+            for await (const block of response.results) {
+                if (block.has_children && block.id && block.type !== 'child_page' && block.type !== 'child_database') {
                     block.children = await this.blocks(block.id)
+                }
                 blocks.push(block)
             }
             cursor = response.has_more ? response.next_cursor : null
@@ -52,8 +57,8 @@ export class Notion {
                 const response: List<Page> = await this.request(
                     `data_sources/${encodeURIComponent(destination.id)}/query`,
                     {
-                        method: 'POST',
-                        body: JSON.stringify({ page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) })
+                        body: JSON.stringify({ page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) }),
+                        method: 'POST'
                     }
                 )
                 pages.push(...response.results)
@@ -65,13 +70,17 @@ export class Notion {
         const ids: string[] = []
         const visit = (items: NotionBlock[]) => {
             for (const block of items) {
-                if (block.type === 'child_page' && block.id) ids.push(block.id)
+                if (block.type === 'child_page' && block.id) {
+                    ids.push(block.id)
+                }
                 visit(block.children ?? [])
             }
         }
         visit(blocks)
         const pages: Page[] = []
-        for (const id of ids) pages.push(await this.request<Page>(`pages/${id}`))
+        for await (const id of ids) {
+            pages.push(await this.request<Page>(`pages/${id}`))
+        }
         return pages
     }
     async entry(page: Page): Promise<Entry> {
@@ -81,68 +90,74 @@ export class Notion {
                 ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
                 .join('') ?? 'Untitled'
         return {
-            id: page.id,
-            title,
-            date: page.created_time,
-            url: page.url,
             body: fromNotion(await this.blocks(page.id)),
-            refreshedAt: new Date().toISOString()
+            date: page.created_time,
+            id: page.id,
+            refreshedAt: new Date().toISOString(),
+            title,
+            url: page.url
         }
     }
     async publish(save: State['saves'][number], checkpoint?: () => void): Promise<Entry> {
-        if (!save.title.trim() || save.title.length > 2000)
+        if (!save.title.trim() || save.title.length > 2000) {
             throw new HttpError(400, 'Use a title between 1 and 2000 characters')
+        }
         const children = toNotion(save.body)
         children.unshift({
             object: 'block',
-            type: 'paragraph',
             paragraph: {
                 rich_text: [
                     {
-                        type: 'text',
                         text: {
                             content: 'Published with weekly-j',
                             link: { url: `https://github.com/XII-A/weekly-j#${save.marker}` }
-                        }
+                        },
+                        type: 'text'
                     }
                 ]
-            }
+            },
+            type: 'paragraph'
         })
         const batches = this.batches(children)
-        const destination = save.destination
+        const { destination } = save
         const properties: Record<string, unknown> = {
             [destination.kind === 'page' ? 'title' : destination.titleProperty]: {
                 title: [{ text: { content: save.title } }]
             }
         }
-        if (destination.kind === 'database' && destination.dateProperty)
+        if (destination.kind === 'database' && destination.dateProperty) {
             properties[destination.dateProperty] = { date: { start: save.week ?? save.createdAt.slice(0, 10) } }
+        }
         const page = await this.request<Page>('pages', {
-            method: 'POST',
             body: JSON.stringify({
+                children: batches[0],
                 parent: destination.kind === 'page' ? { page_id: destination.id } : { data_source_id: destination.id },
-                properties,
-                children: batches[0]
-            })
+                properties
+            }),
+            method: 'POST'
         })
         save.entryId = page.id
         checkpoint?.()
-        for (const children of batches.slice(1))
-            await this.request(`blocks/${page.id}/children`, { method: 'PATCH', body: JSON.stringify({ children }) })
+        for await (const childrenValue of batches.slice(1)) {
+            await this.request(`blocks/${page.id}/children`, {
+                body: JSON.stringify({ children: childrenValue }),
+                method: 'PATCH'
+            })
+        }
         return {
-            id: page.id,
-            url: page.url,
-            title: save.title,
-            date: save.createdAt,
             body: save.body,
-            refreshedAt: new Date().toISOString()
+            date: save.createdAt,
+            id: page.id,
+            refreshedAt: new Date().toISOString(),
+            title: save.title,
+            url: page.url
         }
     }
     async reconcile(save: State['saves'][number]): Promise<Entry | undefined> {
         const pages = save.entryId
             ? [await this.request<Page>(`pages/${save.entryId}`)]
             : await this.pages(save.destination)
-        for (const page of pages) {
+        for await (const page of pages) {
             const blocks = await this.blocks(page.id)
             const matches = blocks.some(
                 (block) => block.type === 'paragraph' && JSON.stringify(block.paragraph).includes(save.marker)
@@ -151,17 +166,21 @@ export class Notion {
                 const body = fromNotion(blocks)
                 const actual = toNotion(body)
                 const expected = toNotion(save.body)
-                if (JSON.stringify(actual) === JSON.stringify(expected)) return { ...(await this.entry(page)), body }
-                if (JSON.stringify(actual) !== JSON.stringify(expected.slice(0, actual.length)))
+                if (JSON.stringify(actual) === JSON.stringify(expected)) {
+                    return { ...(await this.entry(page)), body }
+                }
+                if (JSON.stringify(actual) !== JSON.stringify(expected.slice(0, actual.length))) {
                     throw new Error(
                         'The possible saved page differs from the draft. Coverage remains pending; inspect it in Notion.'
                     )
+                }
                 // Re-read and verify an exact prefix before resuming a partial append.
-                for (const children of this.batches(expected.slice(actual.length)))
+                for await (const children of this.batches(expected.slice(actual.length))) {
                     await this.request(`blocks/${page.id}/children`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({ children })
+                        body: JSON.stringify({ children }),
+                        method: 'PATCH'
                     })
+                }
                 return { ...(await this.entry(page)), body: save.body }
             }
         }
@@ -173,12 +192,13 @@ export class Notion {
         let bytes = 0
         for (const block of blocks) {
             const size = Buffer.byteLength(JSON.stringify(block))
-            if (size > 450000)
+            if (size > 450_000) {
                 throw new HttpError(
                     400,
                     'A journal block exceeds the Notion payload limit; split this block before publishing'
                 )
-            if (batch.length >= 100 || bytes + size > 450000) {
+            }
+            if (batch.length >= 100 || bytes + size > 450_000) {
                 batches.push(batch)
                 batch = []
                 bytes = 0
@@ -186,7 +206,9 @@ export class Notion {
             batch.push(block)
             bytes += size
         }
-        if (batch.length) batches.push(batch)
+        if (batch.length) {
+            batches.push(batch)
+        }
         return batches
     }
 }

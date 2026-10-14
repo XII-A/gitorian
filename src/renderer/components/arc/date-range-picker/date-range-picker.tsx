@@ -1,5 +1,23 @@
 'use client'
 
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import type { Transition, Variants } from 'motion/react'
+import {
+    AnimatePresence,
+    animate,
+    motion,
+    useIsPresent,
+    useMotionValue,
+    useReducedMotion,
+    useTransform
+} from 'motion/react'
+import type {
+    CSSProperties,
+    ForwardRefRenderFunction,
+    FocusEvent as ReactFocusEvent,
+    KeyboardEvent as ReactKeyboardEvent,
+    ReactNode
+} from 'react'
 import {
     forwardRef,
     useCallback,
@@ -11,25 +29,11 @@ import {
     useState,
     useSyncExternalStore
 } from 'react'
-import type {
-    KeyboardEvent as ReactKeyboardEvent,
-    CSSProperties,
-    FocusEvent as ReactFocusEvent,
-    ReactNode
-} from 'react'
-import {
-    AnimatePresence,
-    animate,
-    motion,
-    useIsPresent,
-    useMotionValue,
-    useReducedMotion,
-    useTransform
-} from 'motion/react'
-import type { Transition, Variants } from 'motion/react'
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+
+import { required } from '../../../../shared/required'
 import { useToday } from '../calendar/calendar'
+import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './date-range-picker.module.css'
 
 /** An inclusive range of whole days. */
@@ -104,27 +108,35 @@ const fromKey = (key: string) => {
     const [year, month, day] = key.split('-').map(Number)
     return new Date(year, month - 1, day)
 }
-const ordered = (a: Date, b: Date): DateRange => (dayDiff(a, b) <= 0 ? { start: a, end: b } : { start: b, end: a })
+const ordered = (a: Date, b: Date): DateRange => (dayDiff(a, b) <= 0 ? { end: b, start: a } : { end: a, start: b })
 const sameRange = (a?: DateRange | null, b?: DateRange | null) =>
     Boolean(a && b && sameDay(a.start, b.start) && sameDay(a.end, b.end))
 const clampDate = (date: Date, min?: Date, max?: Date) =>
-    min && dayDiff(date, min) < 0 ? startOfDay(min) : max && dayDiff(date, max) > 0 ? startOfDay(max) : date
+    (() => {
+        if (min && dayDiff(date, min) < 0) {
+            return startOfDay(min)
+        }
+        if (max && dayDiff(date, max) > 0) {
+            return startOfDay(max)
+        }
+        return date
+    })()
 
 export const defaultDateRangePresets: DateRangePreset[] = [
-    { label: 'Today', range: (today) => ({ start: today, end: today }) },
-    { label: 'Yesterday', range: (today) => ({ start: addDays(today, -1), end: addDays(today, -1) }) },
-    { label: 'Last 7 days', range: (today) => ({ start: addDays(today, -6), end: today }) },
-    { label: 'Last 30 days', range: (today) => ({ start: addDays(today, -29), end: today }) },
-    { label: 'This month', range: (today) => ({ start: monthStart(today), end: today }) },
-    { label: 'Last month', range: (today) => ({ start: addMonths(today, -1), end: monthEnd(addMonths(today, -1)) }) },
+    { label: 'Today', range: (today) => ({ end: today, start: today }) },
+    { label: 'Yesterday', range: (today) => ({ end: addDays(today, -1), start: addDays(today, -1) }) },
+    { label: 'Last 7 days', range: (today) => ({ end: today, start: addDays(today, -6) }) },
+    { label: 'Last 30 days', range: (today) => ({ end: today, start: addDays(today, -29) }) },
+    { label: 'This month', range: (today) => ({ end: today, start: monthStart(today) }) },
+    { label: 'Last month', range: (today) => ({ end: monthEnd(addMonths(today, -1)), start: addMonths(today, -1) }) },
     {
         label: 'This quarter',
         range: (today) => ({
-            start: new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1),
-            end: today
+            end: today,
+            start: new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1)
         })
     },
-    { label: 'Year to date', range: (today) => ({ start: new Date(today.getFullYear(), 0, 1), end: today }) }
+    { label: 'Year to date', range: (today) => ({ end: today, start: new Date(today.getFullYear(), 0, 1) }) }
 ]
 
 /** The viewer's local date (lib/use-today.ts, shared with calendar). Re-exported so existing imports from date-range-picker keep working. */
@@ -133,7 +145,7 @@ export { useToday } from '../calendar/calendar'
 const noop = () => () => {
     /* No mutable hydration subscription. */
 }
-function useReducedFlag() {
+const useReducedFlag = () => {
     const hydrated = useSyncExternalStore(
         noop,
         () => true,
@@ -148,72 +160,72 @@ const standardEase = [...motionTokens.ease.standard] as Bezier
 /** Duration springs restated as stiffness and damping, so every retarget keeps the velocity already in flight. */
 const physical = (visualDuration: number, bounce: number): Transition => {
     const root = (2 * Math.PI) / (visualDuration * 1.2)
-    return { type: 'spring', stiffness: root * root, damping: 2 * (1 - bounce) * root, mass: 1 }
+    return { damping: 2 * (1 - bounce) * root, mass: 1, stiffness: root * root, type: 'spring' }
 }
-const GROW = physical(0.48, 0.12),
-    SHRINK = physical(0.38, 0),
-    STRETCH = physical(0.3, 0.04),
-    GLIDE = physical(0.3, 0.1),
-    SLIDE = physical(0.4, 0.06)
-const TRIGGER_RADIUS = 18,
-    PANEL_RADIUS = 26,
-    WIDE_CELL = 36,
-    WIDE_MIN = 712,
-    EDGE = 8
+const GROW = physical(0.48, 0.12)
+const SHRINK = physical(0.38, 0)
+const STRETCH = physical(0.3, 0.04)
+const GLIDE = physical(0.3, 0.1)
+const SLIDE = physical(0.4, 0.06)
+const EDGE = 8
+const PANEL_RADIUS = 26
+const TRIGGER_RADIUS = 18
+const WIDE_CELL = 36
+const WIDE_MIN = 712
 
 const roll: Variants = {
-    enter: (direction: number) => ({ opacity: 0, y: `${direction * 0.45}em`, filter: `blur(${blur.subtle}px)` }),
-    center: { opacity: 1, y: '0em', filter: 'blur(0px)', transition: { duration: 0.26, ease: enterEase } },
+    center: { filter: 'blur(0px)', opacity: 1, transition: { duration: 0.26, ease: enterEase }, y: '0em' },
+    enter: (direction: number) => ({ filter: `blur(${blur.subtle}px)`, opacity: 0, y: `${direction * 0.45}em` }),
     exit: (direction: number) => ({
-        opacity: 0,
-        y: `${direction * -0.45}em`,
         filter: `blur(${blur.subtle}px)`,
-        transition: { duration: 0.14, ease: standardEase }
+        opacity: 0,
+        transition: { duration: 0.14, ease: standardEase },
+        y: `${direction * -0.45}em`
     })
 }
 const fade: Variants = {
+    center: { filter: 'blur(0px)', opacity: 1, transition: { duration: 0.12 }, y: '0em' },
     enter: { opacity: 0 },
-    center: { opacity: 1, y: '0em', filter: 'blur(0px)', transition: { duration: 0.12 } },
     exit: { opacity: 0, transition: { duration: 0.08 } }
 }
 /** Panel content arrives just behind the growing surface and leaves ahead of it. */
 const faceIn: Variants = {
-    hidden: { opacity: 0, y: -4, filter: `blur(${blur.soft}px)` },
-    shown: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.26, ease: enterEase, delay: 0.07 } },
-    gone: { opacity: 0, y: -2, filter: `blur(${blur.soft}px)`, transition: { duration: 0.12, ease: standardEase } }
+    gone: { filter: `blur(${blur.soft}px)`, opacity: 0, transition: { duration: 0.12, ease: standardEase }, y: -2 },
+    hidden: { filter: `blur(${blur.soft}px)`, opacity: 0, y: -4 },
+    shown: { filter: 'blur(0px)', opacity: 1, transition: { delay: 0.07, duration: 0.26, ease: enterEase }, y: 0 }
 }
 const faceFade: Variants = {
+    gone: { opacity: 0, transition: { duration: 0.08 } },
     hidden: { opacity: 0 },
-    shown: { opacity: 1, transition: { duration: 0.12 } },
-    gone: { opacity: 0, transition: { duration: 0.08 } }
+    shown: { opacity: 1, transition: { duration: 0.12 } }
 }
 const slide: Variants = {
-    enter: (direction: number) => ({ opacity: 0, x: direction * 48, filter: `blur(${blur.soft}px)` }),
     center: {
-        opacity: 1,
-        x: 0,
         filter: 'blur(0px)',
+        opacity: 1,
         transition: {
-            x: SLIDE,
+            filter: { duration: 0.24, ease: enterEase },
             opacity: { duration: 0.22, ease: enterEase },
-            filter: { duration: 0.24, ease: enterEase }
-        }
+            x: SLIDE
+        },
+        x: 0
     },
+    enter: (direction: number) => ({ filter: `blur(${blur.soft}px)`, opacity: 0, x: direction * 48 }),
     exit: (direction: number) => ({
-        opacity: 0,
-        x: direction * -36,
         filter: `blur(${blur.soft}px)`,
+        opacity: 0,
         transition: {
-            x: SLIDE,
+            filter: { duration: 0.14, ease: standardEase },
             opacity: { duration: 0.14, ease: standardEase },
-            filter: { duration: 0.14, ease: standardEase }
-        }
+            x: SLIDE
+        },
+        x: direction * -36
     })
 }
 
 /** Words roll one by one: a later date rises from below, an earlier one drops from above; words that stay the same hold still. */
-function Rolling({ text, direction, reduced }: { text: string; direction: number; reduced: boolean }) {
-    const words = text.split(/\s+/).filter(Boolean)
+const Rolling = ({ text, direction, reduced }: { text: string; direction: number; reduced: boolean }) => {
+    const words = text.split(/\s+/u).filter(Boolean)
     return (
         <span className={styles.rolling} aria-hidden="true">
             {words.map((word, index) => (
@@ -238,7 +250,7 @@ function Rolling({ text, direction, reduced }: { text: string; direction: number
 }
 
 /** Remembers which way a range moved, so labels roll in time's direction. */
-function useDirection(range: DateRange | null) {
+const useDirection = (range: DateRange | null) => {
     const time = range ? range.start.getTime() * 2 + range.end.getTime() : null
     const [previous, setPrevious] = useState(time)
     const [direction, setDirection] = useState(1)
@@ -252,16 +264,16 @@ function useDirection(range: DateRange | null) {
 type Segment = { left: number; width: number } | null
 const cellIn = (date: Date, first: Date) => {
     const index = dayDiff(date, first)
-    return { row: Math.floor(index / 7), col: index % 7 }
+    return { col: index % 7, row: Math.floor(index / 7) }
 }
 
 /** One week's slice of the highlight. It grows out of the edge the range arrives from, so hovering reads as stretching. */
-function Bar({ row, segment, reduced }: { row: number; segment: Segment; reduced: boolean }) {
-    const left = useMotionValue(segment?.left ?? 0),
-        width = useMotionValue(segment?.width ?? 0),
-        opacity = useMotionValue(segment ? 1 : 0)
-    const leftPct = useTransform(left, (value) => `${value}%`),
-        widthPct = useTransform(width, (value) => `${value}%`)
+const Bar = ({ row, segment, reduced }: { row: number; segment: Segment; reduced: boolean }) => {
+    const left = useMotionValue(segment?.left ?? 0)
+    const width = useMotionValue(segment?.width ?? 0)
+    const opacity = useMotionValue(segment ? 1 : 0)
+    const leftPct = useTransform(left, (value) => `${value}%`)
+    const widthPct = useTransform(width, (value) => `${value}%`)
     const wasEmpty = useRef(!segment)
     useLayoutEffect(() => {
         if (!segment) {
@@ -282,17 +294,17 @@ function Bar({ row, segment, reduced }: { row: number; segment: Segment; reduced
     return (
         <motion.span
             className={styles.bar}
-            style={{ left: leftPct, width: widthPct, opacity, top: `calc(${row} * var(--cell) + 3px)` }}
+            style={{ left: leftPct, opacity, top: `calc(${row} * var(--cell) + 3px)`, width: widthPct }}
         />
     )
 }
 
 /** A solid end of the range. It glides from day to day and only fades when the end leaves this month. */
-function Thumb({ cell, reduced }: { cell: { row: number; col: number } | null; reduced: boolean }) {
-    const x = useMotionValue(cell?.col ?? 0),
-        y = useMotionValue(cell?.row ?? 0),
-        opacity = useMotionValue(cell ? 1 : 0),
-        scale = useMotionValue(cell ? 1 : 0.8)
+const Thumb = ({ cell, reduced }: { cell: { row: number; col: number } | null; reduced: boolean }) => {
+    const x = useMotionValue(cell?.col ?? 0)
+    const y = useMotionValue(cell?.row ?? 0)
+    const opacity = useMotionValue(cell ? 1 : 0)
+    const scale = useMotionValue(cell ? 1 : 0.8)
     const transform = useTransform(() => `translate(${x.get() * 100}%, ${y.get() * 100}%) scale(${scale.get()})`)
     const hidden = useRef(!cell)
     useLayoutEffect(() => {
@@ -313,7 +325,7 @@ function Thumb({ cell, reduced }: { cell: { row: number; col: number } | null; r
         animate(opacity, 1, { duration: reduced ? 0 : 0.16 })
         animate(scale, 1, reduced ? { duration: 0 } : GLIDE)
     }, [cell, opacity, reduced, scale, x, y])
-    return <motion.span className={styles.thumb} style={{ transform, opacity }} />
+    return <motion.span className={styles.thumb} style={{ opacity, transform }} />
 }
 
 interface MonthProps {
@@ -338,7 +350,7 @@ interface MonthProps {
     idBase: string
 }
 
-function Month({
+const Month = ({
     month,
     range,
     tabbable,
@@ -353,41 +365,49 @@ function Month({
     onKey,
     onFocusDay,
     idBase
-}: MonthProps) {
+}: MonthProps) => {
     const first = useMemo(() => addDays(month, -((month.getDay() - weekStartsOn + 7) % 7)), [month, weekStartsOn])
     const rows = useMemo(
         () =>
-            Array.from({ length: 6 }, (_, row) => Array.from({ length: 7 }, (_, col) => addDays(first, row * 7 + col))),
+            Array.from({ length: 6 }, (_, row) =>
+                Array.from({ length: 7 }, (_Value, col) => addDays(first, row * 7 + col))
+            ),
         [first]
     )
     const titleId = `${idBase}-${keyOf(month)}`
     const inMonth = (date: Date) => monthDiff(date, month) === 0
 
-    const lo = range?.start,
-        hi = range?.end
-    const loKey = lo ? keyOf(lo) : '',
-        hiKey = hi ? keyOf(hi) : ''
+    const lo = range?.start
+    const hi = range?.end
+    const loKey = lo ? keyOf(lo) : ''
+    const hiKey = hi ? keyOf(hi) : ''
     /** Each week's slice of the range, in percent of the row. Keyed by the range's days so bars only move when it does. */
     const segments = useMemo<Segment[]>(() => {
-        if (!loKey || !hiKey) return rows.map(() => null)
-        const start = fromKey(loKey),
-            end = fromKey(hiKey)
+        if (!loKey || !hiKey) {
+            return rows.map(() => null)
+        }
+        const start = fromKey(loKey)
+        const end = fromKey(hiKey)
         const unit = 100 / 7
         const colOf = (date: Date) => dayDiff(date, first) % 7
         return rows.map((row) => {
             const days = row.filter((date) => monthDiff(date, month) === 0)
-            if (!days.length) return null
-            const rowFirst = days[0],
-                rowLast = days[days.length - 1]
-            const from = dayDiff(start, rowFirst) > 0 ? start : rowFirst,
-                to = dayDiff(end, rowLast) < 0 ? end : rowLast
+            if (!days.length) {
+                return null
+            }
+            const [rowFirst] = days
+            const rowLast = required(days.at(-1))
+            const from = dayDiff(start, rowFirst) > 0 ? start : rowFirst
+            const to = dayDiff(end, rowLast) < 0 ? end : rowLast
             if (dayDiff(from, to) <= 0) {
-                const a = colOf(from),
-                    b = colOf(to)
+                const a = colOf(from)
+                const b = colOf(to)
                 return { left: a * unit, width: (b - a + 1) * unit }
             }
             // The week sits wholly before or after the range: collapse at the edge the range would grow in from.
-            if (dayDiff(rowLast, start) < 0) return { left: (colOf(rowLast) + 1) * unit, width: 0 }
+            if (dayDiff(rowLast, start) < 0) {
+                return { left: (colOf(rowLast) + 1) * unit, width: 0 }
+            }
             return { left: colOf(rowFirst) * unit, width: 0 }
         })
     }, [first, hiKey, loKey, month, rows])
@@ -425,8 +445,9 @@ function Month({
                     {rows.map((row, index) => (
                         <div key={index} role="row" className={styles.week}>
                             {row.map((date) => {
-                                if (!inMonth(date))
+                                if (!inMonth(date)) {
                                     return <span key={keyOf(date)} role="gridcell" className={styles.blank} />
+                                }
                                 const key = keyOf(date)
                                 const disabled = Boolean(
                                     (minDate && dayDiff(date, minDate) < 0) || (maxDate && dayDiff(date, maxDate) > 0)
@@ -447,12 +468,20 @@ function Month({
                                             disabled={disabled}
                                             aria-current={isToday ? 'date' : undefined}
                                             aria-label={formatters.day.format(date)}
-                                            onClick={() => onPick(date)}
-                                            onPointerEnter={() => {
-                                                if (!disabled) onHover(date)
+                                            onClick={() => {
+                                                onPick(date)
                                             }}
-                                            onFocus={() => onFocusDay(date)}
-                                            onKeyDown={(event) => onKey(event, date)}
+                                            onPointerEnter={() => {
+                                                if (!disabled) {
+                                                    onHover(date)
+                                                }
+                                            }}
+                                            onFocus={() => {
+                                                onFocusDay(date)
+                                            }}
+                                            onKeyDown={(event) => {
+                                                onKey(event, date)
+                                            }}
                                         >
                                             <span>{date.getDate()}</span>
                                         </button>
@@ -469,10 +498,10 @@ function Month({
 
 /** The visible months travel together; a leaving set turns inert so focus and queries only find the current one. */
 // popLayout needs the exiting month's DOM node so it can remove it from the layout during the slide.
-const Months = forwardRef<HTMLDivElement, { children: ReactNode; direction: number; reduced: boolean }>(function Months(
-    { children, direction, reduced },
-    ref
-) {
+const MonthsRender: ForwardRefRenderFunction<
+    HTMLDivElement,
+    { children: ReactNode; direction: number; reduced: boolean }
+> = ({ children, direction, reduced }, ref) => {
     const present = useIsPresent()
     return (
         <motion.div
@@ -489,9 +518,10 @@ const Months = forwardRef<HTMLDivElement, { children: ReactNode; direction: numb
             {children}
         </motion.div>
     )
-})
+}
+const Months = forwardRef<HTMLDivElement, { children: ReactNode; direction: number; reduced: boolean }>(MonthsRender)
 
-export function DateRangePicker({
+export const DateRangePicker = ({
     value,
     defaultValue = null,
     onChange,
@@ -507,12 +537,12 @@ export function DateRangePicker({
     className,
     fixedRangeDays,
     normalizeStart
-}: DateRangePickerProps) {
+}: DateRangePickerProps) => {
     const reduced = useReducedFlag()
     const today = useToday()
     const uid = useId()
     const [inner, setInner] = useState<DateRange | null>(defaultValue)
-    const committed = value !== undefined ? value : inner
+    const committed = value === undefined ? inner : value
 
     const [open, setOpen] = useState(false)
     const [compact, setCompact] = useState(false)
@@ -526,9 +556,9 @@ export function DateRangePicker({
 
     const formatters = useMemo(
         () => ({
-            label: new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric' }),
+            day: new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', weekday: 'long', year: 'numeric' }),
+            label: new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
             title: new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }),
-            day: new Intl.DateTimeFormat(locale, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
             weekday: new Intl.DateTimeFormat(locale, { weekday: 'short' }),
             weekdayLong: new Intl.DateTimeFormat(locale, { weekday: 'long' })
         }),
@@ -536,11 +566,15 @@ export function DateRangePicker({
     )
     const format = useCallback(
         (range: DateRange | null) =>
-            !range
-                ? placeholder
-                : sameDay(range.start, range.end)
-                  ? formatters.label.format(range.start)
-                  : formatters.label.formatRange(range.start, range.end),
+            (() => {
+                if (range) {
+                    if (sameDay(range.start, range.end)) {
+                        return formatters.label.format(range.start)
+                    }
+                    return formatters.label.formatRange(range.start, range.end)
+                }
+                return placeholder
+            })(),
         [formatters, placeholder]
     )
 
@@ -560,13 +594,13 @@ export function DateRangePicker({
 
     /* ---------- One surface: the trigger's box springs to the panel's box and back ---------- */
     // Before the first measurement the surface simply fills the root and the root wraps the trigger, so server markup already looks right.
-    const width = useMotionValue<number | string>('100%'),
-        height = useMotionValue<number | string>('100%'),
-        radius = useMotionValue(TRIGGER_RADIUS),
-        x = useMotionValue(0),
-        rootWidth = useMotionValue<number | string>('auto')
-    const sizes = useRef<{ trigger: Size; panel: Size | null }>({ trigger: { w: 0, h: 0 }, panel: null })
-    const live = useRef({ open: false, reduced: false, ready: false })
+    const width = useMotionValue<number | string>('100%')
+    const height = useMotionValue<number | string>('100%')
+    const radius = useMotionValue(TRIGGER_RADIUS)
+    const x = useMotionValue(0)
+    const rootWidth = useMotionValue<number | string>('auto')
+    const sizes = useRef<{ trigger: Size; panel: Size | null }>({ panel: null, trigger: { h: 0, w: 0 } })
+    const live = useRef({ open: false, ready: false, reduced: false })
     const queued = useRef(false)
     const boundaryRef = useRef(boundary)
     useLayoutEffect(() => {
@@ -576,22 +610,26 @@ export function DateRangePicker({
     const bounds = useCallback(() => {
         const element = boundaryRef.current?.()
         const viewport = { left: 0, right: document.documentElement.clientWidth }
-        if (!element) return viewport
+        if (!element) {
+            return viewport
+        }
         const rect = element.getBoundingClientRect()
         return { left: Math.max(viewport.left, rect.left), right: Math.min(viewport.right, rect.right) }
     }, [])
 
     const update = useCallback(() => {
         queued.current = false
-        const { trigger, panel } = sizes.current,
-            state = live.current
-        if (!trigger.w) return
+        const { trigger, panel } = sizes.current
+        const state = live.current
+        if (!trigger.w) {
+            return
+        }
         const openPanel = state.open && panel ? panel : null
         const target = openPanel ?? trigger
         let offset = 0
         if (openPanel && rootRef.current) {
-            const rect = rootRef.current.getBoundingClientRect(),
-                box = bounds()
+            const rect = rootRef.current.getBoundingClientRect()
+            const box = bounds()
             offset = Math.min(0, box.right - EDGE - (rect.left + openPanel.w))
             offset = Math.max(offset, box.left + EDGE - rect.left)
         }
@@ -605,7 +643,15 @@ export function DateRangePicker({
             state.ready = true
             return
         }
-        const spring = openPanel ? GROW : state.open ? GROW : SHRINK
+        const spring = (() => {
+            if (openPanel) {
+                return GROW
+            }
+            if (state.open) {
+                return GROW
+            }
+            return SHRINK
+        })()
         animate(width, target.w, spring)
         animate(height, target.h, spring)
         animate(radius, r, spring)
@@ -614,7 +660,9 @@ export function DateRangePicker({
     }, [bounds, height, radius, rootWidth, width, x])
 
     const schedule = useCallback(() => {
-        if (queued.current) return
+        if (queued.current) {
+            return
+        }
         queued.current = true
         queueMicrotask(update)
     }, [update])
@@ -622,63 +670,90 @@ export function DateRangePicker({
     useLayoutEffect(() => {
         live.current.open = open
         live.current.reduced = reduced
-        if (!open) sizes.current.panel = null
+        if (!open) {
+            sizes.current.panel = null
+        }
         schedule()
     }, [open, reduced, schedule])
 
     useLayoutEffect(() => {
         const node = triggerRef.current
-        if (!node) return
+        if (!node) {
+            return
+        }
         const read = () => {
-            sizes.current.trigger = { w: node.offsetWidth, h: node.offsetHeight }
+            sizes.current.trigger = { h: node.offsetHeight, w: node.offsetWidth }
             schedule()
         }
         read()
-        if (typeof ResizeObserver === 'undefined') return
+        if (typeof ResizeObserver === 'undefined') {
+            return
+        }
         const observer = new ResizeObserver(read)
         observer.observe(node)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [schedule])
 
     useLayoutEffect(() => {
         const node = panelRef.current
-        if (!open || !node) return
+        if (!open || !node) {
+            return
+        }
         const read = () => {
-            sizes.current.panel = { w: node.offsetWidth, h: node.offsetHeight }
+            sizes.current.panel = { h: node.offsetHeight, w: node.offsetWidth }
             schedule()
         }
         read()
-        if (typeof ResizeObserver === 'undefined') return
+        if (typeof ResizeObserver === 'undefined') {
+            return
+        }
         const observer = new ResizeObserver(read)
         observer.observe(node)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [open, schedule])
 
     // On a short screen (a phone, a trigger low on the page) the panel can open below the fold, with Apply out of reach.
     // Once it has its size, scroll just enough to bring its bottom into view, never past its top. After closing, the
     // trigger comes back into view if that scroll left it off screen.
     useEffect(() => {
-        if (!open) return
+        if (!open) {
+            return
+        }
         const frame = requestAnimationFrame(() => {
             const node = panelRef.current
-            if (!node) return
+            if (!node) {
+                return
+            }
             const rect = node.getBoundingClientRect()
             const overflow = rect.bottom - (window.innerHeight - EDGE)
-            if (overflow <= 0) return
+            if (overflow <= 0) {
+                return
+            }
             window.scrollBy({
-                top: Math.min(overflow, Math.max(0, rect.top - EDGE)),
-                behavior: reduced ? 'instant' : 'smooth'
+                behavior: reduced ? 'instant' : 'smooth',
+                top: Math.min(overflow, Math.max(0, rect.top - EDGE))
             })
         })
-        return () => cancelAnimationFrame(frame)
+        return () => {
+            cancelAnimationFrame(frame)
+        }
     }, [open, reduced])
     useEffect(() => {
-        if (open) return
+        if (open) {
+            return
+        }
         const trigger = triggerRef.current
-        if (!trigger) return
+        if (!trigger) {
+            return
+        }
         const rect = trigger.getBoundingClientRect()
-        if (rect.bottom < 0 || rect.top > window.innerHeight)
-            trigger.scrollIntoView({ block: 'center', behavior: reduced ? 'instant' : 'smooth' })
+        if (rect.bottom < 0 || rect.top > window.innerHeight) {
+            trigger.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth', block: 'center' })
+        }
     }, [open, reduced])
 
     /* ---------- Layout: two months when there is room, one compact month otherwise ---------- */
@@ -690,7 +765,9 @@ export function DateRangePicker({
     }, [bounds, months])
 
     useEffect(() => {
-        if (!open) return
+        if (!open) {
+            return
+        }
         const onResize = () => {
             const next = measureLayout()
             setCompact(next.single)
@@ -698,7 +775,9 @@ export function DateRangePicker({
             schedule()
         }
         window.addEventListener('resize', onResize)
-        return () => window.removeEventListener('resize', onResize)
+        return () => {
+            window.removeEventListener('resize', onResize)
+        }
     }, [measureLayout, open, schedule])
 
     const viewFor = (range: DateRange | null, single: boolean, fallback: Date) => {
@@ -707,7 +786,9 @@ export function DateRangePicker({
     }
 
     const openPanel = () => {
-        if (!today) return
+        if (!today) {
+            return
+        }
         const layout = measureLayout()
         setCompact(layout.single)
         setPanelWidth(layout.width)
@@ -722,7 +803,9 @@ export function DateRangePicker({
     }
 
     const close = useCallback((focus: boolean) => {
-        if (focus) pendingFocus.current = 'trigger'
+        if (focus) {
+            pendingFocus.current = 'trigger'
+        }
         setDirection(0)
         setOpen(false)
         setAnchor(null)
@@ -730,9 +813,13 @@ export function DateRangePicker({
     }, [])
 
     const apply = () => {
-        const next = anchor ? { start: anchor, end: anchor } : draft
-        if (!next) return
-        if (value === undefined) setInner(next)
+        const next = anchor ? { end: anchor, start: anchor } : draft
+        if (!next) {
+            return
+        }
+        if (value === undefined) {
+            setInner(next)
+        }
         onChange?.(next)
         close(true)
     }
@@ -740,7 +827,9 @@ export function DateRangePicker({
     /* ---------- Focus management ---------- */
     useLayoutEffect(() => {
         const target = pendingFocus.current
-        if (!target) return
+        if (!target) {
+            return
+        }
         if (target === 'trigger' && !open) {
             pendingFocus.current = null
             triggerRef.current?.focus({ preventScroll: true })
@@ -756,12 +845,18 @@ export function DateRangePicker({
     }, [focusKey, open, view, compact])
 
     useEffect(() => {
-        if (!open) return
+        if (!open) {
+            return
+        }
         const down = (event: PointerEvent) => {
-            if (!rootRef.current?.contains(event.target as Node)) close(false)
+            if (!rootRef.current?.contains(event.target as Node)) {
+                close(false)
+            }
         }
         document.addEventListener('pointerdown', down)
-        return () => document.removeEventListener('pointerdown', down)
+        return () => {
+            document.removeEventListener('pointerdown', down)
+        }
     }, [close, open])
 
     const onRootKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -773,22 +868,28 @@ export function DateRangePicker({
     }
     const onRootBlur = (event: ReactFocusEvent<HTMLDivElement>) => {
         const next = event.relatedTarget as Node | null
-        if (open && next && !event.currentTarget.contains(next)) close(false)
+        if (open && next && !event.currentTarget.contains(next)) {
+            close(false)
+        }
     }
 
     /* ---------- Month navigation and picking ---------- */
     const goTo = (next: Date) => {
         const delta = monthDiff(next, view)
-        if (!delta) return
+        if (!delta) {
+            return
+        }
         setDirection(Math.sign(delta))
         setView(next)
     }
 
     /** Keeps a range on screen: nothing moves when it already fits, otherwise its last month lands on the right. */
     const reveal = (range: DateRange) => {
-        const first = view,
-            last = addMonths(view, count - 1)
-        if (monthDiff(range.start, first) >= 0 && monthDiff(range.end, last) <= 0) return
+        const first = view
+        const last = addMonths(view, count - 1)
+        if (monthDiff(range.start, first) >= 0 && monthDiff(range.end, last) <= 0) {
+            return
+        }
         goTo(viewFor(range, compact, range.end))
     }
 
@@ -796,7 +897,7 @@ export function DateRangePicker({
         setFocusKey(keyOf(date))
         if (fixedRangeDays) {
             const start = startOfDay(normalizeStart?.(date) ?? date)
-            const range = { start, end: addDays(start, fixedRangeDays - 1) }
+            const range = { end: addDays(start, fixedRangeDays - 1), start }
             setDraft(range)
             setAnchor(null)
             setHover(null)
@@ -814,10 +915,12 @@ export function DateRangePicker({
     }
 
     const choosePreset = (preset: DateRangePreset) => {
-        if (!today) return
+        if (!today) {
+            return
+        }
         const proposed = preset.range(today)
         const start = startOfDay(normalizeStart?.(proposed.start) ?? proposed.start)
-        const range = fixedRangeDays ? { start, end: addDays(start, fixedRangeDays - 1) } : proposed
+        const range = fixedRangeDays ? { end: addDays(start, fixedRangeDays - 1), start } : proposed
         setDraft(range)
         setAnchor(null)
         setHover(null)
@@ -828,34 +931,45 @@ export function DateRangePicker({
     const onDayKey = (event: ReactKeyboardEvent<HTMLButtonElement>, date: Date) => {
         const weekday = (date.getDay() - weekStartsOn + 7) % 7
         const moves: Record<string, () => Date> = {
+            ArrowDown: () => addDays(date, 7),
             ArrowLeft: () => addDays(date, -1),
             ArrowRight: () => addDays(date, 1),
             ArrowUp: () => addDays(date, -7),
-            ArrowDown: () => addDays(date, 7),
-            Home: () => addDays(date, -weekday),
             End: () => addDays(date, 6 - weekday),
-            PageUp: () => shiftMonths(date, event.shiftKey ? -12 : -1),
-            PageDown: () => shiftMonths(date, event.shiftKey ? 12 : 1)
+            Home: () => addDays(date, -weekday),
+            PageDown: () => shiftMonths(date, event.shiftKey ? 12 : 1),
+            PageUp: () => shiftMonths(date, event.shiftKey ? -12 : -1)
         }
         const move = moves[event.key]
-        if (!move) return
+        if (!move) {
+            return
+        }
         event.preventDefault()
         const next = clampDate(move(), minDate, maxDate)
         setFocusKey(keyOf(next))
-        if (anchor) setHover(next)
+        if (anchor) {
+            setHover(next)
+        }
         pendingFocus.current = 'day'
-        const first = view,
-            last = addMonths(view, count - 1)
-        if (monthDiff(next, first) < 0) goTo(monthStart(next))
-        else if (monthDiff(next, last) > 0) goTo(addMonths(monthStart(next), -(count - 1)))
+        const first = view
+        const last = addMonths(view, count - 1)
+        if (monthDiff(next, first) < 0) {
+            goTo(monthStart(next))
+        } else if (monthDiff(next, last) > 0) {
+            goTo(addMonths(monthStart(next), -(count - 1)))
+        }
     }
 
     const onRailKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
         const keys = compact ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown']
-        if (!keys.includes(event.key)) return
-        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-preset]'))
+        if (!keys.includes(event.key)) {
+            return
+        }
+        const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-preset]')]
         const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
-        if (at < 0) return
+        if (at === -1) {
+            return
+        }
         event.preventDefault()
         buttons[(at + (event.key === keys[1] ? 1 : -1) + buttons.length) % buttons.length]?.focus()
     }
@@ -863,17 +977,21 @@ export function DateRangePicker({
     /** The day that owns the tab stop: the focused day when it is on screen, else the first visible day of the range, else the 1st. */
     const tabbable = useMemo(() => {
         const onScreen = (date: Date) => visible.some((month) => monthDiff(date, month) === 0)
-        if (focusKey && onScreen(fromKey(focusKey))) return focusKey
-        if (shown && onScreen(shown.start)) return keyOf(shown.start)
+        if (focusKey && onScreen(fromKey(focusKey))) {
+            return focusKey
+        }
+        if (shown && onScreen(shown.start)) {
+            return keyOf(shown.start)
+        }
         return keyOf(visible[0])
     }, [focusKey, shown, visible])
 
     /* ---------- Preset highlight glides between presets ---------- */
-    const gx = useMotionValue(0),
-        gy = useMotionValue(0),
-        gw = useMotionValue(0),
-        gh = useMotionValue(0),
-        go = useMotionValue(0)
+    const gx = useMotionValue(0)
+    const gy = useMotionValue(0)
+    const gw = useMotionValue(0)
+    const gh = useMotionValue(0)
+    const go = useMotionValue(0)
     useLayoutEffect(() => {
         const rail = railRef.current
         const node = activePreset < 0 ? null : rail?.querySelector<HTMLElement>(`[data-preset="${activePreset}"]`)
@@ -899,7 +1017,7 @@ export function DateRangePicker({
             (node.offsetLeft < rail.scrollLeft ||
                 node.offsetLeft + node.offsetWidth > rail.scrollLeft + rail.clientWidth)
         ) {
-            rail.scrollTo({ left: node.offsetLeft - 12, behavior: reduced ? 'auto' : 'smooth' })
+            rail.scrollTo({ behavior: reduced ? 'auto' : 'smooth', left: node.offsetLeft - 12 })
         }
     }, [activePreset, compact, go, gh, gw, gx, gy, open, reduced])
 
@@ -907,25 +1025,34 @@ export function DateRangePicker({
     const committedText = format(committed)
     const shownText = shown ? format(shown) : 'No dates'
     const countText = shown ? `${days} ${days === 1 ? 'day' : 'days'}` : ''
-    const status = !open
-        ? ''
-        : anchor
-          ? `Start ${formatters.label.format(anchor)}. Choose an end date.`
-          : shown
-            ? `${shownText}, ${countText}`
-            : ''
+    const status = (() => {
+        if (open) {
+            if (anchor) {
+                return `Start ${formatters.label.format(anchor)}. Choose an end date.`
+            }
+            if (shown) {
+                return `${shownText}, ${countText}`
+            }
+            return ''
+        }
+        return ''
+    })()
     const layoutId = reduced ? undefined : `${uid}-value`
 
     const cellSize = compact && panelWidth ? Math.max(32, Math.min(42, Math.floor((panelWidth - 24) / 7))) : WIDE_CELL
 
-    const quiet = open
-        ? reduced
-            ? { opacity: 0 }
-            : { opacity: 0, filter: `blur(${blur.subtle}px)` }
-        : { opacity: 1, filter: 'blur(0px)' }
+    const quiet = (() => {
+        if (open) {
+            if (reduced) {
+                return { opacity: 0 }
+            }
+            return { filter: `blur(${blur.subtle}px)`, opacity: 0 }
+        }
+        return { filter: 'blur(0px)', opacity: 1 }
+    })()
     const quietTransition = open
         ? { duration: 0.12, ease: standardEase }
-        : { duration: 0.22, ease: enterEase, delay: reduced ? 0 : 0.1 }
+        : { delay: reduced ? 0 : 0.1, duration: 0.22, ease: enterEase }
 
     return (
         <motion.div
@@ -985,7 +1112,7 @@ export function DateRangePicker({
                 </motion.span>
             </button>
 
-            <motion.div className={styles.surface} style={{ width, height, borderRadius: radius, x }}>
+            <motion.div className={styles.surface} style={{ borderRadius: radius, height, width, x }}>
                 <AnimatePresence>
                     {open && today && (
                         <motion.div
@@ -1021,7 +1148,7 @@ export function DateRangePicker({
                                 >
                                     <motion.span
                                         className={styles.railHighlight}
-                                        style={{ x: gx, y: gy, width: gw, height: gh, opacity: go }}
+                                        style={{ height: gh, opacity: go, width: gw, x: gx, y: gy }}
                                         aria-hidden="true"
                                     />
                                     {presets.map((preset, index) => (
@@ -1031,7 +1158,9 @@ export function DateRangePicker({
                                             className={styles.preset}
                                             data-preset={index}
                                             aria-pressed={index === activePreset}
-                                            onClick={() => choosePreset(preset)}
+                                            onClick={() => {
+                                                choosePreset(preset)
+                                            }}
                                         >
                                             {preset.label}
                                         </button>
@@ -1041,7 +1170,9 @@ export function DateRangePicker({
                                 <div
                                     className={styles.calendars}
                                     onPointerLeave={() => {
-                                        if (anchor) setHover(null)
+                                        if (anchor) {
+                                            setHover(null)
+                                        }
                                     }}
                                 >
                                     <button
@@ -1049,7 +1180,9 @@ export function DateRangePicker({
                                         className={styles.navButton}
                                         data-side="prev"
                                         aria-label="Previous month"
-                                        onClick={() => goTo(addMonths(view, -1))}
+                                        onClick={() => {
+                                            goTo(addMonths(view, -1))
+                                        }}
                                         disabled={Boolean(minDate && monthDiff(view, minDate) <= 0)}
                                     >
                                         <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -1059,7 +1192,9 @@ export function DateRangePicker({
                                         className={styles.navButton}
                                         data-side="next"
                                         aria-label="Next month"
-                                        onClick={() => goTo(addMonths(view, 1))}
+                                        onClick={() => {
+                                            goTo(addMonths(view, 1))
+                                        }}
                                         disabled={Boolean(
                                             maxDate && monthDiff(addMonths(view, count - 1), maxDate) >= 0
                                         )}
@@ -1088,10 +1223,14 @@ export function DateRangePicker({
                                                         idBase={uid}
                                                         onPick={pick}
                                                         onHover={(date) => {
-                                                            if (anchor) setHover(date)
+                                                            if (anchor) {
+                                                                setHover(date)
+                                                            }
                                                         }}
                                                         onKey={onDayKey}
-                                                        onFocusDay={(date) => setFocusKey(keyOf(date))}
+                                                        onFocusDay={(date) => {
+                                                            setFocusKey(keyOf(date))
+                                                        }}
                                                     />
                                                 ))}
                                             </Months>
@@ -1137,7 +1276,13 @@ export function DateRangePicker({
                                     animate="shown"
                                     exit="gone"
                                 >
-                                    <button type="button" className={styles.ghost} onClick={() => close(true)}>
+                                    <button
+                                        type="button"
+                                        className={styles.ghost}
+                                        onClick={() => {
+                                            close(true)
+                                        }}
+                                    >
                                         Cancel
                                     </button>
                                     <button type="button" className={styles.primary} onClick={apply} disabled={!shown}>

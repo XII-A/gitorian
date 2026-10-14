@@ -1,30 +1,21 @@
-import { activityUpdating } from './background-work'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Command, Reply } from '../shared/model'
-import { WeeklyHub } from './WeeklyHub'
-import { Settings } from './Settings'
-import { CommandMenu } from './components/CommandMenu'
-import { Button } from './components/arc/button/button'
-import { Workspace } from './Workspace'
-import { WorkspaceReference } from './WorkspaceReference'
+
+import type { Activity, Command, Reply } from '../shared/model'
 import { localDate, weekOf } from '../shared/model'
-import type { Activity } from '../shared/model'
-import { journalWeek } from './hub-model'
-import { AcquisitionStatus } from './AcquisitionStatus'
-import { BackgroundNotifications } from './BackgroundNotifications'
-import { ToastStack, ToastStackProvider } from './components/arc/toast-stack/toast-stack'
+import { AcquisitionStatus } from './acquisition-status'
 import { unchangedStateReply } from './activity-cache'
+import { BackgroundNotifications } from './background-notifications'
+import { activityUpdating } from './background-work'
+import { Button } from './components/arc/button/button'
+import { ToastStack, ToastStackProvider } from './components/arc/toast-stack/toast-stack'
+import { CommandMenu } from './components/command-menu'
+import { journalWeek } from './hub-model'
+import { Settings } from './settings'
+import { WeeklyHub } from './weekly-hub'
+import { Workspace } from './workspace'
+import { WorkspaceReference } from './workspace-reference'
 
-export function App() {
-    return (
-        <ToastStackProvider>
-            <JournalApp />
-            <ToastStack className="journal-notifications" />
-        </ToastStackProvider>
-    )
-}
-
-function JournalApp() {
+const JournalApp = () => {
     const [screen, setScreen] = useState<'hub' | 'workspace'>('hub')
     const [reply, setReply] = useState<Reply>()
     const [remotes, setRemotes] = useState<Record<string, string[]>>({})
@@ -42,14 +33,19 @@ function JournalApp() {
         try {
             const result = await window.journal.invoke(command)
             setReply((current) => {
-                if (unchangedStateReply(current, result, command)) return current
+                if (unchangedStateReply(current, result, command)) {
+                    return current
+                }
                 if (
                     current?.state.restoreId === result.state.restoreId &&
                     (current?.state.snapshotVersion ?? 0) > (result.state.snapshotVersion ?? 0)
-                )
+                ) {
                     return current
+                }
                 const diffs = current?.state.restoreId === result.state.restoreId ? { ...current?.state.diffs } : {}
-                if (command.type === 'details' && result.diff !== undefined) diffs[command.activityId] = result.diff
+                if (command.type === 'details' && result.diff !== undefined) {
+                    diffs[command.activityId] = result.diff
+                }
                 return { ...result, state: { ...result.state, diffs: { ...diffs, ...result.state.diffs } } }
             })
             if ('remotes' in result) {
@@ -58,8 +54,8 @@ function JournalApp() {
             }
             setError('')
             return result
-        } catch (failure) {
-            setError(String(failure))
+        } catch (error) {
+            setError(String(error))
             return undefined
         }
     }, [])
@@ -67,29 +63,40 @@ function JournalApp() {
         const parameters = new URLSearchParams(window.location.search)
         const referenceKind = parameters.get('reference')
         const referenceId = parameters.get('id')
-        if (referenceKind && referenceId) setReference({ kind: referenceKind, id: referenceId })
+        if (referenceKind && referenceId) {
+            setReference({ id: referenceId, kind: referenceKind })
+        }
         const requestedWeek = parameters.get('week')
         if (
             requestedWeek &&
-            /^\d{4}-\d{2}-\d{2}$/.test(requestedWeek) &&
+            /^\d{4}-\d{2}-\d{2}$/u.test(requestedWeek) &&
             !Number.isNaN(new Date(`${requestedWeek}T12:00:00Z`).getTime())
-        )
+        ) {
             setWorkspaceWeek(requestedWeek)
-        if (parameters.has('workspace') || parameters.has('reference')) setScreen('workspace')
+        }
+        if (parameters.has('workspace') || parameters.has('reference')) {
+            setScreen('workspace')
+        }
         void run({ type: 'state' })
         let lastPoll = Date.now()
         const timer = setInterval(() => {
-            if (polling.current) return
+            if (polling.current) {
+                return
+            }
             const state = currentReply.current?.state
             const active = state?.repositoryImport?.status === 'running' || (!!state && activityUpdating(state))
-            if (!active && Date.now() - lastPoll < 15000) return
+            if (!active && Date.now() - lastPoll < 15_000) {
+                return
+            }
             lastPoll = Date.now()
             polling.current = true
             void run({ type: 'state' }).finally(() => {
                 polling.current = false
             })
         }, 2000)
-        return () => clearInterval(timer)
+        return () => {
+            clearInterval(timer)
+        }
     }, [run])
     useEffect(() => {
         const keyboard = (event: KeyboardEvent) => {
@@ -106,8 +113,9 @@ function JournalApp() {
                 screen === 'workspace' &&
                 !settingsOpen &&
                 !commandsOpen
-            )
+            ) {
                 setScreen('hub')
+            }
             if (
                 (event.ctrlKey || event.metaKey) &&
                 event.key.toLowerCase() === 'k' &&
@@ -120,7 +128,9 @@ function JournalApp() {
             }
         }
         window.addEventListener('keydown', keyboard)
-        return () => window.removeEventListener('keydown', keyboard)
+        return () => {
+            window.removeEventListener('keydown', keyboard)
+        }
     }, [screen, settingsOpen, commandsOpen, reference])
     const openWorkspace = (date?: string) => {
         setWorkspaceWeek(date ?? (reply ? weekOf(new Date(), reply.state.settings) : ''))
@@ -129,7 +139,9 @@ function JournalApp() {
         window.scrollTo(0, 0)
     }
     const openActivity = (activity: Activity) => {
-        if (!reply) return
+        if (!reply) {
+            return
+        }
         openWorkspace(
             journalWeek(
                 localDate(new Date(activity.date), reply.state.settings.timezone),
@@ -139,9 +151,13 @@ function JournalApp() {
         setWorkspaceActivity(activity.id)
     }
     const backToHub = (week?: string) => {
-        if (week) setWorkspaceWeek(week)
+        if (week) {
+            setWorkspaceWeek(week)
+        }
         const url = new URL(window.location.href)
-        for (const key of ['workspace', 'variant', 'data', 'week']) url.searchParams.delete(key)
+        for (const key of ['workspace', 'variant', 'data', 'week']) {
+            url.searchParams.delete(key)
+        }
         window.history.replaceState({}, '', url)
         setScreen('hub')
     }
@@ -163,67 +179,99 @@ function JournalApp() {
                         state={reply.state}
                         run={run}
                         settingsOpen={settingsOpen}
-                        onSources={() => setSourcesOpen(true)}
+                        onSources={() => {
+                            setSourcesOpen(true)
+                        }}
                     />
                 </>
             )}
-            {reference && reply ? (
-                <WorkspaceReference state={reply.state} run={run} kind={reference.kind} id={reference.id} />
-            ) : screen === 'workspace' && reply ? (
-                <Workspace
-                    state={reply.state}
-                    notionConnected={reply.connections.notion}
-                    run={run}
-                    error={error}
-                    initialWeek={workspaceWeek || weekOf(new Date(), reply.state.settings)}
-                    initialActivity={workspaceActivity}
-                    onBack={backToHub}
-                    onSources={() => setSourcesOpen(true)}
-                    onSettings={() => setSettingsOpen(true)}
-                />
-            ) : reply && !reference ? (
-                <WeeklyHub
-                    initialWeek={workspaceWeek}
-                    state={reply.state}
-                    run={run}
-                    error={error}
-                    onSources={() => setSourcesOpen(true)}
-                    onSettings={() => setSettingsOpen(true)}
-                    onWrite={openWorkspace}
-                    onActivity={openActivity}
-                />
-            ) : (
-                <main className="loading">
-                    <p role={error ? 'alert' : 'status'}>{error || 'Opening your journal…'}</p>
-                    {error && <Button onClick={() => run({ type: 'state' })}>Try again</Button>}
-                </main>
-            )}
+            {(() => {
+                if (reference && reply) {
+                    return <WorkspaceReference state={reply.state} run={run} kind={reference.kind} id={reference.id} />
+                }
+                if (screen === 'workspace' && reply) {
+                    return (
+                        <Workspace
+                            state={reply.state}
+                            notionConnected={reply.connections.notion}
+                            run={run}
+                            error={error}
+                            initialWeek={workspaceWeek || weekOf(new Date(), reply.state.settings)}
+                            initialActivity={workspaceActivity}
+                            onBack={backToHub}
+                            onSources={() => {
+                                setSourcesOpen(true)
+                            }}
+                            onSettings={() => {
+                                setSettingsOpen(true)
+                            }}
+                        />
+                    )
+                }
+                if (reply && !reference) {
+                    return (
+                        <WeeklyHub
+                            initialWeek={workspaceWeek}
+                            state={reply.state}
+                            run={run}
+                            error={error}
+                            onSources={() => {
+                                setSourcesOpen(true)
+                            }}
+                            onSettings={() => {
+                                setSettingsOpen(true)
+                            }}
+                            onWrite={openWorkspace}
+                            onActivity={openActivity}
+                        />
+                    )
+                }
+
+                return (
+                    <main className="loading">
+                        <p role={error ? 'alert' : 'status'}>{error || 'Opening your journal…'}</p>
+                        {error && <Button onClick={() => Promise.resolve(run({ type: 'state' }))}>Try again</Button>}
+                    </main>
+                )
+            })()}
             {settingsOpen && reply && (
                 <Settings
                     state={reply.state}
                     connections={reply.connections}
                     remotes={remotes}
                     run={run}
-                    close={() => setSettingsOpen(false)}
+                    close={() => {
+                        setSettingsOpen(false)
+                    }}
                 />
             )}
             {commandsOpen && (
                 <CommandMenu
-                    close={() => setCommandsOpen(false)}
+                    close={() => {
+                        setCommandsOpen(false)
+                    }}
                     commands={[
-                        { name: 'Open journal', hint: 'Writing workspace', action: () => openWorkspace() },
-                        { name: 'Back to week', hint: 'Weekly hub', action: backToHub },
                         {
-                            name: 'Open settings',
+                            action: () => {
+                                openWorkspace()
+                            },
+                            hint: 'Writing workspace',
+                            name: 'Open journal'
+                        },
+                        { action: backToHub, hint: 'Weekly hub', name: 'Back to week' },
+                        {
+                            action: () => {
+                                setSettingsOpen(true)
+                            },
                             hint: 'Repositories and connections',
-                            action: () => setSettingsOpen(true)
+                            name: 'Open settings'
                         },
                         {
-                            name: 'Refresh activity',
-                            hint: 'Discover work',
                             action: () => {
                                 void run({ type: 'refresh' })
-                            }
+                            },
+                            hint: 'Discover work',
+                            name: 'Refresh activity'
                         }
                     ]}
                 />
@@ -231,3 +279,10 @@ function JournalApp() {
         </>
     )
 }
+
+export const App = () => (
+    <ToastStackProvider>
+        <JournalApp />
+        <ToastStack className="journal-notifications" />
+    </ToastStackProvider>
+)

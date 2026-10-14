@@ -1,11 +1,13 @@
 'use client'
 
-import { forwardRef, useEffect, useRef, useState } from 'react'
-import type { ComponentPropsWithoutRef, ComponentRef } from 'react'
 import * as SwitchPrimitive from '@radix-ui/react-switch'
-import { animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
 import type { Transition } from 'motion/react'
+import { animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
+import type { ComponentPropsWithoutRef, ComponentRef, ForwardRefRenderFunction } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './switch.module.css'
 
 export interface SwitchProps extends ComponentPropsWithoutRef<typeof SwitchPrimitive.Root> {
@@ -18,9 +20,9 @@ const travel = 18
 /** How far the thumb widens toward the other side while pressed. */
 const stretch = 5
 /** Critically damped: the thumb lands on its end without overshooting the state it reports. */
-const glide: Transition = { type: 'spring', visualDuration: 0.3, bounce: 0 }
+const glide: Transition = { bounce: 0, type: 'spring', visualDuration: 0.3 }
 
-export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, SwitchProps>(function Switch(
+const SwitchRender: ForwardRefRenderFunction<ComponentRef<typeof SwitchPrimitive.Root>, SwitchProps> = (
     {
         label,
         className,
@@ -37,7 +39,7 @@ export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, Swit
         ...props
     },
     ref
-) {
+) => {
     const reduceMotion = useReducedMotion()
     const [internal, setInternal] = useState(defaultChecked ?? false)
     const [pressed, setPressed] = useState(false)
@@ -48,16 +50,22 @@ export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, Swit
     // A pointer or Space press already stretched the thumb, so its release should not add a second stretch on top.
     const releasedAt = useRef(-Infinity)
     useEffect(() => {
-        if (shown.current === on) return
+        if (shown.current === on) {
+            return
+        }
         shown.current = on
         const fromPress = performance.now() - releasedAt.current < 250
-        if (reduceMotion || fromPress) return
+        if (reduceMotion || fromPress) {
+            return
+        }
         const controls = animate(scaleX, [1, 1.16, 1], {
             duration: 0.34,
-            times: [0, 0.4, 1],
-            ease: ['easeOut', 'easeInOut']
+            ease: ['easeOut', 'easeInOut'],
+            times: [0, 0.4, 1]
         })
-        return () => controls.stop()
+        return () => {
+            controls.stop()
+        }
     }, [on, reduceMotion, scaleX])
     const extra = pressed && !reduceMotion && !props.disabled ? stretch : 0
     const classes = [styles.switch, className].filter(Boolean).join(' ')
@@ -68,16 +76,22 @@ export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, Swit
             ref={ref}
             checked={on}
             onCheckedChange={(next) => {
-                if (checked === undefined) setInternal(next)
+                if (checked === undefined) {
+                    setInternal(next)
+                }
                 onCheckedChange?.(next)
             }}
             onPointerDown={(event) => {
                 onPointerDown?.(event)
-                if (event.button === 0) setPressed(true)
+                if (event.button === 0) {
+                    setPressed(true)
+                }
             }}
             onPointerUp={(event) => {
                 onPointerUp?.(event)
-                if (pressed && !props.disabled) releasedAt.current = performance.now()
+                if (pressed && !props.disabled) {
+                    releasedAt.current = performance.now()
+                }
                 setPressed(false)
             }}
             onPointerLeave={(event) => {
@@ -90,11 +104,15 @@ export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, Swit
             }}
             onKeyDown={(event) => {
                 onKeyDown?.(event)
-                if (event.key === ' ') setPressed(true)
+                if (event.key === ' ') {
+                    setPressed(true)
+                }
             }}
             onKeyUp={(event) => {
                 onKeyUp?.(event)
-                if (pressed && !props.disabled) releasedAt.current = performance.now()
+                if (pressed && !props.disabled) {
+                    releasedAt.current = performance.now()
+                }
                 setPressed(false)
             }}
             onBlur={(event) => {
@@ -110,14 +128,15 @@ export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, Swit
                     className={styles.thumb}
                     style={{ scaleX }}
                     initial={false}
-                    animate={{ x: on ? travel - extra : 0, width: size + extra }}
-                    transition={reduceMotion ? { duration: 0 } : { x: glide, width: motionTokens.spring.snappy }}
+                    animate={{ width: size + extra, x: on ? travel - extra : 0 }}
+                    transition={reduceMotion ? { duration: 0 } : { width: motionTokens.spring.snappy, x: glide }}
                 />
             </span>
             {label ? <span className={styles.label}>{label}</span> : null}
         </SwitchPrimitive.Root>
     )
-})
+}
+export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, SwitchProps>(SwitchRender)
 
 Switch.displayName = 'Switch'
 

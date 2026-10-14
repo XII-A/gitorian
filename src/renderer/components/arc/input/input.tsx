@@ -1,9 +1,11 @@
 'use client'
 
-import { forwardRef, useEffect, useId, useRef, useState } from 'react'
-import type { InputHTMLAttributes } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import type { ForwardRefRenderFunction, InputHTMLAttributes } from 'react'
+import { forwardRef, useEffect, useId, useRef, useState } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './input.module.css'
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -14,37 +16,38 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 /* Digits roll up when a number grows and down when it shrinks; `custom` hands the latest direction to digits already leaving. */
 const digit = {
+    center: { filter: 'blur(0px)', opacity: 1, y: 0 },
     enter: (direction: number) => ({
+        filter: `blur(${motionTokens.blur.subtle}px)`,
         opacity: 0,
-        y: `${direction * 0.6}em`,
-        filter: `blur(${motionTokens.blur.subtle}px)`
+        y: `${direction * 0.6}em`
     }),
-    center: { opacity: 1, y: 0, filter: 'blur(0px)' },
     exit: (direction: number) => ({
+        filter: `blur(${motionTokens.blur.subtle}px)`,
         opacity: 0,
-        y: `${direction * -0.6}em`,
-        filter: `blur(${motionTokens.blur.subtle}px)`
+        y: `${direction * -0.6}em`
     })
 }
-const isNumber = (word: string) => /^\d[\d.,/:]*%?$/.test(word)
+const isNumber = (word: string) => /^\d[\d.,/:]*%?$/u.test(word)
 
 /** A count in the copy, such as "12 characters", rolls only the digits that changed; a gained or lost digit opens or closes its width. */
-function RollingNumber({ word }: { word: string }) {
+const RollingNumber = ({ word }: { word: string }) => {
     const reduced = useReducedMotion()
-    const [shown, setShown] = useState({ word, direction: 1 })
-    if (shown.word !== word)
+    const [shown, setShown] = useState({ direction: 1, word })
+    if (shown.word !== word) {
         setShown({
-            word,
-            direction: parseFloat(word.replace(/,/g, '')) < parseFloat(shown.word.replace(/,/g, '')) ? -1 : 1
+            direction: Number(word.replaceAll(',', '')) < Number(shown.word.replaceAll(',', '')) ? -1 : 1,
+            word
         })
+    }
     const characters = word.split('')
     const transition = reduced
         ? { duration: 0 }
         : {
-              y: motionTokens.spring.snappy,
-              width: motionTokens.spring.morph,
+              filter: { duration: motionTokens.duration.fast },
               opacity: { duration: motionTokens.duration.fast },
-              filter: { duration: motionTokens.duration.fast }
+              width: motionTokens.spring.morph,
+              y: motionTokens.spring.snappy
           }
     return (
         <AnimatePresence initial={false}>
@@ -52,9 +55,9 @@ function RollingNumber({ word }: { word: string }) {
                 <motion.span
                     key={characters.length - index}
                     className={styles.column}
-                    initial={{ width: 0, opacity: 0 }}
-                    animate={{ width: 'auto', opacity: 1 }}
-                    exit={{ width: 0, opacity: 0 }}
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 'auto' }}
+                    exit={{ opacity: 0, width: 0 }}
                     transition={transition}
                 >
                     <AnimatePresence initial={false} mode="popLayout" custom={shown.direction}>
@@ -77,7 +80,7 @@ function RollingNumber({ word }: { word: string }) {
 }
 
 /** Changed words rise in and unblur while unchanged words hold still, and numbers roll. Assistive tech reads the plain copy. */
-function MotionText({ text }: { text: string }) {
+const MotionText = ({ text }: { text: string }) => {
     const reduced = useReducedMotion()
     const words = text.split(' ')
     return (
@@ -92,20 +95,20 @@ function MotionText({ text }: { text: string }) {
                             initial={
                                 reduced
                                     ? { opacity: 0 }
-                                    : { opacity: 0, y: '0.35em', filter: `blur(${motionTokens.blur.soft}px)` }
+                                    : { filter: `blur(${motionTokens.blur.soft}px)`, opacity: 0, y: '0.35em' }
                             }
-                            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                            animate={{ filter: 'blur(0px)', opacity: 1, y: 0 }}
                             exit={
                                 reduced
                                     ? { opacity: 0, transition: { duration: 0 } }
                                     : {
-                                          opacity: 0,
-                                          y: '-0.35em',
                                           filter: `blur(${motionTokens.blur.subtle}px)`,
+                                          opacity: 0,
                                           transition: {
                                               duration: motionTokens.duration.exit,
                                               ease: [...motionTokens.ease.standard]
-                                          }
+                                          },
+                                          y: '-0.35em'
                                       }
                             }
                             transition={
@@ -125,37 +128,32 @@ function MotionText({ text }: { text: string }) {
 }
 
 /** Helper and error copy: the row opens its height on a spring, then the words settle in. */
-function FieldMessage({
+const MessageRow = ({
     id,
     text,
     className,
     alert
 }: {
     id?: string
-    text?: string
+    text: string
     className: string
     alert?: boolean
-}) {
-    return (
-        <AnimatePresence initial={false}>
-            {text ? <MessageRow key="message" id={id} text={text} className={className} alert={alert} /> : null}
-        </AnimatePresence>
-    )
-}
-
-/** The row tracks the measured copy, so a longer message that wraps opens its next line instead of snapping. */
-function MessageRow({ id, text, className, alert }: { id?: string; text: string; className: string; alert?: boolean }) {
+}) => {
     const reduced = useReducedMotion()
     const copyRef = useRef<HTMLSpanElement>(null)
     const [height, setHeight] = useState<number | 'auto'>('auto')
     useEffect(() => {
         const node = copyRef.current
-        if (!node || typeof ResizeObserver === 'undefined') return
-        const observer = new ResizeObserver(([entry]) =>
+        if (!node || typeof ResizeObserver === 'undefined') {
+            return
+        }
+        const observer = new ResizeObserver(([entry]) => {
             setHeight(entry.borderBoxSize?.[0]?.blockSize ?? node.offsetHeight)
-        )
+        })
         observer.observe(node)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [])
     // Reduced motion mounts the row at full height: a zero-duration open would still paint one collapsed frame. The presence starts
     // with initial={false}, so rows present at hydration render the same on server and client either way.
@@ -182,8 +180,8 @@ function MessageRow({ id, text, className, alert }: { id?: string; text: string;
                 id={id}
                 className={className}
                 role={alert ? 'alert' : undefined}
-                initial={reduced ? false : { y: '0.35em', filter: `blur(${motionTokens.blur.soft}px)` }}
-                animate={{ y: 0, filter: 'blur(0px)' }}
+                initial={reduced ? false : { filter: `blur(${motionTokens.blur.soft}px)`, y: '0.35em' }}
+                animate={{ filter: 'blur(0px)', y: 0 }}
                 transition={{
                     duration: reduced ? 0 : motionTokens.duration.standard,
                     ease: [...motionTokens.ease.enter]
@@ -195,10 +193,28 @@ function MessageRow({ id, text, className, alert }: { id?: string; text: string;
     )
 }
 
-export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
+const FieldMessage = ({
+    id,
+    text,
+    className,
+    alert
+}: {
+    id?: string
+    text?: string
+    className: string
+    alert?: boolean
+}) => (
+    <AnimatePresence initial={false}>
+        {text ? <MessageRow key="message" id={id} text={text} className={className} alert={alert} /> : null}
+    </AnimatePresence>
+)
+
+/** The row tracks the measured copy, so a longer message that wraps opens its next line instead of snapping. */
+
+const InputRender: ForwardRefRenderFunction<HTMLInputElement, InputProps> = (
     { label, description, error, id, className, ...props },
     ref
-) {
+) => {
     const generatedId = useId()
     const controlId = id ?? generatedId
     const hintId = description ? `${controlId}-description` : undefined
@@ -221,6 +237,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             <FieldMessage id={errorId} text={error} className={styles.error} alert />
         </div>
     )
-})
+}
+export const Input = forwardRef<HTMLInputElement, InputProps>(InputRender)
 
 Input.displayName = 'Input'

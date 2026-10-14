@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
-import type { ReactNode } from 'react'
 import * as AccordionPrimitive from '@radix-ui/react-accordion'
 import { ChevronDown } from 'lucide-react'
-import { motion, useReducedMotion } from 'motion/react'
 import type { TargetAndTransition, Variants } from 'motion/react'
+import { motion, useReducedMotion } from 'motion/react'
+import type { ReactNode } from 'react'
+import { useState } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './accordion.module.css'
 
 export interface AccordionItem {
@@ -24,48 +26,48 @@ export interface AccordionProps {
 const panelOpen: TargetAndTransition = { height: 'auto', opacity: 1, visibility: 'visible' }
 const panelClosed: TargetAndTransition = { height: 0, opacity: 0, transitionEnd: { visibility: 'hidden' } }
 /** The answer settles down into place with a brief focus pull as the panel opens. */
-const contentOpen: TargetAndTransition = { y: 0, filter: 'blur(0px)', transitionEnd: { filter: 'none' } }
-const contentClosed: TargetAndTransition = { y: -6, filter: `blur(${motionTokens.blur.subtle}px)` }
+const contentOpen: TargetAndTransition = { filter: 'blur(0px)', transitionEnd: { filter: 'none' }, y: 0 }
+const contentClosed: TargetAndTransition = { filter: `blur(${motionTokens.blur.subtle}px)`, y: -6 }
 const panelMotion: Variants = {
-    open: {
-        ...panelOpen,
-        transition: {
-            height: motionTokens.spring.smooth,
-            opacity: { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
-        }
-    },
     closed: {
         ...panelClosed,
         transition: {
             height: motionTokens.spring.smooth,
             opacity: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] }
         }
+    },
+    open: {
+        ...panelOpen,
+        transition: {
+            height: motionTokens.spring.smooth,
+            opacity: { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
+        }
     }
 }
 const contentMotion: Variants = {
-    open: {
-        ...contentOpen,
-        transition: {
-            y: motionTokens.spring.smooth,
-            filter: { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
-        }
-    },
     closed: {
         ...contentClosed,
         transition: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] }
+    },
+    open: {
+        ...contentOpen,
+        transition: {
+            filter: { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] },
+            y: motionTokens.spring.smooth
+        }
     }
 }
 /** Reduced motion: same end states in one step, so server and client render identical styles. */
 const panelStill: Variants = {
-    open: { ...panelOpen, transition: { duration: 0 } },
-    closed: { ...panelClosed, transition: { duration: 0 } }
+    closed: { ...panelClosed, transition: { duration: 0 } },
+    open: { ...panelOpen, transition: { duration: 0 } }
 }
 const contentStill: Variants = {
-    open: { ...contentOpen, transition: { duration: 0 } },
-    closed: { ...contentClosed, transition: { duration: 0 } }
+    closed: { ...contentClosed, transition: { duration: 0 } },
+    open: { ...contentOpen, transition: { duration: 0 } }
 }
 
-export function Accordion({ items, defaultOpen = 0, size = 'md' }: AccordionProps) {
+export const Accordion = ({ items, defaultOpen = 0, size = 'md' }: AccordionProps) => {
     const initialValue = defaultOpen >= 0 && defaultOpen < items.length ? String(defaultOpen) : ''
     const [openValue, setOpenValue] = useState(initialValue)
     const reduced = useReducedMotion()

@@ -1,31 +1,48 @@
-import { app } from 'electron'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+
+import { app } from 'electron'
+
 import { checkActivityFilterReset } from './activity-filter-check.mjs'
 
 const temporaryRoot = resolve(tmpdir())
 const directory = mkdtempSync(join(temporaryRoot, 'weekly-j-filter-check-'))
 app.setPath('userData', directory)
 app.on('will-quit', () => {
-    if (!resolve(directory).startsWith(temporaryRoot + sep)) throw new Error('Unexpected smoke test directory')
-    rmSync(directory, { recursive: true, force: true })
+    if (!resolve(directory).startsWith(temporaryRoot + sep)) {
+        throw new Error('Unexpected smoke test directory')
+    }
+    rmSync(directory, { force: true, recursive: true })
 })
 let started = false
 app.on('browser-window-created', (_, window) => {
-    window.show = () => window.hide()
+    window.show = () => {
+        window.hide()
+    }
     window.webContents.setBackgroundThrottling(false)
     window.webContents.once('did-finish-load', async () => {
-        if (started) return
+        if (started) {
+            return
+        }
         started = true
         try {
             const base = window.webContents.getURL().split('?')[0]
-            await window.loadURL(base + '?workspace=true&data=sample&week=2026-10-05')
-            for (let attempt = 0; attempt < 100; attempt++) {
-                if (await window.webContents.executeJavaScript(`!!document.querySelector('.ws-activity-filters')`))
+            await window.loadURL(`${base}?workspace=true&data=sample&week=2026-10-05`)
+            for (let attempt = 0; attempt < 100; attempt += 1) {
+                if (await window.webContents.executeJavaScript(`!!document.querySelector('.ws-activity-filters')`)) {
                     break
-                await new Promise((resolve) => setTimeout(resolve, 25))
+                }
+                await (() => {
+                    const { promise, resolve: resolveValue, reject } = Promise.withResolvers()
+                    try {
+                        setTimeout(resolveValue, 25)
+                    } catch (error) {
+                        reject(error)
+                    }
+                    return promise
+                })()
             }
             const result = await window.webContents.executeJavaScript(`(${checkActivityFilterReset.toString()})()`)
             console.info(JSON.stringify(result))
@@ -39,5 +56,5 @@ app.on('browser-window-created', (_, window) => {
 setTimeout(() => {
     console.error('Activity filter smoke test timed out')
     app.exit(1)
-}, 30000).unref()
+}, 30_000).unref()
 await import(pathToFileURL(resolve('out/main/index.js')).href)

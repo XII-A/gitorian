@@ -1,31 +1,16 @@
 'use client'
-/* eslint-disable jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- The native label only suppresses a click after scrubbing. Its associated spinbutton supplies keyboard interaction. */
 
-import {
-    AnimatePresence,
-    animate,
-    motion,
-    useMotionValue,
-    useReducedMotion,
-    useTransform,
-    type MotionValue,
-    type Variants
-} from 'motion/react'
 import { Minus, Plus } from 'lucide-react'
-import {
-    Fragment,
-    useEffect,
-    useId,
-    useLayoutEffect,
-    useMemo,
-    useRef,
-    useState,
-    type KeyboardEvent,
-    type PointerEvent,
-    type Ref
-} from 'react'
+import type { MotionValue, Variants } from 'motion/react'
+import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react'
+import type { KeyboardEvent, PointerEvent, Ref } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './number-field.module.css'
+
+/* eslint-disable jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- The native label only suppresses a click after scrubbing. Its associated spinbutton supplies keyboard interaction. */
 
 /** Text shown beside the number. A function receives the value, so a unit can follow it: `n => n === 1 ? " seat" : " seats"`. */
 export type NumberFieldAffix = string | ((value: number) => string)
@@ -69,28 +54,28 @@ const enterEase = [...motionTokens.ease.enter] as [number, number, number, numbe
 const exitEase = [...motionTokens.ease.standard] as [number, number, number, number]
 const DIGITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 /** Pixels of label drag per step, the pause before a held control repeats, and the fastest repeat. */
-const SCRUB_PX = 6,
-    HOLD_DELAY = 400,
-    HOLD_FASTEST = 40
+const HOLD_DELAY = 400
+const HOLD_FASTEST = 40
+const SCRUB_PX = 6
 /** A held press keeps leaning on a limit at this cadence, how long the limit note stays, and how long an under-minimum draft waits
  * before it warns (a short draft is often on its way to a larger number). */
-const LIMIT_PUSH = 240,
-    LIMIT_HINT_MS = 1500,
-    UNDER_WARN_MS = 700
+const LIMIT_HINT_MS = 1500
+const LIMIT_PUSH = 240
+const UNDER_WARN_MS = 700
 /** Pushes that arrive within this window count as one continued effort, so each strains a little further, up to the cap. */
-const PUSH_WINDOW = 700,
-    PUSH_GAIN = 0.22,
-    PUSH_CAP = 4
+const PUSH_CAP = 4
+const PUSH_GAIN = 0.22
+const PUSH_WINDOW = 700
 /** A velocity kick on the value at a limit: it strains a few pixels toward the press and springs home. Motion drops velocity on
  * time-defined springs, so the kick runs the morph spring expressed as stiffness and damping. */
 const BUMP_VELOCITY = 130
 const kick = (() => {
     const root = (2 * Math.PI) / (spring.morph.visualDuration * 1.2)
-    return { type: 'spring' as const, stiffness: root * root, damping: 2 * (1 - spring.morph.bounce) * root }
+    return { damping: 2 * (1 - spring.morph.bounce) * root, stiffness: root * root, type: 'spring' as const }
 })()
 
 const decimalsOf = (value: number) => (String(value).split('.')[1] ?? '').length
-const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')
+const escape = (text: string) => text.replaceAll(/[.*+?^${}()|[\]\\-]/gu, '\\$&')
 const affixText = (affix: NumberFieldAffix | undefined, value: number) =>
     typeof affix === 'function' ? affix(value) : (affix ?? '')
 /** iOS style resistance: travel past a limit gives less and less, and never more than `limit` pixels. */
@@ -98,25 +83,32 @@ const rubber = (distance: number, limit = 10) =>
     Math.sign(distance) * (1 - 1 / ((Math.abs(distance) * 0.55) / limit + 1)) * limit
 
 /** Split a formatted number into columns keyed by place value, so 9 → 10 keeps the ones column the ones column. */
-function partsOf(value: number, format: Intl.NumberFormat): Part[] {
+const partsOf = (value: number, format: Intl.NumberFormat): Part[] => {
     const parts = format.formatToParts(value)
     let place = parts.reduce((count, part) => count + (part.type === 'integer' ? part.value.length : 0), 0)
     let fraction = 0
     return parts.flatMap((part, index): Part[] => {
-        if (part.type === 'integer')
-            return Array.from(part.value).map((char) => ({ key: `i${--place}`, digit: Number(char) }))
-        if (part.type === 'fraction')
-            return Array.from(part.value).map((char) => ({ key: `f${fraction++}`, digit: Number(char) }))
+        if (part.type === 'integer') {
+            return [...part.value].map((char) => ({ digit: Number(char), key: `i${(place -= 1)}` }))
+        }
+        if (part.type === 'fraction') {
+            return [...part.value].map((char) => ({ digit: Number(char), key: `f${(fraction += 1)}` }))
+        }
         return [
             {
-                key:
-                    part.type === 'group'
-                        ? `g${place}`
-                        : part.type === 'decimal'
-                          ? 'd'
-                          : part.type === 'minusSign'
-                            ? 'm'
-                            : `${part.type}${index}`,
+                key: (() => {
+                    if (part.type === 'group') {
+                        return `g${place}`
+                    }
+                    if (part.type === 'decimal') {
+                        return 'd'
+                    }
+                    if (part.type === 'minusSign') {
+                        return 'm'
+                    }
+
+                    return `${part.type}${index}`
+                })(),
                 text: part.value
             }
         ]
@@ -126,59 +118,59 @@ function partsOf(value: number, format: Intl.NumberFormat): Part[] {
 /* A column or character opens its width while it rises in the direction of change, and closes on a critically damped spring so it never passes zero.
    Scale and opacity ride the same spring as width, so a digit grows with its slot instead of landing on its neighbours. */
 const slot: Variants = {
-    enter: (direction: number) => ({
-        width: 0,
-        scale: 0.6,
-        opacity: 0,
-        y: `${direction * 0.3}em`,
-        filter: `blur(${blur.soft}px)`
-    }),
     center: {
-        width: 'auto',
-        scale: 1,
-        opacity: 1,
-        y: 0,
         filter: 'blur(0px)',
-        transitionEnd: { filter: 'none' },
+        opacity: 1,
+        scale: 1,
         transition: {
-            width: spring.morph,
-            scale: spring.morph,
+            filter: { duration: 0.3, ease: exitEase },
             opacity: spring.morph,
-            y: spring.snappy,
-            filter: { duration: 0.3, ease: exitEase }
-        }
+            scale: spring.morph,
+            width: spring.morph,
+            y: spring.snappy
+        },
+        transitionEnd: { filter: 'none' },
+        width: 'auto',
+        y: 0
     },
-    exit: (direction: number) => ({
-        width: 0,
-        scale: 0.6,
+    enter: (direction: number) => ({
+        filter: `blur(${blur.soft}px)`,
         opacity: 0,
-        y: `${direction * -0.3}em`,
+        scale: 0.6,
+        width: 0,
+        y: `${direction * 0.3}em`
+    }),
+    exit: (direction: number) => ({
         filter: `blur(${blur.subtle}px)`,
+        opacity: 0,
+        scale: 0.6,
         transition: {
-            width: spring.smooth,
-            scale: spring.smooth,
-            y: { duration: duration.fast, ease: exitEase },
+            filter: { duration: duration.instant },
             opacity: { duration: duration.instant },
-            filter: { duration: duration.instant }
-        }
+            scale: spring.smooth,
+            width: spring.smooth,
+            y: { duration: duration.fast, ease: exitEase }
+        },
+        width: 0,
+        y: `${direction * -0.3}em`
     })
 }
 /* Reduced motion keeps a short fade and no travel. While typing, columns follow the draft at once so they never lag the caret.
    Every resting state matches `slot`, so a page hydrated with reduced motion renders the same styles as the server. */
-const rest = (opacity: number) => ({ width: 'auto', scale: 1, opacity, y: 0, filter: 'none' })
+const rest = (opacity: number) => ({ filter: 'none', opacity, scale: 1, width: 'auto', y: 0 })
 const still: Variants = {
-    enter: rest(0),
     center: { ...rest(1), transition: { duration: duration.instant } },
-    exit: { width: 0, opacity: 0, transition: { duration: 0 } }
+    enter: rest(0),
+    exit: { opacity: 0, transition: { duration: 0 }, width: 0 }
 }
 const cut: Variants = {
-    enter: rest(1),
     center: { ...rest(1), transition: { duration: 0 } },
-    exit: { width: 0, opacity: 0, transition: { duration: 0 } }
+    enter: rest(1),
+    exit: { opacity: 0, transition: { duration: 0 }, width: 0 }
 }
 
 /** One digit on the wheel. Its distance from the wheel position sets where it sits, how clear it is, and whether it shows. */
-function Glyph({ position, digit }: { position: MotionValue<number>; digit: number }) {
+const Glyph = ({ position, digit }: { position: MotionValue<number>; digit: number }) => {
     // Every style reads the wheel directly: a chained transform can update a frame late and leave the wheel blank on a jump.
     const offset = (current: number) => ((((digit - current) % 10) + 15) % 10) - 5
     const y = useTransform(position, (current) => `${offset(current) * 1.05}em`)
@@ -190,27 +182,34 @@ function Glyph({ position, digit }: { position: MotionValue<number>; digit: numb
         return distance < 0.02 || distance >= 1 ? 'none' : `blur(${(distance * blur.soft * 0.75).toFixed(2)}px)`
     })
     return (
-        <motion.span className={styles.glyph} style={{ y, opacity, filter, visibility }}>
+        <motion.span className={styles.glyph} style={{ filter, opacity, visibility, y }}>
             {digit}
         </motion.span>
     )
 }
 
 /** An odometer wheel. It turns the way the whole number moved, wraps 9 → 0, and retargets mid spin when steps arrive quickly. */
-function Wheel({ digit, direction, instant }: { digit: number; direction: number; instant: boolean }) {
+const Wheel = ({ digit, direction, instant }: { digit: number; direction: number; instant: boolean }) => {
     const reduced = useReducedMotion()
     const position = useMotionValue(digit)
     const wheel = useRef({ digit, target: digit })
     useLayoutEffect(() => {
         const state = wheel.current
-        if (state.digit === digit) return
+        if (state.digit === digit) {
+            return
+        }
         // Turn the way the number moved, unless that is more than half a turn; then take the short way, so a big clamp never spins.
         let delta = direction > 0 ? (digit - state.digit + 10) % 10 : -((state.digit - digit + 10) % 10)
-        if (Math.abs(delta) > 5) delta -= Math.sign(delta) * 10
+        if (Math.abs(delta) > 5) {
+            delta -= Math.sign(delta) * 10
+        }
         state.target += delta
         state.digit = digit
-        if (instant || reduced) position.jump(state.target)
-        else animate(position, state.target, spring.snappy)
+        if (instant || reduced) {
+            position.jump(state.target)
+        } else {
+            animate(position, state.target, spring.snappy)
+        }
     }, [digit, direction, instant, position, reduced])
     return (
         <>
@@ -222,7 +221,7 @@ function Wheel({ digit, direction, instant }: { digit: number; direction: number
     )
 }
 
-function Digits({
+const Digits = ({
     value,
     format,
     direction,
@@ -232,9 +231,17 @@ function Digits({
     format: Intl.NumberFormat
     direction: number
     instant: boolean
-}) {
+}) => {
     const reduced = useReducedMotion()
-    const variants = instant ? cut : reduced ? still : slot
+    const variants = (() => {
+        if (instant) {
+            return cut
+        }
+        if (reduced) {
+            return still
+        }
+        return slot
+    })()
     return (
         <AnimatePresence initial={false} custom={direction}>
             {partsOf(value, format).map((part) => (
@@ -255,7 +262,7 @@ function Digits({
 }
 
 /** Prefix and suffix characters are keyed by position, so "seat" → "seats" only opens the new "s" and the rest holds still. */
-function AffixText({ text, direction, className }: { text: string; direction: number; className?: string }) {
+const AffixText = ({ text, direction, className }: { text: string; direction: number; className?: string }) => {
     const reduced = useReducedMotion()
     return (
         <span className={className}>
@@ -282,58 +289,65 @@ function AffixText({ text, direction, className }: { text: string; direction: nu
 }
 
 const numberIn = (word?: string) => {
-    const digits = word?.replace(/[^\d.-]/g, '')
-    return digits && /\d/.test(digits) && Number.isFinite(Number(digits)) ? Number(digits) : null
+    const digits = word?.replaceAll(/[^\d.-]/gu, '')
+    return digits && /\d/u.test(digits) && Number.isFinite(Number(digits)) ? Number(digits) : null
 }
 /** A number word rolls down when it shrank and up when it grew; any other changed word rises. */
 const directionsBetween = (from: string, to: string) => {
     const before = from.split(' ')
     return to.split(' ').map((word, index) => {
-        const a = numberIn(before[index]),
-            b = numberIn(word)
+        const a = numberIn(before[index])
+        const b = numberIn(word)
         return a !== null && b !== null && b < a ? -1 : 1
     })
 }
 
 const wordRise: Variants = {
-    enter: (direction: number) => ({ opacity: 0, y: `${direction * 0.3}em`, filter: `blur(${blur.soft}px)` }),
+    enter: (direction: number) => ({ filter: `blur(${blur.soft}px)`, opacity: 0, y: `${direction * 0.3}em` }),
     // Opacity follows the slot's width spring, so a longer word never shows before its room has opened.
     center: {
-        opacity: 1,
-        y: 0,
         filter: 'blur(0px)',
+        opacity: 1,
+        transition: { duration: 0.22, ease: enterEase, opacity: spring.morph },
         transitionEnd: { filter: 'none' },
-        transition: { duration: 0.22, ease: enterEase, opacity: spring.morph }
+        y: 0
     },
     exit: (direction: number) => ({
-        opacity: 0,
-        y: `${direction * -0.3}em`,
         filter: `blur(${blur.subtle}px)`,
-        transition: { duration: 0.14, ease: exitEase }
+        opacity: 0,
+        transition: { duration: 0.14, ease: exitEase },
+        y: `${direction * -0.3}em`
     })
 }
 const wordFade: Variants = {
-    enter: { opacity: 0, y: 0, filter: 'none' },
-    center: { opacity: 1, y: 0, filter: 'none', transition: { duration: duration.instant } },
+    center: { filter: 'none', opacity: 1, transition: { duration: duration.instant }, y: 0 },
+    enter: { filter: 'none', opacity: 0, y: 0 },
     exit: { opacity: 0, transition: { duration: 0 } }
 }
 
 /** A word's width follows its new copy on a spring, so a price gaining a digit eases the rest of the line along instead of shoving it. */
-function WordSlot({ word, direction }: { word: string; direction: number }) {
+const WordSlot = ({ word, direction }: { word: string; direction: number }) => {
     const reduced = useReducedMotion()
     const sizerRef = useRef<HTMLSpanElement>(null)
     const width = useMotionValue<number | 'auto'>('auto')
     const measured = useRef(false)
     useLayoutEffect(() => {
         const node = sizerRef.current
-        if (!node || typeof ResizeObserver === 'undefined') return
+        if (!node || typeof ResizeObserver === 'undefined') {
+            return
+        }
         const observer = new ResizeObserver(() => {
-            if (!measured.current || reduced) width.jump(node.offsetWidth)
-            else animate(width, node.offsetWidth, spring.morph)
+            if (!measured.current || reduced) {
+                width.jump(node.offsetWidth)
+            } else {
+                animate(width, node.offsetWidth, spring.morph)
+            }
             measured.current = true
         })
         observer.observe(node)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [reduced, width])
     return (
         <motion.span className={styles.wordSlot} style={{ width }}>
@@ -358,9 +372,11 @@ function WordSlot({ word, direction }: { word: string; direction: number }) {
 }
 
 /** Changed words rise in and unblur while unchanged words hold still. Assistive tech reads the plain copy. */
-function MotionText({ text }: { text: string }) {
-    const [trail, setTrail] = useState({ text, directions: [] as number[] })
-    if (trail.text !== text) setTrail({ text, directions: directionsBetween(trail.text, text) })
+const MotionText = ({ text }: { text: string }) => {
+    const [trail, setTrail] = useState({ directions: [] as number[], text })
+    if (trail.text !== text) {
+        setTrail({ directions: directionsBetween(trail.text, text), text })
+    }
     const directions = trail.text === text ? trail.directions : directionsBetween(trail.text, text)
     const words = text.split(' ')
     // Spaces live between the slots, so a word that is still opening its width never runs into the next one.
@@ -380,27 +396,22 @@ function MotionText({ text }: { text: string }) {
 }
 
 /** Helper copy: the row opens its height on a spring, then the words settle in. */
-function FieldMessage({ id, text, className }: { id?: string; text?: string; className?: string }) {
-    return (
-        <AnimatePresence initial={false}>
-            {text ? <MessageRow key="message" id={id} text={text} className={className} /> : null}
-        </AnimatePresence>
-    )
-}
-
-/** The row tracks the measured copy, so a longer message that wraps opens its next line instead of snapping. */
-function MessageRow({ id, text, className }: { id?: string; text: string; className?: string }) {
+const MessageRow = ({ id, text, className }: { id?: string; text: string; className?: string }) => {
     const reduced = useReducedMotion()
     const copyRef = useRef<HTMLSpanElement>(null)
     const [height, setHeight] = useState<number | 'auto'>('auto')
     useLayoutEffect(() => {
         const node = copyRef.current
-        if (!node || typeof ResizeObserver === 'undefined') return
-        const observer = new ResizeObserver(([entry]) =>
+        if (!node || typeof ResizeObserver === 'undefined') {
+            return
+        }
+        const observer = new ResizeObserver(([entry]) => {
             setHeight(entry?.borderBoxSize?.[0]?.blockSize ?? node.offsetHeight)
-        )
+        })
         observer.observe(node)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [])
     return (
         <motion.span
@@ -420,8 +431,8 @@ function MessageRow({ id, text, className }: { id?: string; text: string; classN
                 ref={copyRef}
                 id={id}
                 className={className}
-                initial={reduced ? false : { y: '0.35em', filter: `blur(${blur.soft}px)` }}
-                animate={{ y: 0, filter: 'blur(0px)' }}
+                initial={reduced ? false : { filter: `blur(${blur.soft}px)`, y: '0.35em' }}
+                animate={{ filter: 'blur(0px)', y: 0 }}
                 transition={{ duration: reduced ? 0 : duration.standard, ease: enterEase }}
             >
                 <MotionText text={text} />
@@ -430,8 +441,16 @@ function MessageRow({ id, text, className }: { id?: string; text: string; classN
     )
 }
 
+const FieldMessage = ({ id, text, className }: { id?: string; text?: string; className?: string }) => (
+    <AnimatePresence initial={false}>
+        {text ? <MessageRow key="message" id={id} text={text} className={className} /> : null}
+    </AnimatePresence>
+)
+
+/** The row tracks the measured copy, so a longer message that wraps opens its next line instead of snapping. */
+
 /** The limit note rises in from the side it guards (up for a maximum, down for a minimum) and fades out in place. */
-function LimitNote({ id, edge, text }: { id: string; edge: 1 | -1 | 0; text: string }) {
+const LimitNote = ({ id, edge, text }: { id: string; edge: 1 | -1 | 0; text: string }) => {
     const reduced = useReducedMotion()
     return (
         <AnimatePresence initial={false}>
@@ -443,9 +462,9 @@ function LimitNote({ id, edge, text }: { id: string; edge: 1 | -1 | 0; text: str
                     initial={
                         reduced
                             ? { opacity: 0 }
-                            : { opacity: 0, y: `${edge * 0.45}em`, filter: `blur(${blur.subtle}px)` }
+                            : { filter: `blur(${blur.subtle}px)`, opacity: 0, y: `${edge * 0.45}em` }
                     }
-                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)', transitionEnd: { filter: 'none' } }}
+                    animate={{ filter: 'blur(0px)', opacity: 1, transitionEnd: { filter: 'none' }, y: 0 }}
                     exit={{
                         opacity: 0,
                         transition: { duration: reduced ? duration.instant : duration.standard, ease: exitEase }
@@ -454,9 +473,9 @@ function LimitNote({ id, edge, text }: { id: string; edge: 1 | -1 | 0; text: str
                         reduced
                             ? { duration: duration.instant }
                             : {
-                                  y: spring.snappy,
+                                  filter: { duration: duration.fast },
                                   opacity: { duration: duration.fast },
-                                  filter: { duration: duration.fast }
+                                  y: spring.snappy
                               }
                     }
                 >
@@ -468,7 +487,7 @@ function LimitNote({ id, edge, text }: { id: string; edge: 1 | -1 | 0; text: str
 }
 
 /** Pointer presses hold to repeat; keyboard and assistive clicks (detail 0) take one step. */
-function StepButton({
+const StepButton = ({
     toward,
     label,
     disabled,
@@ -490,7 +509,7 @@ function StepButton({
     onPress: () => void
     onRelease: () => void
     onActivate: () => void
-}) {
+}) => {
     const Icon = toward > 0 ? Plus : Minus
     // A limit dims the button but keeps it focusable, so a press there strains the value instead of dropping focus.
     // Mouse presses keep focus where it was: an open draft commits with the step, and the stepper never steals the ring.
@@ -504,16 +523,24 @@ function StepButton({
             aria-disabled={limit || undefined}
             data-pressed={pressed || undefined}
             onPointerDown={(event) => {
-                if (event.button === 0) onPress()
+                if (event.button === 0) {
+                    onPress()
+                }
             }}
             onPointerUp={onRelease}
             onPointerLeave={onRelease}
             onPointerCancel={onRelease}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={(event) => {
-                if (event.detail === 0) onActivate()
+            onMouseDown={(event) => {
+                event.preventDefault()
             }}
-            onContextMenu={(event) => event.preventDefault()}
+            onClick={(event) => {
+                if (event.detail === 0) {
+                    onActivate()
+                }
+            }}
+            onContextMenu={(event) => {
+                event.preventDefault()
+            }}
         >
             <span ref={iconRef} className={styles.icon}>
                 <Icon size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -527,7 +554,7 @@ function StepButton({
  * large steps, Home and End jump to the limits, and `scrub` lets the label be dragged. Typing edits a plain draft that
  * applies live while valid; the rolling digits return once it commits on Enter, blur, or the next step.
  */
-export function NumberField({
+export const NumberField = ({
     label,
     value,
     defaultValue = 0,
@@ -546,7 +573,7 @@ export function NumberField({
     formatOptions,
     size = 'md',
     limitHint = true
-}: NumberFieldProps) {
+}: NumberFieldProps) => {
     const reduced = useReducedMotion()
     const generatedId = useId()
     const inputId = id ?? generatedId
@@ -566,15 +593,15 @@ export function NumberField({
     const controlRef = useRef<HTMLDivElement>(null)
     const minusIcon = useRef<HTMLSpanElement>(null)
     const plusIcon = useRef<HTMLSpanElement>(null)
-    const pushedTimer = useRef<number | undefined>(undefined)
-    const underTimer = useRef<number | undefined>(undefined)
-    const strainTimer = useRef<number | undefined>(undefined)
-    const effort = useRef({ edge: 0, count: 0, at: 0 })
+    const pushedTimer = useRef<number | undefined | null>(null)
+    const underTimer = useRef<number | undefined | null>(null)
+    const strainTimer = useRef<number | undefined | null>(null)
+    const effort = useRef({ at: 0, count: 0, edge: 0 })
     const inputRef = useRef<HTMLInputElement>(null)
     const groupRef = useRef<HTMLSpanElement>(null)
     const latest = useRef(current)
     const editStart = useRef(current)
-    const hold = useRef<number | undefined>(undefined)
+    const hold = useRef<number | undefined | null>(null)
     const drag = useRef<{ pointer: number; x: number; from: number; active: boolean } | null>(null)
     const suppressClick = useRef(false)
     const shiftFrom = useRef<number | null>(null)
@@ -593,18 +620,18 @@ export function NumberField({
     const format = useMemo(
         () =>
             new Intl.NumberFormat(locale, {
-                minimumFractionDigits: minFraction,
                 maximumFractionDigits: maxFraction,
-                useGrouping: grouping,
-                numberingSystem: 'latn'
+                minimumFractionDigits: minFraction,
+                numberingSystem: 'latn',
+                useGrouping: grouping
             }),
         [locale, minFraction, maxFraction, grouping]
     )
     const symbols = useMemo(() => {
         const parts = new Intl.NumberFormat(locale).formatToParts(-1234.5)
         return {
-            group: parts.find((part) => part.type === 'group')?.value ?? ',',
-            decimal: parts.find((part) => part.type === 'decimal')?.value ?? '.'
+            decimal: parts.find((part) => part.type === 'decimal')?.value ?? '.',
+            group: parts.find((part) => part.type === 'group')?.value ?? ','
         }
     }, [locale])
     const round = (next: number) => Number(next.toFixed(decimals)) || 0
@@ -616,44 +643,56 @@ export function NumberField({
         return round(base + ((steps > 0 ? Math.floor(index + 1e-7) : Math.ceil(index - 1e-7)) + steps) * step)
     }
     const spoken = (next: number) => `${affixText(prefix, next)}${format.format(next)}${affixText(suffix, next)}`.trim()
-    function parse(text: string) {
+    const parse = (text: string) => {
         const normalized = text
             .split(symbols.group)
             .join('')
             .replace(symbols.decimal, '.')
-            .replace(/[^\d.-]/g, '')
-        if (!/\d/.test(normalized)) return null
+            .replaceAll(/[^\d.-]/gu, '')
+        if (!/\d/u.test(normalized)) {
+            return null
+        }
         const parsed = Number(normalized)
         return Number.isFinite(parsed) ? parsed : null
     }
     const typed = editing ? parse(draft) : null
     const shown = typed ?? current
-    const [trail, setTrail] = useState({ value: shown, direction: 1 as 1 | -1 })
-    if (trail.value !== shown) setTrail({ value: shown, direction: shown > trail.value ? 1 : -1 })
-    const direction = trail.value === shown ? trail.direction : shown > trail.value ? 1 : -1
+    const [trail, setTrail] = useState({ direction: 1 as 1 | -1, value: shown })
+    if (trail.value !== shown) {
+        setTrail({ direction: shown > trail.value ? 1 : -1, value: shown })
+    }
+    const direction = (() => {
+        if (trail.value === shown) {
+            return trail.direction
+        }
+        if (shown > trail.value) {
+            return 1
+        }
+        return -1
+    })()
 
     useEffect(
         () => () => {
-            window.clearTimeout(hold.current)
-            window.clearTimeout(pushedTimer.current)
-            window.clearTimeout(underTimer.current)
-            window.clearTimeout(strainTimer.current)
+            window.clearTimeout(hold.current ?? undefined)
+            window.clearTimeout(pushedTimer.current ?? undefined)
+            window.clearTimeout(underTimer.current ?? undefined)
+            window.clearTimeout(strainTimer.current ?? undefined)
         },
         []
     )
 
     /** A press past a limit. The value strains toward it and springs home, a little further with each push in a row (capped, like
      * overscroll); the refused button shakes once; the note names the limit. Reduced motion keeps only a brief color change. */
-    function strain(edge: 1 | -1, source: Source) {
-        const now = performance.now(),
-            push = effort.current
+    const strain = (edge: 1 | -1, source: Source) => {
+        const now = performance.now()
+        const push = effort.current
         push.count = push.edge === edge && now - push.at < PUSH_WINDOW ? push.count + 1 : 1
         push.edge = edge
         push.at = now
         const control = controlRef.current
         if (control) {
             control.dataset.strain = edge > 0 ? 'max' : 'min'
-            window.clearTimeout(strainTimer.current)
+            window.clearTimeout(strainTimer.current ?? undefined)
             strainTimer.current = window.setTimeout(() => {
                 delete control.dataset.strain
             }, 420)
@@ -664,27 +703,38 @@ export function NumberField({
                 velocity: -edge * BUMP_VELOCITY * (1 + Math.min(push.count - 1, PUSH_CAP) * PUSH_GAIN)
             })
             const icon = (edge > 0 ? plusIcon : minusIcon).current
-            if (icon && (source === 'button' || source === 'key'))
+            if (icon && (source === 'button' || source === 'key')) {
                 animate(icon, { x: [0, -2.5, 2.5, -1.5, 1, 0] }, { duration: 0.32, ease: 'easeOut' })
+            }
         }
         if (limitHint) {
             setPushed(edge)
-            window.clearTimeout(pushedTimer.current)
-            pushedTimer.current = window.setTimeout(() => setPushed(0), LIMIT_HINT_MS)
+            window.clearTimeout(pushedTimer.current ?? undefined)
+            pushedTimer.current = window.setTimeout(() => {
+                setPushed(0)
+            }, LIMIT_HINT_MS)
         }
     }
     /** Every change lands here. A value past a limit clamps, strains toward it, and says which limit it met. */
-    function commitValue(next: number, source: Source) {
-        if (!Number.isFinite(next)) return false
+    const commitValue = (next: number, source: Source) => {
+        if (!Number.isFinite(next)) {
+            return false
+        }
         const clamped = clamp(next)
         const limit = Math.sign(next - clamped)
         if (limit && source !== 'scrub') {
             strain(limit > 0 ? 1 : -1, source)
             setAnnouncement(`${spoken(clamped)}, ${limit > 0 ? 'maximum' : 'minimum'}`)
-        } else if (source === 'button' && clamped !== latest.current) setAnnouncement(spoken(clamped))
-        if (clamped === latest.current) return false
+        } else if (source === 'button' && clamped !== latest.current) {
+            setAnnouncement(spoken(clamped))
+        }
+        if (clamped === latest.current) {
+            return false
+        }
         latest.current = clamped
-        if (value === undefined) setInternal(clamped)
+        if (value === undefined) {
+            setInternal(clamped)
+        }
         onValueChange?.(clamped)
         return true
     }
@@ -696,14 +746,15 @@ export function NumberField({
     })
 
     /** The group glides back to center when typing changes its width, instead of hopping half a character per key. */
-    function captureShift() {
+    const captureShift = () => {
         const group = groupRef.current
-        if (group && shiftFrom.current === null)
+        if (group && shiftFrom.current === null) {
             shiftFrom.current = group.getBoundingClientRect().left - scrubX.get() - shiftX.get()
+        }
     }
     useLayoutEffect(() => {
-        const from = shiftFrom.current,
-            group = groupRef.current
+        const from = shiftFrom.current
+        const group = groupRef.current
         shiftFrom.current = null
         // After a commit the caret collapses to the end, so no selection box sits over the rolling digits.
         if (selectNext.current) {
@@ -714,59 +765,77 @@ export function NumberField({
                 input.setSelectionRange(end, end)
             }
         }
-        if (from === null || !group) return
+        if (from === null || !group) {
+            return
+        }
         const delta = from - (group.getBoundingClientRect().left - scrubX.get() - shiftX.get())
-        if (Math.abs(delta) < 0.5) return
+        if (Math.abs(delta) < 0.5) {
+            return
+        }
         shiftX.set(shiftX.get() + delta)
-        if (reduced) shiftX.jump(0)
-        else animate(shiftX, 0, spring.morph)
+        if (reduced) {
+            shiftX.jump(0)
+        } else {
+            animate(shiftX, 0, spring.morph)
+        }
     })
 
-    function clearUnder() {
-        window.clearTimeout(underTimer.current)
+    const clearUnder = () => {
+        window.clearTimeout(underTimer.current ?? undefined)
         setUnderWarn(false)
     }
-    function commitDraft() {
-        if (!editing) return
+    const commitDraft = () => {
+        if (!editing) {
+            return
+        }
         captureShift()
         setEditing(false)
         clearUnder()
         const parsed = parse(draft)
-        if (parsed !== null) commitValue(snap(parsed), 'type')
+        if (parsed !== null) {
+            commitValue(snap(parsed), 'type')
+        }
     }
-    function stopHold() {
-        window.clearTimeout(hold.current)
+    const stopHold = () => {
+        window.clearTimeout(hold.current ?? undefined)
         hold.current = undefined
         setPressed(0)
     }
     /** One step now; after a pause, repeats that speed up gently until release. Held into a limit, it keeps leaning on it at a
      * steady cadence, each push straining a little further, until the press lets go. */
-    function startHold(toward: 1 | -1, amount: number, source: Source) {
+    const startHold = (toward: 1 | -1, amount: number, source: Source) => {
         stopHold()
         commitDraft()
         const steps = Math.max(1, Math.round(amount / step))
-        if (source === 'button') setPressed(toward)
+        if (source === 'button') {
+            setPressed(toward)
+        }
         let count = 0
         const tick = () => {
             const moved = live.current(toward, steps, source)
-            hold.current = window.setTimeout(tick, moved ? Math.max(HOLD_FASTEST, 150 * 0.86 ** ++count) : LIMIT_PUSH)
+            if (moved) {
+                count += 1
+            }
+            hold.current = window.setTimeout(tick, moved ? Math.max(HOLD_FASTEST, 150 * 0.86 ** count) : LIMIT_PUSH)
         }
         hold.current = window.setTimeout(tick, nudge(toward, steps, source) ? HOLD_DELAY : LIMIT_PUSH + 120)
     }
 
-    function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
         const large = largeStep ?? step * 10
         const move = (
             {
-                ArrowUp: [1, event.shiftKey ? large : step],
                 ArrowDown: [-1, event.shiftKey ? large : step],
-                PageUp: [1, large],
-                PageDown: [-1, large]
+                ArrowUp: [1, event.shiftKey ? large : step],
+                PageDown: [-1, large],
+                PageUp: [1, large]
             } as Record<string, [1 | -1, number]>
         )[event.key]
         if (move) {
             event.preventDefault()
-            if (!event.repeat) startHold(move[0], move[1], 'key')
+            if (!event.repeat) {
+                startHold(move[0], move[1], 'key')
+            }
             return
         }
         // Home and End reach the limits; while a draft is open they move the caret as in any text field.
@@ -783,7 +852,9 @@ export function NumberField({
             if (editing) {
                 selectNext.current = true
                 commitDraft()
-            } else event.currentTarget.select()
+            } else {
+                event.currentTarget.select()
+            }
         }
         if (event.key === 'Escape' && editing) {
             event.preventDefault()
@@ -794,54 +865,79 @@ export function NumberField({
             commitValue(editStart.current, 'type')
         }
     }
-    function onChange(text: string) {
+    const onChange = (text: string) => {
         const allowed = new RegExp(
             `[^0-9${escape(symbols.group)}${decimals || maxFraction ? escape(symbols.decimal) : ''}${min < 0 ? '\\-' : ''}]`,
-            'g'
+            'gu'
         )
         const next = text.replace(allowed, '')
-        if (!editing) editStart.current = current
+        if (!editing) {
+            editStart.current = current
+        }
         captureShift()
         setDraft(next)
         setEditing(true)
         // Valid drafts apply as they are typed, so anything that depends on the value follows along.
         const parsed = parse(next)
-        if (parsed !== null && parsed >= min && parsed <= max && snap(parsed) === parsed) commitValue(parsed, 'type')
+        if (parsed !== null && parsed >= min && parsed <= max && snap(parsed) === parsed) {
+            commitValue(parsed, 'type')
+        }
         // Past the maximum warns at once; under the minimum waits, since "1" is often the start of "12".
         clearUnder()
-        if (parsed !== null && parsed < min)
-            underTimer.current = window.setTimeout(() => setUnderWarn(true), UNDER_WARN_MS)
+        if (parsed !== null && parsed < min) {
+            underTimer.current = window.setTimeout(() => {
+                setUnderWarn(true)
+            }, UNDER_WARN_MS)
+        }
     }
 
-    function onScrubStart(event: PointerEvent<HTMLLabelElement>) {
+    const onScrubStart = (event: PointerEvent<HTMLLabelElement>) => {
         suppressClick.current = false
-        if (!scrub || disabled || event.button !== 0) return
+        if (!scrub || disabled || event.button !== 0) {
+            return
+        }
         commitDraft()
-        drag.current = { pointer: event.pointerId, x: event.clientX, from: latest.current, active: false }
+        drag.current = { active: false, from: latest.current, pointer: event.pointerId, x: event.clientX }
         event.currentTarget.setPointerCapture(event.pointerId)
     }
-    function onScrubMove(event: PointerEvent<HTMLLabelElement>) {
+    const onScrubMove = (event: PointerEvent<HTMLLabelElement>) => {
         const state = drag.current
-        if (!state || state.pointer !== event.pointerId) return
+        if (!state || state.pointer !== event.pointerId) {
+            return
+        }
         const dx = event.clientX - state.x
         if (!state.active) {
-            if (Math.abs(dx) < 3) return
+            if (Math.abs(dx) < 3) {
+                return
+            }
             state.active = true
             setScrubbing(true)
         }
-        const travel = dx / SCRUB_PX,
-            steps = Math.trunc(travel)
+        const travel = dx / SCRUB_PX
+        const steps = Math.trunc(travel)
         commitValue(steps ? stepFrom(state.from, steps) : state.from, 'scrub')
         // Past a limit the value follows the pointer with resistance, then springs back on release.
         const raw = state.from + travel * step
-        const over = raw > max ? ((raw - max) / step) * SCRUB_PX : raw < min ? ((raw - min) / step) * SCRUB_PX : 0
+        const over = (() => {
+            if (raw > max) {
+                return ((raw - max) / step) * SCRUB_PX
+            }
+            if (raw < min) {
+                return ((raw - min) / step) * SCRUB_PX
+            }
+            return 0
+        })()
         scrubX.set(reduced ? 0 : rubber(over))
     }
-    function onScrubEnd(event: PointerEvent<HTMLLabelElement>) {
+    const onScrubEnd = (event: PointerEvent<HTMLLabelElement>) => {
         const state = drag.current
-        if (!state || state.pointer !== event.pointerId) return
+        if (!state || state.pointer !== event.pointerId) {
+            return
+        }
         drag.current = null
-        if (!state.active) return
+        if (!state.active) {
+            return
+        }
         suppressClick.current = true
         setScrubbing(false)
         animate(scrubX, 0, reduced ? { duration: 0 } : spring.snappy)
@@ -849,22 +945,38 @@ export function NumberField({
     }
 
     const stepper = (toward: 1 | -1) => ({
-        toward,
-        label,
-        disabled,
         controls: inputId,
+        disabled,
+        label,
         limit: toward > 0 ? shown >= max : shown <= min,
-        pressed: pressed === toward
+        pressed: pressed === toward,
+        toward
     })
     /** A typed value past a limit holds a calm warning until it commits and springs back. */
-    const outside: 1 | -1 | 0 = typed === null ? 0 : typed > max ? 1 : typed < min && underWarn ? -1 : 0
+    const outside: 1 | -1 | 0 = (() => {
+        if (typed === null) {
+            return 0
+        }
+        if (typed > max) {
+            return 1
+        }
+        if (typed < min && underWarn) {
+            return -1
+        }
+
+        return 0
+    })()
     const noteEdge = limitHint ? outside || pushed : 0
     const noteLimit = noteEdge > 0 ? max : min
-    const noteText = !noteEdge
-        ? ''
-        : typeof limitHint === 'function'
-          ? limitHint(noteEdge > 0 ? 'max' : 'min', noteLimit)
-          : `${noteEdge > 0 ? 'Max' : 'Min'} ${spoken(noteLimit)}`
+    const noteText = (() => {
+        if (noteEdge) {
+            if (typeof limitHint === 'function') {
+                return limitHint(noteEdge > 0 ? 'max' : 'min', noteLimit)
+            }
+            return `${noteEdge > 0 ? 'Max' : 'Min'} ${spoken(noteLimit)}`
+        }
+        return ''
+    })()
     const describedBy = [hintId, outside && limitHint ? limitId : undefined].filter(Boolean).join(' ') || undefined
 
     return (
@@ -899,7 +1011,9 @@ export function NumberField({
                 <StepButton
                     {...stepper(-1)}
                     iconRef={minusIcon}
-                    onPress={() => startHold(-1, step, 'button')}
+                    onPress={() => {
+                        startHold(-1, step, 'button')
+                    }}
                     onRelease={stopHold}
                     onActivate={() => {
                         commitDraft()
@@ -910,7 +1024,9 @@ export function NumberField({
                     className={styles.valueWrap}
                     role="presentation"
                     onMouseDown={(event) => {
-                        if (event.target !== inputRef.current) event.preventDefault()
+                        if (event.target !== inputRef.current) {
+                            event.preventDefault()
+                        }
                     }}
                     onClick={(event) => {
                         if (!disabled && event.target !== inputRef.current) {
@@ -936,7 +1052,15 @@ export function NumberField({
                                 className={styles.input}
                                 type="text"
                                 role="spinbutton"
-                                inputMode={min < 0 ? 'text' : decimals || maxFraction ? 'decimal' : 'numeric'}
+                                inputMode={(() => {
+                                    if (min < 0) {
+                                        return 'text'
+                                    }
+                                    if (decimals || maxFraction) {
+                                        return 'decimal'
+                                    }
+                                    return 'numeric'
+                                })()}
                                 autoComplete="off"
                                 spellCheck={false}
                                 value={editing ? draft : format.format(current)}
@@ -947,10 +1071,16 @@ export function NumberField({
                                 aria-valuetext={spoken(current)}
                                 aria-valuemin={Number.isFinite(min) ? min : undefined}
                                 aria-valuemax={max < Number.MAX_SAFE_INTEGER ? max : undefined}
-                                onChange={(event) => onChange(event.currentTarget.value)}
+                                onChange={(event) => {
+                                    onChange(event.currentTarget.value)
+                                }}
                                 onKeyDown={onKeyDown}
                                 onKeyUp={(event) => {
-                                    if (/^(Arrow(Up|Down)|Page(Up|Down))$/.test(event.key)) stopHold()
+                                    if (
+                                        /^(?<group1>Arrow(?<group2>Up|Down)|Page(?<group3>Up|Down))$/u.test(event.key)
+                                    ) {
+                                        stopHold()
+                                    }
                                 }}
                                 onBlur={() => {
                                     stopHold()
@@ -964,7 +1094,9 @@ export function NumberField({
                 <StepButton
                     {...stepper(1)}
                     iconRef={plusIcon}
-                    onPress={() => startHold(1, step, 'button')}
+                    onPress={() => {
+                        startHold(1, step, 'button')
+                    }}
                     onRelease={stopHold}
                     onActivate={() => {
                         commitDraft()

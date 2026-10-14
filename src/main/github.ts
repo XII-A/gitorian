@@ -1,6 +1,7 @@
 import type { Activity, Repository } from '../shared/model'
-import type { Http } from './http'
+import { required } from '../shared/required'
 import { fingerprint, githubRemote } from './git'
+import type { Http } from './http'
 import { HttpError } from './http'
 
 interface User {
@@ -56,84 +57,111 @@ interface Device {
 }
 export class GitHub {
     private device?: Device & { clientId: string; expires: number; nextPoll: number }
-    constructor(
-        private readonly http: Http,
-        private readonly token: () => string,
-        private readonly setToken: (token: string) => void
-    ) {}
+    private readonly http: Http
+    private readonly token: () => string
+    private readonly setToken: (token: string) => void
+    constructor(http: Http, token: () => string, setToken: (token: string) => void) {
+        this.http = http
+        this.token = token
+        this.setToken = setToken
+    }
     private request<T>(path: string, background = false): Promise<T> {
-        return this.http.request<T>(`https://api.github.com/${path}`, this.token(), {}, 'json', { background })
+        return Promise.resolve(
+            this.http.request<T>(`https://api.github.com/${path}`, this.token(), {}, 'json', { background })
+        )
     }
     private async list<T>(path: string, background = false): Promise<T[]> {
         const result: T[] = []
-        for (let page = 1; page <= 30; page++) {
+        for (let page = 1; page <= 30; page += 1) {
             const items = await this.request<T[]>(
                 `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`,
                 background
             )
             result.push(...items)
-            if (items.length < 100) return result
+            if (items.length < 100) {
+                return result
+            }
         }
         throw new Error('This activity has more than 3,000 detail records. Open it in GitHub for the complete source.')
     }
     async start(clientId: string): Promise<{ code: string; url: string; interval: number }> {
-        if (!clientId) throw new Error('Enter the public client ID of a GitHub OAuth app with device flow enabled')
+        if (!clientId) {
+            throw new Error('Enter the public client ID of a GitHub OAuth app with device flow enabled')
+        }
         const response = await fetch('https://github.com/login/device/code', {
-            method: 'POST',
-            signal: AbortSignal.timeout(30000),
+            body: JSON.stringify({ client_id: clientId, scope: 'repo read:user user:email' }),
             headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ client_id: clientId, scope: 'repo read:user user:email' })
+            method: 'POST',
+            signal: AbortSignal.timeout(30_000)
         })
-        if (!response.ok) throw new Error(`GitHub sign-in failed (${response.status})`)
+        if (!response.ok) {
+            throw new Error(`GitHub sign-in failed (${response.status})`)
+        }
         const device = (await response.json()) as Device & { error?: string }
-        if (device.error || !device.device_code)
+        if (device.error || !device.device_code) {
             throw new Error(
-                device.error === 'device_flow_disabled'
-                    ? 'Enable device flow in your GitHub OAuth application settings, then try again'
-                    : device.error === 'incorrect_client_credentials'
-                      ? 'GitHub rejected this OAuth client ID. Copy the client ID from your OAuth application settings'
-                      : (device.error ?? 'Invalid device authorization response')
+                (() => {
+                    if (device.error === 'device_flow_disabled') {
+                        return 'Enable device flow in your GitHub OAuth application settings, then try again'
+                    }
+                    if (device.error === 'incorrect_client_credentials') {
+                        return 'GitHub rejected this OAuth client ID. Copy the client ID from your OAuth application settings'
+                    }
+                    return device.error ?? 'Invalid device authorization response'
+                })()
             )
+        }
         this.device = {
             ...device,
             clientId,
             expires: Date.now() + device.expires_in * 1000,
             nextPoll: Date.now() + device.interval * 1000
         }
-        return { code: device.user_code, url: device.verification_uri, interval: device.interval }
+        return { code: device.user_code, interval: device.interval, url: device.verification_uri }
     }
     async poll(): Promise<{ login: string; emails: string[] } | { pending: true; interval: number }> {
-        const device = this.device
-        if (!device || Date.now() > device.expires) throw new Error('Device sign-in expired; start again')
-        if (Date.now() < device.nextPoll)
-            return { pending: true, interval: Math.ceil((device.nextPoll - Date.now()) / 1000) }
+        const { device } = this
+        if (!device || Date.now() > device.expires) {
+            throw new Error('Device sign-in expired; start again')
+        }
+        if (Date.now() < device.nextPoll) {
+            return { interval: Math.ceil((device.nextPoll - Date.now()) / 1000), pending: true }
+        }
         device.nextPoll = Date.now() + device.interval * 1000
         const response = await fetch('https://github.com/login/oauth/access_token', {
-            method: 'POST',
-            signal: AbortSignal.timeout(30000),
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 client_id: device.clientId,
                 device_code: device.device_code,
                 grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-            })
+            }),
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+            method: 'POST',
+            signal: AbortSignal.timeout(30_000)
         })
-        if (!response.ok) throw new Error(`GitHub sign-in failed (${response.status}); try again`)
+        if (!response.ok) {
+            throw new Error(`GitHub sign-in failed (${response.status}); try again`)
+        }
         const result = (await response.json()) as { access_token?: string; error?: string }
         if (result.error === 'slow_down') {
             device.interval += 5
             device.nextPoll = Date.now() + device.interval * 1000
         }
-        if (result.error === 'authorization_pending' || result.error === 'slow_down')
-            return { pending: true, interval: device.interval }
-        if (!result.access_token)
+        if (result.error === 'authorization_pending' || result.error === 'slow_down') {
+            return { interval: device.interval, pending: true }
+        }
+        if (!result.access_token) {
             throw new Error(
-                result.error === 'access_denied'
-                    ? 'GitHub authorization was declined; start sign-in again'
-                    : result.error === 'expired_token'
-                      ? 'GitHub sign-in expired; start again'
-                      : (result.error ?? 'GitHub sign-in failed')
+                (() => {
+                    if (result.error === 'access_denied') {
+                        return 'GitHub authorization was declined; start sign-in again'
+                    }
+                    if (result.error === 'expired_token') {
+                        return 'GitHub sign-in expired; start again'
+                    }
+                    return result.error ?? 'GitHub sign-in failed'
+                })()
             )
+        }
         const user = await this.http.request<User>('https://api.github.com/user', result.access_token)
         const emails = await this.http.request<{ email: string }[]>(
             'https://api.github.com/user/emails',
@@ -141,7 +169,7 @@ export class GitHub {
         )
         this.setToken(result.access_token)
         this.device = undefined
-        return { login: user.login, emails: emails.map((item) => item.email) }
+        return { emails: emails.map((item) => item.email), login: user.login }
     }
     async activities(
         repository: Repository,
@@ -150,18 +178,20 @@ export class GitHub {
         scan: ActivityScan = {}
     ): Promise<Activity[]> {
         const remote = githubRemote(repository.remote)
-        if (!remote || !this.token()) return []
+        if (!remote || !this.token()) {
+            return []
+        }
         const activities: Activity[] = []
         const since = scan.since ?? repository.trackingStart
         const firstPage = Math.max(1, (scan.page ?? 1) - 1)
         let complete = false
         let hydrated = 0
-        for (let page = firstPage; page < firstPage + 2; page++) {
+        for (let page = firstPage; page < firstPage + 2; page += 1) {
             const pulls = await this.request<Pull[]>(
                 `repos/${remote}/pulls?state=all&sort=updated&direction=desc&per_page=100&page=${page}`,
                 scan.background
             )
-            for (const summary of pulls) {
+            for await (const summary of pulls) {
                 if ((summary.updated_at ?? summary.created_at).slice(0, 10) < since) {
                     complete = true
                     break
@@ -178,12 +208,14 @@ export class GitHub {
                     summary.draft,
                     summary.closed_at
                 ])
-                if (scan.versions?.[String(summary.number)] === version) continue
+                if (scan.versions?.[String(summary.number)] === version) {
+                    continue
+                }
                 if (hydrated >= 20) {
                     scan.checkpoint?.(page, false)
                     return activities
                 }
-                hydrated++
+                hydrated += 1
                 const path = `repos/${remote}/pulls/${summary.number}`
                 const pr = summary
                 const commits = await this.list<Commit>(`${path}/commits`, scan.background)
@@ -196,7 +228,9 @@ export class GitHub {
                     (review) => review.user.login === login && review.submitted_at && review.state !== 'PENDING'
                 )
                 if (pr.user.login !== login && !mine.length && !myReviews.length && !trackedPrIds.includes(id)) {
-                    if (scan.versions) scan.versions[String(summary.number)] = version
+                    if (scan.versions) {
+                        scan.versions[String(summary.number)] = version
+                    }
                     scan.checkpoint?.(page, false)
                     continue
                 }
@@ -204,104 +238,127 @@ export class GitHub {
                 const latest =
                     commits
                         .map((commit) => commit.commit.author.date)
-                        .sort()
+                        .toSorted()
                         .at(-1) ?? pr.created_at
                 const common = {
-                    repositoryId: repository.id,
-                    title: `#${pr.number} ${pr.title}`,
                     author: pr.user.login,
-                    branches: [pr.head.ref],
-                    prId: id,
-                    url: pr.html_url,
-                    description: pr.body ?? '',
-                    files: [],
                     base: pr.base.ref,
-                    head: pr.head.sha,
-                    sourceVersion: version,
+                    branches: [pr.head.ref],
+                    deletedBranches: [],
+                    description: pr.body ?? '',
                     disposition: 'inbox' as const,
                     explicit: false,
-                    deletedBranches: []
+                    files: [],
+                    head: pr.head.sha,
+                    prId: id,
+                    repositoryId: repository.id,
+                    sourceVersion: version,
+                    title: `#${pr.number} ${pr.title}`,
+                    url: pr.html_url
                 }
-                batch.push({
-                    ...common,
-                    id,
-                    kind: 'pr',
-                    date: latest,
-                    pullRequest: {
-                        status: pr.merged_at
-                            ? 'merged'
-                            : pr.state === 'closed'
-                              ? 'closed'
-                              : pr.draft
-                                ? 'draft'
-                                : pr.state === 'open'
-                                  ? 'open'
-                                  : undefined,
-                        openedAt: pr.created_at,
-                        commitDates: [...new Set(commits.map((commit) => commit.commit.author.date))]
-                            .filter((date) => date >= pr.created_at)
-                            .sort(),
-                        closedAt: pr.closed_at ?? undefined,
-                        mergedAt: pr.merged_at ?? undefined
+                batch.push(
+                    {
+                        ...common,
+                        date: latest,
+                        id,
+                        kind: 'pr',
+                        pullRequest: {
+                            closedAt: pr.closed_at ?? undefined,
+                            commitDates: [...new Set(commits.map((commit) => commit.commit.author.date))]
+                                .filter((date) => date >= pr.created_at)
+                                .toSorted(),
+                            mergedAt: pr.merged_at ?? undefined,
+                            openedAt: pr.created_at,
+                            status: (() => {
+                                if (pr.merged_at) {
+                                    return 'merged'
+                                }
+                                if (pr.state === 'closed') {
+                                    return 'closed'
+                                }
+                                if (pr.draft) {
+                                    return 'draft'
+                                }
+
+                                if (pr.state === 'open') {
+                                    return 'open'
+                                }
+                            })()
+                        }
+                    },
+                    {
+                        ...common,
+                        date: pr.created_at,
+                        id: `${id}:opened`,
+                        kind: 'opened',
+                        title: `Opened ${common.title}`
                     }
-                })
-                batch.push({
-                    ...common,
-                    id: `${id}:opened`,
-                    kind: 'opened',
-                    date: pr.created_at,
-                    title: `Opened ${common.title}`
-                })
-                if (pr.merged_at)
+                )
+                if (pr.merged_at) {
                     batch.push({
                         ...common,
-                        id: `${id}:merged`,
-                        kind: 'merged',
                         date: pr.merged_at,
-                        title: `Merged ${common.title}`,
-                        integrationSha: pr.merge_commit_sha ?? undefined
+                        id: `${id}:merged`,
+                        integrationSha: pr.merge_commit_sha ?? undefined,
+                        kind: 'merged',
+                        title: `Merged ${common.title}`
                     })
-                for (const commit of mine)
+                }
+                for (const commit of mine) {
                     batch.push({
                         ...common,
+                        author: commit.commit.author.email,
+                        date: commit.commit.author.date,
+                        description: commit.commit.message,
                         id: `${repository.id}:commit:${commit.sha}`,
                         kind: 'commit',
                         sha: commit.sha,
-                        author: commit.commit.author.email,
-                        date: commit.commit.author.date,
-                        title: commit.commit.message.split('\n')[0],
-                        description: commit.commit.message
+                        title: commit.commit.message.split('\n')[0]
                     })
-                for (const review of myReviews)
+                }
+                for (const review of myReviews) {
                     batch.push({
                         ...common,
+                        author: login,
+                        date: required(review.submitted_at),
+                        description: review.body,
                         id: `${id}:review:${review.id}`,
                         kind: 'review',
-                        author: login,
-                        date: review.submitted_at!,
                         title: `${review.state}: ${common.title}`,
-                        description: review.body,
                         url: review.html_url
                     })
+                }
                 const eligible = batch.filter(
                     (item) => item.kind === 'pr' || item.date.slice(0, 10) >= repository.trackingStart
                 )
-                if (scan.batch) await scan.batch(eligible)
-                else activities.push(...eligible)
-                if (scan.versions) scan.versions[String(summary.number)] = version
+                if (scan.batch) {
+                    await scan.batch(eligible)
+                } else {
+                    activities.push(...eligible)
+                }
+                if (scan.versions) {
+                    scan.versions[String(summary.number)] = version
+                }
                 scan.checkpoint?.(page, false)
             }
-            if (pulls.length < 100) complete = true
+            if (pulls.length < 100) {
+                complete = true
+            }
             scan.checkpoint?.(complete ? 1 : page + 1, complete)
-            if (complete) break
+            if (complete) {
+                break
+            }
         }
         return activities
     }
     async files(repository: Repository, activity: Activity): Promise<Activity['files']> {
         const remote = githubRemote(repository.remote)
         const number = activity.prId?.split(':').at(-1)
-        if (!remote || !number) return []
-        return (await this.list<File>(`repos/${remote}/pulls/${number}/files`)).map((file) => ({
+        if (!remote || !number) {
+            return []
+        }
+        const awaited1 = await this.list<File>(`repos/${remote}/pulls/${number}/files`)
+        return awaited1.map((file) => ({
             name: file.filename,
             status: file.status,
             ...(file.previous_filename ? { previousName: file.previous_filename } : {})
@@ -313,7 +370,9 @@ export class GitHub {
         includeDiff = true
     ): Promise<{ diff: string; files: Activity['files'] }> {
         const remote = githubRemote(repository.remote)
-        if (!remote || !/^[a-f0-9]{40,64}$/.test(sha)) throw new Error('GitHub commit source is unavailable')
+        if (!remote || !/^[a-f0-9]{40,64}$/u.test(sha)) {
+            throw new Error('GitHub commit source is unavailable')
+        }
         const path = `repos/${remote}/commits/${sha}`
         const metadata = await this.request<{ files: File[] }>(path)
         const diff = includeDiff
@@ -332,14 +391,17 @@ export class GitHub {
     }
     private async diff(url: string, token: string, init: RequestInit, background = false): Promise<string> {
         try {
-            return await this.http.request<string>(url, token, init, 'text', { maxBytes: 2_000_000, background })
+            return await this.http.request<string>(url, token, init, 'text', { background, maxBytes: 2_000_000 })
         } catch (error) {
-            if (error instanceof HttpError && error.status === 413) return 'Diff is too large. Open in GitHub.'
+            if (error instanceof HttpError && error.status === 413) {
+                return 'Diff is too large. Open in GitHub.'
+            }
             // GitHub may reject the diff representation (for example, when its
             // server-side rendering limit is exceeded) while JSON metadata works.
             // Keep acquisition moving, but never fingerprint unavailable evidence.
-            if (error instanceof HttpError && error.status === 406)
+            if (error instanceof HttpError && error.status === 406) {
                 return "GitHub could not provide this diff (HTTP 406). It may exceed GitHub's rendering limits. Open in GitHub or inspect the changes locally."
+            }
             throw error
         }
     }
@@ -350,7 +412,9 @@ export class GitHub {
     ): Promise<{ diff: string; fingerprint?: string; base: string; head: string }> {
         const remote = githubRemote(repository.remote)
         const number = activity.prId?.split(':').at(-1)
-        if (!remote || !number) throw new Error('GitHub remote is unavailable')
+        if (!remote || !number) {
+            throw new Error('GitHub remote is unavailable')
+        }
         const path = `repos/${remote}/pulls/${number}`
         const before = await this.request<Pull>(path, background)
         if (activity.sourceVersion) {
@@ -360,8 +424,9 @@ export class GitHub {
                 before.head.sha !== head ||
                 before.merged_at !== merged ||
                 before.merge_commit_sha !== integration
-            )
+            ) {
                 throw new Error('PR changed since activity refresh. Refresh this repository and try again.')
+            }
         }
         const integration =
             before.merged_at && before.merge_commit_sha
@@ -386,17 +451,18 @@ export class GitHub {
             before.head.sha !== after.head.sha ||
             before.merge_commit_sha !== after.merge_commit_sha ||
             before.merged_at !== after.merged_at
-        )
+        ) {
             throw new Error('PR changed while capturing its revision; refresh and try again')
+        }
         const comparable =
             (!integration || provenIntegration) &&
-            !/Binary files .* differ/.test(diff) &&
+            !/Binary files .* differ/u.test(diff) &&
             !diff.includes('GIT binary patch')
         return {
+            base: provenIntegration ? integration.parents[0].sha : before.base.sha,
             diff: diff.length <= 2_000_000 ? diff : 'Diff is too large. Open in GitHub.',
             fingerprint: comparable ? fingerprint(diff) : undefined,
-            base: provenIntegration ? integration.parents[0].sha : before.base.sha,
-            head: integration ? before.merge_commit_sha! : before.head.sha
+            head: integration ? required(before.merge_commit_sha) : before.head.sha
         }
     }
 }

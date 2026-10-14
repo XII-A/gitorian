@@ -1,36 +1,43 @@
 import { randomUUID } from 'node:crypto'
+
 import { Effect } from 'effect'
-import { commits, indexCommits, commitDetails, inspectRepository, git, githubRemote } from './git'
-import { HttpError } from './http'
-import { discoverRepositories, repositoryPathKey } from './repository-discovery'
-import { weekOf } from '../shared/model'
-import type { Activity, Command, Reply, Repository, RepositoryImportProgress, Selection, State } from '../shared/model'
-import type { Store } from './store'
-import type { GitHub } from './github'
-import type { Notion } from './notion'
-import { forEachConcurrent } from './work-queue'
-import { filesFromDiff } from './diff-files'
+
 import { isCombinedDiff } from '../shared/diff-format'
+import type { Activity, Command, Reply, Repository, RepositoryImportProgress, Selection, State } from '../shared/model'
+import { weekOf } from '../shared/model'
+import { required } from '../shared/required'
+import { filesFromDiff } from './diff-files'
+import { commitDetails, commits, git, githubRemote, indexCommits, inspectRepository } from './git'
+import type { GitHub } from './github'
+import { HttpError } from './http'
+import type { Notion } from './notion'
+import { discoverRepositories, repositoryPathKey } from './repository-discovery'
+import type { Store } from './store'
+import { forEachConcurrent } from './work-queue'
 
 export class JournalService {
     private refreshing?: Promise<void>
-    private queuedRefreshes = new Map<string, Promise<void>>()
-    private details = new Map<string, Promise<void>>()
+    private readonly queuedRefreshes = new Map<string, Promise<void>>()
+    private readonly details = new Map<string, Promise<void>>()
     private importing = false
     private importStopped = false
-    constructor(
-        readonly store: Store,
-        private readonly github: GitHub,
-        private readonly notion: Notion,
-        private readonly connections: () => Reply['connections']
-    ) {}
+    readonly store: Store
+    private readonly github: GitHub
+    private readonly notion: Notion
+    private readonly connections: () => Reply['connections']
+    constructor(store: Store, github: GitHub, notion: Notion, connections: () => Reply['connections']) {
+        this.store = store
+        this.github = github
+        this.notion = notion
+        this.connections = connections
+    }
     reply(extra: Partial<Reply> = {}): Reply {
-        return { state: this.store.snapshot(), connections: this.connections(), ...extra }
+        return { connections: this.connections(), state: this.store.snapshot(), ...extra }
     }
     execute(command: Command): Effect.Effect<Reply, Error> {
         return Effect.tryPromise({
-            try: () => this.handle(command),
-            catch: (error) => (error instanceof Error ? error : new Error(String(error)))
+            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+            try: () => Promise.resolve(this.handle(command))
         })
     }
     async addRepository(path: string, persist = true): Promise<void> {
@@ -39,33 +46,38 @@ export class JournalService {
             this.store.state.repositories.some(
                 (repository) => repositoryPathKey(repository.path) === repositoryPathKey(inspected.path)
             )
-        )
+        ) {
             throw new Error('This repository is already tracked')
+        }
         this.store.state.repositories.push({
+            available: true,
+            base: inspected.base,
+            branchBases: {},
+            branches: inspected.branches,
+            emails: inspected.email ? [inspected.email] : [],
             id: randomUUID(),
             name: inspected.name,
             path: inspected.path,
             remote: '',
-            base: inspected.base,
-            emails: inspected.email ? [inspected.email] : [],
-            trackingStart: weekOf(new Date(), this.store.state.settings),
-            available: true,
+            remotes: inspected.remotes,
             removed: false,
-            branchBases: {},
-            branches: inspected.branches,
-            remotes: inspected.remotes
+            trackingStart: weekOf(new Date(), this.store.state.settings)
         })
-        if (persist) this.store.persist()
+        if (persist) {
+            this.store.persist()
+        }
     }
     async addRepositories(folder: string, onProgress?: (progress: RepositoryImportProgress) => void): Promise<Reply> {
-        if (this.importing) return this.reply({ message: 'A repository import is already running.' })
+        if (this.importing) {
+            return this.reply({ message: 'A repository import is already running.' })
+        }
         this.importing = true
         this.importStopped = false
         const importId = randomUUID()
-        this.store.state.repositoryImport = { id: importId, status: 'running', completed: 0, total: 0 }
+        this.store.state.repositoryImport = { completed: 0, id: importId, status: 'running', total: 0 }
         this.store.persist()
         try {
-            onProgress?.({ stage: 'discovering', scanned: 0, found: 0 })
+            onProgress?.({ found: 0, scanned: 0, stage: 'discovering' })
             const discovered = await discoverRepositories(folder, (counts) =>
                 onProgress?.({ stage: 'discovering', ...counts })
             )
@@ -78,16 +90,18 @@ export class JournalService {
             }))
             let skipped = discovered.unreadable.length
             let completed = 0
-            onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
+            onProgress?.({ completed, stage: 'processing', total: discovered.paths.length })
             this.store.state.repositoryImport = {
+                completed,
                 id: importId,
                 status: 'running',
-                completed,
                 total: discovered.paths.length
             }
             this.store.persist()
             await forEachConcurrent(discovered.paths, 2, async (path) => {
-                if (this.importStopped) return
+                if (this.importStopped) {
+                    return
+                }
                 const tracked = this.store.state.repositories.find(
                     (item) => repositoryPathKey(item.path) === repositoryPathKey(path)
                 )
@@ -96,46 +110,60 @@ export class JournalService {
                         if (tracked.removed || !tracked.available) {
                             const inspected = await inspectRepository(path)
                             Object.assign(tracked, {
-                                path: inspected.path,
                                 available: true,
-                                removed: false,
                                 branches: inspected.branches,
-                                remotes: inspected.remotes
+                                path: inspected.path,
+                                remotes: inspected.remotes,
+                                removed: false
                             })
-                            restored++
-                        } else existing++
+                            restored += 1
+                        } else {
+                            existing += 1
+                        }
                     } else {
                         await this.addRepository(path, false)
-                        added++
+                        added += 1
                     }
                 } catch (error) {
                     skippedItems.push({ path, reason: error instanceof Error ? error.message : String(error) })
-                    skipped++
+                    skipped += 1
                 }
-                completed++
+                completed += 1
                 this.store.state.repositoryImport = {
+                    completed,
                     id: importId,
                     status: 'running',
-                    completed,
                     total: discovered.paths.length
                 }
-                if (completed % 4 === 0) this.store.persist()
-                onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
+                if (completed % 4 === 0) {
+                    this.store.persist()
+                }
+                onProgress?.({ completed, stage: 'processing', total: discovered.paths.length })
             })
             const messages = [`Added ${added} ${added === 1 ? 'repository' : 'repositories'}.`]
-            if (!discovered.paths.length) messages[0] = 'No Git repositories found in this folder.'
-            if (restored) messages.push(`Resumed tracking ${restored}.`)
-            if (existing) messages.push(`${existing} already tracked.`)
-            if (skipped) messages.push(`${skipped} unreadable or invalid folders skipped.`)
-            if (this.importStopped) messages.push('Import stopped. Add the folder again to continue.')
+            if (!discovered.paths.length) {
+                messages[0] = 'No Git repositories found in this folder.'
+            }
+            if (restored) {
+                messages.push(`Resumed tracking ${restored}.`)
+            }
+            if (existing) {
+                messages.push(`${existing} already tracked.`)
+            }
+            if (skipped) {
+                messages.push(`${skipped} unreadable or invalid folders skipped.`)
+            }
+            if (this.importStopped) {
+                messages.push('Import stopped. Add the folder again to continue.')
+            }
             this.store.state.repositoryImport = {
+                completed,
                 id: importId,
+                message: messages.join(' '),
                 skipped,
                 skippedItems,
                 status: this.importStopped ? 'cancelled' : 'done',
-                completed,
-                total: discovered.paths.length,
-                message: messages.join(' ')
+                total: discovered.paths.length
             }
             this.store.persist()
             return this.reply({ message: messages.join(' ') })
@@ -144,59 +172,72 @@ export class JournalService {
         }
     }
     stopWork(source: 'git' | 'github' | 'repositories', repositoryId?: string): void {
-        if (source === 'repositories') this.importStopped = true
-        else
+        if (source === 'repositories') {
+            this.importStopped = true
+        } else {
             for (const [key, status] of Object.entries(this.store.state.acquisition ?? {})) {
                 if (key.startsWith(`${source}:`) && (!repositoryId || key === `${source}:${repositoryId}`)) {
                     status.status = 'cancelled'
                     status.error = undefined
                 }
             }
+        }
         this.store.persist()
     }
     private checkStopped(status: NonNullable<State['acquisition']>[string]): void {
-        if (this.isStopped(status)) throw new Error('Paused by you. Completed work is kept.')
+        if (this.isStopped(status)) {
+            throw new Error('Paused by you. Completed work is kept.')
+        }
     }
     private isStopped(status: NonNullable<State['acquisition']>[string]): boolean {
         return status.status === 'cancelled'
     }
     private repository(id: string): Repository {
         const repository = this.store.state.repositories.find((item) => item.id === id)
-        if (!repository) throw new Error('Repository is no longer available')
+        if (!repository) {
+            throw new Error('Repository is no longer available')
+        }
         return repository
     }
     private activity(id: string): Activity {
         const activity = this.store.state.activities.find((item) => item.id === id)
-        if (!activity) throw new Error('Work is no longer available')
+        if (!activity) {
+            throw new Error('Work is no longer available')
+        }
         return activity
     }
     private mergeActivity(incoming: Activity): void {
-        const state = this.store.state
+        const { state } = this.store
         const current = state.activities.find((item) => item.id === incoming.id)
-        if (!current) state.activities.push(incoming)
-        else
+        if (current) {
             Object.assign(current, incoming, {
-                disposition: current.disposition,
-                deferUntil: current.deferUntil,
-                reason: current.reason,
-                explicit: current.explicit,
-                revision: incoming.revision ?? current.revision,
-                fingerprint: incoming.fingerprint ?? current.fingerprint,
-                deletedBranches: current.deletedBranches,
                 branches: [...new Set([...current.branches, ...incoming.branches])],
+                deferUntil: current.deferUntil,
+                deletedBranches: current.deletedBranches,
+                disposition: current.disposition,
+                explicit: current.explicit,
                 files: incoming.filesLoaded ? incoming.files : current.files,
                 filesLoaded:
-                    current.filesLoaded && (!incoming.sourceVersion || incoming.sourceVersion === current.sourceVersion)
+                    current.filesLoaded &&
+                    (!incoming.sourceVersion || incoming.sourceVersion === current.sourceVersion),
+                fingerprint: incoming.fingerprint ?? current.fingerprint,
+                reason: current.reason,
+                revision: incoming.revision ?? current.revision
             })
+        } else {
+            state.activities.push(incoming)
+        }
     }
     private async capture(activity: Activity, retainDiff = true, persist = true): Promise<string> {
-        const state = this.store.state
+        const { state } = this.store
         const version = activity.sourceVersion
         const snapshot = await this.github.snapshot(this.repository(activity.repositoryId), activity, !persist)
-        if (state !== this.store.state)
+        if (state !== this.store.state) {
             throw new Error('Local data was restored while loading. Open the activity again.')
-        if (version !== activity.sourceVersion)
+        }
+        if (version !== activity.sourceVersion) {
             throw new Error('Activity changed while loading. Select it again to load the current revision.')
+        }
         const prior = snapshot.fingerprint
             ? state.revisions.find(
                   (revision) => revision.prId === activity.id && revision.fingerprint === snapshot.fingerprint
@@ -208,9 +249,12 @@ export class JournalService {
                       revision.head === snapshot.head
               )
         const id = prior?.id ?? randomUUID()
-        if (!prior) state.revisions.push({ id, prId: activity.id, ...snapshot, diff: retainDiff ? snapshot.diff : '' })
-        else if (retainDiff) prior.diff = snapshot.diff
-        Object.assign(activity, { revision: id, fingerprint: snapshot.fingerprint, head: snapshot.head })
+        if (!prior) {
+            state.revisions.push({ id, prId: activity.id, ...snapshot, diff: retainDiff ? snapshot.diff : '' })
+        } else if (retainDiff) {
+            prior.diff = snapshot.diff
+        }
+        Object.assign(activity, { fingerprint: snapshot.fingerprint, head: snapshot.head, revision: id })
         if (retainDiff) {
             state.diffs[activity.id] = snapshot.diff
             activity.diffRevision = id
@@ -222,11 +266,13 @@ export class JournalService {
                 }
             }
         }
-        if (persist) this.store.persist()
+        if (persist) {
+            this.store.persist()
+        }
         return id
     }
     private status(key: string): NonNullable<State['acquisition']>[string] {
-        const state = this.store.state
+        const { state } = this.store
         state.acquisition ??= {}
         return (state.acquisition[key] ??= { status: 'idle' })
     }
@@ -239,10 +285,14 @@ export class JournalService {
         } = {}
     ): Promise<void> {
         if (this.refreshing) {
-            if (!options.resume && !options.afterCurrent) return this.refreshing
+            if (!options.resume && !options.afterCurrent) {
+                return await this.refreshing
+            }
             const key = `${options.repositoryId ?? '*'}:${options.source ?? '*'}:${!!options.resume}`
             const queued = this.queuedRefreshes.get(key)
-            if (queued) return queued
+            if (queued) {
+                return await queued
+            }
             const next = this.refreshing.then(
                 () => {
                     this.queuedRefreshes.delete(key)
@@ -254,17 +304,21 @@ export class JournalService {
                 }
             )
             this.queuedRefreshes.set(key, next)
-            return next
+            return await next
         }
         this.refreshing = this.refreshSources(options).finally(() => {
             this.refreshing = undefined
         })
-        return this.refreshing
+        return await this.refreshing
     }
     async backfill(repositoryId: string, since: string): Promise<void> {
-        if (this.refreshing) await this.refreshing
+        if (this.refreshing) {
+            await this.refreshing
+        }
         const repository = this.repository(repositoryId)
-        if (since > repository.trackingStart) throw new Error('Choose a date before the current history start.')
+        if (since > repository.trackingStart) {
+            throw new Error('Choose a date before the current history start.')
+        }
         repository.trackingStart = since
         for (const source of ['git', 'github']) {
             const status = this.status(`${source}:${repositoryId}`)
@@ -281,8 +335,12 @@ export class JournalService {
     }
     private async source(key: string, work: () => Promise<void>, resume = false): Promise<void> {
         const status = this.status(key)
-        if (this.isStopped(status) && !resume) return
-        if (status.retryAt && Date.parse(status.retryAt) > Date.now()) return
+        if (this.isStopped(status) && !resume) {
+            return
+        }
+        if (status.retryAt && Date.parse(status.retryAt) > Date.now()) {
+            return
+        }
         status.status = 'running'
         status.error = undefined
         status.retryAt = undefined
@@ -291,11 +349,22 @@ export class JournalService {
             await work()
             this.checkStopped(status)
             status.status = 'idle'
-            if (!status.windowEnd) status.lastSuccess = new Date().toISOString()
+            if (!status.windowEnd) {
+                status.lastSuccess = new Date().toISOString()
+            }
         } catch (error) {
-            if (!this.isStopped(status))
+            if (!this.isStopped(status)) {
                 status.status = error instanceof HttpError && error.retryAt ? 'paused' : 'error'
-            status.error = this.isStopped(status) ? undefined : error instanceof Error ? error.message : String(error)
+            }
+            status.error = (() => {
+                if (this.isStopped(status)) {
+                    return
+                }
+                if (error instanceof Error) {
+                    return error.message
+                }
+                return String(error)
+            })()
             status.retryAt =
                 error instanceof HttpError && error.retryAt ? new Date(error.retryAt).toISOString() : undefined
         }
@@ -306,7 +375,7 @@ export class JournalService {
         source?: 'git' | 'github' | 'notion'
         resume?: boolean
     }): Promise<void> {
-        const state = this.store.state
+        const { state } = this.store
         const repositories = state.repositories.filter(
             (item) => !item.removed && (!options.repositoryId || item.id === options.repositoryId)
         )
@@ -321,21 +390,27 @@ export class JournalService {
             this.connections().notion &&
             state.settings.destination
                 ? this.source('notion', async () => {
-                      for (const page of await this.notion.pages(state.settings.destination!)) {
+                      for await (const page of await this.notion.pages(required(state.settings.destination))) {
                           const entry = await this.notion.entry(page)
                           const index = state.entries.findIndex((item) => item.id === entry.id)
-                          if (index < 0) state.entries.push(entry)
-                          else state.entries[index] = entry
+                          if (index === -1) {
+                              state.entries.push(entry)
+                          } else {
+                              state.entries[index] = entry
+                          }
                       }
-                      for (const save of state.saves.filter((item) => item.status === 'unknown'))
+                      for await (const save of state.saves.filter((item) => item.status === 'unknown')) {
                           await this.reconcile(save.id)
+                      }
                   })
                 : Promise.resolve()
         await Promise.all([
             notion,
             forEachConcurrent(repositories, 2, async (repository) => {
-                if (state !== this.store.state) return
-                if (!options.source || options.source === 'git')
+                if (state !== this.store.state) {
+                    return
+                }
+                if (!options.source || options.source === 'git') {
                     await this.source(
                         `git:${repository.id}`,
                         async () => {
@@ -352,8 +427,10 @@ export class JournalService {
                                 status.excludedTips = undefined
                             }
                             try {
-                                if (!repository.remotes)
-                                    repository.remotes = (await inspectRepository(repository.path)).remotes
+                                if (!repository.remotes) {
+                                    const awaited1 = await inspectRepository(repository.path)
+                                    repository.remotes = awaited1.remotes
+                                }
                                 const indexed = await indexCommits(
                                     repository,
                                     status.refs ?? {},
@@ -366,24 +443,28 @@ export class JournalService {
                                     )
                                 )
                                 this.checkStopped(status)
-                                if (state !== this.store.state)
+                                if (state !== this.store.state) {
                                     throw new Error('Local data was restored while refreshing.')
+                                }
                                 const names = Object.keys(indexed.refs)
                                 repository.branches = names
                                 repository.available = true
                                 for (const activity of state.activities.filter(
                                     (item) => item.repositoryId === repository.id
-                                ))
+                                )) {
                                     activity.deletedBranches = activity.branches.filter(
                                         (branch) => !names.includes(branch)
                                     )
-                                for (const activity of indexed.items)
+                                }
+                                for (const activity of indexed.items) {
                                     if (
                                         repository.emails.some(
                                             (email) => email.toLowerCase() === activity.author.toLowerCase()
                                         )
-                                    )
+                                    ) {
                                         this.mergeActivity(activity)
+                                    }
+                                }
                                 status.refs = indexed.refs
                                 status.offset = indexed.nextOffset
                                 status.excludedTips = indexed.excludedTips
@@ -393,17 +474,20 @@ export class JournalService {
                                 status.configuration = configuration
                                 status.since = repository.trackingStart
                             } catch (error) {
-                                if (!this.isStopped(status)) repository.available = false
+                                if (!this.isStopped(status)) {
+                                    repository.available = false
+                                }
                                 throw error
                             }
                         },
                         options.resume
                     )
+                }
                 if (
                     (!options.source || options.source === 'github') &&
                     this.connections().github &&
                     githubRemote(repository.remote)
-                )
+                ) {
                     await this.source(
                         `github:${repository.id}`,
                         async () => {
@@ -423,48 +507,33 @@ export class JournalService {
                             }
                             status.configuration = configuration
                             status.versions ??= {}
-                            if (!status.windowEnd) status.page = 1
+                            if (!status.windowEnd) {
+                                status.page = 1
+                            }
                             status.windowEnd ??= new Date().toISOString()
-                            if (!status.since)
+                            if (!status.since) {
                                 status.since = status.lastSuccess
                                     ? new Date(
                                           Math.max(
                                               Date.parse(repository.trackingStart),
-                                              Date.parse(status.lastSuccess) - 2 * 86400000
+                                              Date.parse(status.lastSuccess) - 2 * 86_400_000
                                           )
                                       )
                                           .toISOString()
                                           .slice(0, 10)
                                     : repository.trackingStart
+                            }
                             const tracked = state.activities
                                 .filter((item) => item.repositoryId === repository.id && item.kind === 'pr')
                                 .map((item) => item.id)
                             await this.github.activities(repository, state.settings.githubLogin, tracked, {
-                                since: status.since,
-                                page: status.page,
-                                versions: status.versions,
                                 background: true,
-                                checkpoint: (page, complete) => {
-                                    this.checkStopped(status)
-                                    status.page = page
-                                    if (complete) {
-                                        status.since = new Date(
-                                            Math.max(
-                                                Date.parse(repository.trackingStart),
-                                                Date.parse(status.windowEnd!) - 2 * 86400000
-                                            )
-                                        )
-                                            .toISOString()
-                                            .slice(0, 10)
-                                        status.windowEnd = undefined
-                                    }
-                                    this.store.persist()
-                                },
                                 batch: async (activities) => {
-                                    if (state !== this.store.state)
+                                    if (state !== this.store.state) {
                                         throw new Error('Local data was restored while refreshing.')
+                                    }
                                     this.checkStopped(status)
-                                    for (const incoming of activities) {
+                                    for await (const incoming of activities) {
                                         const previous = state.activities.find((item) => item.id === incoming.id)
                                         const previousDate = previous?.date
                                         const previousFingerprint = previous?.fingerprint
@@ -472,7 +541,9 @@ export class JournalService {
                                             (item) => item.id === previous?.revision
                                         )
                                         this.mergeActivity(incoming)
-                                        if (incoming.kind !== 'pr') continue
+                                        if (incoming.kind !== 'pr') {
+                                            continue
+                                        }
                                         const current = this.activity(incoming.id)
                                         const needsComparison =
                                             !!previousRevision || current.date.slice(0, 10) < repository.trackingStart
@@ -494,66 +565,107 @@ export class JournalService {
                                                       revision &&
                                                       (previousRevision.head !== revision.head ||
                                                           previousRevision.base !== revision.base)
-                                                if (changed) current.date = new Date().toISOString()
-                                                else if (previousDate && previousDate > current.date)
-                                                    current.date = previousDate
-                                            } catch (error) {
-                                                if (previousRevision && previousRevision.head !== current.head)
+                                                if (changed) {
                                                     current.date = new Date().toISOString()
+                                                } else if (previousDate && previousDate > current.date) {
+                                                    current.date = previousDate
+                                                }
+                                            } catch (error) {
+                                                if (previousRevision && previousRevision.head !== current.head) {
+                                                    current.date = new Date().toISOString()
+                                                }
                                                 this.store.persist()
                                                 throw error
                                             }
-                                        } else if (previousDate && previousDate > current.date)
+                                        } else if (previousDate && previousDate > current.date) {
                                             current.date = previousDate
+                                        }
                                     }
-                                }
+                                },
+                                checkpoint: (page, complete) => {
+                                    this.checkStopped(status)
+                                    status.page = page
+                                    if (complete) {
+                                        status.since = new Date(
+                                            Math.max(
+                                                Date.parse(repository.trackingStart),
+                                                Date.parse(required(status.windowEnd)) - 2 * 86_400_000
+                                            )
+                                        )
+                                            .toISOString()
+                                            .slice(0, 10)
+                                        status.windowEnd = undefined
+                                    }
+                                    this.store.persist()
+                                },
+                                page: status.page,
+                                since: status.since,
+                                versions: status.versions
                             })
                         },
                         options.resume
                     )
+                }
             })
         ])
         const errors = Object.entries(state.acquisition ?? {})
             .filter(([, status]) => status.status !== 'cancelled' && status.error)
             .map(([key, status]) => `${key}: ${status.error}`)
         state.refreshError = errors.length ? errors.join('\n') : undefined
-        if (!errors.length && !Object.values(state.acquisition ?? {}).some((status) => status.windowEnd))
+        if (!errors.length && !Object.values(state.acquisition ?? {}).some((status) => status.windowEnd)) {
             state.lastRefreshed = new Date().toISOString()
+        }
         this.store.persist()
     }
     private async loadDetails(activity: Activity, includeDiff: boolean): Promise<void> {
-        const state = this.store.state
+        const { state } = this.store
         const repository = this.repository(activity.repositoryId)
         const version = activity.sourceVersion
         if (activity.kind === 'pr') {
-            if (includeDiff) await this.capture(activity)
-            if (!activity.filesLoaded) activity.files = await this.github.files(repository, activity)
+            if (includeDiff) {
+                await this.capture(activity)
+            }
+            if (!activity.filesLoaded) {
+                activity.files = await this.github.files(repository, activity)
+            }
         } else if (activity.sha) {
             let details: Awaited<ReturnType<typeof commitDetails>>
             try {
-                if (!repository.available) throw new Error('Local checkout unavailable')
+                if (!repository.available) {
+                    throw new Error('Local checkout unavailable')
+                }
                 details = await commitDetails(repository, activity.sha, includeDiff)
             } catch (localError) {
-                if (!githubRemote(repository.remote) || !this.connections().github)
+                if (!githubRemote(repository.remote) || !this.connections().github) {
                     throw new Error(
-                        `Local changes are unavailable (${localError instanceof Error ? localError.message : String(localError)}). Locate the repository, or connect GitHub and select its remote in Settings.`
+                        `Local changes are unavailable (${localError instanceof Error ? localError.message : String(localError)}). Locate the repository, or connect GitHub and select its remote in Settings.`,
+                        { cause: localError }
                     )
+                }
                 details = await this.github.commitDetails(repository, activity.sha, includeDiff)
             }
-            if (state !== this.store.state)
+            if (state !== this.store.state) {
                 throw new Error('Local data was restored while loading. Open the activity again.')
-            if (includeDiff) state.diffs[activity.id] = details.diff
+            }
+            if (includeDiff) {
+                state.diffs[activity.id] = details.diff
+            }
             activity.files = details.files
-        } else if (activity.prId) activity.files = await this.github.files(repository, activity)
-        if (version !== activity.sourceVersion)
+        } else if (activity.prId) {
+            activity.files = await this.github.files(repository, activity)
+        }
+        if (version !== activity.sourceVersion) {
             throw new Error('Activity changed while loading. Select it again to load the current revision.')
+        }
         activity.filesLoaded = true
         this.store.persist()
     }
     private confirm(save: State['saves'][number], entry: State['entries'][number]): void {
-        const state = this.store.state
-        if (!state.entries.some((item) => item.id === entry.id)) state.entries.push(entry)
-        for (const selected of save.selections)
+        const { state } = this.store
+        if (!state.entries.some((item) => item.id === entry.id)) {
+            state.entries.push(entry)
+        }
+        for (const selected of save.selections) {
             if (
                 !state.coverage.some(
                     (link) =>
@@ -561,8 +673,10 @@ export class JournalService {
                         link.revision === selected.revision &&
                         link.entryId === entry.id
                 )
-            )
+            ) {
                 state.coverage.push({ ...selected, entryId: entry.id })
+            }
+        }
         save.status = 'confirmed'
         save.entryId = entry.id
         save.error = undefined
@@ -572,29 +686,37 @@ export class JournalService {
             draft.title === save.title &&
             JSON.stringify(draft.body) === JSON.stringify(save.body) &&
             JSON.stringify(draft.selections) === JSON.stringify(save.selections)
-        )
+        ) {
             draft.publishedEntryId = entry.id
+        }
         this.store.persist()
     }
     private async publish(draftId: string): Promise<void> {
-        const state = this.store.state
+        const { state } = this.store
         const draft = state.drafts.find((item) => item.id === draftId)
-        if (!draft) throw new Error('Draft does not exist')
-        if (draft.publishedEntryId) throw new Error('This draft has already been published; create another entry')
-        if (state.saves.some((save) => save.draftId === draftId && ['pending', 'unknown'].includes(save.status)))
+        if (!draft) {
+            throw new Error('Draft does not exist')
+        }
+        if (draft.publishedEntryId) {
+            throw new Error('This draft has already been published; create another entry')
+        }
+        if (state.saves.some((save) => save.draftId === draftId && ['pending', 'unknown'].includes(save.status))) {
             throw new Error('This draft has an uncertain save. Verify it before publishing again.')
-        const destination = state.settings.destination
-        if (!destination || !this.connections().notion) throw new Error('Connect Notion and choose a destination first')
+        }
+        const { destination } = state.settings
+        if (!destination || !this.connections().notion) {
+            throw new Error('Connect Notion and choose a destination first')
+        }
         const save: State['saves'][number] = {
-            id: randomUUID(),
-            draftId,
-            status: 'pending',
-            marker: `weekly-j-operation:${randomUUID()}`,
-            title: draft.title,
             body: structuredClone(draft.body),
-            selections: structuredClone(draft.selections),
-            destination: structuredClone(destination),
             createdAt: new Date().toISOString(),
+            destination: structuredClone(destination),
+            draftId,
+            id: randomUUID(),
+            marker: `weekly-j-operation:${randomUUID()}`,
+            selections: structuredClone(draft.selections),
+            status: 'pending',
+            title: draft.title,
             week: draft.week
         }
         state.saves.push(save)
@@ -623,39 +745,47 @@ export class JournalService {
     }
     private async reconcile(saveId: string): Promise<void> {
         const save = this.store.state.saves.find((item) => item.id === saveId)
-        if (!save || save.status !== 'unknown') throw new Error('No uncertain save to verify')
+        if (!save || save.status !== 'unknown') {
+            throw new Error('No uncertain save to verify')
+        }
         const entry = await this.notion.reconcile(save)
-        if (entry) this.confirm(save, entry)
-        else {
+        if (entry) {
+            this.confirm(save, entry)
+        } else {
             save.error =
                 'The saved page has not been found yet. Retry verification after Notion is reachable; creation remains blocked.'
             this.store.persist()
         }
     }
     async handle(command: Command): Promise<Reply> {
-        const state = this.store.state
+        const { state } = this.store
         switch (command.type) {
-            case 'state':
+            case 'state': {
                 return this.reply()
+            }
             case 'repository': {
                 const repository = this.repository(command.repository.id)
                 const incoming = command.repository
                 // Renderer configuration cannot assign arbitrary filesystem paths.
-                Object.assign(repository, incoming, { path: repository.path, available: repository.available })
+                Object.assign(repository, incoming, { available: repository.available, path: repository.path })
                 break
             }
-            case 'refresh':
+            case 'refresh': {
                 await this.refresh({ ...command, resume: true })
                 return this.reply()
-            case 'backfill':
+            }
+            case 'backfill': {
                 await this.backfill(command.repositoryId, command.since)
                 return this.reply()
-            case 'stopWork':
+            }
+            case 'stopWork': {
                 this.stopWork(command.source, command.repositoryId)
                 return this.reply()
+            }
             case 'history': {
                 const repository = this.repository(command.repositoryId)
-                const remoteNames = (await git(repository.path, ['remote'])).trim().split('\n').filter(Boolean)
+                const awaited2 = await git(repository.path, ['remote'])
+                const remoteNames = awaited2.trim().split('\n').filter(Boolean)
                 const remotePrefix = remoteNames.find((name) => command.branch.startsWith(`${name}/`))
                 const branchName = remotePrefix ? command.branch.slice(remotePrefix.length + 1) : command.branch
                 const linked = state.activities.find(
@@ -668,13 +798,21 @@ export class JournalService {
                 const remoteTarget = target
                     ? repository.branches.find((name) => remoteNames.some((remote) => name === `${remote}/${target}`))
                     : undefined
-                const base = target
-                    ? repository.branches.includes(target)
-                        ? target
-                        : (remoteTarget ?? target)
-                    : (repository.branchBases[command.branch] ?? repository.branchBases[branchName] ?? repository.base)
+                const base = (() => {
+                    if (target) {
+                        if (repository.branches.includes(target)) {
+                            return target
+                        }
+                        return remoteTarget ?? target
+                    }
+                    return (
+                        repository.branchBases[command.branch] ?? repository.branchBases[branchName] ?? repository.base
+                    )
+                })()
                 const items = await commits(repository, command.branch, command.view, base, command.since)
-                for (const item of items) this.mergeActivity(item)
+                for (const item of items) {
+                    this.mergeActivity(item)
+                }
                 this.store.persist()
                 const authors = (Array.isArray(command.author) ? command.author : [command.author])
                     .map((author) => author.trim().toLowerCase())
@@ -712,19 +850,22 @@ export class JournalService {
                 }
                 return this.reply(includeDiff ? { diff: state.diffs[activity.id] ?? '' } : {})
             }
-            case 'newDraft':
+            case 'newDraft': {
                 state.drafts.push({
-                    id: randomUUID(),
-                    week: command.week,
-                    title: `${command.week} – ${new Date(new Date(`${command.week}T12:00:00Z`).getTime() + 6 * 86400000).toISOString().slice(0, 10)}`,
                     body: structuredClone(state.settings.template),
+                    id: randomUUID(),
                     selections: [],
-                    updatedAt: new Date().toISOString()
+                    title: `${command.week} – ${new Date(new Date(`${command.week}T12:00:00Z`).getTime() + 6 * 86_400_000).toISOString().slice(0, 10)}`,
+                    updatedAt: new Date().toISOString(),
+                    week: command.week
                 })
                 break
+            }
             case 'draft': {
                 const draft = state.drafts.find((item) => item.id === command.draft.id)
-                if (!draft || draft.publishedEntryId) throw new Error('Draft is read-only or unavailable')
+                if (!draft || draft.publishedEntryId) {
+                    throw new Error('Draft is read-only or unavailable')
+                }
                 draft.body = command.draft.body
                 draft.title = command.draft.title
                 draft.updatedAt = new Date().toISOString()
@@ -732,10 +873,14 @@ export class JournalService {
             }
             case 'select': {
                 const draft = state.drafts.find((item) => item.id === command.draftId)
-                if (!draft || draft.publishedEntryId) throw new Error('Choose an editable draft')
+                if (!draft || draft.publishedEntryId) {
+                    throw new Error('Choose an editable draft')
+                }
                 const activity = this.activity(command.activityId)
                 if (command.included) {
-                    if (draft.selections.some((item) => item.activityId === activity.id)) break
+                    if (draft.selections.some((item) => item.activityId === activity.id)) {
+                        break
+                    }
                     const selected: Selection = { activityId: activity.id }
                     if (activity.kind === 'pr') {
                         selected.revision =
@@ -745,63 +890,78 @@ export class JournalService {
                     }
                     draft.selections.push(selected)
                     activity.explicit = true
-                } else draft.selections = draft.selections.filter((item) => item.activityId !== activity.id)
+                } else {
+                    draft.selections = draft.selections.filter((item) => item.activityId !== activity.id)
+                }
                 break
             }
-            case 'disposition':
+            case 'disposition': {
                 Object.assign(this.activity(command.activityId), {
-                    disposition: command.disposition,
                     deferUntil: command.until,
+                    disposition: command.disposition,
                     reason: command.reason
                 })
-                if (command.disposition === 'inbox') this.activity(command.activityId).explicit = true
+                if (command.disposition === 'inbox') {
+                    this.activity(command.activityId).explicit = true
+                }
                 break
+            }
             case 'feature': {
                 const current = state.features.find((item) => item.id === command.id)
                 const feature = {
-                    id: command.id || randomUUID(),
-                    name: command.name,
                     archived: command.archived,
-                    members: command.members
+                    id: command.id || randomUUID(),
+                    members: command.members,
+                    name: command.name
                 }
-                if (current) Object.assign(current, feature)
-                else state.features.push(feature)
+                if (current) {
+                    Object.assign(current, feature)
+                } else {
+                    state.features.push(feature)
+                }
                 break
             }
             case 'settings': {
                 new Intl.DateTimeFormat('en-US', { timeZone: command.settings.timezone })
-                const order = command.settings.layout.order
-                if (order.length !== 3 || new Set(order).size !== 3)
+                const { order } = command.settings.layout
+                if (order.length !== 3 || new Set(order).size !== 3) {
                     throw new Error('Layout must contain each pane once')
+                }
                 state.settings = command.settings
                 break
             }
-            case 'publish':
+            case 'publish': {
                 await this.publish(command.draftId)
                 return this.reply()
-            case 'reconcile':
+            }
+            case 'reconcile': {
                 await this.reconcile(command.saveId)
                 return this.reply()
+            }
             case 'coverage': {
                 const activity = this.activity(command.activityId)
-                if (!state.entries.some((entry) => entry.id === command.entryId))
+                if (!state.entries.some((entry) => entry.id === command.entryId)) {
                     throw new Error('Choose a cached saved entry')
+                }
                 if (command.linked) {
-                    const revision =
-                        activity.kind === 'pr'
-                            ? activity.revision && state.diffs[activity.id] !== undefined
+                    let revision: string | undefined
+                    if (activity.kind === 'pr') {
+                        revision =
+                            activity.revision && state.diffs[activity.id] !== undefined
                                 ? activity.revision
                                 : await this.capture(activity)
-                            : undefined
-                    state.coverage.push({ activityId: activity.id, revision, entryId: command.entryId })
-                } else
+                    }
+                    state.coverage.push({ activityId: activity.id, entryId: command.entryId, revision })
+                } else {
                     state.coverage = state.coverage.filter(
                         (link) => !(link.activityId === activity.id && link.entryId === command.entryId)
                     )
+                }
                 break
             }
-            default:
+            default: {
                 throw new Error('This command requires the desktop host')
+            }
         }
         this.store.persist()
         return this.reply()

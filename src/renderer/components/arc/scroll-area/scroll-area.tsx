@@ -1,7 +1,18 @@
 'use client'
 
+import type {
+    CSSProperties,
+    ForwardRefRenderFunction,
+    HTMLAttributes,
+    ReactNode,
+    PointerEvent as ReactPointerEvent,
+    Ref,
+    UIEvent
+} from 'react'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
-import type { CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactNode, Ref, UIEvent } from 'react'
+
+import { required } from '../../../../shared/required'
+
 import styles from './scroll-area.module.css'
 
 type Axis = 'y' | 'x'
@@ -47,7 +58,7 @@ export interface ScrollAreaProps extends Omit<HTMLAttributes<HTMLDivElement>, 'o
 
 const MIN_THUMB = 28
 
-export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function ScrollArea(
+const ScrollAreaRender: ForwardRefRenderFunction<HTMLDivElement, ScrollAreaProps> = (
     {
         children,
         orientation = 'vertical',
@@ -67,38 +78,40 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
         ...rest
     },
     forwardedRef
-) {
+) => {
     const rootRef = useRef<HTMLDivElement>(null)
     const viewport = useRef<HTMLDivElement>(null)
     const tracks = useRef<Record<Axis, HTMLDivElement | null>>({ x: null, y: null })
     const thumbs = useRef<Record<Axis, HTMLDivElement | null>>({ x: null, y: null })
-    const hideTimer = useRef<number | undefined>(undefined)
+    const hideTimer = useRef<number | undefined | null>(null)
     const lastEdges = useRef('')
     const onEdgeRef = useRef(onEdgeChange)
-    useImperativeHandle(forwardedRef, () => rootRef.current!)
-    useImperativeHandle(viewportRef, () => viewport.current!)
+    useImperativeHandle(forwardedRef, () => required(rootRef.current))
+    useImperativeHandle(viewportRef, () => required(viewport.current))
     useEffect(() => {
         onEdgeRef.current = onEdgeChange
     }, [onEdgeChange])
 
-    const vertical = orientation !== 'horizontal',
-        horizontal = orientation !== 'vertical'
+    const vertical = orientation !== 'horizontal'
+    const horizontal = orientation !== 'vertical'
 
     /* Everything visual is written straight to the DOM on each scroll frame, so scrolling never re-renders React. */
     const sync = useCallback(() => {
-        const node = viewport.current,
-            root = rootRef.current
-        if (!node || !root) return
+        const node = viewport.current
+        const root = rootRef.current
+        if (!node || !root) {
+            return
+        }
         const { scrollTop, scrollLeft, scrollHeight, scrollWidth, clientHeight, clientWidth } = node
-        const maxY = Math.max(0, scrollHeight - clientHeight),
-            maxX = Math.max(0, scrollWidth - clientWidth)
+        const maxY = Math.max(0, scrollHeight - clientHeight)
+        const maxX = Math.max(0, scrollWidth - clientWidth)
         // RTL layouts report negative scrollLeft; distance from the start edge is its magnitude.
         const left = Math.abs(scrollLeft)
         const edges: ScrollAreaEdges = {
-            top: vertical && scrollTop > 0.5,
             bottom: vertical && maxY - scrollTop > 0.5,
             left: horizontal && left > 0.5,
-            right: horizontal && maxX - left > 0.5
+            right: horizontal && maxX - left > 0.5,
+            top: vertical && scrollTop > 0.5
         }
 
         if (fade > 0) {
@@ -109,20 +122,28 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
         }
 
         const place = (axis: Axis, scroll: number, max: number, client: number, total: number) => {
-            const track = tracks.current[axis],
-                thumb = thumbs.current[axis]
-            if (!track || !thumb) return
+            const track = tracks.current[axis]
+            const thumb = thumbs.current[axis]
+            if (!track || !thumb) {
+                return
+            }
             const overflowing = max > 0.5
             track.toggleAttribute('data-hidden', !overflowing)
-            if (!overflowing) return
+            if (!overflowing) {
+                return
+            }
             const length = axis === 'y' ? track.clientHeight : track.clientWidth
             const size = Math.max(MIN_THUMB, (length * client) / total)
             const offset = (length - size) * (scroll / max)
             thumb.style[axis === 'y' ? 'height' : 'width'] = `${size}px`
             thumb.style.transform = axis === 'y' ? `translate3d(0, ${offset}px, 0)` : `translate3d(${offset}px, 0, 0)`
         }
-        if (vertical) place('y', scrollTop, maxY, clientHeight, scrollHeight)
-        if (horizontal) place('x', left, maxX, clientWidth, scrollWidth)
+        if (vertical) {
+            place('y', scrollTop, maxY, clientHeight, scrollHeight)
+        }
+        if (horizontal) {
+            place('x', left, maxX, clientWidth, scrollWidth)
+        }
         root.toggleAttribute('data-overflow', maxY > 0.5 || maxX > 0.5)
 
         const key = `${edges.top}${edges.bottom}${edges.left}${edges.right}`
@@ -134,16 +155,26 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
 
     useLayoutEffect(() => {
         const node = viewport.current
-        if (!node) return
+        if (!node) {
+            return
+        }
         sync()
-        if (typeof ResizeObserver === 'undefined') return
-        const observer = new ResizeObserver(() => sync())
+        if (typeof ResizeObserver === 'undefined') {
+            return
+        }
+        const observer = new ResizeObserver(() => {
+            sync()
+        })
         observer.observe(node)
-        Array.from(node.children).forEach((child) => observer.observe(child))
+        for (const child of [...node.children]) {
+            observer.observe(child)
+        }
         const mutations = new MutationObserver(() => {
             observer.disconnect()
             observer.observe(node)
-            Array.from(node.children).forEach((child) => observer.observe(child))
+            for (const child of [...node.children]) {
+                observer.observe(child)
+            }
             sync()
         })
         mutations.observe(node, { childList: true })
@@ -153,14 +184,23 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
         }
     }, [sync])
 
-    useEffect(() => () => window.clearTimeout(hideTimer.current), [])
+    useEffect(
+        () => () => {
+            window.clearTimeout(hideTimer.current ?? undefined)
+        },
+        []
+    )
 
     const wake = () => {
         const root = rootRef.current
-        if (!root) return
-        root.setAttribute('data-scrolling', '')
-        window.clearTimeout(hideTimer.current)
-        hideTimer.current = window.setTimeout(() => root.removeAttribute('data-scrolling'), hideDelay)
+        if (!root) {
+            return
+        }
+        root.dataset.scrolling = ''
+        window.clearTimeout(hideTimer.current ?? undefined)
+        hideTimer.current = window.setTimeout(() => {
+            delete root.dataset.scrolling
+        }, hideDelay)
     }
 
     const handleScroll = (event: UIEvent<HTMLDivElement>) => {
@@ -172,62 +212,84 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
     // A mouse wheel over a horizontal strip moves it sideways, but only while there is room, so the page still scrolls at the ends.
     useEffect(() => {
         const node = viewport.current
-        if (!node || orientation !== 'horizontal' || !wheelToHorizontal) return
+        if (!node || orientation !== 'horizontal' || !wheelToHorizontal) {
+            return
+        }
         const wheel = (event: WheelEvent) => {
-            if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return
-            const max = node.scrollWidth - node.clientWidth,
-                at = Math.abs(node.scrollLeft)
-            if (max <= 0 || (event.deltaY < 0 && at <= 0) || (event.deltaY > 0 && at >= max - 0.5)) return
+            if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) {
+                return
+            }
+            const max = node.scrollWidth - node.clientWidth
+            const at = Math.abs(node.scrollLeft)
+            if (max <= 0 || (event.deltaY < 0 && at <= 0) || (event.deltaY > 0 && at >= max - 0.5)) {
+                return
+            }
             event.preventDefault()
             node.scrollLeft += event.deltaY * (getComputedStyle(node).direction === 'rtl' ? -1 : 1)
         }
         node.addEventListener('wheel', wheel, { passive: false })
-        return () => node.removeEventListener('wheel', wheel)
+        return () => {
+            node.removeEventListener('wheel', wheel)
+        }
     }, [orientation, wheelToHorizontal])
 
     /* Dragging a thumb maps pointer travel to scroll distance; pressing the track pages toward the pointer. */
     const drag = useRef<{ axis: Axis; start: number; scroll: number; ratio: number } | null>(null)
     const onThumbDown = (event: ReactPointerEvent<HTMLDivElement>, axis: Axis) => {
-        const node = viewport.current,
-            track = tracks.current[axis],
-            thumb = thumbs.current[axis]
-        if (!node || !track || !thumb || event.button !== 0) return
+        const node = viewport.current
+        const track = tracks.current[axis]
+        const thumb = thumbs.current[axis]
+        if (!node || !track || !thumb || event.button !== 0) {
+            return
+        }
         event.preventDefault()
         event.stopPropagation()
         event.currentTarget.setPointerCapture(event.pointerId)
-        const length = axis === 'y' ? track.clientHeight : track.clientWidth,
-            size = axis === 'y' ? thumb.offsetHeight : thumb.offsetWidth
+        const length = axis === 'y' ? track.clientHeight : track.clientWidth
+        const size = axis === 'y' ? thumb.offsetHeight : thumb.offsetWidth
         const max = axis === 'y' ? node.scrollHeight - node.clientHeight : node.scrollWidth - node.clientWidth
         drag.current = {
             axis,
-            start: axis === 'y' ? event.clientY : event.clientX,
+            ratio: max / Math.max(1, length - size),
             scroll: axis === 'y' ? node.scrollTop : node.scrollLeft,
-            ratio: max / Math.max(1, length - size)
+            start: axis === 'y' ? event.clientY : event.clientX
         }
         rootRef.current?.setAttribute('data-dragging', axis)
         node.style.scrollSnapType = 'none'
     }
     const onThumbMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-        const state = drag.current,
-            node = viewport.current
-        if (!state || !node) return
+        const state = drag.current
+        const node = viewport.current
+        if (!state || !node) {
+            return
+        }
         const delta = ((state.axis === 'y' ? event.clientY : event.clientX) - state.start) * state.ratio
-        if (state.axis === 'y') node.scrollTop = state.scroll + delta
-        else node.scrollLeft = state.scroll + delta
+        if (state.axis === 'y') {
+            node.scrollTop = state.scroll + delta
+        } else {
+            node.scrollLeft = state.scroll + delta
+        }
     }
     const onThumbUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-        if (!drag.current) return
+        if (!drag.current) {
+            return
+        }
         drag.current = null
-        if (event.currentTarget.hasPointerCapture(event.pointerId))
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId)
-        rootRef.current?.removeAttribute('data-dragging')
-        if (viewport.current) viewport.current.style.scrollSnapType = ''
+        }
+        delete rootRef.current?.dataset.dragging
+        if (viewport.current) {
+            viewport.current.style.scrollSnapType = ''
+        }
         wake()
     }
     const onTrackDown = (event: ReactPointerEvent<HTMLDivElement>, axis: Axis) => {
-        const node = viewport.current,
-            thumb = thumbs.current[axis]
-        if (!node || !thumb || event.button !== 0 || event.target !== event.currentTarget) return
+        const node = viewport.current
+        const thumb = thumbs.current[axis]
+        if (!node || !thumb || event.button !== 0 || event.target !== event.currentTarget) {
+            return
+        }
         const rect = thumb.getBoundingClientRect()
         const before = axis === 'y' ? event.clientY < rect.top : event.clientX < rect.left
         const page = (axis === 'y' ? node.clientHeight : node.clientWidth) * 0.9 * (before ? -1 : 1)
@@ -244,14 +306,18 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
             data-axis={axis}
             data-hidden=""
             aria-hidden="true"
-            onPointerDown={(event) => onTrackDown(event, axis)}
+            onPointerDown={(event) => {
+                onTrackDown(event, axis)
+            }}
         >
             <div
                 ref={(node) => {
                     thumbs.current[axis] = node
                 }}
                 className={styles.thumb}
-                onPointerDown={(event) => onThumbDown(event, axis)}
+                onPointerDown={(event) => {
+                    onThumbDown(event, axis)
+                }}
                 onPointerMove={onThumbMove}
                 onPointerUp={onThumbUp}
                 onPointerCancel={onThumbUp}
@@ -283,6 +349,7 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
             {horizontal && bar('x')}
         </div>
     )
-})
+}
+export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(ScrollAreaRender)
 
 export default ScrollArea

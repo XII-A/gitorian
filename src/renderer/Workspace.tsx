@@ -1,41 +1,38 @@
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
-import { Alert } from './components/arc/alert/alert'
-import { readableError } from './background-work'
-import { activityUpdating, actionableSources } from './background-work'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+
 import type { Activity, Command, Reply, State } from '../shared/model'
-import { localDate, shiftWeek, weekOf, stateSchema } from '../shared/model'
-import { offsetDay, journalWeek, rangeActivities } from './hub-model'
-import { Button } from './components/arc/button/button'
-import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
-import { Combobox } from './components/arc/combobox/combobox'
-import { TagInput } from './components/arc/tag-input/tag-input'
-import { Dialog, DialogContent } from './components/arc/dialog/dialog'
-import SegmentedControl from './components/arc/segmented-control/segmented-control'
-import { WorkspaceIcon } from './components/WorkspaceIcon'
-import { WorkspaceDraft } from './WorkspaceDraft'
-import type { Citation } from './WorkspaceDraft'
-import { WorkspaceInspector } from './WorkspaceInspector'
-import { sampleState } from './workspace-sample'
-import { activityLink, dateKey, dateValue, filterWorkspaceActivity, formatDay } from './workspace-model'
-import { ScrollArea } from './components/arc/scroll-area/scroll-area'
-import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
-import { ActivityChart } from './ActivityChart'
-import { ActivityRow } from './ActivityRow'
-import { ActivityHover } from './ActivityHover'
-import { ProjectFilter } from './ProjectFilter'
+import { localDate, shiftWeek, stateSchema, weekOf } from '../shared/model'
 import { hasCachedDetails } from './activity-cache'
-import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
+import { ActivityChart } from './activity-chart'
+import { ActivityHover } from './activity-hover'
+import { ActivityRow } from './activity-row'
 import landscape from './assets/week-landscape.jpg'
+import { actionableSources, activityUpdating, readableError } from './background-work'
+import { Alert } from './components/arc/alert/alert'
+import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
+import { Button } from './components/arc/button/button'
+import { Combobox } from './components/arc/combobox/combobox'
+import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
+import { Dialog, DialogContent } from './components/arc/dialog/dialog'
+import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
+import { ScrollArea } from './components/arc/scroll-area/scroll-area'
+import SegmentedControl from './components/arc/segmented-control/segmented-control'
+import { TagInput } from './components/arc/tag-input/tag-input'
+import { WorkspaceIcon } from './components/workspace-icon'
+import { journalWeek, offsetDay, rangeActivities } from './hub-model'
+import { ProjectFilter } from './project-filter'
+import type { Citation } from './workspace-draft'
+import { WorkspaceDraft } from './workspace-draft'
+import { WorkspaceInspector } from './workspace-inspector'
+import { activityLink, dateKey, dateValue, filterWorkspaceActivity, formatDay } from './workspace-model'
+import { sampleState } from './workspace-sample'
+
 import './workspace.css'
 
-function BrowseHistoryIcon() {
-    return <WorkspaceIcon name="branch" width="14" height="14" />
-}
+const BrowseHistoryIcon = () => <WorkspaceIcon name="branch" width="14" height="14" />
 
-function ClearHistoryIcon() {
-    return <WorkspaceIcon name="close" width="14" height="14" />
-}
+const ClearHistoryIcon = () => <WorkspaceIcon name="close" width="14" height="14" />
 
 interface Props {
     state: State
@@ -48,7 +45,7 @@ interface Props {
     onSources: () => void
     onSettings: () => void
 }
-export function Workspace({
+export const Workspace = ({
     state: realState,
     notionConnected,
     run: realRun,
@@ -58,7 +55,7 @@ export function Workspace({
     onBack,
     onSources,
     onSettings
-}: Props) {
+}: Props) => {
     const [week, setWeek] = useState(initialWeek)
     const [sample, setSample] = useState(false)
     const [example, setExample] = useState<State>()
@@ -70,7 +67,7 @@ export function Workspace({
     const activityViewport = useRef<HTMLDivElement>(null)
     useLayoutEffect(() => {
         // A new result set starts at the top before paint. Background refreshes keep their position.
-        activityViewport.current?.scrollTo({ top: 0, behavior: 'instant' })
+        activityViewport.current?.scrollTo({ behavior: 'instant', top: 0 })
     }, [week, project, branch, kind, authors])
     const [searchExpanded, setSearchExpanded] = useState(false)
     const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('diff')
@@ -89,7 +86,7 @@ export function Workspace({
     const [citation, setCitation] = useState<Citation>()
     const [notice, setNotice] = useState('')
     const [detached, setDetached] = useState<string>()
-    const channel = useRef<BroadcastChannel | undefined>(undefined)
+    const channel = useRef<BroadcastChannel | undefined | null>(null)
     const requestId = useRef(0)
     const getSample = useCallback((sampleWeek: string) => {
         let value = examples.current.get(sampleWeek)
@@ -101,8 +98,9 @@ export function Workspace({
                 if (
                     cached?.success &&
                     cached.data.activities.every((item) => item.id.startsWith(`sample:${sampleWeek}:`))
-                )
+                ) {
                     value = cached.data
+                }
             } catch {
                 /* Sample data can still be used without browser storage. */
             }
@@ -111,12 +109,16 @@ export function Workspace({
         return value
     }, [])
     useEffect(() => {
-        if (new URLSearchParams(window.location.search).get('data') !== 'sample') return
+        if (new URLSearchParams(window.location.search).get('data') !== 'sample') {
+            return
+        }
         setExample(getSample(initialWeek))
         setSample(true)
     }, [getSample, initialWeek])
     useEffect(() => {
-        if (!sample) return
+        if (!sample) {
+            return
+        }
         const value = getSample(week)
         setExample(value)
         setSelectedId(value.activities[0]?.id)
@@ -124,46 +126,55 @@ export function Workspace({
     const state = sample ? (example ?? sampleState(week)) : realState
     const run = useCallback(
         async (command: Command): Promise<Reply | undefined> => {
-            if (!sample) return realRun(command)
+            if (!sample) {
+                return await realRun(command)
+            }
             const current = examples.current.get(week)
-            if (!current) return undefined
+            if (!current) {
+                return undefined
+            }
             const next = structuredClone(current)
             switch (command.type) {
                 case 'draft': {
                     const index = next.drafts.findIndex((draft) => draft.id === command.draft.id)
-                    if (index >= 0) next.drafts[index] = command.draft
+                    if (index !== -1) {
+                        next.drafts[index] = command.draft
+                    }
                     break
                 }
-                case 'newDraft':
+                case 'newDraft': {
                     next.drafts.push({
+                        body: { content: [{ type: 'paragraph' }], type: 'doc' },
                         id: `sample-draft-${crypto.randomUUID()}`,
-                        week: command.week,
-                        title: '',
-                        body: { type: 'doc', content: [{ type: 'paragraph' }] },
                         selections: [],
-                        updatedAt: new Date().toISOString()
+                        title: '',
+                        updatedAt: new Date().toISOString(),
+                        week: command.week
                     })
                     break
+                }
                 case 'publish': {
                     const draft = next.drafts.find((item) => item.id === command.draftId)
                     if (draft) {
                         draft.publishedEntryId = `sample-entry-${draft.id}`
                         next.entries.push({
-                            id: draft.publishedEntryId,
-                            title: draft.title,
                             body: draft.body,
                             date: draft.week,
-                            url: 'https://notion.so/example',
-                            refreshedAt: new Date().toISOString()
+                            id: draft.publishedEntryId,
+                            refreshedAt: new Date().toISOString(),
+                            title: draft.title,
+                            url: 'https://notion.so/example'
                         })
                     }
                     break
                 }
-                case 'open':
+                case 'open': {
                     setNotice('Sample links are examples and cannot open real activity.')
                     break
-                default:
+                }
+                default: {
                     break
+                }
             }
             examples.current.set(week, next)
             try {
@@ -172,13 +183,13 @@ export function Workspace({
                 setNotice('Sample changes are kept for this session. Local storage is unavailable.')
             }
             setExample(next)
-            return { state: next, connections: { github: false, notion: false, protectedStorage: false } }
+            return { connections: { github: false, notion: false, protectedStorage: false }, state: next }
         },
         [realRun, sample, week]
     )
     const inspect = useCallback(
         async (item: Activity, tab: 'diff' | 'details' = 'diff') => {
-            const id = ++requestId.current
+            const id = (requestId.current += 1)
             setSelectedId(item.id)
             setInspectionTab(tab)
             setDetailError('')
@@ -188,20 +199,25 @@ export function Workspace({
             }
             setDetailBusy(true)
             const reply = await realRun({
-                type: 'details',
                 activityId: item.id,
-                content: tab === 'details' ? 'files' : 'diff'
+                content: tab === 'details' ? 'files' : 'diff',
+                type: 'details'
             })
-            if (requestId.current !== id) return
-            if (!reply || reply.detailError)
+            if (requestId.current !== id) {
+                return
+            }
+            if (!reply || reply.detailError) {
                 setDetailError(reply?.detailError ?? 'Could not load these changes. Retry loading the activity.')
+            }
             setDetailBusy(false)
         },
         [sample, realRun, realState]
     )
     const initialInspected = useRef(false)
     useEffect(() => {
-        if (!initialActivity || initialInspected.current) return
+        if (!initialActivity || initialInspected.current) {
+            return
+        }
         const activity = realState.activities.find((item) => item.id === initialActivity)
         if (activity) {
             initialInspected.current = true
@@ -211,7 +227,7 @@ export function Workspace({
     const selected = state.activities.find((item) => item.id === selectedId)
     const items = useMemo(() => rangeActivities(state, week, offsetDay(week, 6)), [state, week])
     const visible = useMemo(
-        () => filterWorkspaceActivity(state, week, { project, branch, kind, authors, search: '' }),
+        () => filterWorkspaceActivity(state, week, { authors, branch, kind, project, search: '' }),
         [state, week, project, branch, kind, authors]
     )
     const currentWeek = weekOf(new Date(), state.settings)
@@ -229,16 +245,21 @@ export function Workspace({
         const bus = new BroadcastChannel('weekly-j-workspace-reference')
         channel.current = bus
         bus.onmessage = (event: MessageEvent<unknown>) => {
-            const data = event.data
-            if (!data || typeof data !== 'object' || !('activityId' in data) || typeof data.activityId !== 'string')
+            const { data } = event
+            if (!data || typeof data !== 'object' || !('activityId' in data) || typeof data.activityId !== 'string') {
                 return
+            }
             const activity = state.activities.find((item) => item.id === data.activityId)
-            if (!activity || !('type' in data)) return
+            if (!activity || !('type' in data)) {
+                return
+            }
             if (data.type === 'cite') {
                 const accepted =
                     canCite && rangeActivities(state, week, offsetDay(week, 6)).some((item) => item.id === activity.id)
-                if (accepted) cite(activity)
-                bus.postMessage({ type: 'citation-result', activityId: activity.id, accepted })
+                if (accepted) {
+                    cite(activity)
+                }
+                bus.postMessage({ accepted, activityId: activity.id, type: 'citation-result' })
             }
             if (data.type === 'dock') {
                 setDetached(undefined)
@@ -251,7 +272,9 @@ export function Workspace({
         }
     }, [state, week, cite, canCite])
     const changeWeek = (value: string) => {
-        if (sample) setExample(getSample(value))
+        if (sample) {
+            setExample(getSample(value))
+        }
         setWeek(value)
         setSelectedId(undefined)
         setDetached(undefined)
@@ -263,18 +286,25 @@ export function Workspace({
         window.history.replaceState({}, '', url)
     }
     const popout = async () => {
-        if (!selected) return
+        if (!selected) {
+            return
+        }
         if (navigator.userAgent.includes('Electron/')) {
-            const reply = await realRun({ type: 'popout', kind: 'activity', id: selected.id })
-            if (reply) setDetached(selected.id)
+            const reply = await realRun({ id: selected.id, kind: 'activity', type: 'popout' })
+            if (reply) {
+                setDetached(selected.id)
+            }
         } else {
             const url = new URL(window.location.href)
             url.search = ''
             url.searchParams.set('reference', 'activity')
             url.searchParams.set('id', selected.id)
             const popup = window.open(url, `weekly-j-${selected.id}`, 'popup,width=1400,height=900')
-            if (popup) setDetached(selected.id)
-            else setNotice('The browser blocked the window. Allow pop-ups for this app and try again.')
+            if (popup) {
+                setDetached(selected.id)
+            } else {
+                setNotice('The browser blocked the window. Allow pop-ups for this app and try again.')
+            }
         }
     }
     const refresh = async () => {
@@ -283,20 +313,26 @@ export function Workspace({
         setRefreshing(false)
     }
     const browse = async () => {
-        if (project === 'all' || branch === 'all') return
+        if (project === 'all' || branch === 'all') {
+            return
+        }
         setHistoryBusy(true)
         setHistoryError('')
         const result = await run({
-            type: 'history',
-            repositoryId: project,
-            branch,
-            view: historyMode === 'history' ? 'history' : 'introduced',
             author: authors,
-            since: week
+            branch,
+            repositoryId: project,
+            since: week,
+            type: 'history',
+            view: historyMode === 'history' ? 'history' : 'introduced'
         })
-        if (!result) setHistoryError('Could not load branch history. Check the repository and try again.')
+        if (!result) {
+            setHistoryError('Could not load branch history. Check the repository and try again.')
+        }
         setHistoryBusy(false)
-        if (result) setHistoryOpen(false)
+        if (result) {
+            setHistoryOpen(false)
+        }
     }
     const inspector =
         selected && detached !== selected.id ? (
@@ -308,10 +344,16 @@ export function Workspace({
                 error={detailError}
                 canCite={canCite}
                 initialTab={inspectionTab}
-                onCite={() => cite(selected)}
-                onInspect={(item, tab) => void inspect(item, tab)}
+                onCite={() => {
+                    cite(selected)
+                }}
+                onInspect={(item, tab) => {
+                    inspect(item, tab)
+                }}
                 onPopout={popout}
-                onClose={() => setSelectedId(undefined)}
+                onClose={() => {
+                    setSelectedId(undefined)
+                }}
             />
         ) : undefined
     return (
@@ -323,23 +365,40 @@ export function Workspace({
                 <div className="ws-heading">
                     <Breadcrumb
                         ariaLabel="Journal breadcrumb"
-                        items={[{ label: 'Hub', onClick: () => onBack(week) }, { label: 'Weekly entry' }]}
+                        items={[
+                            {
+                                label: 'Hub',
+                                onClick: () => {
+                                    onBack(week)
+                                }
+                            },
+                            { label: 'Weekly entry' }
+                        ]}
                     />
                 </div>
                 <div className="ws-date">
                     <DateRangePicker
                         label="Week"
                         weekStartsOn={state.settings.weekStart}
-                        value={{ start: dateValue(week), end: dateValue(offsetDay(week, 6)) }}
+                        value={{ end: dateValue(offsetDay(week, 6)), start: dateValue(week) }}
                         fixedRangeDays={7}
                         normalizeStart={(date) => dateValue(journalWeek(dateKey(date), state.settings.weekStart))}
-                        onChange={(range) => changeWeek(dateKey(range.start))}
+                        onChange={(range) => {
+                            changeWeek(dateKey(range.start))
+                        }}
                         presets={[0, 1, 2, 3, 4].map((weeksAgo) => ({
-                            label:
-                                weeksAgo === 0 ? 'This week' : weeksAgo === 1 ? 'Last week' : `${weeksAgo} weeks ago`,
+                            label: (() => {
+                                if (weeksAgo === 0) {
+                                    return 'This week'
+                                }
+                                if (weeksAgo === 1) {
+                                    return 'Last week'
+                                }
+                                return `${weeksAgo} weeks ago`
+                            })(),
                             range: () => ({
-                                start: dateValue(shiftWeek(currentWeek, -weeksAgo)),
-                                end: dateValue(offsetDay(shiftWeek(currentWeek, -weeksAgo), 6))
+                                end: dateValue(offsetDay(shiftWeek(currentWeek, -weeksAgo), 6)),
+                                start: dateValue(shiftWeek(currentWeek, -weeksAgo))
                             })
                         }))}
                     />
@@ -370,7 +429,9 @@ export function Workspace({
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setFocus((value) => !value)}
+                        onClick={() => {
+                            setFocus((value) => !value)
+                        }}
                         aria-label={focus ? 'Show activity panels' : 'Focus on writing'}
                         aria-pressed={focus}
                         title={focus ? 'Show activity panels' : 'Focus on writing'}
@@ -383,7 +444,14 @@ export function Workspace({
             {notice && (
                 <div className="ws-action-notice" role="status">
                     <span>{notice}</span>
-                    <Button variant="ghost" size="sm" aria-label="Dismiss notification" onClick={() => setNotice('')}>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label="Dismiss notification"
+                        onClick={() => {
+                            setNotice('')
+                        }}
+                    >
                         <WorkspaceIcon name="close" />
                     </Button>
                 </div>
@@ -412,22 +480,24 @@ export function Workspace({
                             expandedWidth="container"
                             onExpandedChange={setSearchExpanded}
                             items={items.map((item) => ({
-                                id: item.id,
-                                title: item.title,
                                 group: state.repositories.find((repo) => repo.id === item.repositoryId)?.name,
-                                meta: `${formatDay(localDate(new Date(item.date), state.settings.timezone))} · ${item.sha?.slice(0, 7) ?? item.kind}`,
+                                icon: <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'pr'} />,
+                                id: item.id,
                                 keywords: [item.sha ?? '', item.description, ...item.branches],
-                                icon: <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'pr'} />
+                                meta: `${formatDay(localDate(new Date(item.date), state.settings.timezone))} · ${item.sha?.slice(0, 7) ?? item.kind}`,
+                                title: item.title
                             }))}
                             suggestions={items.slice(0, 4).map((item) => ({
                                 id: item.id,
-                                title: item.title,
-                                meta: state.repositories.find((repo) => repo.id === item.repositoryId)?.name
+                                meta: state.repositories.find((repo) => repo.id === item.repositoryId)?.name,
+                                title: item.title
                             }))}
                             suggestionsLabel="This week"
                             onSelect={(result) => {
                                 const item = items.find((activity) => activity.id === result.id)
-                                if (item) void inspect(item, 'details')
+                                if (item) {
+                                    void inspect(item, 'details')
+                                }
                             }}
                         />
                     </div>
@@ -446,9 +516,19 @@ export function Workspace({
                                 className="ws-filter-chip"
                                 animateContent={false}
                                 aria-pressed={kind === value}
-                                onClick={() => setKind(value)}
+                                onClick={() => {
+                                    setKind(value)
+                                }}
                             >
-                                {value === 'all' ? 'All' : value === 'commit' ? 'Commits' : 'PRs & reviews'}
+                                {(() => {
+                                    if (value === 'all') {
+                                        return 'All'
+                                    }
+                                    if (value === 'commit') {
+                                        return 'Commits'
+                                    }
+                                    return 'PRs & reviews'
+                                })()}
                                 <span>
                                     {
                                         items.filter(
@@ -489,25 +569,29 @@ export function Workspace({
                                     setHistoryOpen(true)
                                 }
                             }}
-                            aria-label={
-                                branch !== 'all' || authors.length > 0
-                                    ? branch !== 'all'
-                                        ? `Clear ${branch} history filters`
-                                        : 'Clear branch history filters'
-                                    : 'Browse branch history'
-                            }
-                            title={
-                                branch !== 'all' || authors.length > 0
-                                    ? branch !== 'all'
-                                        ? `Clear ${branch} history filters`
-                                        : 'Clear branch history filters'
-                                    : 'Browse branch history'
-                            }
+                            aria-label={(() => {
+                                if (branch !== 'all' || authors.length > 0) {
+                                    if (branch === 'all') {
+                                        return 'Clear branch history filters'
+                                    }
+                                    return `Clear ${branch} history filters`
+                                }
+                                return 'Browse branch history'
+                            })()}
+                            title={(() => {
+                                if (branch !== 'all' || authors.length > 0) {
+                                    if (branch === 'all') {
+                                        return 'Clear branch history filters'
+                                    }
+                                    return `Clear ${branch} history filters`
+                                }
+                                return 'Browse branch history'
+                            })()}
                             aria-pressed={branch !== 'all' || authors.length > 0}
                         >
                             {branch !== 'all' || authors.length > 0 ? (
                                 <>
-                                    {branch !== 'all' ? branch : 'History filters'}
+                                    {branch === 'all' ? 'History filters' : branch}
                                     <ClearHistoryIcon />
                                 </>
                             ) : (
@@ -560,7 +644,9 @@ export function Workspace({
                                                                 )
                                                                 event.dataTransfer.effectAllowed = 'copy'
                                                             }}
-                                                            onClick={() => void inspect(item)}
+                                                            onClick={() => {
+                                                                inspect(item)
+                                                            }}
                                                         />
                                                     </li>
                                                 ))}
@@ -582,7 +668,9 @@ export function Workspace({
                                             setProject('all')
                                             setBranch('all')
                                             setKind('all')
-                                            if (!items.length) void refresh()
+                                            if (!items.length) {
+                                                void refresh()
+                                            }
                                         }}
                                     >
                                         {items.length ? 'Clear activity filters' : 'Refresh activity'}
@@ -599,7 +687,7 @@ export function Workspace({
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                    channel.current?.postMessage({ type: 'close', activityId: detached })
+                                    channel.current?.postMessage({ activityId: detached, type: 'close' })
                                     setDetached(undefined)
                                 }}
                             >
@@ -611,8 +699,9 @@ export function Workspace({
                 <div
                     className="ws-draft-host"
                     onDragOver={(event) => {
-                        if (canCite && event.dataTransfer.types.includes('application/x-weekly-j-activity'))
+                        if (canCite && event.dataTransfer.types.includes('application/x-weekly-j-activity')) {
                             event.preventDefault()
+                        }
                     }}
                     onDrop={(event) => {
                         const item = state.activities.find(
@@ -661,7 +750,7 @@ export function Workspace({
                             }}
                             options={state.repositories
                                 .filter((repo) => !repo.removed)
-                                .map((repo) => ({ value: repo.id, label: repo.name, keywords: [repo.path] }))}
+                                .map((repo) => ({ keywords: [repo.path], label: repo.name, value: repo.id }))}
                         />
                         <Combobox
                             label="Branch"
@@ -670,11 +759,13 @@ export function Workspace({
                             disabled={project === 'all'}
                             description={project === 'all' ? 'Choose a project first.' : undefined}
                             value={branch === 'all' ? '' : branch}
-                            onValueChange={(value) => setBranch(value || 'all')}
+                            onValueChange={(value) => {
+                                setBranch(value || 'all')
+                            }}
                             options={(state.repositories.find((repo) => repo.id === project)?.branches ?? []).map(
                                 (name) => ({
-                                    value: name,
-                                    label: name
+                                    label: name,
+                                    value: name
                                 })
                             )}
                         />
@@ -684,8 +775,8 @@ export function Workspace({
                             value={historyMode}
                             onValueChange={setHistoryMode}
                             options={[
-                                { value: 'introduced', label: 'Introduced on branch' },
-                                { value: 'history', label: 'Full history' }
+                                { label: 'Introduced on branch', value: 'introduced' },
+                                { label: 'Full history', value: 'history' }
                             ]}
                         />
                         <TagInput

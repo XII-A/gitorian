@@ -1,20 +1,13 @@
 export default {
     rules: {
         'computed-no-console': {
-            meta: {
-                type: 'suggestion',
-                messages: {
-                    unexpected:
-                        'Unexpected console statement. Only these console methods are allowed: warn, error, info.'
-                }
-            },
             create(context) {
                 const sourceCode = context.sourceCode ?? context.getSourceCode()
                 const comments = sourceCode.getAllComments()
 
                 const isDisabledForNoConsole = (node) =>
                     comments.some((comment) => {
-                        const value = comment.value
+                        const { value } = comment
                         const disablesNoConsole =
                             /eslint-disable-next-line\b.*\bno-console\b/u.test(value) ||
                             /eslint-disable-line\b.*\bno-console\b/u.test(value)
@@ -34,10 +27,17 @@ export default {
                             node.object.name === 'console' &&
                             !isDisabledForNoConsole(node)
                         ) {
-                            context.report({ node, messageId: 'unexpected' })
+                            context.report({ messageId: 'unexpected', node })
                         }
                     }
                 }
+            },
+            meta: {
+                messages: {
+                    unexpected:
+                        'Unexpected console statement. Only these console methods are allowed: warn, error, info.'
+                },
+                type: 'suggestion'
             }
         }
     }

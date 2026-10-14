@@ -1,4 +1,3 @@
-import { Children, createContext, isValidElement, useContext, useId } from 'react'
 import type {
     HTMLAttributes,
     InputHTMLAttributes,
@@ -6,14 +5,24 @@ import type {
     SelectHTMLAttributes,
     TextareaHTMLAttributes
 } from 'react'
+import { Children, createContext, isValidElement, useContext, useId } from 'react'
+
+import { Checkbox } from './arc/checkbox/checkbox'
+import { DatePicker } from './arc/date-picker/date-picker'
 import { Input as ArcInput } from './arc/input/input'
 import { Select as ArcSelect } from './arc/select/select'
-import { Checkbox } from './arc/checkbox/checkbox'
 import { Textarea as ArcTextarea } from './arc/textarea/textarea'
-import { DatePicker } from './arc/date-picker/date-picker'
+
+const parse = (value: unknown) => {
+    if (typeof value !== 'string' || !value) {
+        return
+    }
+    const [year, month, day] = value.split('-').map(Number)
+    return new Date(year, month - 1, day)
+}
 
 const FieldName = createContext<string | undefined>(undefined)
-export function Field({ children, className = '', ...props }: HTMLAttributes<HTMLDivElement>) {
+export const Field = ({ children, className = '', ...props }: HTMLAttributes<HTMLDivElement>) => {
     const id = useId()
     const parts = Children.toArray(children)
     const caption = parts.filter((child) => !isValidElement(child) || child.type === 'span')
@@ -27,14 +36,9 @@ export function Field({ children, className = '', ...props }: HTMLAttributes<HTM
         </div>
     )
 }
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+export const Input = (props: InputHTMLAttributes<HTMLInputElement>) => {
     const name = useContext(FieldName)
     if (props.type === 'date') {
-        const parse = (value: unknown) => {
-            if (typeof value !== 'string' || !value) return undefined
-            const [year, month, day] = value.split('-').map(Number)
-            return new Date(year, month - 1, day)
-        }
         return (
             <DatePicker
                 label=""
@@ -56,7 +60,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
             />
         )
     }
-    if (props.type === 'checkbox')
+    if (props.type === 'checkbox') {
         return (
             <Checkbox
                 id={props.id ?? name}
@@ -68,29 +72,36 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
                 }
             />
         )
+    }
     return <ArcInput label="" id={name} aria-labelledby={name ? `${name}-label` : undefined} {...props} />
 }
-export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export const Textarea = (props: TextareaHTMLAttributes<HTMLTextAreaElement>) => {
     const name = useContext(FieldName)
     return <ArcTextarea label="" id={name} aria-labelledby={name ? `${name}-label` : undefined} {...props} />
 }
-function optionsFrom(children: ReactNode): { value: string; label: string; disabled?: boolean }[] {
-    return Children.toArray(children).flatMap((child) => {
-        if (!isValidElement<{ value?: string | number; children?: ReactNode; disabled?: boolean }>(child)) return []
-        if (child.type !== 'option') return optionsFrom(child.props.children)
-        const label = optionText(child.props.children)
-        return [{ value: String(child.props.value ?? label) || '__empty__', label, disabled: child.props.disabled }]
-    })
-}
-function optionText(children: ReactNode): string {
-    return Children.toArray(children)
+const optionText = (children: ReactNode): string =>
+    Children.toArray(children)
         .map((child): string => {
-            if (typeof child === 'string' || typeof child === 'number') return String(child)
+            if (typeof child === 'string' || typeof child === 'number') {
+                return String(child)
+            }
             return isValidElement<{ children?: ReactNode }>(child) ? optionText(child.props.children) : ''
         })
         .join('')
-}
-export function Select({
+
+const optionsFrom = (children: ReactNode): { value: string; label: string; disabled?: boolean }[] =>
+    Children.toArray(children).flatMap((child) => {
+        if (!isValidElement<{ value?: string | number; children?: ReactNode; disabled?: boolean }>(child)) {
+            return []
+        }
+        if (child.type !== 'option') {
+            return optionsFrom(child.props.children)
+        }
+        const label = optionText(child.props.children)
+        return [{ disabled: child.props.disabled, label, value: String(child.props.value ?? label) || '__empty__' }]
+    })
+
+export const Select = ({
     children,
     value,
     onChange,
@@ -98,7 +109,7 @@ export function Select({
     id,
     disabled,
     ...props
-}: SelectHTMLAttributes<HTMLSelectElement>) {
+}: SelectHTMLAttributes<HTMLSelectElement>) => {
     const name = useContext(FieldName)
     return (
         <ArcSelect

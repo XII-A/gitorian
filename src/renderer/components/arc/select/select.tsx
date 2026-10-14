@@ -1,12 +1,14 @@
 'use client'
 
-import { forwardRef, useId, useState } from 'react'
-import type { ComponentPropsWithoutRef } from 'react'
 import * as SelectPrimitive from '@radix-ui/react-select'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import type { Variants } from 'motion/react'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
+import type { Variants } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import type { ComponentPropsWithoutRef, ForwardRefRenderFunction } from 'react'
+import { forwardRef, useId, useState } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './select.module.css'
 
 export interface SelectProps extends Omit<ComponentPropsWithoutRef<typeof SelectPrimitive.Root>, 'children'> {
@@ -26,32 +28,32 @@ export interface SelectProps extends Omit<ComponentPropsWithoutRef<typeof Select
 
 /** The shown value rolls in the direction of the list: a later option rises from below, an earlier one drops from above. */
 const valueRoll: Variants = {
-    enter: (direction: number) => ({
-        opacity: 0,
-        y: `${direction * 0.35}em`,
-        filter: `blur(${motionTokens.blur.soft}px)`
-    }),
     center: {
-        opacity: 1,
-        y: 0,
         filter: 'blur(0px)',
-        transition: { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
+        opacity: 1,
+        transition: { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] },
+        y: 0
     },
-    exit: (direction: number) => ({
+    enter: (direction: number) => ({
+        filter: `blur(${motionTokens.blur.soft}px)`,
         opacity: 0,
-        y: `${direction * -0.3}em`,
+        y: `${direction * 0.35}em`
+    }),
+    exit: (direction: number) => ({
         filter: `blur(${motionTokens.blur.subtle}px)`,
-        transition: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] }
+        opacity: 0,
+        transition: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] },
+        y: `${direction * -0.3}em`
     })
 }
 /** Reduced motion keeps a short crossfade; the resting state matches valueRoll so server and client markup agree. */
 const valueFade: Variants = {
+    center: { filter: 'blur(0px)', opacity: 1, transition: { duration: motionTokens.duration.instant }, y: 0 },
     enter: { opacity: 0 },
-    center: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: motionTokens.duration.instant } },
     exit: { opacity: 0, transition: { duration: motionTokens.duration.instant } }
 }
 
-export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select(
+const SelectRender: ForwardRefRenderFunction<HTMLButtonElement, SelectProps> = (
     {
         label,
         description,
@@ -66,7 +68,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
         ...rootProps
     },
     ref
-) {
+) => {
     const generatedId = useId()
     const controlId = id ?? generatedId
     const hintId = description ? `${controlId}-description` : undefined
@@ -152,7 +154,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                                 >
                                     <SelectPrimitive.ItemText>
                                         {option.label}
-                                        {option.count !== undefined ? ` ${option.count}` : ''}
+                                        {option.count === undefined ? '' : ` ${option.count}`}
                                     </SelectPrimitive.ItemText>
                                     <SelectPrimitive.ItemIndicator className={styles.indicator}>
                                         <Check size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -173,4 +175,5 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
             )}
         </div>
     )
-})
+}
+export const Select = forwardRef<HTMLButtonElement, SelectProps>(SelectRender)

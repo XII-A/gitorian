@@ -1,20 +1,12 @@
 'use client'
 
-import { isValidElement, useEffect, useLayoutEffect, useRef } from 'react'
+import type { AnimationPlaybackControls, HTMLMotionProps, TargetAndTransition, Transition } from 'motion/react'
+import { AnimatePresence, animate, motion, useIsPresent, useMotionValue, useReducedMotion } from 'motion/react'
 import type { HTMLAttributes, ReactNode } from 'react'
-import {
-    AnimatePresence,
-    animate,
-    motion,
-    useIsPresent,
-    useMotionValue,
-    useReducedMotion,
-    type AnimationPlaybackControls,
-    type HTMLMotionProps,
-    type TargetAndTransition,
-    type Transition
-} from 'motion/react'
+import { isValidElement, useEffect, useLayoutEffect, useRef } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './badge.module.css'
 
 export type BadgeTone = 'neutral' | 'success' | 'info' | 'warning' | 'danger'
@@ -29,58 +21,33 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const exitFast: Transition = { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] }
-const textIn: TargetAndTransition = { opacity: 0, y: '0.3em', filter: `blur(${motionTokens.blur.soft}px)` }
+const textIn: TargetAndTransition = { filter: `blur(${motionTokens.blur.soft}px)`, opacity: 0, y: '0.3em' }
 const textOut: TargetAndTransition = {
-    opacity: 0,
-    y: '-0.3em',
     filter: `blur(${motionTokens.blur.subtle}px)`,
-    transition: exitFast
+    opacity: 0,
+    transition: exitFast,
+    y: '-0.3em'
 }
-const iconIn: TargetAndTransition = { opacity: 0, scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }
-const shown: TargetAndTransition = { opacity: 1, y: '0em', scale: 1, filter: 'blur(0px)' }
+const iconIn: TargetAndTransition = { filter: `blur(${motionTokens.blur.subtle}px)`, opacity: 0, scale: 0.6 }
+const shown: TargetAndTransition = { filter: 'blur(0px)', opacity: 1, scale: 1, y: '0em' }
 const fadeOnly: TargetAndTransition = { opacity: 0, transition: { duration: motionTokens.duration.instant } }
 
 /** Outgoing copies are hidden from assistive tech while they fade, so only the current text is read. */
-function Swap(props: HTMLMotionProps<'span'>) {
+const Swap = (props: HTMLMotionProps<'span'>) => {
     const present = useIsPresent()
     return <motion.span {...props} aria-hidden={present ? props['aria-hidden'] : true} />
 }
 
 /** A new icon component crossfades in; re-rendering the same icon stays still. */
-function iconKey(icon: ReactNode) {
-    if (!isValidElement(icon)) return 'icon'
+const iconKey = (icon: ReactNode) => {
+    if (!isValidElement(icon)) {
+        return 'icon'
+    }
     const type = icon.type as string | { displayName?: string; name?: string }
     return typeof type === 'string' ? type : (type.displayName ?? type.name ?? 'icon')
 }
 
-export function Badge({
-    animateChanges = true,
-    tone = 'neutral',
-    size = 'md',
-    icon,
-    className,
-    children,
-    ...props
-}: BadgeProps) {
-    if (animateChanges)
-        return (
-            <AnimatedBadge {...props} tone={tone} size={size} icon={icon} className={className}>
-                {children}
-            </AnimatedBadge>
-        )
-    return (
-        <span {...props} className={[styles.badge, styles[tone], styles[size], className].filter(Boolean).join(' ')}>
-            {icon && (
-                <span className={styles.icon} aria-hidden="true">
-                    {icon}
-                </span>
-            )}
-            {children}
-        </span>
-    )
-}
-
-function AnimatedBadge({ tone = 'neutral', size = 'md', icon, className, children, ...props }: BadgeProps) {
+const AnimatedBadge = ({ tone = 'neutral', size = 'md', icon, className, children, ...props }: BadgeProps) => {
     const reduce = useReducedMotion()
     const text = typeof children === 'string' || typeof children === 'number' ? String(children) : null
     const glyphKey = icon ? iconKey(icon) : ''
@@ -94,15 +61,21 @@ function AnimatedBadge({ tone = 'neutral', size = 'md', icon, className, childre
     }, [text, glyphKey])
     useEffect(() => {
         const node = content.current
-        if (!node || typeof ResizeObserver === 'undefined') return
+        if (!node || typeof ResizeObserver === 'undefined') {
+            return
+        }
         let last: number | undefined
         let controls: AnimationPlaybackControls | undefined
         const settle = () => {
             width.jump('auto')
-            if (body.current) body.current.style.width = 'auto'
+            if (body.current) {
+                body.current.style.width = 'auto'
+            }
         }
         const observer = new ResizeObserver(([entry]) => {
-            if (!entry) return
+            if (!entry) {
+                return
+            }
             const next = entry.borderBoxSize?.[0]?.inlineSize ?? node.offsetWidth
             const current = width.get()
             const from = typeof current === 'number' ? current : last
@@ -113,7 +86,9 @@ function AnimatedBadge({ tone = 'neutral', size = 'md', icon, className, childre
                 return
             }
             // Pin the old width before this frame paints, then spring to the new one.
-            if (body.current) body.current.style.width = `${from}px`
+            if (body.current) {
+                body.current.style.width = `${from}px`
+            }
             controls = animate(width, [from, next], { ...motionTokens.spring.morph, onComplete: settle })
         })
         observer.observe(node)
@@ -167,6 +142,34 @@ function AnimatedBadge({ tone = 'neutral', size = 'md', icon, className, childre
                     )}
                 </span>
             </motion.span>
+        </span>
+    )
+}
+
+export const Badge = ({
+    animateChanges = true,
+    tone = 'neutral',
+    size = 'md',
+    icon,
+    className,
+    children,
+    ...props
+}: BadgeProps) => {
+    if (animateChanges) {
+        return (
+            <AnimatedBadge {...props} tone={tone} size={size} icon={icon} className={className}>
+                {children}
+            </AnimatedBadge>
+        )
+    }
+    return (
+        <span {...props} className={[styles.badge, styles[tone], styles[size], className].filter(Boolean).join(' ')}>
+            {icon && (
+                <span className={styles.icon} aria-hidden="true">
+                    {icon}
+                </span>
+            )}
+            {children}
         </span>
     )
 }

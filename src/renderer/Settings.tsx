@@ -1,35 +1,39 @@
-import { Disclosure } from './components/Disclosure'
-import { ImportResults } from './ImportResults'
-import { Alert } from './components/arc/alert/alert'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { plainText } from '../shared/notion-format'
-import type { Command, Destination, Reply, Repository, RepositoryImportProgress, State } from '../shared/model'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/arc/tabs/tabs'
-import { Dialog, DialogContent } from './components/arc/dialog/dialog'
-import { ScrollArea } from './components/arc/scroll-area/scroll-area'
-import { Button } from './components/arc/button/button'
-import { Input } from './components/arc/input/input'
-import { Select } from './components/arc/select/select'
-import { Combobox } from './components/arc/combobox/combobox'
-import { DatePicker } from './components/arc/date-picker/date-picker'
-import { TagInput } from './components/arc/tag-input/tag-input'
-import { ImportProgressLabel } from './ImportProgressLabel'
-import { Folder, RefreshCw } from 'lucide-react'
-import { GitHubSignIn, githubSignInFailure, type GitHubSignInFeedback } from './GitHubSignIn'
-import { Switch } from './components/arc/switch/switch'
-import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
-import { NumberField } from './components/arc/number-field/number-field'
-import { SearchField } from './components/arc/search-field/search-field'
-import { ConfirmMorph } from './components/arc/confirm-morph/confirm-morph'
-import { RichTextEditor, type RichTextEditorHandle } from './components/arc/rich-text-editor/rich-text-editor'
-import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
 import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise'
-import { Editor } from './Editor'
-import { dateKey, dateValue, journalFromHTML, journalHTML, needsLegacyEditor } from './workspace-model'
-import { hasUnsavedSettings, timezoneOptions } from './settings-model'
-import './settings.css'
+import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
+import { Folder, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-export function Settings({
+import type { Command, Destination, Reply, Repository, RepositoryImportProgress, State } from '../shared/model'
+import { plainText } from '../shared/notion-format'
+import { Alert } from './components/arc/alert/alert'
+import { Button } from './components/arc/button/button'
+import { Combobox } from './components/arc/combobox/combobox'
+import { ConfirmMorph } from './components/arc/confirm-morph/confirm-morph'
+import { DatePicker } from './components/arc/date-picker/date-picker'
+import { Dialog, DialogContent } from './components/arc/dialog/dialog'
+import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
+import { Input } from './components/arc/input/input'
+import { NumberField } from './components/arc/number-field/number-field'
+import type { RichTextEditorHandle } from './components/arc/rich-text-editor/rich-text-editor'
+import { RichTextEditor } from './components/arc/rich-text-editor/rich-text-editor'
+import { ScrollArea } from './components/arc/scroll-area/scroll-area'
+import { SearchField } from './components/arc/search-field/search-field'
+import { Select } from './components/arc/select/select'
+import { Switch } from './components/arc/switch/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/arc/tabs/tabs'
+import { TagInput } from './components/arc/tag-input/tag-input'
+import { Disclosure } from './components/disclosure'
+import { Editor } from './editor'
+import type { GitHubSignInFeedback } from './git-hub-sign-in'
+import { GitHubSignIn, githubSignInFailure } from './git-hub-sign-in'
+import { ImportProgressLabel } from './import-progress-label'
+import { ImportResults } from './import-results'
+import { hasUnsavedSettings, timezoneOptions } from './settings-model'
+
+import './settings.css'
+import { dateKey, dateValue, journalFromHTML, journalHTML, needsLegacyEditor } from './workspace-model'
+
+export const Settings = ({
     state,
     connections,
     remotes,
@@ -41,7 +45,7 @@ export function Settings({
     remotes: Record<string, string[]>
     run: (command: Command) => Promise<Reply | undefined>
     close: () => void
-}) {
+}) => {
     const [settings, setSettings] = useState(state.settings)
     const [repositories, setRepositories] = useState(state.repositories)
     const [token, setToken] = useState('')
@@ -60,8 +64,8 @@ export function Settings({
     const keepEditing = useRef<HTMLButtonElement>(null)
     const previousFocus = useRef<Element | null>(null)
     const templateEditor = useRef<RichTextEditorHandle>(null)
-    const [templateHistory, setTemplateHistory] = useState({ canUndo: false, canRedo: false })
-    const templateWords = plainText(settings.template).trim().split(/\s+/).filter(Boolean).length
+    const [templateHistory, setTemplateHistory] = useState({ canRedo: false, canUndo: false })
+    const templateWords = plainText(settings.template).trim().split(/\s+/u).filter(Boolean).length
     const zones = useMemo(() => timezoneOptions(state.settings.timezone), [state.settings.timezone])
     const matchingRepositories = repositories.filter((repository) =>
         `${repository.name} ${repository.path}`.toLowerCase().includes(repositorySearch.trim().toLowerCase())
@@ -69,9 +73,14 @@ export function Settings({
     const activeImport = state.repositoryImport?.status === 'running' ? state.repositoryImport : undefined
     useEffect(() => window.journal.onRepositoryImportProgress?.(setImportProgress), [])
     const requestClose = () => {
-        if (busy) return
-        if (hasUnsavedSettings(settings, repositories, state, token)) setConfirmClose(true)
-        else close()
+        if (busy) {
+            return
+        }
+        if (hasUnsavedSettings(settings, repositories, state, token)) {
+            setConfirmClose(true)
+        } else {
+            close()
+        }
     }
     const invoke = async (command: Command) => {
         const result = await window.journal.invoke(command)
@@ -84,56 +93,68 @@ export function Settings({
         setStatus('')
         try {
             await task()
-        } catch (failure) {
-            setError(failure instanceof Error ? failure.message : String(failure))
+        } catch (error) {
+            setError(error instanceof Error ? error.message : String(error))
         } finally {
             setBusy('')
         }
     }
-    const editRepository = (repository: Repository, patch: Partial<Repository>) =>
+    const editRepository = (repository: Repository, patch: Partial<Repository>) => {
         setRepositories((items) => items.map((item) => (item.id === repository.id ? { ...item, ...patch } : item)))
+    }
     const mergeRepositories = useCallback(
-        (fresh: Repository[]) =>
+        (fresh: Repository[]) => {
             setRepositories((local) =>
                 fresh.map((item) => {
                     const edited = local.find((old) => old.id === item.id)
-                    if (!edited) return item
+                    if (!edited) {
+                        return item
+                    }
                     const before = state.repositories.find((old) => old.id === item.id)
                     return {
                         ...item,
                         ...edited,
-                        path: item.path,
                         available: item.available,
                         branches: item.branches,
-                        removed: item.removed !== before?.removed ? item.removed : edited.removed
+                        path: item.path,
+                        removed: item.removed === before?.removed ? edited.removed : item.removed
                     }
                 })
-            ),
+            )
+        },
         [state.repositories]
     )
-    const destination = (patch: Partial<Destination>) =>
+    const destination = (patch: Partial<Destination>) => {
         setSettings((current) => ({
             ...current,
             destination: {
-                kind: 'page',
-                id: '',
-                titleProperty: 'Name',
                 dateProperty: '',
+                id: '',
+                kind: 'page',
+                titleProperty: 'Name',
                 ...current.destination,
                 ...patch
             }
         }))
+    }
     useEffect(() => {
-        if (!device) return
+        if (!device) {
+            return
+        }
         const attempt = githubAttempt.current
         let cancelled = false
         let timer: ReturnType<typeof setTimeout>
         const poll = async () => {
             try {
                 const result = await window.journal.invoke({ type: 'githubPoll' })
-                if (cancelled || githubAttempt.current !== attempt) return
-                if (result.devicePending) timer = setTimeout(() => void poll(), result.devicePending.interval * 1000)
-                else {
+                if (cancelled || githubAttempt.current !== attempt) {
+                    return
+                }
+                if (result.devicePending) {
+                    timer = setTimeout(() => {
+                        poll()
+                    }, result.devicePending.interval * 1000)
+                } else {
                     setDevice(undefined)
                     setGithubNotice('')
                     setGithubFeedback({ kind: 'success', login: result.state.settings.githubLogin })
@@ -147,22 +168,26 @@ export function Settings({
                         })
                     )
                 }
-            } catch (failure) {
+            } catch (error) {
                 if (!cancelled && githubAttempt.current === attempt) {
-                    setGithubFeedback(githubSignInFailure(failure))
+                    setGithubFeedback(githubSignInFailure(error))
                     setDevice(undefined)
                     setGithubNotice('')
                 }
             }
         }
-        timer = setTimeout(() => void poll(), device.interval * 1000)
+        timer = setTimeout(() => {
+            poll()
+        }, device.interval * 1000)
         return () => {
             cancelled = true
             clearTimeout(timer)
         }
     }, [device, run])
     useEffect(() => {
-        if (githubFeedback?.kind !== 'success') return
+        if (githubFeedback?.kind !== 'success') {
+            return
+        }
         let cancelled = false
         // Give the in-place confirmation time to be read before showing the account controls.
         const timer = setTimeout(() => {
@@ -179,41 +204,58 @@ export function Settings({
         }
     }, [githubFeedback, run])
     const save = () =>
-        action('save', async () => {
-            if (!settings.timezone) throw new Error('Choose a timezone before saving.')
-            if (repositories.some((repository) => !repository.removed && !repository.base))
-                throw new Error('Choose a comparison base for each tracked repository.')
-            for (const repository of repositories) await window.journal.invoke({ type: 'repository', repository })
-            await invoke({ type: 'settings', settings })
-            close()
-        })
+        Promise.resolve(
+            action('save', async () => {
+                if (!settings.timezone) {
+                    throw new Error('Choose a timezone before saving.')
+                }
+                if (repositories.some((repository) => !repository.removed && !repository.base)) {
+                    throw new Error('Choose a comparison base for each tracked repository.')
+                }
+                for await (const repository of repositories) {
+                    await window.journal.invoke({ repository, type: 'repository' })
+                }
+                await invoke({ settings, type: 'settings' })
+                close()
+            })
+        )
     useEffect(() => {
         mergeRepositories(state.repositories)
     }, [state.repositories, mergeRepositories])
     const startSignIn = () =>
-        action('github', async () => {
-            const attempt = ++githubAttempt.current
-            setGithubNotice('')
-            try {
-                if (!settings.githubClientId.trim())
-                    throw new Error('Enter a GitHub OAuth client ID with device flow enabled.')
-                await window.journal.invoke({
-                    type: 'settings',
-                    settings: { ...state.settings, githubClientId: settings.githubClientId.trim() }
-                })
-                const result = await invoke({ type: 'githubStart' })
-                if (githubAttempt.current !== attempt) return
-                if (!result.device) throw new Error('GitHub did not provide a sign-in code')
-                setDevice(result.device)
-                setGithubFeedback(undefined)
-                if (result.message)
-                    setGithubNotice(
-                        'Your browser could not be opened. Use Open GitHub, or visit github.com/login/device.'
-                    )
-            } catch (failure) {
-                if (githubAttempt.current === attempt) setGithubFeedback(githubSignInFailure(failure))
-            }
-        })
+        Promise.resolve(
+            action('github', async () => {
+                const attempt = (githubAttempt.current += 1)
+                setGithubNotice('')
+                try {
+                    if (!settings.githubClientId.trim()) {
+                        throw new Error('Enter a GitHub OAuth client ID with device flow enabled.')
+                    }
+                    await window.journal.invoke({
+                        settings: { ...state.settings, githubClientId: settings.githubClientId.trim() },
+                        type: 'settings'
+                    })
+                    const result = await invoke({ type: 'githubStart' })
+                    if (githubAttempt.current !== attempt) {
+                        return
+                    }
+                    if (!result.device) {
+                        throw new Error('GitHub did not provide a sign-in code')
+                    }
+                    setDevice(result.device)
+                    setGithubFeedback(undefined)
+                    if (result.message) {
+                        setGithubNotice(
+                            'Your browser could not be opened. Use Open GitHub, or visit github.com/login/device.'
+                        )
+                    }
+                } catch (error) {
+                    if (githubAttempt.current === attempt) {
+                        setGithubFeedback(githubSignInFailure(error))
+                    }
+                }
+            })
+        )
     const repositoryFields = (repository: Repository) => (
         <div className="settings-fields settings-repository-fields">
             <div className="settings-actions settings-repository-actions">
@@ -221,7 +263,9 @@ export function Settings({
                     label="Track this repository"
                     checked={!repository.removed}
                     disabled={!!busy}
-                    onCheckedChange={(checked) => editRepository(repository, { removed: !checked })}
+                    onCheckedChange={(checked) => {
+                        editRepository(repository, { removed: !checked })
+                    }}
                 />
                 <Button
                     className="settings-locate-button"
@@ -230,10 +274,12 @@ export function Settings({
                     disabled={!!busy}
                     loading={busy === `locate:${repository.id}`}
                     onClick={() =>
-                        action(`locate:${repository.id}`, async () => {
-                            const result = await invoke({ type: 'relocate', id: repository.id })
-                            mergeRepositories(result.state.repositories)
-                        })
+                        Promise.resolve(
+                            action(`locate:${repository.id}`, async () => {
+                                const result = await invoke({ id: repository.id, type: 'relocate' })
+                                mergeRepositories(result.state.repositories)
+                            })
+                        )
                     }
                 >
                     <Folder size={16} aria-hidden="true" /> Locate folder
@@ -261,8 +307,10 @@ export function Settings({
                         ])
                     ]
                         .filter(Boolean)
-                        .map((value) => ({ value, label: value }))}
-                    onValueChange={(base) => editRepository(repository, { base })}
+                        .map((value) => ({ label: value, value }))}
+                    onValueChange={(base) => {
+                        editRepository(repository, { base })
+                    }}
                 />
             </div>
             <Button
@@ -272,14 +320,16 @@ export function Settings({
                 size="sm"
                 disabled={!!busy || repository.removed}
                 onClick={() =>
-                    action('backfill', async () => {
-                        const result = await invoke({
-                            type: 'backfill',
-                            repositoryId: repository.id,
-                            since: dateKey(dateValue(repository.trackingStart))
+                    Promise.resolve(
+                        action('backfill', async () => {
+                            const result = await invoke({
+                                repositoryId: repository.id,
+                                since: dateKey(dateValue(repository.trackingStart)),
+                                type: 'backfill'
+                            })
+                            setStatus(result.message ?? 'Older activity is being acquired. You can close Settings.')
                         })
-                        setStatus(result.message ?? 'Older activity is being acquired. You can close Settings.')
-                    })
+                    )
                 }
             >
                 <span className="settings-backfill-label">
@@ -291,18 +341,22 @@ export function Settings({
                 label="GitHub remote"
                 value={repository.remote || '__local__'}
                 options={[
-                    { value: '__local__', label: 'Local only' },
+                    { label: 'Local only', value: '__local__' },
                     ...[...new Set([...(remotes[repository.id] ?? []), repository.remote])]
                         .filter(Boolean)
-                        .map((value) => ({ value, label: value }))
+                        .map((value) => ({ label: value, value }))
                 ]}
-                onValueChange={(remote) => editRepository(repository, { remote: remote === '__local__' ? '' : remote })}
+                onValueChange={(remote) => {
+                    editRepository(repository, { remote: remote === '__local__' ? '' : remote })
+                }}
             />
             <TagInput
                 label="Author emails"
                 placeholder="Add an author email"
                 value={repository.emails.filter(Boolean)}
-                onValueChange={(emails) => editRepository(repository, { emails })}
+                onValueChange={(emails) => {
+                    editRepository(repository, { emails })
+                }}
                 description="Press Enter or comma to add each author email."
             />
         </div>
@@ -311,7 +365,9 @@ export function Settings({
         <Dialog
             open
             onOpenChange={(open) => {
-                if (!open) requestClose()
+                if (!open) {
+                    requestClose()
+                }
             }}
         >
             <DialogContent
@@ -324,7 +380,9 @@ export function Settings({
                 }}
                 onCloseAutoFocus={(event) => {
                     event.preventDefault()
-                    if (previousFocus.current instanceof HTMLElement) previousFocus.current.focus()
+                    if (previousFocus.current instanceof HTMLElement) {
+                        previousFocus.current.focus()
+                    }
                 }}
             >
                 <Tabs value={section} onValueChange={setSection} orientation="vertical" className="settings-tabs">
@@ -354,16 +412,18 @@ export function Settings({
                                     disabled={!!busy || !!activeImport}
                                     aria-busy={busy === 'repositories' || !!activeImport || undefined}
                                     onClick={() =>
-                                        action('repositories', async () => {
-                                            setImportProgress({ stage: 'selecting' })
-                                            try {
-                                                const result = await invoke({ type: 'addRepositories' })
-                                                mergeRepositories(result.state.repositories)
-                                                setStatus('')
-                                            } finally {
-                                                setImportProgress(undefined)
-                                            }
-                                        })
+                                        Promise.resolve(
+                                            action('repositories', async () => {
+                                                setImportProgress({ stage: 'selecting' })
+                                                try {
+                                                    const result = await invoke({ type: 'addRepositories' })
+                                                    mergeRepositories(result.state.repositories)
+                                                    setStatus('')
+                                                } finally {
+                                                    setImportProgress(undefined)
+                                                }
+                                            })
+                                        )
                                     }
                                 >
                                     <ImportProgressLabel progress={importProgress} activeImport={activeImport} />
@@ -446,7 +506,7 @@ export function Settings({
                                                     setBusy('disconnect-github')
                                                     setError('')
                                                     try {
-                                                        await invoke({ type: 'disconnect', service: 'github' })
+                                                        await invoke({ service: 'github', type: 'disconnect' })
                                                         setSettings((current) => ({ ...current, githubLogin: '' }))
                                                         setStatus('GitHub disconnected.')
                                                     } finally {
@@ -469,9 +529,9 @@ export function Settings({
                                             disabled={
                                                 !!device || busy === 'github' || githubFeedback?.kind === 'success'
                                             }
-                                            onChange={(event) =>
+                                            onChange={(event) => {
                                                 setSettings({ ...settings, githubClientId: event.target.value })
-                                            }
+                                            }}
                                         />
                                         <div className="settings-actions settings-github-setup">
                                             <p className="settings-hint">
@@ -482,12 +542,14 @@ export function Settings({
                                                 size="sm"
                                                 disabled={!!busy || !!device || githubFeedback?.kind === 'success'}
                                                 onClick={() =>
-                                                    action('oauth', async () => {
-                                                        await invoke({
-                                                            type: 'open',
-                                                            url: 'https://github.com/settings/applications/new'
+                                                    Promise.resolve(
+                                                        action('oauth', async () => {
+                                                            await invoke({
+                                                                type: 'open',
+                                                                url: 'https://github.com/settings/applications/new'
+                                                            })
                                                         })
-                                                    })
+                                                    )
                                                 }
                                             >
                                                 Set up OAuth app
@@ -502,22 +564,29 @@ export function Settings({
                                             disabled={!!busy && busy !== 'github' && busy !== 'browser'}
                                             onStart={startSignIn}
                                             onOpen={() =>
-                                                action('browser', async () => {
-                                                    if (!device) return
-                                                    const attempt = githubAttempt.current
-                                                    try {
-                                                        await invoke({ type: 'open', url: device.url })
-                                                        if (githubAttempt.current === attempt) setGithubNotice('')
-                                                    } catch {
-                                                        if (githubAttempt.current === attempt)
-                                                            setGithubNotice(
-                                                                'Your browser could not be opened. Visit github.com/login/device and enter this code.'
-                                                            )
-                                                    }
-                                                })
+                                                Promise.resolve(
+                                                    action('browser', async () => {
+                                                        if (!device) {
+                                                            return
+                                                        }
+                                                        const attempt = githubAttempt.current
+                                                        try {
+                                                            await invoke({ type: 'open', url: device.url })
+                                                            if (githubAttempt.current === attempt) {
+                                                                setGithubNotice('')
+                                                            }
+                                                        } catch {
+                                                            if (githubAttempt.current === attempt) {
+                                                                setGithubNotice(
+                                                                    'Your browser could not be opened. Visit github.com/login/device and enter this code.'
+                                                                )
+                                                            }
+                                                        }
+                                                    })
+                                                )
                                             }
                                             onCancel={() => {
-                                                githubAttempt.current++
+                                                githubAttempt.current += 1
                                                 setDevice(undefined)
                                                 setGithubFeedback(undefined)
                                                 setGithubNotice('')
@@ -534,14 +603,32 @@ export function Settings({
                                         {connections.notion ? 'Connected' : 'Not connected'}
                                     </span>
                                 </div>
-                                {!connections.notion ? (
+                                {connections.notion ? (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={!!busy}
+                                        onClick={() =>
+                                            Promise.resolve(
+                                                action('disconnect-notion', async () => {
+                                                    await invoke({ service: 'notion', type: 'disconnect' })
+                                                    setStatus('Notion disconnected.')
+                                                })
+                                            )
+                                        }
+                                    >
+                                        Disconnect Notion
+                                    </Button>
+                                ) : (
                                     <>
                                         <Input
                                             label="Integration token"
                                             type="password"
                                             autoComplete="off"
                                             value={token}
-                                            onChange={(event) => setToken(event.target.value)}
+                                            onChange={(event) => {
+                                                setToken(event.target.value)
+                                            }}
                                         />
                                         <div className="settings-actions">
                                             <Button
@@ -550,31 +637,19 @@ export function Settings({
                                                 disabled={!token.trim() || !!busy}
                                                 loading={busy === 'notion'}
                                                 onClick={() =>
-                                                    action('notion', async () => {
-                                                        await invoke({ type: 'notionConnect', token: token.trim() })
-                                                        setToken('')
-                                                        setStatus('Notion connected.')
-                                                    })
+                                                    Promise.resolve(
+                                                        action('notion', async () => {
+                                                            await invoke({ token: token.trim(), type: 'notionConnect' })
+                                                            setToken('')
+                                                            setStatus('Notion connected.')
+                                                        })
+                                                    )
                                                 }
                                             >
                                                 Connect Notion
                                             </Button>
                                         </div>
                                     </>
-                                ) : (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        disabled={!!busy}
-                                        onClick={() =>
-                                            action('disconnect-notion', async () => {
-                                                await invoke({ type: 'disconnect', service: 'notion' })
-                                                setStatus('Notion disconnected.')
-                                            })
-                                        }
-                                    >
-                                        Disconnect Notion
-                                    </Button>
                                 )}
                                 {(connections.github || connections.notion) && !connections.protectedStorage && (
                                     <p className="settings-hint">Credentials are kept for this session only.</p>
@@ -584,15 +659,19 @@ export function Settings({
                                         label="Destination"
                                         value={settings.destination?.kind ?? 'page'}
                                         options={[
-                                            { value: 'page', label: 'Parent page' },
-                                            { value: 'database', label: 'Database data source' }
+                                            { label: 'Parent page', value: 'page' },
+                                            { label: 'Database data source', value: 'database' }
                                         ]}
-                                        onValueChange={(kind) => destination({ kind: kind as Destination['kind'] })}
+                                        onValueChange={(kind) => {
+                                            destination({ kind: kind as Destination['kind'] })
+                                        }}
                                     />
                                     <Input
                                         label={settings.destination?.kind === 'database' ? 'Data source ID' : 'Page ID'}
                                         value={settings.destination?.id ?? ''}
-                                        onChange={(event) => destination({ id: event.target.value.trim() })}
+                                        onChange={(event) => {
+                                            destination({ id: event.target.value.trim() })
+                                        }}
                                     />
                                 </div>
                                 {settings.destination?.kind === 'database' && (
@@ -600,12 +679,16 @@ export function Settings({
                                         <Input
                                             label="Title property"
                                             value={settings.destination.titleProperty}
-                                            onChange={(event) => destination({ titleProperty: event.target.value })}
+                                            onChange={(event) => {
+                                                destination({ titleProperty: event.target.value })
+                                            }}
                                         />
                                         <Input
                                             label="Date property (optional)"
                                             value={settings.destination.dateProperty}
-                                            onChange={(event) => destination({ dateProperty: event.target.value })}
+                                            onChange={(event) => {
+                                                destination({ dateProperty: event.target.value })
+                                            }}
                                         />
                                     </div>
                                 )}
@@ -619,7 +702,9 @@ export function Settings({
                                     label="Timezone"
                                     options={zones}
                                     value={settings.timezone}
-                                    onValueChange={(timezone) => setSettings({ ...settings, timezone })}
+                                    onValueChange={(timezone) => {
+                                        setSettings({ ...settings, timezone })
+                                    }}
                                     placeholder="Search timezones"
                                 />
                                 <div className="settings-field-grid">
@@ -634,17 +719,19 @@ export function Settings({
                                             'Thursday',
                                             'Friday',
                                             'Saturday'
-                                        ].map((label, index) => ({ value: String(index), label }))}
-                                        onValueChange={(value) =>
+                                        ].map((label, index) => ({ label, value: String(index) }))}
+                                        onValueChange={(value) => {
                                             setSettings({ ...settings, weekStart: Number(value) })
-                                        }
+                                        }}
                                     />
                                     <NumberField
                                         label="Refresh interval"
                                         min={0}
                                         max={1440}
                                         value={settings.refreshMinutes}
-                                        onValueChange={(refreshMinutes) => setSettings({ ...settings, refreshMinutes })}
+                                        onValueChange={(refreshMinutes) => {
+                                            setSettings({ ...settings, refreshMinutes })
+                                        }}
                                         suffix={(minutes) => (minutes === 1 ? ' minute' : ' minutes')}
                                         description="Set to 0 to turn off background refresh."
                                     />
@@ -691,9 +778,9 @@ export function Settings({
                                         {needsLegacyEditor(settings.template) ? (
                                             <Editor
                                                 value={settings.template}
-                                                onChange={(template) =>
+                                                onChange={(template) => {
                                                     setSettings((current) => ({ ...current, template }))
-                                                }
+                                                }}
                                             />
                                         ) : (
                                             <RichTextEditor
@@ -703,12 +790,12 @@ export function Settings({
                                                 defaultValue={journalHTML(settings.template)}
                                                 placeholder="Give each week a starting point…"
                                                 blockHint="Type / for formatting"
-                                                onChange={({ html }) =>
+                                                onChange={({ html }) => {
                                                     setSettings((current) => ({
                                                         ...current,
                                                         template: journalFromHTML(html)
                                                     }))
-                                                }
+                                                }}
                                             />
                                         )}
                                     </div>
@@ -728,9 +815,11 @@ export function Settings({
                                         disabled={!!busy}
                                         loading={busy === 'export'}
                                         onClick={() =>
-                                            action('export', async () => {
-                                                await invoke({ type: 'export' })
-                                            })
+                                            Promise.resolve(
+                                                action('export', async () => {
+                                                    await invoke({ type: 'export' })
+                                                })
+                                            )
                                         }
                                     >
                                         Export backup
@@ -741,14 +830,16 @@ export function Settings({
                                         disabled={!!busy}
                                         loading={busy === 'import'}
                                         onClick={() =>
-                                            action('import', async () => {
-                                                const result = await invoke({ type: 'import' })
-                                                if (result.message === 'Backup imported.') {
-                                                    setSettings(result.state.settings)
-                                                    setRepositories(result.state.repositories)
-                                                    setStatus(result.message)
-                                                }
-                                            })
+                                            Promise.resolve(
+                                                action('import', async () => {
+                                                    const result = await invoke({ type: 'import' })
+                                                    if (result.message === 'Backup imported.') {
+                                                        setSettings(result.state.settings)
+                                                        setRepositories(result.state.repositories)
+                                                        setStatus(result.message)
+                                                    }
+                                                })
+                                            )
                                         }
                                     >
                                         Import backup
@@ -785,7 +876,13 @@ export function Settings({
                     }}
                 >
                     <div className="settings-discard-actions">
-                        <Button ref={keepEditing} variant="secondary" onClick={() => setConfirmClose(false)}>
+                        <Button
+                            ref={keepEditing}
+                            variant="secondary"
+                            onClick={() => {
+                                setConfirmClose(false)
+                            }}
+                        >
                             Keep editing
                         </Button>
                         <Button variant="danger" onClick={close}>

@@ -1,8 +1,11 @@
 'use client'
 
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
+import type { KeyboardEvent, ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+
 import { motionTokens } from '../lib/motion-tokens'
+
 import styles from './segmented-control.module.css'
 
 export interface Segment {
@@ -23,7 +26,7 @@ export interface SegmentedControlProps {
     fullWidth?: boolean
 }
 
-export default function SegmentedControl({
+const SegmentedControl = ({
     options,
     value,
     onValueChange,
@@ -32,7 +35,7 @@ export default function SegmentedControl({
     className,
     size = 'md',
     fullWidth = false
-}: SegmentedControlProps) {
+}: SegmentedControlProps) => {
     const id = useId()
     const reduced = useReducedMotion()
     const track = useRef<HTMLDivElement>(null)
@@ -41,28 +44,34 @@ export default function SegmentedControl({
     // Keep one indicator in track coordinates. Shared layout IDs also animate ancestor scroll clamps as movement.
     useLayoutEffect(() => {
         const node = track.current
-        if (!node) return
+        if (!node) {
+            return
+        }
         const measure = () => {
             const button = node.querySelector<HTMLElement>('[aria-pressed="true"]')
             if (!button) {
                 setSelection(undefined)
                 return
             }
-            const x = button.offsetLeft,
-                width = button.offsetWidth
-            setSelection((current) => (current?.x === x && current.width === width ? current : { x, width }))
+            const x = button.offsetLeft
+            const width = button.offsetWidth
+            setSelection((current) => (current?.x === x && current.width === width ? current : { width, x }))
         }
         measure()
         const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
         observer?.observe(node)
-        node.querySelectorAll('button').forEach((button) => observer?.observe(button))
+        for (const button of node.querySelectorAll('button')) {
+            observer?.observe(button)
+        }
         return () => observer?.disconnect()
     }, [value, options])
 
     // When the options are wider than the container, the track scrolls inside itself. Edges fade only on the side with more to see.
     useLayoutEffect(() => {
         const node = track.current
-        if (!node) return
+        if (!node) {
+            return
+        }
         const edges = () => {
             const rest = node.scrollWidth - node.clientWidth - node.scrollLeft
             node.toggleAttribute('data-fade-start', node.scrollLeft > 1)
@@ -87,12 +96,21 @@ export default function SegmentedControl({
             first.current = false
             return
         }
-        const room = 20,
-            start = button.offsetLeft - room,
-            end = button.offsetLeft + button.offsetWidth + room - node.clientWidth
-        const left = node.scrollLeft > start ? start : node.scrollLeft < end ? end : node.scrollLeft
-        if (left !== node.scrollLeft)
-            node.scrollTo({ left: Math.max(0, left), behavior: first.current || reduced ? 'auto' : 'smooth' })
+        const room = 20
+        const start = button.offsetLeft - room
+        const end = button.offsetLeft + button.offsetWidth + room - node.clientWidth
+        const left = (() => {
+            if (node.scrollLeft > start) {
+                return start
+            }
+            if (node.scrollLeft < end) {
+                return end
+            }
+            return node.scrollLeft
+        })()
+        if (left !== node.scrollLeft) {
+            node.scrollTo({ behavior: first.current || reduced ? 'auto' : 'smooth', left: Math.max(0, left) })
+        }
         first.current = false
     }, [value, reduced])
 
@@ -103,21 +121,32 @@ export default function SegmentedControl({
     )
     const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
         const last = options.length - 1
-        const target =
-            event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                ? selectedIndex === last
-                    ? 0
-                    : selectedIndex + 1
-                : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-                  ? selectedIndex === 0
-                      ? last
-                      : selectedIndex - 1
-                  : event.key === 'Home'
-                    ? 0
-                    : event.key === 'End'
-                      ? last
-                      : -1
-        if (target < 0 || !options[target]) return
+        const target = (() => {
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                if (selectedIndex === last) {
+                    return 0
+                }
+                return selectedIndex + 1
+            }
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+                if (selectedIndex === 0) {
+                    return last
+                }
+                return selectedIndex - 1
+            }
+            if (event.key === 'Home') {
+                return 0
+            }
+
+            if (event.key === 'End') {
+                return last
+            }
+
+            return -1
+        })()
+        if (target < 0 || !options[target]) {
+            return
+        }
         event.preventDefault()
         onValueChange(options[target].value)
         track.current
@@ -152,10 +181,24 @@ export default function SegmentedControl({
                         data-value={option.value}
                         aria-pressed={value === option.value}
                         tabIndex={index === selectedIndex ? 0 : -1}
-                        onClick={() => onValueChange(option.value)}
+                        onClick={() => {
+                            onValueChange(option.value)
+                        }}
                         onKeyDown={onKeyDown}
-                        onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
-                        onFocus={onOptionIntent ? () => onOptionIntent(option.value) : undefined}
+                        onPointerEnter={
+                            onOptionIntent
+                                ? () => {
+                                      onOptionIntent(option.value)
+                                  }
+                                : undefined
+                        }
+                        onFocus={
+                            onOptionIntent
+                                ? () => {
+                                      onOptionIntent(option.value)
+                                  }
+                                : undefined
+                        }
                     >
                         <span className={styles.label}>
                             {option.label}
@@ -167,3 +210,4 @@ export default function SegmentedControl({
         </div>
     )
 }
+export default SegmentedControl

@@ -1,15 +1,19 @@
 'use client'
 
-import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, ReactNode, RefObject } from 'react'
-import { flushSync } from 'react-dom'
-import { AnimatePresence, animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion } from 'motion/react'
-import type { MotionValue } from 'motion/react'
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react/dist/csr/MagnifyingGlass'
 import { XIcon as X } from '@phosphor-icons/react/dist/csr/X'
-import { ScrollArea } from '../scroll-area/scroll-area'
+import type { MotionValue } from 'motion/react'
+import { AnimatePresence, animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion } from 'motion/react'
+import type { KeyboardEvent, ReactNode, RefObject } from 'react'
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
+
 import { motionTokens } from '../lib/motion-tokens'
+import { ScrollArea } from '../scroll-area/scroll-area'
+
 import styles from './expanding-search.module.css'
+
+const defaultSuggestions: never[] = []
 
 export interface ExpandingSearchItem {
     id: string
@@ -59,41 +63,63 @@ const standard = [...motionTokens.ease.standard] as [number, number, number, num
 const FALLBACK_SIZE = 44
 
 /** Title starts beat word starts, which beat matches inside a word, which beat keyword and meta matches. Ties keep the original order. */
-function rank(items: ExpandingSearchItem[], query: string, limit: number) {
+const rank = (items: ExpandingSearchItem[], query: string, limit: number) => {
     const q = query.toLocaleLowerCase()
     const scored: { item: ExpandingSearchItem; score: number; order: number }[] = []
-    items.forEach((item, order) => {
+    for (const [order, item] of items.entries()) {
         const title = item.title.toLocaleLowerCase()
         const at = title.indexOf(q)
         const extra = [item.meta ?? '', ...(item.keywords ?? [])].some((word) => word.toLocaleLowerCase().includes(q))
-        const score = at === 0 ? 0 : at > 0 && /[\s\-/]/.test(title[at - 1]) ? 1 : at > 0 ? 2 : extra ? 3 : -1
-        if (score >= 0) scored.push({ item, score, order })
-    })
+        const score = (() => {
+            if (at === 0) {
+                return 0
+            }
+            if (at > 0 && /[\s\-/]/u.test(title[at - 1])) {
+                return 1
+            }
+            if (at > 0) {
+                return 2
+            }
+
+            if (extra) {
+                return 3
+            }
+
+            return -1
+        })()
+        if (score >= 0) {
+            scored.push({ item, order, score })
+        }
+    }
     return scored
-        .sort((a, b) => a.score - b.score || a.order - b.order)
+        .toSorted((a, b) => a.score - b.score || a.order - b.order)
         .slice(0, limit)
         .map((entry) => entry.item)
 }
 
-function groupBy(list: ExpandingSearchItem[], source: ExpandingSearchItem[]): Group[] {
+const groupBy = (list: ExpandingSearchItem[], source: ExpandingSearchItem[]): Group[] => {
     const order = new Map<string, number>()
-    source.forEach((item, index) => {
+    for (const [index, item] of source.entries()) {
         const name = item.group ?? ''
-        if (!order.has(name)) order.set(name, index)
-    })
+        if (!order.has(name)) {
+            order.set(name, index)
+        }
+    }
     const groups = new Map<string, ExpandingSearchItem[]>()
-    list.forEach((item) => {
+    for (const item of list) {
         const name = item.group ?? ''
         groups.set(name, [...(groups.get(name) ?? []), item])
-    })
+    }
     return [...groups]
-        .sort((a, b) => (order.get(a[0]) ?? 0) - (order.get(b[0]) ?? 0))
-        .map(([name, items]) => ({ name, items }))
+        .toSorted((a, b) => (order.get(a[0]) ?? 0) - (order.get(b[0]) ?? 0))
+        .map(([name, items]) => ({ items, name }))
 }
 
-function Match({ text, query }: { text: string; query: string }) {
+const Match = ({ text, query }: { text: string; query: string }) => {
     const at = query ? text.toLocaleLowerCase().indexOf(query.toLocaleLowerCase()) : -1
-    if (at < 0) return text
+    if (at < 0) {
+        return text
+    }
     return (
         <>
             {text.slice(0, at)}
@@ -104,28 +130,35 @@ function Match({ text, query }: { text: string; query: string }) {
 }
 
 /** The panel shares the field's width value, so on first open it unfolds out of the field; afterwards only its height follows the content. */
-function Panel({ width, reduced, children }: { width: MotionValue<number>; reduced: boolean; children: ReactNode }) {
+const Panel = ({ width, reduced, children }: { width: MotionValue<number>; reduced: boolean; children: ReactNode }) => {
     const panelRef = useRef<HTMLDivElement>(null)
     const bodyRef = useRef<HTMLDivElement>(null)
     const height = useMotionValue(0)
     useLayoutEffect(() => {
-        const panel = panelRef.current,
-            body = bodyRef.current
-        if (!panel || !body || typeof ResizeObserver === 'undefined') return
+        const panel = panelRef.current
+        const body = bodyRef.current
+        if (!panel || !body || typeof ResizeObserver === 'undefined') {
+            return
+        }
         const observer = new ResizeObserver(() => {
             const next = body.offsetHeight + panel.offsetHeight - panel.clientHeight
-            if (reduced) height.jump(next)
-            else animate(height, next, motionTokens.spring.smooth)
+            if (reduced) {
+                height.jump(next)
+            } else {
+                animate(height, next, motionTokens.spring.smooth)
+            }
         })
         observer.observe(body)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [height, reduced])
     // Reduced motion skips the unfold: the panel is its content's height from the first frame and only fades.
     return (
         <motion.div
             ref={panelRef}
             className={styles.panel}
-            style={{ width, height: reduced ? 'auto' : height }}
+            style={{ height: reduced ? 'auto' : height, width }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { duration: reduced ? 0.15 : motionTokens.duration.fast, ease: enter } }}
             exit={{
@@ -148,7 +181,7 @@ function Panel({ width, reduced, children }: { width: MotionValue<number>; reduc
 }
 
 /** Offsets ignore transforms, so they describe where rows sit in the list, not where a gliding row happens to be mid-flight. */
-function offsetWithin(node: HTMLElement, container: HTMLElement) {
+const offsetWithin = (node: HTMLElement, container: HTMLElement) => {
     let top = 0
     let current: HTMLElement | null = node
     while (current && current !== container) {
@@ -171,7 +204,7 @@ interface ListboxProps {
     onChoose: (item: ExpandingSearchItem) => void
 }
 
-function Listbox({
+const Listbox = ({
     id,
     label,
     groups,
@@ -182,7 +215,7 @@ function Listbox({
     keyboard,
     onHover,
     onChoose
-}: ListboxProps) {
+}: ListboxProps) => {
     const listRef = useRef<HTMLDivElement>(null)
     const flat = groups.flatMap((group) => group.items)
     const layoutKey = flat.map((item) => item.id).join('|')
@@ -195,7 +228,7 @@ function Listbox({
 
     useLayoutEffect(() => {
         const list = listRef.current
-        const row = activeId ? document.getElementById(activeId) : null
+        const row = activeId ? document.querySelector<HTMLElement>(`#${activeId}`) : null
         if (!list || !row) {
             last.current = null
             return
@@ -204,7 +237,9 @@ function Listbox({
         const previous = last.current
         last.current = { id: activeId, set: layoutKey, top }
         // Same row: its highlight is already in place, and any travel still in flight stays relative to it.
-        if (previous?.id === activeId) return
+        if (previous?.id === activeId) {
+            return
+        }
         if (previous && previous.set === layoutKey && !reduced) {
             const velocity = travel.getVelocity()
             travel.jump(previous.top + travel.get() - top)
@@ -212,20 +247,23 @@ function Listbox({
         } else {
             // Nothing was highlighted, or new results arrived: it fades in on its row, without travel.
             travel.jump(0)
-            if (reduced) fade.jump(1)
-            else {
+            if (reduced) {
+                fade.jump(1)
+            } else {
                 fade.jump(0)
                 animate(fade, 1, { duration: motionTokens.duration.instant, ease: enter })
             }
         }
-        if (keyboard.current) row.scrollIntoView({ block: 'nearest' })
+        if (keyboard.current) {
+            row.scrollIntoView({ block: 'nearest' })
+        }
     }, [activeId, layoutKey, reduced, travel, fade, keyboard])
 
     return (
         <div ref={listRef} id={id} role="listbox" aria-label={label} className={styles.listbox}>
             <AnimatePresence mode="popLayout" initial={false}>
                 {groups.map((group) => {
-                    const headingId = `${id}-${group.name || 'results'}`.replace(/\s+/g, '-')
+                    const headingId = `${id}-${group.name || 'results'}`.replaceAll(/\s+/gu, '-')
                     return (
                         <motion.div
                             key={group.name}
@@ -238,8 +276,8 @@ function Listbox({
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0, transition: { duration: 0.08 } }}
                             transition={{
-                                opacity: { duration: motionTokens.duration.fast, ease: enter },
-                                layout: motionTokens.spring.smooth
+                                layout: motionTokens.spring.smooth,
+                                opacity: { duration: motionTokens.duration.fast, ease: enter }
                             }}
                         >
                             {group.name && (
@@ -265,8 +303,8 @@ function Listbox({
                                             animate={{ opacity: 1 }}
                                             exit={{ opacity: 0, transition: { duration: 0.08 } }}
                                             transition={{
-                                                opacity: { duration: motionTokens.duration.fast, ease: enter },
-                                                layout: motionTokens.spring.smooth
+                                                layout: motionTokens.spring.smooth,
+                                                opacity: { duration: motionTokens.duration.fast, ease: enter }
                                             }}
                                             onPointerMove={() => {
                                                 if (!active) {
@@ -274,13 +312,17 @@ function Listbox({
                                                     onHover(position)
                                                 }
                                             }}
-                                            onMouseDown={(event) => event.preventDefault()}
-                                            onClick={() => onChoose(item)}
+                                            onMouseDown={(event) => {
+                                                event.preventDefault()
+                                            }}
+                                            onClick={() => {
+                                                onChoose(item)
+                                            }}
                                         >
                                             {active && (
                                                 <motion.span
                                                     className={styles.highlight}
-                                                    style={{ y: travel, opacity: fade }}
+                                                    style={{ opacity: fade, y: travel }}
                                                     aria-hidden="true"
                                                 />
                                             )}
@@ -307,10 +349,10 @@ function Listbox({
     )
 }
 
-export function ExpandingSearch({
+export const ExpandingSearch = ({
     label,
     items,
-    suggestions = [],
+    suggestions = defaultSuggestions,
     suggestionsLabel = 'Recent',
     placeholder,
     onSelect,
@@ -320,7 +362,7 @@ export function ExpandingSearch({
     anchor = 'end',
     emptyHint = 'Try a shorter word or check the spelling.',
     className
-}: ExpandingSearchProps) {
+}: ExpandingSearchProps) => {
     const id = useId()
     const reduced = useReducedMotion() ?? false
     const rootRef = useRef<HTMLDivElement>(null)
@@ -352,9 +394,11 @@ export function ExpandingSearch({
 
     // The field grows to its own limit or its container, whichever is smaller. Container resizes are followed at once; they are not the person's action.
     useLayoutEffect(() => {
-        const root = rootRef.current,
-            shell = shellRef.current
-        if (!root || !shell) return
+        const root = rootRef.current
+        const shell = shellRef.current
+        if (!root || !shell) {
+            return
+        }
         const measure = () => {
             const collapsed = shell.offsetHeight || FALLBACK_SIZE
             const full = Math.max(
@@ -364,26 +408,38 @@ export function ExpandingSearch({
             size.current = { collapsed, expanded: full }
             root.style.setProperty('--es-width', `${full}px`)
             const goal = open.current ? full : collapsed
-            if (width.isAnimating()) animate(width, goal, motionTokens.spring.morph)
-            else width.jump(goal)
+            if (width.isAnimating()) {
+                animate(width, goal, motionTokens.spring.morph)
+            } else {
+                width.jump(goal)
+            }
             syncShape(width.get())
         }
         measure()
-        if (typeof ResizeObserver === 'undefined') return
+        if (typeof ResizeObserver === 'undefined') {
+            return
+        }
         const observer = new ResizeObserver(measure)
         observer.observe(root)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [expandedWidth, width, syncShape])
 
     // Opening grows on the morph spring with a hint of overshoot; folding back settles without one, so the circle never dips below its own size.
     const morphTo = (goal: number) => {
-        if (reduced) width.jump(goal)
-        else animate(width, goal, goal >= width.get() ? motionTokens.spring.morph : motionTokens.spring.smooth)
+        if (reduced) {
+            width.jump(goal)
+        } else {
+            animate(width, goal, goal >= width.get() ? motionTokens.spring.morph : motionTokens.spring.smooth)
+        }
     }
 
     // Focus moves inside the same click, so touch keyboards open; the field is inert until this flush makes it focusable.
-    function expand() {
-        if (open.current) return
+    const expand = () => {
+        if (open.current) {
+            return
+        }
         open.current = true
         flushSync(() => {
             setExpanded(true)
@@ -394,8 +450,10 @@ export function ExpandingSearch({
         onExpandedChange?.(true)
     }
 
-    function collapse(returnFocus: boolean) {
-        if (!open.current) return
+    const collapse = (returnFocus: boolean) => {
+        if (!open.current) {
+            return
+        }
         open.current = false
         flushSync(() => {
             setExpanded(false)
@@ -403,27 +461,38 @@ export function ExpandingSearch({
             setQuery('')
             setActive(-1)
         })
-        if (returnFocus) buttonRef.current?.focus({ preventScroll: true })
+        if (returnFocus) {
+            buttonRef.current?.focus({ preventScroll: true })
+        }
         morphTo(size.current.collapsed)
         onExpandedChange?.(false)
     }
 
     const trimmed = query.trim()
     const results = useMemo(() => (trimmed ? rank(items, trimmed, maxResults) : []), [items, trimmed, maxResults])
-    const mode: Mode | null = !trimmed
-        ? suggestions.length
-            ? 'suggestions'
-            : null
-        : results.length
-          ? 'results'
-          : 'empty'
+    const mode: Mode | null = (() => {
+        if (trimmed) {
+            if (results.length) {
+                return 'results'
+            }
+            return 'empty'
+        }
+        if (suggestions.length) {
+            return 'suggestions'
+        }
+        return null
+    })()
     const groups = useMemo<Group[]>(
         () =>
-            mode === 'suggestions'
-                ? [{ name: suggestionsLabel, items: suggestions }]
-                : mode === 'results'
-                  ? groupBy(results, items)
-                  : [],
+            (() => {
+                if (mode === 'suggestions') {
+                    return [{ items: suggestions, name: suggestionsLabel }]
+                }
+                if (mode === 'results') {
+                    return groupBy(results, items)
+                }
+                return []
+            })(),
         [mode, suggestions, suggestionsLabel, results, items]
     )
     const flat = groups.flatMap((group) => group.items)
@@ -432,26 +501,33 @@ export function ExpandingSearch({
     const optionId = (item: ExpandingSearchItem) => `${id}-${mode}-${item.id}`
     const listboxId = `${id}-${mode}-listbox`
     const panelOpen = expanded && focused && mode !== null
-    const announcement = !panelOpen
-        ? ''
-        : mode === 'empty'
-          ? `No results for ${trimmed}`
-          : mode === 'results'
-            ? `${flat.length} ${flat.length === 1 ? 'result' : 'results'}`
-            : `${flat.length} ${suggestionsLabel.toLocaleLowerCase()} ${flat.length === 1 ? 'item' : 'items'}`
+    const announcement = (() => {
+        if (panelOpen) {
+            if (mode === 'empty') {
+                return `No results for ${trimmed}`
+            }
+            if (mode === 'results') {
+                return `${flat.length} ${flat.length === 1 ? 'result' : 'results'}`
+            }
+            return `${flat.length} ${suggestionsLabel.toLocaleLowerCase()} ${flat.length === 1 ? 'item' : 'items'}`
+        }
+        return ''
+    })()
 
-    function choose(item: ExpandingSearchItem) {
+    const choose = (item: ExpandingSearchItem) => {
         collapse(true)
         onSelect?.(item)
     }
 
-    function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Escape') {
             event.preventDefault()
             collapse(true)
             return
         }
-        if (!panelOpen || !flat.length) return
+        if (!panelOpen || !flat.length) {
+            return
+        }
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault()
             const step = event.key === 'ArrowDown' ? 1 : -1
@@ -467,7 +543,7 @@ export function ExpandingSearch({
 
     const clearHidden = reduced
         ? { opacity: 0 }
-        : { opacity: 0, scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }
+        : { filter: `blur(${motionTokens.blur.subtle}px)`, opacity: 0, scale: 0.6 }
 
     return (
         <div ref={rootRef} className={[styles.root, className].filter(Boolean).join(' ')} data-anchor={anchor}>
@@ -503,7 +579,7 @@ export function ExpandingSearch({
                     animate={{ opacity: expanded ? 1 : 0 }}
                     transition={
                         expanded
-                            ? { duration: reduced ? 0.15 : 0.2, ease: enter, delay: reduced ? 0 : 0.08 }
+                            ? { delay: reduced ? 0 : 0.08, duration: reduced ? 0.15 : 0.2, ease: enter }
                             : { duration: reduced ? 0.1 : 0.08, ease: standard }
                     }
                     onChange={(event) => {
@@ -512,12 +588,18 @@ export function ExpandingSearch({
                         setActive(next.trim() ? 0 : -1)
                         keyboard.current = false
                     }}
-                    onFocus={() => setFocused(true)}
+                    onFocus={() => {
+                        setFocused(true)
+                    }}
                     onBlur={() => {
                         // Switching windows keeps the search as it was; the field refocuses on return.
-                        if (typeof document !== 'undefined' && !document.hasFocus()) return
+                        if (typeof document !== 'undefined' && !document.hasFocus()) {
+                            return
+                        }
                         setFocused(false)
-                        if (open.current && !inputRef.current?.value.trim()) collapse(false)
+                        if (open.current && !inputRef.current?.value.trim()) {
+                            collapse(false)
+                        }
                     }}
                     onKeyDown={handleKeyDown}
                 />
@@ -529,14 +611,16 @@ export function ExpandingSearch({
                             tabIndex={-1}
                             className={styles.clear}
                             aria-label="Clear search"
-                            onMouseDown={(event) => event.preventDefault()}
+                            onMouseDown={(event) => {
+                                event.preventDefault()
+                            }}
                             onClick={() => {
                                 setQuery('')
                                 setActive(-1)
                                 inputRef.current?.focus({ preventScroll: true })
                             }}
                             initial={clearHidden}
-                            animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                            animate={{ filter: 'blur(0px)', opacity: 1, scale: 1 }}
                             exit={{
                                 ...clearHidden,
                                 transition: { duration: reduced ? 0.1 : motionTokens.duration.instant, ease: standard }
@@ -546,8 +630,8 @@ export function ExpandingSearch({
                                     ? { duration: 0.15 }
                                     : {
                                           ...motionTokens.spring.snappy,
-                                          opacity: { duration: motionTokens.duration.fast },
-                                          filter: { duration: motionTokens.duration.fast }
+                                          filter: { duration: motionTokens.duration.fast },
+                                          opacity: { duration: motionTokens.duration.fast }
                                       }
                             }
                         >
@@ -566,9 +650,9 @@ export function ExpandingSearch({
                                 initial={
                                     reduced
                                         ? { opacity: 0 }
-                                        : { opacity: 0, filter: `blur(${motionTokens.blur.subtle}px)` }
+                                        : { filter: `blur(${motionTokens.blur.subtle}px)`, opacity: 0 }
                                 }
-                                animate={{ opacity: 1, filter: 'blur(0px)' }}
+                                animate={{ filter: 'blur(0px)', opacity: 1 }}
                                 exit={{ opacity: 0, transition: { duration: 0.1, ease: standard } }}
                                 transition={{ duration: reduced ? 0.15 : motionTokens.duration.fast, ease: enter }}
                             >

@@ -1,13 +1,22 @@
 'use client'
 
-import { animate, AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
+import { animate, AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import type {
+    ForwardRefRenderFunction,
+    InputHTMLAttributes,
+    KeyboardEvent,
+    MouseEvent as ReactMouseEvent,
+    ReactNode
+} from 'react'
 import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import type { InputHTMLAttributes, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+
+import { required } from '../../../../shared/required'
 import { motionTokens } from '../lib/motion-tokens'
-import styles from './combobox.module.css'
-import { ScrollArea } from '../scroll-area/scroll-area'
 import { Popover, PopoverAnchor, PopoverContent } from '../popover/popover'
+import { ScrollArea } from '../scroll-area/scroll-area'
+
+import styles from './combobox.module.css'
 
 export interface ComboboxOption {
     value: string
@@ -32,15 +41,21 @@ export interface ComboboxProps extends Omit<
 }
 
 /** Follows the listbox height with a critically damped spring, so filtering never snaps the menu. */
-function AutoHeight({ children, reduceMotion }: { children: ReactNode; reduceMotion: boolean | null }) {
+const AutoHeight = ({ children, reduceMotion }: { children: ReactNode; reduceMotion: boolean | null }) => {
     const innerRef = useRef<HTMLDivElement>(null)
     const [height, setHeight] = useState<number | 'auto'>('auto')
     useEffect(() => {
         const inner = innerRef.current
-        if (!inner) return
-        const observer = new ResizeObserver(() => setHeight(inner.offsetHeight))
+        if (!inner) {
+            return
+        }
+        const observer = new ResizeObserver(() => {
+            setHeight(inner.offsetHeight)
+        })
         observer.observe(inner)
-        return () => observer.disconnect()
+        return () => {
+            observer.disconnect()
+        }
     }, [])
     return (
         <motion.div
@@ -54,7 +69,7 @@ function AutoHeight({ children, reduceMotion }: { children: ReactNode; reduceMot
     )
 }
 
-export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Combobox(
+const ComboboxRender: ForwardRefRenderFunction<HTMLInputElement, ComboboxProps> = (
     {
         label,
         options,
@@ -71,7 +86,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         ...inputProps
     },
     forwardedRef
-) {
+) => {
     const generatedId = useId()
     const controlId = id ?? generatedId
     const listboxId = `${controlId}-listbox`
@@ -88,20 +103,28 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     const selectedValue = controlledValue ?? uncontrolledValue
     const selectedOption = options.find((option) => option.value === selectedValue)
 
-    useImperativeHandle(forwardedRef, () => inputRef.current!)
+    useImperativeHandle(forwardedRef, () => required(inputRef.current))
 
     // A chosen label settles into the field: it rises in from below with a soft blur. Clearing fades the
     // placeholder in instead of snapping from the old label.
     const settledValue = useRef(selectedValue)
     useEffect(() => {
-        if (settledValue.current === selectedValue) return
+        if (settledValue.current === selectedValue) {
+            return
+        }
         settledValue.current = selectedValue
         const input = inputRef.current
-        if (!input || reduceMotion || (selectedValue && open)) return
+        if (!input || reduceMotion || (selectedValue && open)) {
+            return
+        }
         const controls = selectedValue
             ? animate(
                   input,
-                  { opacity: [0, 1], y: ['0.35em', '0em'], filter: [`blur(${motionTokens.blur.soft}px)`, 'blur(0px)'] },
+                  {
+                      filter: [`blur(${motionTokens.blur.soft}px)`, 'blur(0px)'],
+                      opacity: [0, 1],
+                      y: ['0.35em', '0em']
+                  },
                   { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
               )
             : animate(
@@ -109,12 +132,16 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                   { opacity: [0, 1] },
                   { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] }
               )
-        return () => controls.complete()
+        return () => {
+            controls.complete()
+        }
     }, [selectedValue, reduceMotion, open])
 
     const filteredOptions = useMemo(() => {
         const normalizedQuery = query.trim().toLocaleLowerCase()
-        if (!normalizedQuery) return options
+        if (!normalizedQuery) {
+            return options
+        }
         return options.filter((option) =>
             [option.label, ...(option.keywords ?? [])].some((term) =>
                 term.toLocaleLowerCase().includes(normalizedQuery)
@@ -123,26 +150,34 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     }, [options, query])
 
     const enabledIndices = filteredOptions.reduce<number[]>((indices, option, index) => {
-        if (!option.disabled) indices.push(index)
+        if (!option.disabled) {
+            indices.push(index)
+        }
         return indices
     }, [])
 
     useEffect(() => {
-        if (!open) return
+        if (!open) {
+            return
+        }
         const activeOption = activeIndex >= 0 ? filteredOptions[activeIndex] : undefined
         const option = activeOption ? optionRefs.current[activeOption.value] : null
         const listbox = optionsViewport.current
         if (option && listbox) {
             const top = option.getBoundingClientRect().top - listbox.getBoundingClientRect().top + listbox.scrollTop
             const bottom = top + option.offsetHeight
-            if (top < listbox.scrollTop) listbox.scrollTop = top
-            else if (bottom > listbox.scrollTop + listbox.clientHeight)
+            if (top < listbox.scrollTop) {
+                listbox.scrollTop = top
+            } else if (bottom > listbox.scrollTop + listbox.clientHeight) {
                 listbox.scrollTop = bottom - listbox.clientHeight
+            }
         }
     }, [activeIndex, filteredOptions, open])
 
     const choose = (option: ComboboxOption) => {
-        if (option.disabled) return
+        if (option.disabled) {
+            return
+        }
         setUncontrolledValue(option.value)
         onValueChange?.(option.value)
         setQuery('')
@@ -160,21 +195,27 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     }
 
     const openMenu = () => {
-        if (disabled) return
+        if (disabled) {
+            return
+        }
         setOpen(true)
         setQuery('')
         setActiveIndex(-1)
     }
 
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-        if (disabled) return
+        if (disabled) {
+            return
+        }
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault()
             if (!open) {
                 openMenu()
                 return
             }
-            if (!enabledIndices.length) return
+            if (!enabledIndices.length) {
+                return
+            }
             const currentPosition = enabledIndices.indexOf(activeIndex)
             const nextPosition =
                 event.key === 'ArrowDown'
@@ -186,7 +227,9 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         if (event.key === 'Enter' && open && activeIndex >= 0) {
             event.preventDefault()
             const option = filteredOptions[activeIndex]
-            if (option) choose(option)
+            if (option) {
+                choose(option)
+            }
             return
         }
         if (event.key === 'Escape' && open) {
@@ -194,7 +237,6 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             event.stopPropagation()
             setOpen(false)
             setQuery('')
-            return
         }
     }
 
@@ -206,7 +248,9 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             open={open}
             onOpenChange={(next) => {
                 setOpen(next)
-                if (!next) setQuery('')
+                if (!next) {
+                    setQuery('')
+                }
             }}
         >
             <div ref={rootRef} className={styles.field}>
@@ -258,17 +302,23 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                                     type="button"
                                     className={styles.clear}
                                     aria-label="Clear selection"
-                                    onMouseDown={(event) => event.preventDefault()}
+                                    onMouseDown={(event) => {
+                                        event.preventDefault()
+                                    }}
                                     onClick={clear}
                                     initial={
                                         reduceMotion
                                             ? { opacity: 0 }
-                                            : { opacity: 0, scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }
+                                            : {
+                                                  filter: `blur(${motionTokens.blur.subtle}px)`,
+                                                  opacity: 0,
+                                                  scale: 0.6
+                                              }
                                     }
                                     animate={{
+                                        filter: 'blur(0px)',
                                         opacity: 1,
                                         scale: 1,
-                                        filter: 'blur(0px)',
                                         transition: reduceMotion
                                             ? { duration: motionTokens.duration.instant }
                                             : {
@@ -280,7 +330,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                                         opacity: 0,
                                         ...(reduceMotion
                                             ? {}
-                                            : { scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }),
+                                            : { filter: `blur(${motionTokens.blur.subtle}px)`, scale: 0.6 }),
                                         transition: {
                                             duration: motionTokens.duration.instant,
                                             ease: [...motionTokens.ease.standard]
@@ -312,20 +362,26 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                             asChild
                             forceMount
                             role="presentation"
-                            onOpenAutoFocus={(event) => event.preventDefault()}
-                            onCloseAutoFocus={(event) => event.preventDefault()}
-                            onEscapeKeyDown={(event) => event.stopPropagation()}
+                            onOpenAutoFocus={(event) => {
+                                event.preventDefault()
+                            }}
+                            onCloseAutoFocus={(event) => {
+                                event.preventDefault()
+                            }}
+                            onEscapeKeyDown={(event) => {
+                                event.stopPropagation()
+                            }}
                             onInteractOutside={(event) => {
-                                if (event.target instanceof Node && rootRef.current?.contains(event.target))
+                                if (event.target instanceof Node && rootRef.current?.contains(event.target)) {
                                     event.preventDefault()
+                                }
                             }}
                         >
                             <motion.div
                                 className={styles.popover}
-                                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
+                                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -6 }}
                                 animate={{
                                     opacity: 1,
-                                    y: 0,
                                     scale: 1,
                                     transition: reduceMotion
                                         ? { duration: motionTokens.duration.instant }
@@ -335,11 +391,12 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                                                   duration: motionTokens.duration.fast,
                                                   ease: [...motionTokens.ease.enter]
                                               }
-                                          }
+                                          },
+                                    y: 0
                                 }}
                                 exit={{
                                     opacity: 0,
-                                    ...(reduceMotion ? {} : { y: -4, scale: 0.98 }),
+                                    ...(reduceMotion ? {} : { scale: 0.98, y: -4 }),
                                     transition: {
                                         duration: motionTokens.duration.instant,
                                         ease: [...motionTokens.ease.standard]
@@ -375,9 +432,13 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                                                         tabIndex={-1}
                                                         aria-selected={option.value === selectedValue}
                                                         aria-disabled={option.disabled || undefined}
-                                                        onMouseDown={(event) => event.preventDefault()}
+                                                        onMouseDown={(event) => {
+                                                            event.preventDefault()
+                                                        }}
                                                         onMouseEnter={() => !option.disabled && setActiveIndex(index)}
-                                                        onClick={() => choose(option)}
+                                                        onClick={() => {
+                                                            choose(option)
+                                                        }}
                                                         onKeyDown={(event) => {
                                                             if (event.key === 'Enter' || event.key === ' ') {
                                                                 event.preventDefault()
@@ -404,12 +465,12 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                                                         reduceMotion
                                                             ? false
                                                             : {
+                                                                  filter: `blur(${motionTokens.blur.soft}px)`,
                                                                   opacity: 0,
-                                                                  y: 4,
-                                                                  filter: `blur(${motionTokens.blur.soft}px)`
+                                                                  y: 4
                                                               }
                                                     }
-                                                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                                                    animate={{ filter: 'blur(0px)', opacity: 1, y: 0 }}
                                                     transition={{
                                                         duration: motionTokens.duration.standard,
                                                         ease: [...motionTokens.ease.enter]
@@ -428,6 +489,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             </div>
         </Popover>
     )
-})
+}
+export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(ComboboxRender)
 
 Combobox.displayName = 'Combobox'
