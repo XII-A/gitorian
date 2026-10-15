@@ -1,10 +1,12 @@
 # Frontend conventions
 
+Install Node.js 22.19 or newer and pnpm 10.24.0 (the version pinned in `package.json`), then run `pnpm install --frozen-lockfile`. Use `pnpm check` for validation and `pnpm build` for a production build.
+
 The hub and writing workspace share Arc's semantic tokens and installed components. Import `components/arc/foundation.css` once in `src/renderer/src.tsx`. Keep page styles in the renderer's page stylesheet; use documented component props and layout classes rather than targeting CSS module internals.
 
-Run development through `npm run dev`, which watches both the desktop backend and preload modules. Shared command-schema changes must rebuild and restart the backend alongside renderer updates; otherwise newly added UI commands can fail with an invalid discriminator from the older running schema. When changing the development launch command, restart an already-running dev session once to pick up the new watcher.
+Run development through `pnpm dev`, which watches both the desktop backend and preload modules. Shared command-schema changes must rebuild and restart the backend alongside renderer updates; otherwise newly added UI commands can fail with an invalid discriminator from the older running schema. When changing the development launch command, restart an already-running dev session once to pick up the new watcher.
 
-`npm run smoke:dev-reload` exercises this through an isolated Electron IPC fixture: folder import initially fails against the old command schema, then becomes accepted after the shared schema changes and the development backend automatically restarts. `npm run smoke` covers folder selection and actual repository discovery.
+`pnpm smoke:dev-reload` exercises this through an isolated Electron IPC fixture: folder import initially fails against the old command schema, then becomes accepted after the shared schema changes and the development backend automatically restarts. `pnpm smoke` covers folder selection and actual repository discovery.
 
 ## Disclosure and feedback
 
