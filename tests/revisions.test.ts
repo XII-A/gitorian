@@ -1,7 +1,14 @@
-import { expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { coveredEntries, inbox } from '../src/shared/model'
 import { patch, workspace } from './fixtures'
 import { weekOf } from '../src/shared/model'
+
+// Keep the live refresh timestamps and historical remote fixtures in the same week.
+beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-08T12:00:00Z'))
+})
+afterEach(() => vi.useRealTimers())
 
 it('pins a selected PR revision, retains coverage after equivalent rewrites, and groups later changes', async () => {
     const app = await workspace()
