@@ -995,9 +995,9 @@ export const MorphSelect = ({
                                             )
                                         })
                                         return section.label ? (
-                                            <div
+                                            <fieldset
                                                 key={section.key}
-                                                role="group"
+
                                                 aria-labelledby={`${uid}-${section.key}`}
                                                 className={styles.group}
                                             >
@@ -1009,7 +1009,7 @@ export const MorphSelect = ({
                                                     {section.label}
                                                 </div>
                                                 {rows}
-                                            </div>
+                                            </fieldset>
                                         ) : (
                                             <div key={section.key} role="presentation" className={styles.group}>
                                                 {rows}
@@ -1027,9 +1027,9 @@ export const MorphSelect = ({
             </motion.div>
 
             {name && <input type="hidden" name={name} value={selected ?? ''} />}
-            <span className={styles.srOnly} role="status" aria-live="polite">
+            <output className={styles.srOnly} aria-live="polite">
                 {announcement}
-            </span>
+            </output>
         </div>
     )
 }

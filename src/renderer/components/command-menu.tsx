@@ -13,7 +13,7 @@ export interface WorkspaceCommand {
 export const CommandMenu = ({ commands, close }: { commands: WorkspaceCommand[]; close: () => void }) => {
     const [query, setQuery] = useState('')
     const search = useRef<HTMLInputElement>(null)
-    const [previousFocus] = useState(() => document.activeElement)
+    const [previousFocus, _setPreviousFocus] = useState(() => document.activeElement)
     const matches = commands.filter((command) =>
         `${command.name} ${command.hint}`.toLowerCase().includes(query.toLowerCase())
     )

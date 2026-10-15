@@ -426,6 +426,7 @@ export const Timeline = ({
     headingLevel = 3,
     className
 }: TimelineProps) => {
+    const Heading = `h${headingLevel}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
     const reduced = useReducedMotionSafe()
     const id = useId()
     const scrollerRef = useRef<HTMLDivElement>(null)
@@ -477,10 +478,13 @@ export const Timeline = ({
         }
     }, [scrolls])
 
-    const newestId = events.reduce<TimelineEvent | null>(
-        (latest, event) => (!latest || new Date(event.at).getTime() > new Date(latest.at).getTime() ? event : latest),
-        null
-    )?.id
+    let newest: TimelineEvent | null = null
+    for (const event of events) {
+        if (!newest || new Date(event.at).getTime() > new Date(newest.at).getTime()) {
+            newest = event
+        }
+    }
+    const newestId = newest?.id
     useEffect(() => {
         const scroller = scrollerRef.current
         if (!scrollToNew || !scroller || scroller.scrollTop < 1) {
@@ -489,7 +493,9 @@ export const Timeline = ({
         scroller.scrollTo({ behavior: reduced ? 'auto' : 'smooth', top: 0 })
     }, [newestId, scrollToNew, reduced])
 
-    const [initialDays] = useState(() => new Set(events.map((event) => dayKey(new Date(event.at).getTime(), timeZone))))
+    const [initialDays, _setInitialDays] = useState(
+        () => new Set(events.map((event) => dayKey(new Date(event.at).getTime(), timeZone)))
+    )
     const groups = useMemo<Group[]>(() => {
         const rows = events
             .map((event) => {
@@ -600,7 +606,7 @@ export const Timeline = ({
 
     return (
         <RevealClock.Provider value={clock}>
-            <div className={[styles.root, className].filter(Boolean).join(' ')} role="region" aria-label={label}>
+            <section className={[styles.root, className].filter(Boolean).join(' ')} aria-label={label}>
                 <div
                     ref={scrollerRef}
                     role="presentation"
@@ -626,10 +632,9 @@ export const Timeline = ({
                                     reduced={reduced}
                                 >
                                     {groupByDay && (
-                                        <div
+                                        <Heading
                                             className={styles.day}
-                                            role="heading"
-                                            aria-level={headingLevel}
+
                                             id={`${id}-${group.day}`}
                                         >
                                             <span>{group.label}</span>
@@ -640,7 +645,7 @@ export const Timeline = ({
                                             <span
                                                 className={styles.srOnly}
                                             >{`, ${group.rows.length} ${group.rows.length === 1 ? 'update' : 'updates'}`}</span>
-                                        </div>
+                                        </Heading>
                                     )}
                                     <ol className={styles.list}>
                                         <AnimatePresence>
@@ -689,10 +694,8 @@ export const Timeline = ({
                         </AnimatePresence>
                     </div>
                 </div>
-                <span className={styles.srOnly} role="status">
-                    {known.announcement}
-                </span>
-            </div>
+                <output className={styles.srOnly}>{known.announcement}</output>
+            </section>
         </RevealClock.Provider>
     )
 }

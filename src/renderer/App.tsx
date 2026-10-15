@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import type { Activity, Command, Reply } from '../shared/model'
 import { localDate, weekOf } from '../shared/model'
@@ -6,6 +6,7 @@ import { AcquisitionStatus } from './acquisition-status'
 import { unchangedStateReply } from './activity-cache'
 import { BackgroundNotifications } from './background-notifications'
 import { activityUpdating } from './background-work'
+import { useNow } from './clock'
 import { Button } from './components/arc/button/button'
 import { ToastStack, ToastStackProvider } from './components/arc/toast-stack/toast-stack'
 import { CommandMenu } from './components/command-menu'
@@ -15,20 +16,28 @@ import { WeeklyHub } from './weekly-hub'
 import { Workspace } from './workspace'
 import { WorkspaceReference } from './workspace-reference'
 
-const JournalApp = () => {
-    const [screen, setScreen] = useState<'hub' | 'workspace'>('hub')
+export interface StartupRoute {
+    screen: 'hub' | 'workspace'
+    week: string
+    reference?: { kind: string; id: string }
+}
+const JournalApp = ({ route }: { route: StartupRoute }) => {
+    const now = useNow()
+    const [screen, setScreen] = useState<'hub' | 'workspace'>(route.screen)
     const [reply, setReply] = useState<Reply>()
     const [remotes, setRemotes] = useState<Record<string, string[]>>({})
     const [error, setError] = useState('')
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [commandsOpen, setCommandsOpen] = useState(false)
-    const [workspaceWeek, setWorkspaceWeek] = useState('')
+    const [workspaceWeek, setWorkspaceWeek] = useState(route.week)
     const [workspaceActivity, setWorkspaceActivity] = useState<string>()
-    const [reference, setReference] = useState<{ kind: string; id: string }>()
+    const { reference } = route
     const [sourcesOpen, setSourcesOpen] = useState(false)
     const polling = useRef(false)
     const currentReply = useRef(reply)
-    currentReply.current = reply
+    useLayoutEffect(() => {
+        currentReply.current = reply
+    }, [reply])
     const run = useCallback(async (command: Command): Promise<Reply | undefined> => {
         try {
             const result = await window.journal.invoke(command)
@@ -60,23 +69,6 @@ const JournalApp = () => {
         }
     }, [])
     useEffect(() => {
-        const parameters = new URLSearchParams(window.location.search)
-        const referenceKind = parameters.get('reference')
-        const referenceId = parameters.get('id')
-        if (referenceKind && referenceId) {
-            setReference({ id: referenceId, kind: referenceKind })
-        }
-        const requestedWeek = parameters.get('week')
-        if (
-            requestedWeek &&
-            /^\d{4}-\d{2}-\d{2}$/u.test(requestedWeek) &&
-            !Number.isNaN(new Date(`${requestedWeek}T12:00:00Z`).getTime())
-        ) {
-            setWorkspaceWeek(requestedWeek)
-        }
-        if (parameters.has('workspace') || parameters.has('reference')) {
-            setScreen('workspace')
-        }
         void run({ type: 'state' })
         let lastPoll = Date.now()
         const timer = setInterval(() => {
@@ -90,9 +82,14 @@ const JournalApp = () => {
             }
             lastPoll = Date.now()
             polling.current = true
-            void run({ type: 'state' }).finally(() => {
-                polling.current = false
-            })
+            const poll = async () => {
+                try {
+                    await run({ type: 'state' })
+                } finally {
+                    polling.current = false
+                }
+            }
+            poll()
         }, 2000)
         return () => {
             clearInterval(timer)
@@ -133,7 +130,7 @@ const JournalApp = () => {
         }
     }, [screen, settingsOpen, commandsOpen, reference])
     const openWorkspace = (date?: string) => {
-        setWorkspaceWeek(date ?? (reply ? weekOf(new Date(), reply.state.settings) : ''))
+        setWorkspaceWeek(date ?? (reply ? weekOf(new Date(now), reply.state.settings) : ''))
         setWorkspaceActivity(undefined)
         setScreen('workspace')
         window.scrollTo(0, 0)
@@ -280,9 +277,9 @@ const JournalApp = () => {
     )
 }
 
-export const App = () => (
+export const App = ({ route }: { route: StartupRoute }) => (
     <ToastStackProvider>
-        <JournalApp />
+        <JournalApp route={route} />
         <ToastStack className="journal-notifications" />
     </ToastStackProvider>
 )

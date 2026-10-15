@@ -368,10 +368,10 @@ export const WorkspaceDraft = ({
                 <span>
                     {draft ? `${plainText(draft.body).trim().split(/\s+/u).filter(Boolean).length} words` : '0 words'}
                 </span>
-                <span role="status">
+                <output>
                     <WorkspaceIcon name="check" width="14" height="14" />
                     {status || 'Ready when you are'}
-                </span>
+                </output>
                 {dirty.current && status.startsWith('Could not') && (
                     <Button className="ws-retry-saving" variant="ghost" size="sm" onClick={persist}>
                         Retry saving

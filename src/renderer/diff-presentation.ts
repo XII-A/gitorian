@@ -4,17 +4,24 @@ import { tokenize } from 'react-diff-view'
 /** Use the same prefix for both sides, so indentation-only changes remain visible. */
 export const sharedIndent = (lines: string[]): string => {
     const prefixes = lines.filter((line) => line.trim()).map((line) => /^[\t ]*/u.exec(line)?.[0] ?? '')
-    return prefixes.reduce((prefix, next) => {
+    let prefix = prefixes[0] ?? ''
+    for (const next of prefixes) {
         let length = 0
         while (length < prefix.length && prefix[length] === next[length]) {
             length += 1
         }
-        return prefix.slice(0, length)
-    }, prefixes[0] ?? '')
+        prefix = prefix.slice(0, length)
+    }
+    return prefix
 }
 
-export const indentColumns = (prefix: string): number =>
-    prefix.split('').reduce((column, character) => column + (character === '\t' ? 4 - (column % 4) : 1), 0)
+export const indentColumns = (prefix: string): number => {
+    let column = 0
+    for (const character of prefix) {
+        column += character === '\t' ? 4 - (column % 4) : 1
+    }
+    return column
+}
 
 /** Wrap original tokens without changing source text, line numbers, or highlighting. */
 export const presentationTokens = (

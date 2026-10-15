@@ -447,9 +447,9 @@ export const Settings = ({
                                 />
                             )}
                             {!!repositories.length && !matchingRepositories.length && (
-                                <p className="settings-hint" role="status">
+                                <output className="settings-hint" style={{ display: 'block' }}>
                                     No matching repositories.
-                                </p>
+                                </output>
                             )}
                             {!!matchingRepositories.length && (
                                 <div className="settings-repositories">
@@ -857,7 +857,7 @@ export const Settings = ({
                                 {error}
                             </Alert>
                         ) : (
-                            <p role="status">{status || 'Changes apply when saved.'}</p>
+                            <output style={{ display: 'block' }}>{status || 'Changes apply when saved.'}</output>
                         )}
                     </div>
                     <Button disabled={!!busy || !!device} loading={busy === 'save'} onClick={save}>

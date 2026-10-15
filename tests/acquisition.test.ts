@@ -12,6 +12,21 @@ import { required } from '../src/shared/required'
 import { transport, workspace } from './fixtures'
 
 describe('acquisition', () => {
+    it('limits a failed network read to three attempts', async () => {
+        vi.useFakeTimers()
+        try {
+            const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError('Connection failed'))
+            const http = new Http(fetcher)
+            const failure = expect(
+                http.request('https://api.github.com/repos/example/project', 'test')
+            ).rejects.toThrow('Connection failed')
+            await vi.runAllTimersAsync()
+            await failure
+            expect(fetcher).toHaveBeenCalledTimes(3)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
     const repository: Repository = {
         available: true,
         base: 'main',

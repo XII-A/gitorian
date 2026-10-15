@@ -107,9 +107,7 @@ export const DraftPane = ({
                             </div>
                         ))}
                     <footer className="draft-footer">
-                        <span className="muted" role="status">
-                            {saveStatus}
-                        </span>
+                        <output className="muted">{saveStatus}</output>
                         {draft.publishedEntryId ? (
                             <Button
                                 onClick={() => {

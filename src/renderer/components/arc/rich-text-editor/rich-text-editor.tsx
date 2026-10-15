@@ -802,10 +802,11 @@ const outdent = (item: HTMLElement): HTMLElement => {
     const tail = following.length || nested.length ? document.createElement(list.nodeName.toLowerCase()) : null
     if (tail) {
         for (const sub of nested) {
-            sub.childNodes.length &&
-                [...sub.childNodes].forEach((node) => {
+            if (sub.childNodes.length) {
+                ;[...sub.childNodes].forEach((node) => {
                     tail.append(node)
                 })
+            }
         }
         for (const node of following) {
             tail.append(node)

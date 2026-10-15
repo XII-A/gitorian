@@ -15,6 +15,25 @@ import { discoverRepositories, repositoryPathKey } from './repository-discovery'
 import type { Store } from './store'
 import { forEachConcurrent } from './work-queue'
 
+const serviceRoutes: Partial<Record<Command['type'], 'dispatch0' | 'dispatch1' | 'dispatch2' | 'dispatch3'>> = {
+    backfill: 'dispatch0',
+    coverage: 'dispatch3',
+    details: 'dispatch1',
+    disposition: 'dispatch2',
+    draft: 'dispatch1',
+    feature: 'dispatch2',
+    history: 'dispatch0',
+    newDraft: 'dispatch1',
+    publish: 'dispatch3',
+    reconcile: 'dispatch3',
+    refresh: 'dispatch0',
+    repository: 'dispatch0',
+    select: 'dispatch2',
+    settings: 'dispatch2',
+    state: 'dispatch0',
+    stopWork: 'dispatch0'
+}
+
 export class JournalService {
     private refreshing?: Promise<void>
     private readonly queuedRefreshes = new Map<string, Promise<void>>()
@@ -184,12 +203,12 @@ export class JournalService {
         }
         this.store.persist()
     }
-    private checkStopped(status: NonNullable<State['acquisition']>[string]): void {
-        if (this.isStopped(status)) {
+    private static checkStopped(status: NonNullable<State['acquisition']>[string]): void {
+        if (JournalService.isStopped(status)) {
             throw new Error('Paused by you. Completed work is kept.')
         }
     }
-    private isStopped(status: NonNullable<State['acquisition']>[string]): boolean {
+    private static isStopped(status: NonNullable<State['acquisition']>[string]): boolean {
         return status.status === 'cancelled'
     }
     private repository(id: string): Repository {
@@ -293,24 +312,40 @@ export class JournalService {
             if (queued) {
                 return await queued
             }
-            const next = this.refreshing.then(
-                () => {
-                    this.queuedRefreshes.delete(key)
-                    return this.refresh(options)
-                },
-                (error: unknown) => {
-                    this.queuedRefreshes.delete(key)
-                    throw error
-                }
-            )
+            const next = this.queueRefresh(this.refreshing, key, options)
             this.queuedRefreshes.set(key, next)
             return await next
         }
-        this.refreshing = this.refreshSources(options).finally(() => {
-            this.refreshing = undefined
-        })
+        this.refreshing = this.finishRefresh(options)
         return await this.refreshing
     }
+    private async queueRefresh(
+        current: Promise<void>,
+        key: string,
+        options: NonNullable<Parameters<JournalService['refresh']>[0]>
+    ): Promise<void> {
+        try {
+            await current
+        } finally {
+            this.queuedRefreshes.delete(key)
+        }
+        await this.refresh(options)
+    }
+    private async finishRefresh(options: NonNullable<Parameters<JournalService['refresh']>[0]>): Promise<void> {
+        try {
+            await this.refreshSources(options)
+        } finally {
+            this.refreshing = undefined
+        }
+    }
+    private async finishDetails(key: string, activity: Activity, includeDiff: boolean): Promise<void> {
+        try {
+            await this.loadDetails(activity, includeDiff)
+        } finally {
+            this.details.delete(key)
+        }
+    }
+
     async backfill(repositoryId: string, since: string): Promise<void> {
         if (this.refreshing) {
             await this.refreshing
@@ -335,7 +370,7 @@ export class JournalService {
     }
     private async source(key: string, work: () => Promise<void>, resume = false): Promise<void> {
         const status = this.status(key)
-        if (this.isStopped(status) && !resume) {
+        if (JournalService.isStopped(status) && !resume) {
             return
         }
         if (status.retryAt && Date.parse(status.retryAt) > Date.now()) {
@@ -347,17 +382,17 @@ export class JournalService {
         this.store.persist()
         try {
             await work()
-            this.checkStopped(status)
+            JournalService.checkStopped(status)
             status.status = 'idle'
             if (!status.windowEnd) {
                 status.lastSuccess = new Date().toISOString()
             }
         } catch (error) {
-            if (!this.isStopped(status)) {
+            if (!JournalService.isStopped(status)) {
                 status.status = error instanceof HttpError && error.retryAt ? 'paused' : 'error'
             }
             status.error = (() => {
-                if (this.isStopped(status)) {
+                if (JournalService.isStopped(status)) {
                     return
                 }
                 if (error instanceof Error) {
@@ -442,7 +477,7 @@ export class JournalService {
                                             activity.repositoryId === repository.id && activity.kind === 'commit'
                                     )
                                 )
-                                this.checkStopped(status)
+                                JournalService.checkStopped(status)
                                 if (state !== this.store.state) {
                                     throw new Error('Local data was restored while refreshing.')
                                 }
@@ -474,7 +509,7 @@ export class JournalService {
                                 status.configuration = configuration
                                 status.since = repository.trackingStart
                             } catch (error) {
-                                if (!this.isStopped(status)) {
+                                if (!JournalService.isStopped(status)) {
                                     repository.available = false
                                 }
                                 throw error
@@ -532,7 +567,7 @@ export class JournalService {
                                     if (state !== this.store.state) {
                                         throw new Error('Local data was restored while refreshing.')
                                     }
-                                    this.checkStopped(status)
+                                    JournalService.checkStopped(status)
                                     for await (const incoming of activities) {
                                         const previous = state.activities.find((item) => item.id === incoming.id)
                                         const previousDate = previous?.date
@@ -583,7 +618,7 @@ export class JournalService {
                                     }
                                 },
                                 checkpoint: (page, complete) => {
-                                    this.checkStopped(status)
+                                    JournalService.checkStopped(status)
                                     status.page = page
                                     if (complete) {
                                         status.since = new Date(
@@ -758,6 +793,19 @@ export class JournalService {
         }
     }
     async handle(command: Command): Promise<Reply> {
+        const route = serviceRoutes[command.type]
+        if (!route) {
+            throw new Error('This command requires the desktop host')
+        }
+        const reply = await this[route](command)
+        if (reply) {
+            return reply
+        }
+        this.store.persist()
+        return this.reply()
+    }
+
+    private async dispatch0(command: Command): Promise<Reply | undefined> {
         const { state } = this.store
         switch (command.type) {
             case 'state': {
@@ -768,7 +816,7 @@ export class JournalService {
                 const incoming = command.repository
                 // Renderer configuration cannot assign arbitrary filesystem paths.
                 Object.assign(repository, incoming, { available: repository.available, path: repository.path })
-                break
+                return undefined
             }
             case 'refresh': {
                 await this.refresh({ ...command, resume: true })
@@ -829,6 +877,15 @@ export class JournalService {
                     message: `Comparison: ${base}`
                 })
             }
+            default: {
+                throw new Error('Command routed to the wrong service handler')
+            }
+        }
+    }
+
+    private async dispatch1(command: Command): Promise<Reply | undefined> {
+        const { state } = this.store
+        switch (command.type) {
             case 'details': {
                 const activity = this.activity(command.activityId)
                 const includeDiff = command.content !== 'files'
@@ -841,9 +898,7 @@ export class JournalService {
                     const key = `${activity.id}:${activity.sourceVersion ?? activity.sha ?? ''}:${includeDiff}`
                     let request = this.details.get(key)
                     if (!request) {
-                        request = this.loadDetails(activity, includeDiff).finally(() => {
-                            this.details.delete(key)
-                        })
+                        request = this.finishDetails(key, activity, includeDiff)
                         this.details.set(key, request)
                     }
                     await request
@@ -859,7 +914,7 @@ export class JournalService {
                     updatedAt: new Date().toISOString(),
                     week: command.week
                 })
-                break
+                return undefined
             }
             case 'draft': {
                 const draft = state.drafts.find((item) => item.id === command.draft.id)
@@ -869,8 +924,17 @@ export class JournalService {
                 draft.body = command.draft.body
                 draft.title = command.draft.title
                 draft.updatedAt = new Date().toISOString()
-                break
+                return undefined
             }
+            default: {
+                throw new Error('Command routed to the wrong service handler')
+            }
+        }
+    }
+
+    private async dispatch2(command: Command): Promise<Reply | undefined> {
+        const { state } = this.store
+        switch (command.type) {
             case 'select': {
                 const draft = state.drafts.find((item) => item.id === command.draftId)
                 if (!draft || draft.publishedEntryId) {
@@ -893,7 +957,7 @@ export class JournalService {
                 } else {
                     draft.selections = draft.selections.filter((item) => item.activityId !== activity.id)
                 }
-                break
+                return undefined
             }
             case 'disposition': {
                 Object.assign(this.activity(command.activityId), {
@@ -904,7 +968,7 @@ export class JournalService {
                 if (command.disposition === 'inbox') {
                     this.activity(command.activityId).explicit = true
                 }
-                break
+                return undefined
             }
             case 'feature': {
                 const current = state.features.find((item) => item.id === command.id)
@@ -919,17 +983,26 @@ export class JournalService {
                 } else {
                     state.features.push(feature)
                 }
-                break
+                return undefined
             }
             case 'settings': {
-                new Intl.DateTimeFormat('en-US', { timeZone: command.settings.timezone })
+                Intl.DateTimeFormat('en-US', { timeZone: command.settings.timezone })
                 const { order } = command.settings.layout
                 if (order.length !== 3 || new Set(order).size !== 3) {
                     throw new Error('Layout must contain each pane once')
                 }
                 state.settings = command.settings
-                break
+                return undefined
             }
+            default: {
+                throw new Error('Command routed to the wrong service handler')
+            }
+        }
+    }
+
+    private async dispatch3(command: Command): Promise<Reply | undefined> {
+        const { state } = this.store
+        switch (command.type) {
             case 'publish': {
                 await this.publish(command.draftId)
                 return this.reply()
@@ -957,13 +1030,11 @@ export class JournalService {
                         (link) => !(link.activityId === activity.id && link.entryId === command.entryId)
                     )
                 }
-                break
+                return undefined
             }
             default: {
-                throw new Error('This command requires the desktop host')
+                throw new Error('Command routed to the wrong service handler')
             }
         }
-        this.store.persist()
-        return this.reply()
     }
 }

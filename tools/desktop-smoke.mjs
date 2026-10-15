@@ -393,7 +393,7 @@ app.on('browser-window-created', (_, window) => {
                 `!document.querySelector('.ws-action-notice')`
             )
             result.noReferenceNotes = await reference.webContents.executeJavaScript(
-                `!document.querySelector('.ws-reference-note') && !Array.from(document.querySelectorAll('button')).some(button => button.textContent.includes('Add note')) && document.querySelector('.ws-inspector-footer [role="status"]').textContent.includes('Added to your entry.')`
+                `!document.querySelector('.ws-reference-note') && !Array.from(document.querySelectorAll('button')).some(button => button.textContent.includes('Add note')) && document.querySelector('.ws-inspector-footer output').textContent.includes('Added to your entry.')`
             )
             result.sampleIsolated = await window.webContents.executeJavaScript(
                 `(async () => (await window.journal.invoke({type:'state'})).state.drafts.length === ${realDraftsBefore})()`

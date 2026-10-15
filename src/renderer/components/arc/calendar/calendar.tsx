@@ -442,46 +442,49 @@ export const Calendar = ({
     const renderMonth = (paneMonth: Date, present: boolean) => (
         <>
             <SelectionDisc cell={cellOf(paneMonth)} reduced={reducedMotion} />
-            <div className={styles.grid} role="grid" aria-label={formatter.format(paneMonth)}>
-                {makeWeeks(paneMonth).map((week) => (
-                    <div key={dateKey(week[0])} className={styles.week} role="row">
-                        {week.map((date) => {
-                            const key = dateKey(date)
-                            const selected = sameDay(date, value)
-                            const isToday = sameDay(date, today)
-                            return (
-                                <button
-                                    key={key}
-                                    type="button"
-                                    role="gridcell"
-                                    data-date={key}
-                                    aria-label={date.toLocaleDateString(locale, { dateStyle: 'full' })}
-                                    aria-selected={selected}
-                                    aria-current={isToday ? 'date' : undefined}
-                                    tabIndex={present && key === tabbableKey ? 0 : -1}
-                                    disabled={isDisabled(date)}
-                                    style={present ? numberDelay(key) : undefined}
-                                    className={cx(
-                                        styles.day,
-                                        !sameMonth(date, paneMonth) && styles.outside,
-                                        selected && styles.selected,
-                                        isToday && styles.today
-                                    )}
-                                    onFocus={() => {
-                                        setFocusedDate(date)
-                                    }}
-                                    onKeyDown={(event) => {
-                                        onDayKeyDown(event, date)
-                                    }}
-                                    onClick={() => onChange?.(date)}
-                                >
-                                    <span className={styles.dayNumber}>{date.getDate()}</span>
-                                </button>
-                            )
-                        })}
-                    </div>
-                ))}
-            </div>
+            <table className={styles.table} role="grid" aria-label={formatter.format(paneMonth)}>
+                <tbody className={styles.grid}>
+                    {makeWeeks(paneMonth).map((week) => (
+                        <tr key={dateKey(week[0])} className={styles.week}>
+                            {week.map((date) => {
+                                const key = dateKey(date)
+                                const selected = sameDay(date, value)
+                                const isToday = sameDay(date, today)
+                                return (
+                                    <td key={key} aria-selected={selected}>
+                                        <button
+                                            type="button"
+
+                                            data-date={key}
+                                            aria-label={date.toLocaleDateString(locale, { dateStyle: 'full' })}
+
+                                            aria-current={isToday ? 'date' : undefined}
+                                            tabIndex={present && key === tabbableKey ? 0 : -1}
+                                            disabled={isDisabled(date)}
+                                            style={present ? numberDelay(key) : undefined}
+                                            className={cx(
+                                                styles.day,
+                                                !sameMonth(date, paneMonth) && styles.outside,
+                                                selected && styles.selected,
+                                                isToday && styles.today
+                                            )}
+                                            onFocus={() => {
+                                                setFocusedDate(date)
+                                            }}
+                                            onKeyDown={(event) => {
+                                                onDayKeyDown(event, date)
+                                            }}
+                                            onClick={() => onChange?.(date)}
+                                        >
+                                            <span className={styles.dayNumber}>{date.getDate()}</span>
+                                        </button>
+                                    </td>
+                                )
+                            })}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
         </>
     )
 

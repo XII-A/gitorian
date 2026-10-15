@@ -149,12 +149,12 @@ const ComboboxRender: ForwardRefRenderFunction<HTMLInputElement, ComboboxProps> 
         )
     }, [options, query])
 
-    const enabledIndices = filteredOptions.reduce<number[]>((indices, option, index) => {
+    const enabledIndices: number[] = []
+    for (const [index, option] of filteredOptions.entries()) {
         if (!option.disabled) {
-            indices.push(index)
+            enabledIndices.push(index)
         }
-        return indices
-    }, [])
+    }
 
     useEffect(() => {
         if (!open) {
@@ -458,9 +458,9 @@ const ComboboxRender: ForwardRefRenderFunction<HTMLInputElement, ComboboxProps> 
                                                     </div>
                                                 ))
                                             ) : (
-                                                <motion.div
+                                                <motion.output
                                                     className={styles.empty}
-                                                    role="status"
+
                                                     initial={
                                                         reduceMotion
                                                             ? false
@@ -475,9 +475,10 @@ const ComboboxRender: ForwardRefRenderFunction<HTMLInputElement, ComboboxProps> 
                                                         duration: motionTokens.duration.standard,
                                                         ease: [...motionTokens.ease.enter]
                                                     }}
+                                                    style={{ display: 'block' }}
                                                 >
                                                     {emptyMessage}
-                                                </motion.div>
+                                                </motion.output>
                                             )}
                                         </div>
                                     </ScrollArea>

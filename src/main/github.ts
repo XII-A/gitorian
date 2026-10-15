@@ -3,6 +3,7 @@ import { required } from '../shared/required'
 import { fingerprint, githubRemote } from './git'
 import type { Http } from './http'
 import { HttpError } from './http'
+import { numberedPages } from './pagination'
 
 interface User {
     login: string
@@ -55,6 +56,28 @@ interface Device {
     interval: number
     expires_in: number
 }
+const samePullRevision = (before: Pull, after: Pull) =>
+    before.base.sha === after.base.sha &&
+    before.head.sha === after.head.sha &&
+    before.merge_commit_sha === after.merge_commit_sha &&
+    before.merged_at === after.merged_at
+
+const recordScanVersion = (scan: ActivityScan, number: number, version: string, page: number): void => {
+    if (scan.versions) {
+        scan.versions[String(number)] = version
+    }
+    scan.checkpoint?.(page, false)
+}
+const matchesCapturedRevision = (pull: Pull, version: string): boolean => {
+    const [, base, head, merged, integration] = JSON.parse(version) as unknown[]
+    return (
+        pull.base.sha === base &&
+        pull.head.sha === head &&
+        pull.merged_at === merged &&
+        pull.merge_commit_sha === integration
+    )
+}
+
 export class GitHub {
     private device?: Device & { clientId: string; expires: number; nextPoll: number }
     private readonly http: Http
@@ -72,11 +95,15 @@ export class GitHub {
     }
     private async list<T>(path: string, background = false): Promise<T[]> {
         const result: T[] = []
-        for (let page = 1; page <= 30; page += 1) {
-            const items = await this.request<T[]>(
-                `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`,
-                background
-            )
+        for await (const [, items] of numberedPages<T>(
+            (pageNumber) =>
+                this.request<T[]>(
+                    `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${pageNumber}`,
+                    background
+                ),
+            1,
+            30
+        )) {
             result.push(...items)
             if (items.length < 100) {
                 return result
@@ -186,11 +213,15 @@ export class GitHub {
         const firstPage = Math.max(1, (scan.page ?? 1) - 1)
         let complete = false
         let hydrated = 0
-        for (let page = firstPage; page < firstPage + 2; page += 1) {
-            const pulls = await this.request<Pull[]>(
-                `repos/${remote}/pulls?state=all&sort=updated&direction=desc&per_page=100&page=${page}`,
-                scan.background
-            )
+        for await (const [page, pulls] of numberedPages<Pull>(
+            (pageNumber) =>
+                this.request<Pull[]>(
+                    `repos/${remote}/pulls?state=all&sort=updated&direction=desc&per_page=100&page=${pageNumber}`,
+                    scan.background
+                ),
+            firstPage,
+            firstPage + 1
+        )) {
             for await (const summary of pulls) {
                 if ((summary.updated_at ?? summary.created_at).slice(0, 10) < since) {
                     complete = true
@@ -216,117 +247,18 @@ export class GitHub {
                     return activities
                 }
                 hydrated += 1
-                const path = `repos/${remote}/pulls/${summary.number}`
-                const pr = summary
-                const commits = await this.list<Commit>(`${path}/commits`, scan.background)
-                const reviews = await this.list<Review>(`${path}/reviews`, scan.background)
-                const id = `${repository.id}:pr:${pr.number}`
-                const mine = commits.filter((commit) =>
-                    repository.emails.some((email) => email.toLowerCase() === commit.commit.author.email.toLowerCase())
+                const batch = await this.pullBatch(
+                    repository,
+                    remote,
+                    summary,
+                    login,
+                    trackedPrIds,
+                    version,
+                    scan.background
                 )
-                const myReviews = reviews.filter(
-                    (review) => review.user.login === login && review.submitted_at && review.state !== 'PENDING'
-                )
-                if (pr.user.login !== login && !mine.length && !myReviews.length && !trackedPrIds.includes(id)) {
-                    if (scan.versions) {
-                        scan.versions[String(summary.number)] = version
-                    }
-                    scan.checkpoint?.(page, false)
+                if (!batch) {
+                    recordScanVersion(scan, summary.number, version, page)
                     continue
-                }
-                const batch: Activity[] = []
-                const latest =
-                    commits
-                        .map((commit) => commit.commit.author.date)
-                        .toSorted()
-                        .at(-1) ?? pr.created_at
-                const common = {
-                    author: pr.user.login,
-                    base: pr.base.ref,
-                    branches: [pr.head.ref],
-                    deletedBranches: [],
-                    description: pr.body ?? '',
-                    disposition: 'inbox' as const,
-                    explicit: false,
-                    files: [],
-                    head: pr.head.sha,
-                    prId: id,
-                    repositoryId: repository.id,
-                    sourceVersion: version,
-                    title: `#${pr.number} ${pr.title}`,
-                    url: pr.html_url
-                }
-                batch.push(
-                    {
-                        ...common,
-                        date: latest,
-                        id,
-                        kind: 'pr',
-                        pullRequest: {
-                            closedAt: pr.closed_at ?? undefined,
-                            commitDates: [...new Set(commits.map((commit) => commit.commit.author.date))]
-                                .filter((date) => date >= pr.created_at)
-                                .toSorted(),
-                            mergedAt: pr.merged_at ?? undefined,
-                            openedAt: pr.created_at,
-                            status: (() => {
-                                if (pr.merged_at) {
-                                    return 'merged'
-                                }
-                                if (pr.state === 'closed') {
-                                    return 'closed'
-                                }
-                                if (pr.draft) {
-                                    return 'draft'
-                                }
-
-                                if (pr.state === 'open') {
-                                    return 'open'
-                                }
-                            })()
-                        }
-                    },
-                    {
-                        ...common,
-                        date: pr.created_at,
-                        id: `${id}:opened`,
-                        kind: 'opened',
-                        title: `Opened ${common.title}`
-                    }
-                )
-                if (pr.merged_at) {
-                    batch.push({
-                        ...common,
-                        date: pr.merged_at,
-                        id: `${id}:merged`,
-                        integrationSha: pr.merge_commit_sha ?? undefined,
-                        kind: 'merged',
-                        title: `Merged ${common.title}`
-                    })
-                }
-                for (const commit of mine) {
-                    batch.push({
-                        ...common,
-                        author: commit.commit.author.email,
-                        date: commit.commit.author.date,
-                        description: commit.commit.message,
-                        id: `${repository.id}:commit:${commit.sha}`,
-                        kind: 'commit',
-                        sha: commit.sha,
-                        title: commit.commit.message.split('\n')[0]
-                    })
-                }
-                for (const review of myReviews) {
-                    batch.push({
-                        ...common,
-                        author: login,
-                        date: required(review.submitted_at),
-                        description: review.body,
-                        id: `${id}:review:${review.id}`,
-                        kind: 'review',
-                        title: `${review.state}: ${common.title}`,
-                        url: review.html_url
-                    })
                 }
                 const eligible = batch.filter(
                     (item) => item.kind === 'pr' || item.date.slice(0, 10) >= repository.trackingStart
@@ -336,10 +268,7 @@ export class GitHub {
                 } else {
                     activities.push(...eligible)
                 }
-                if (scan.versions) {
-                    scan.versions[String(summary.number)] = version
-                }
-                scan.checkpoint?.(page, false)
+                recordScanVersion(scan, summary.number, version, page)
             }
             if (pulls.length < 100) {
                 complete = true
@@ -351,6 +280,127 @@ export class GitHub {
         }
         return activities
     }
+    private async pullBatch(
+        repository: Repository,
+        remote: string,
+        summary: Pull,
+        login: string,
+        trackedPrIds: string[],
+        version: string,
+        background?: boolean
+    ): Promise<Activity[] | undefined> {
+        const path = `repos/${remote}/pulls/${summary.number}`
+        const pr = summary
+        const commits = await this.list<Commit>(`${path}/commits`, background)
+        const reviews = await this.list<Review>(`${path}/reviews`, background)
+        const id = `${repository.id}:pr:${pr.number}`
+        const mine = commits.filter((commit) =>
+            repository.emails.some((email) => email.toLowerCase() === commit.commit.author.email.toLowerCase())
+        )
+        const myReviews = reviews.filter(
+            (review) => review.user.login === login && review.submitted_at && review.state !== 'PENDING'
+        )
+        if (pr.user.login !== login && !mine.length && !myReviews.length && !trackedPrIds.includes(id)) {
+            return undefined
+        }
+        const batch: Activity[] = []
+        const latest =
+            commits
+                .map((commit) => commit.commit.author.date)
+                .toSorted()
+                .at(-1) ?? pr.created_at
+        const common = {
+            author: pr.user.login,
+            base: pr.base.ref,
+            branches: [pr.head.ref],
+            deletedBranches: [],
+            description: pr.body ?? '',
+            disposition: 'inbox' as const,
+            explicit: false,
+            files: [],
+            head: pr.head.sha,
+            prId: id,
+            repositoryId: repository.id,
+            sourceVersion: version,
+            title: `#${pr.number} ${pr.title}`,
+            url: pr.html_url
+        }
+        batch.push(
+            {
+                ...common,
+                date: latest,
+                id,
+                kind: 'pr',
+                pullRequest: {
+                    closedAt: pr.closed_at ?? undefined,
+                    commitDates: [...new Set(commits.map((commit) => commit.commit.author.date))]
+                        .filter((date) => date >= pr.created_at)
+                        .toSorted(),
+                    mergedAt: pr.merged_at ?? undefined,
+                    openedAt: pr.created_at,
+                    status: (() => {
+                        if (pr.merged_at) {
+                            return 'merged'
+                        }
+                        if (pr.state === 'closed') {
+                            return 'closed'
+                        }
+                        if (pr.draft) {
+                            return 'draft'
+                        }
+
+                        if (pr.state === 'open') {
+                            return 'open'
+                        }
+                    })()
+                }
+            },
+            {
+                ...common,
+                date: pr.created_at,
+                id: `${id}:opened`,
+                kind: 'opened',
+                title: `Opened ${common.title}`
+            }
+        )
+        if (pr.merged_at) {
+            batch.push({
+                ...common,
+                date: pr.merged_at,
+                id: `${id}:merged`,
+                integrationSha: pr.merge_commit_sha ?? undefined,
+                kind: 'merged',
+                title: `Merged ${common.title}`
+            })
+        }
+        for (const commit of mine) {
+            batch.push({
+                ...common,
+                author: commit.commit.author.email,
+                date: commit.commit.author.date,
+                description: commit.commit.message,
+                id: `${repository.id}:commit:${commit.sha}`,
+                kind: 'commit',
+                sha: commit.sha,
+                title: commit.commit.message.split('\n')[0]
+            })
+        }
+        for (const review of myReviews) {
+            batch.push({
+                ...common,
+                author: login,
+                date: required(review.submitted_at),
+                description: review.body,
+                id: `${id}:review:${review.id}`,
+                kind: 'review',
+                title: `${review.state}: ${common.title}`,
+                url: review.html_url
+            })
+        }
+
+        return batch
+    }
+
     async files(repository: Repository, activity: Activity): Promise<Activity['files']> {
         const remote = githubRemote(repository.remote)
         const number = activity.prId?.split(':').at(-1)
@@ -417,16 +467,8 @@ export class GitHub {
         }
         const path = `repos/${remote}/pulls/${number}`
         const before = await this.request<Pull>(path, background)
-        if (activity.sourceVersion) {
-            const [, base, head, merged, integration] = JSON.parse(activity.sourceVersion) as unknown[]
-            if (
-                before.base.sha !== base ||
-                before.head.sha !== head ||
-                before.merged_at !== merged ||
-                before.merge_commit_sha !== integration
-            ) {
-                throw new Error('PR changed since activity refresh. Refresh this repository and try again.')
-            }
+        if (activity.sourceVersion && !matchesCapturedRevision(before, activity.sourceVersion)) {
+            throw new Error('PR changed since activity refresh. Refresh this repository and try again.')
         }
         const integration =
             before.merged_at && before.merge_commit_sha
@@ -446,12 +488,7 @@ export class GitHub {
             background
         )
         const after = await this.request<Pull>(path, background)
-        if (
-            before.base.sha !== after.base.sha ||
-            before.head.sha !== after.head.sha ||
-            before.merge_commit_sha !== after.merge_commit_sha ||
-            before.merged_at !== after.merged_at
-        ) {
+        if (!samePullRevision(before, after)) {
             throw new Error('PR changed while capturing its revision; refresh and try again')
         }
         const comparable =

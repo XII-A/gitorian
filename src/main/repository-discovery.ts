@@ -1,8 +1,6 @@
 import { lstat, readdir, realpath } from 'node:fs/promises'
 import nodePath from 'node:path'
 
-import { required } from '../shared/required'
-
 const ignored = new Set(['.git', 'node_modules', '.cache', '.venv', 'venv', 'vendor', '__pycache__'])
 
 export const repositoryPathKey = (path: string): string => {
@@ -13,37 +11,37 @@ export const repositoryPathKey = (path: string): string => {
     return process.platform === 'win32' ? key.toLowerCase() : key
 }
 
+const repositoryMarker = async (path: string) => {
+    try {
+        return await lstat(nodePath.join(path, '.git'))
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) {
+            return
+        }
+        throw error
+    }
+}
+
 /** Discover working trees without following links or entering repository internals. */
 export const discoverRepositories = async (
     folder: string,
     onProgress?: (counts: { scanned: number; found: number }) => void
 ): Promise<{ paths: string[]; unreadable: string[] }> => {
-    const pending = [await realpath(folder)]
     const paths: string[] = []
     const unreadable: string[] = []
     let scanned = 0
-    while (pending.length) {
-        const path = required(pending.pop())
+    const visit = async (path: string): Promise<void> => {
+        let descendants: string[] = []
         try {
-            const marker = await lstat(nodePath.join(path, '.git')).catch((error: unknown) => {
-                if (
-                    error instanceof Error &&
-                    'code' in error &&
-                    (error.code === 'ENOENT' || error.code === 'ENOTDIR')
-                ) {
-                    return
-                }
-                throw error
-            })
+            const marker = await repositoryMarker(path)
             if (marker?.isDirectory() || marker?.isFile()) {
                 paths.push(path)
-                continue
-            }
-            const children = await readdir(path, { withFileTypes: true })
-            for (const child of children.toSorted((a, b) => b.name.localeCompare(a.name))) {
-                if (child.isDirectory() && !ignored.has(child.name)) {
-                    pending.push(nodePath.join(path, child.name))
-                }
+            } else {
+                const children = await readdir(path, { withFileTypes: true })
+                descendants = children
+                    .toSorted((a, b) => a.name.localeCompare(b.name))
+                    .filter((child) => child.isDirectory() && !ignored.has(child.name))
+                    .map((child) => nodePath.join(path, child.name))
             }
         } catch {
             unreadable.push(path)
@@ -51,6 +49,10 @@ export const discoverRepositories = async (
             scanned += 1
             onProgress?.({ found: paths.length, scanned })
         }
+        for await (const child of descendants) {
+            await visit(child)
+        }
     }
+    await visit(await realpath(folder))
     return { paths, unreadable }
 }

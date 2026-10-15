@@ -522,3 +522,30 @@
         border-color: var(--border-strong);
     }
 }
+
+.grid {
+    position: relative;
+}
+.table {
+    display: block;
+    width: 100%;
+    border-spacing: 0;
+}
+.table thead {
+    display: block;
+}
+.table th,
+.table td {
+    padding: 0;
+    border: 0;
+}
+.table th {
+    font-weight: inherit;
+}
+.rangeOverlay {
+    position: absolute;
+    top: 28px;
+    inset-inline: 0;
+    bottom: 0;
+    pointer-events: none;
+}

@@ -21,21 +21,23 @@ let nextId = 0
 const requestWorker = (payload: DiffRequest): Promise<DiffReply> => {
     const { promise, resolve } = Promise.withResolvers<DiffReply>()
     try {
-        worker ??= new Worker(new URL('diff-worker.ts', import.meta.url), { type: 'module' })
-        worker.onmessage = (event: MessageEvent<DiffReply>) => {
-            requests.get(event.data.id)?.(event.data)
-            requests.delete(event.data.id)
-        }
-        worker.onerror = () => {
-            for (const [id, complete] of requests) {
-                complete({ id })
-            }
-            requests.clear()
-            worker?.terminate()
-            worker = undefined
+        if (!worker) {
+            worker = new Worker(new URL('diff-worker.ts', import.meta.url), { type: 'module' })
+            worker.addEventListener('message', (event: MessageEvent<DiffReply>) => {
+                requests.get(event.data.id)?.(event.data)
+                requests.delete(event.data.id)
+            })
+            worker.addEventListener('error', () => {
+                for (const [id, complete] of requests) {
+                    complete({ id })
+                }
+                requests.clear()
+                worker?.terminate()
+                worker = undefined
+            })
         }
         requests.set(payload.id, resolve)
-        worker.postMessage(payload)
+        worker.postMessage(payload, [])
     } catch {
         requests.delete(payload.id)
         resolve({ id: payload.id })

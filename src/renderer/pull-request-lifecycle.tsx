@@ -1,7 +1,7 @@
 import { GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft } from 'lucide-react'
-import { useEffect, useState } from 'react'
 
 import type { Activity } from '../shared/model'
+import { useNow } from './clock'
 import type { BadgeTone } from './components/arc/badge/badge'
 import { Badge } from './components/arc/badge/badge'
 import type { TimelineEvent } from './components/arc/timeline/timeline'
@@ -43,16 +43,7 @@ export const PullRequestLifecycle = ({
     refreshedAt?: string
 }) => {
     const context = pullRequestContext(activity, activities)
-    const [now, setNow] = useState(() => Date.parse(refreshedAt ?? activity.date))
-    useEffect(() => {
-        setNow(Date.now())
-        const interval = setInterval(() => {
-            setNow(Date.now())
-        }, 60_000)
-        return () => {
-            clearInterval(interval)
-        }
-    }, [])
+    const now = useNow(Date.parse(refreshedAt ?? activity.date))
     const events: TimelineEvent[] = []
     if (context.openedAt) {
         events.push({

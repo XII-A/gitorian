@@ -442,7 +442,7 @@ export const Workspace = ({
                 </div>
             </header>
             {notice && (
-                <div className="ws-action-notice" role="status">
+                <output className="ws-action-notice" style={{ display: 'block' }}>
                     <span>{notice}</span>
                     <Button
                         variant="ghost"
@@ -454,7 +454,7 @@ export const Workspace = ({
                     >
                         <WorkspaceIcon name="close" />
                     </Button>
-                </div>
+                </output>
             )}
             {!sample && error && (
                 <Alert tone="danger" title="Activity could not be refreshed">
@@ -507,7 +507,7 @@ export const Workspace = ({
                         week={week}
                         className="ws-week-chart"
                     />
-                    <div className="ws-activity-filters" role="group" aria-label="Filter activity">
+                    <fieldset className="ws-activity-filters" aria-label="Filter activity">
                         {(['all', 'commit', 'pr'] as const).map((value) => (
                             <Button
                                 key={value}
@@ -598,7 +598,7 @@ export const Workspace = ({
                                 <BrowseHistoryIcon />
                             )}
                         </Button>
-                    </div>
+                    </fieldset>
                     <ScrollArea
                         className="ws-activity-scroll"
                         viewportClassName="ws-activity-viewport"

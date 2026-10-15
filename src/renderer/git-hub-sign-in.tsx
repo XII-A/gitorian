@@ -184,10 +184,10 @@ export const GitHubSignIn = ({
                                 }
                                 if (feedback?.kind === 'success') {
                                     return (
-                                        <p className="github-signin-result" role="status">
+                                        <output className="github-signin-result" style={{ display: 'block' }}>
                                             <CheckCircle size={20} strokeWidth={1.5} aria-hidden="true" />
                                             <span>Connected as {feedback.login}</span>
-                                        </p>
+                                        </output>
                                     )
                                 }
                                 if (feedback) {

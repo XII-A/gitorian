@@ -9,9 +9,13 @@ export const pullRequestKey = (activity: Activity) =>
 export const pullRequestContext = (activity: Activity, activities: Activity[]) => {
     const key = pullRequestKey(activity)
     const related = activities.filter((item) => isPullRequest(item) && pullRequestKey(item) === key)
-    const canonical =
-        related.find((item) => item.kind === 'pr') ??
-        related.reduce((latest, item) => (item.date > latest.date ? item : latest), activity)
+    let latest = activity
+    for (const item of related) {
+        if (item.date > latest.date) {
+            latest = item
+        }
+    }
+    const canonical = related.find((item) => item.kind === 'pr') ?? latest
     const metadata = activity.pullRequest ?? canonical.pullRequest
     const openedAt = metadata?.openedAt ?? related.find((item) => item.kind === 'opened')?.date
     const mergedAt = metadata?.mergedAt ?? related.find((item) => item.kind === 'merged')?.date

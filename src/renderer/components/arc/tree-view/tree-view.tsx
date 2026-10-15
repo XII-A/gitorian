@@ -137,7 +137,7 @@ export const TreeView = ({
     const selectionLayoutId = `tree-selection-${useId()}`
     const [internalExpanded, setInternalExpanded] = useState(() => new Set(defaultExpandedIds))
     const [focusedId, setFocusedId] = useState<string | null>(nodes[0]?.id ?? null)
-    const [internalSelectedId, setSelectedId] = useState<string | null>(null)
+    const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null)
     const selectedId = controlledSelectedId === undefined ? internalSelectedId : controlledSelectedId
     /** The folder that opened last; its new children fade in one after another, then everything else stays still. */
     const [openedId, setOpenedId] = useState<string | null>(null)
@@ -180,7 +180,7 @@ export const TreeView = ({
 
     const select = (node: TreeNode) => {
         if (controlledSelectedId === undefined) {
-            setSelectedId(node.id)
+            setInternalSelectedId(node.id)
         }
         onSelect?.(node)
     }

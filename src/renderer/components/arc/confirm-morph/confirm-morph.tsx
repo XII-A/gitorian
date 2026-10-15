@@ -94,7 +94,7 @@ export interface ConfirmMorphProps {
     disabled?: boolean
     className?: string
     /** Receives the root element, which also takes focus while the action is pending. */
-    ref?: Ref<HTMLDivElement>
+    ref?: Ref<HTMLFieldSetElement>
 }
 
 /** A press this soon after the question appears is the tail of the press that opened it, not an answer. */
@@ -306,7 +306,7 @@ export const ConfirmMorph = ({
     const uid = useId()
     const promptId = `${uid}-prompt`
     const holdHintId = `${uid}-hold`
-    const rootRef = useRef<HTMLDivElement>(null)
+    const rootRef = useRef<HTMLFieldSetElement>(null)
     useImperativeHandle(ref, () => required(rootRef.current), [])
 
     const [inner, setInner] = useState<ConfirmMorphState>(defaultState)
@@ -620,7 +620,7 @@ export const ConfirmMorph = ({
         ;(autofocus ?? root).focus({ preventScroll: true })
     }, [faceKey])
 
-    const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const onKeyDown = (event: ReactKeyboardEvent<HTMLFieldSetElement>) => {
         if (event.key === 'Escape') {
             if (state === 'confirming') {
                 event.preventDefault()
@@ -835,9 +835,9 @@ export const ConfirmMorph = ({
     })()
 
     return (
-        <div
+        <fieldset
             ref={rootRef}
-            role="group"
+
             aria-label={typeof label === 'string' ? label : 'Confirmation action'}
             className={[styles.root, className].filter(Boolean).join(' ')}
             data-state={state}
@@ -874,10 +874,10 @@ export const ConfirmMorph = ({
                     </Face>
                 </AnimatePresence>
             </motion.div>
-            <span className={styles.srOnly} role="status" aria-live="polite">
+            <output className={styles.srOnly} aria-live="polite">
                 {announcement}
-            </span>
-        </div>
+            </output>
+        </fieldset>
     )
 }
 

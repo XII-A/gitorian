@@ -147,6 +147,14 @@
     --duration-spring: 580ms;
 }
 
+/* Native grouping elements inherit the surrounding component's layout. */
+fieldset {
+    border: 0;
+    margin: 0;
+    min-inline-size: 0;
+    padding: 0;
+}
+
 :root[data-theme='dark'] {
     color-scheme: dark;
     --background: oklch(19% 0 0);

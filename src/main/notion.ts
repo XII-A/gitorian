@@ -3,6 +3,7 @@ import type { NotionBlock } from '../shared/notion-format'
 import { fromNotion, toNotion } from '../shared/notion-format'
 import type { Http } from './http'
 import { HttpError } from './http'
+import { cursorPages } from './pagination'
 
 interface Page {
     id: string
@@ -34,36 +35,31 @@ export class Notion {
     }
     async blocks(id: string): Promise<NotionBlock[]> {
         const blocks: NotionBlock[] = []
-        let cursor: string | null = null
-        do {
-            const response: List<NotionBlock> = await this.request(
+        for await (const results of cursorPages<NotionBlock>((cursor) =>
+            this.request<List<NotionBlock>>(
                 `blocks/${encodeURIComponent(id)}/children?page_size=100${cursor ? `&start_cursor=${cursor}` : ''}`
             )
-            for await (const block of response.results) {
+        )) {
+            for await (const block of results) {
                 if (block.has_children && block.id && block.type !== 'child_page' && block.type !== 'child_database') {
                     block.children = await this.blocks(block.id)
                 }
                 blocks.push(block)
             }
-            cursor = response.has_more ? response.next_cursor : null
-        } while (cursor)
+        }
         return blocks
     }
     async pages(destination: Destination): Promise<Page[]> {
         if (destination.kind === 'database') {
             const pages: Page[] = []
-            let cursor: string | null = null
-            do {
-                const response: List<Page> = await this.request(
-                    `data_sources/${encodeURIComponent(destination.id)}/query`,
-                    {
-                        body: JSON.stringify({ page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) }),
-                        method: 'POST'
-                    }
-                )
-                pages.push(...response.results)
-                cursor = response.has_more ? response.next_cursor : null
-            } while (cursor)
+            for await (const results of cursorPages<Page>((cursor) =>
+                this.request<List<Page>>(`data_sources/${encodeURIComponent(destination.id)}/query`, {
+                    body: JSON.stringify({ page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) }),
+                    method: 'POST'
+                })
+            )) {
+                pages.push(...results)
+            }
             return pages
         }
         const blocks = await this.blocks(destination.id)
@@ -118,7 +114,7 @@ export class Notion {
             },
             type: 'paragraph'
         })
-        const batches = this.batches(children)
+        const batches = Notion.batches(children)
         const { destination } = save
         const properties: Record<string, unknown> = {
             [destination.kind === 'page' ? 'title' : destination.titleProperty]: {
@@ -175,7 +171,7 @@ export class Notion {
                     )
                 }
                 // Re-read and verify an exact prefix before resuming a partial append.
-                for await (const children of this.batches(expected.slice(actual.length))) {
+                for await (const children of Notion.batches(expected.slice(actual.length))) {
                     await this.request(`blocks/${page.id}/children`, {
                         body: JSON.stringify({ children }),
                         method: 'PATCH'
@@ -186,7 +182,7 @@ export class Notion {
         }
         return undefined
     }
-    private batches(blocks: NotionBlock[]): NotionBlock[][] {
+    private static batches(blocks: NotionBlock[]): NotionBlock[][] {
         const batches: NotionBlock[][] = []
         let batch: NotionBlock[] = []
         let bytes = 0

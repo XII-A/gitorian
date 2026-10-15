@@ -70,7 +70,7 @@ const iconEnter = {
 
 /** A key for the label content: text plus element names, so a new label or icon crossfades while prop-only updates stay in place. */
 const labelKey = (node: ReactNode): string => {
-    if (node == null || typeof node === 'boolean') {
+    if (node === null || node === undefined || typeof node === 'boolean') {
         return ''
     }
     if (typeof node === 'string' || typeof node === 'number' || typeof node === 'bigint') {

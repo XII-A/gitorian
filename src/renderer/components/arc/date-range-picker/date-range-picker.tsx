@@ -426,15 +426,79 @@ const Month = ({
             <p id={titleId} className={styles.monthTitle}>
                 {formatters.title.format(month)}
             </p>
-            <div role="grid" aria-labelledby={titleId} className={styles.grid}>
-                <div role="row" className={styles.weekdays}>
-                    {rows[0].map((date) => (
-                        <span key={date.getDay()} role="columnheader" aria-label={formatters.weekdayLong.format(date)}>
-                            {formatters.weekday.format(date).slice(0, 2)}
-                        </span>
-                    ))}
-                </div>
-                <div className={styles.weeks}>
+            <div className={styles.grid}>
+                <table role="grid" aria-labelledby={titleId} className={styles.table}>
+                    <thead>
+                        <tr className={styles.weekdays}>
+                            {rows[0].map((date) => (
+                                <th key={date.getDay()} aria-label={formatters.weekdayLong.format(date)}>
+                                    {formatters.weekday.format(date).slice(0, 2)}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className={styles.weeks}>
+                        {rows.map((row, index) => (
+                            <tr key={index} className={styles.week}>
+                                {row.map((date) => {
+                                    if (!inMonth(date)) {
+                                        return (
+                                            <td
+                                                key={keyOf(date)}
+                                                className={styles.blank}
+                                                aria-label="Outside displayed month"
+                                            />
+                                        )
+                                    }
+                                    const key = keyOf(date)
+                                    const disabled = Boolean(
+                                        (minDate && dayDiff(date, minDate) < 0) ||
+                                        (maxDate && dayDiff(date, maxDate) > 0)
+                                    )
+                                    const inRange = Boolean(
+                                        lo && hi && dayDiff(date, lo) >= 0 && dayDiff(date, hi) <= 0
+                                    )
+                                    const edge = sameDay(date, lo) || sameDay(date, hi)
+                                    const isToday = sameDay(date, today)
+                                    return (
+                                        <td key={key} aria-selected={inRange} className={styles.cell}>
+                                            <button
+                                                type="button"
+                                                className={styles.day}
+                                                data-date={key}
+                                                data-edge={edge || undefined}
+                                                data-range={inRange || undefined}
+                                                data-today={isToday || undefined}
+                                                tabIndex={key === tabbable ? 0 : -1}
+                                                disabled={disabled}
+                                                aria-current={isToday ? 'date' : undefined}
+                                                aria-label={formatters.day.format(date)}
+                                                onClick={() => {
+                                                    onPick(date)
+                                                }}
+                                                onPointerEnter={() => {
+                                                    if (!disabled) {
+                                                        onHover(date)
+                                                    }
+                                                }}
+                                                onFocus={() => {
+                                                    onFocusDay(date)
+                                                }}
+                                                onKeyDown={(event) => {
+                                                    onKey(event, date)
+                                                }}
+                                            >
+                                                <span>{date.getDate()}</span>
+                                            </button>
+                                        </td>
+                                    )
+                                })}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                <div className={styles.rangeOverlay} aria-hidden="true">
+                    {' '}
                     <span className={styles.layer} aria-hidden="true">
                         {segments.map((segment, row) => (
                             <Bar key={row} row={row} segment={segment} reduced={reduced} />
@@ -442,54 +506,6 @@ const Month = ({
                         <Thumb cell={startCell} reduced={reduced} />
                         <Thumb cell={endCell} reduced={reduced} />
                     </span>
-                    {rows.map((row, index) => (
-                        <div key={index} role="row" className={styles.week}>
-                            {row.map((date) => {
-                                if (!inMonth(date)) {
-                                    return <span key={keyOf(date)} role="gridcell" className={styles.blank} />
-                                }
-                                const key = keyOf(date)
-                                const disabled = Boolean(
-                                    (minDate && dayDiff(date, minDate) < 0) || (maxDate && dayDiff(date, maxDate) > 0)
-                                )
-                                const inRange = Boolean(lo && hi && dayDiff(date, lo) >= 0 && dayDiff(date, hi) <= 0)
-                                const edge = sameDay(date, lo) || sameDay(date, hi)
-                                const isToday = sameDay(date, today)
-                                return (
-                                    <span key={key} role="gridcell" aria-selected={inRange} className={styles.cell}>
-                                        <button
-                                            type="button"
-                                            className={styles.day}
-                                            data-date={key}
-                                            data-edge={edge || undefined}
-                                            data-range={inRange || undefined}
-                                            data-today={isToday || undefined}
-                                            tabIndex={key === tabbable ? 0 : -1}
-                                            disabled={disabled}
-                                            aria-current={isToday ? 'date' : undefined}
-                                            aria-label={formatters.day.format(date)}
-                                            onClick={() => {
-                                                onPick(date)
-                                            }}
-                                            onPointerEnter={() => {
-                                                if (!disabled) {
-                                                    onHover(date)
-                                                }
-                                            }}
-                                            onFocus={() => {
-                                                onFocusDay(date)
-                                            }}
-                                            onKeyDown={(event) => {
-                                                onKey(event, date)
-                                            }}
-                                        >
-                                            <span>{date.getDate()}</span>
-                                        </button>
-                                    </span>
-                                )
-                            })}
-                        </div>
-                    ))}
                 </div>
             </div>
         </div>

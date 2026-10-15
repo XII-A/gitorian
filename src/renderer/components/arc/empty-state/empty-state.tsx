@@ -69,8 +69,12 @@ const HeightFrame = ({
     const content = useRef<HTMLDivElement>(null)
     const height = useMotionValue<number | 'auto'>('auto')
     const changedAt = useRef(0)
+    const previousMorphKey = useRef(morphKey)
     useLayoutEffect(() => {
-        changedAt.current = performance.now()
+        if (previousMorphKey.current !== morphKey) {
+            changedAt.current = performance.now()
+            previousMorphKey.current = morphKey
+        }
     }, [morphKey])
     useEffect(() => {
         const node = content.current

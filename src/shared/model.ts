@@ -354,6 +354,7 @@ export const commandSchema = z.discriminatedUnion('type', [
 export type Command = z.infer<typeof commandSchema>
 export interface Reply {
     state: State
+    remotes?: Record<string, string[]>
     diff?: string
     activityIds?: string[]
     device?: { code: string; url: string; interval: number }

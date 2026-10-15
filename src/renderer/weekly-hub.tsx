@@ -65,7 +65,7 @@ export const WeeklyHub = ({ state, run, error, onWrite, onSettings, onSources, o
         />
     )
     const filters = (
-        <div className="hub-filters" role="group" aria-label="Filter activity">
+        <fieldset className="hub-filters" aria-label="Filter activity">
             {(['all', 'commit', 'pr'] as const).map((value) => (
                 <Button
                     variant="ghost"
@@ -98,7 +98,7 @@ export const WeeklyHub = ({ state, run, error, onWrite, onSettings, onSources, o
                 </Button>
             ))}
             <ProjectFilter repositories={state.repositories} value={project} onValueChange={setProject} />
-        </div>
+        </fieldset>
     )
     const empty = (
         <div className="hub-empty">
@@ -350,9 +350,9 @@ export const WeeklyHub = ({ state, run, error, onWrite, onSettings, onSources, o
                     <span>No rush. It’s your story.</span>
                 </footer>
             </div>
-            <div className="hub-sr-only" role="status">
+            <output className="hub-sr-only" style={{ display: 'block' }}>
                 {visible.length} activities from {period}
-            </div>
+            </output>
             <HubActivityDialog ref={detailDialog} state={state} onActivity={onActivity} />
         </main>
     )

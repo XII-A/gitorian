@@ -155,11 +155,11 @@ const SegmentedControl = ({
     }
 
     return (
-        <div
+        <fieldset
             className={`${styles.root} ${className ?? ''}`}
             data-size={size}
             data-full-width={fullWidth || undefined}
-            role="group"
+
             aria-label={label}
         >
             <div ref={track} className={styles.track}>
@@ -207,7 +207,7 @@ const SegmentedControl = ({
                     </button>
                 ))}
             </div>
-        </div>
+        </fieldset>
     )
 }
 export default SegmentedControl

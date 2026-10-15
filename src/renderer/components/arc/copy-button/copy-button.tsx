@@ -218,7 +218,7 @@ export const CopyButton = ({
                     </span>
                 )}
             </button>
-            <span className={styles.srOnly} role="status" aria-live="polite">
+            <output className={styles.srOnly} aria-live="polite">
                 {(() => {
                     if (state === 'idle') {
                         return ''
@@ -228,7 +228,7 @@ export const CopyButton = ({
                     }
                     return `${label}: Copied`
                 })()}
-            </span>
+            </output>
         </>
     )
 }

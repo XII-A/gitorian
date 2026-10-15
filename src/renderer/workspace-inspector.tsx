@@ -154,7 +154,7 @@ export const WorkspaceInspector = ({
                                     label="Diff status"
                                     fade={0}
                                 >
-                                    <div role="status">
+                                    <output style={{ display: 'block' }}>
                                         <EmptyState
                                             iconVariant="plain"
                                             icon={
@@ -187,31 +187,31 @@ export const WorkspaceInspector = ({
                                                 </>
                                             }
                                         />
-                                    </div>
+                                    </output>
                                 </ScrollArea>
                             )
                         }
                         if (state.diffs[activity.id] === undefined) {
                             return (
-                                <div className="ws-diff-loading" role="status">
+                                <output className="ws-diff-loading" style={{ display: 'block' }}>
                                     Changes have not been loaded.
-                                </div>
+                                </output>
                             )
                         }
                         return (
                             <>
                                 {loading && (
-                                    <p className="ws-diff-notice" role="status">
+                                    <output className="ws-diff-notice" style={{ display: 'block' }}>
                                         Refreshing changes...
-                                    </p>
+                                    </output>
                                 )}
                                 {error && !loading && (
-                                    <div className="ws-diff-notice" role="status">
+                                    <output className="ws-diff-notice" style={{ display: 'block' }}>
                                         <p>Changes could not be refreshed. Showing cached changes.</p>
                                         <Button variant="ghost" size="sm" onClick={() => onInspect?.(activity, 'diff')}>
                                             Retry
                                         </Button>
-                                    </div>
+                                    </output>
                                 )}
                                 {activity.kind === 'pr' && activity.diffRevision !== activity.revision && !error && (
                                     <p className="ws-diff-notice">Showing changes from an earlier revision.</p>
@@ -277,7 +277,7 @@ export const WorkspaceInspector = ({
                 </TabsContent>
             </Tabs>
             <footer className="ws-inspector-footer">
-                <span role="status">
+                <output>
                     {citationStatus ||
                         (() => {
                             if (canCite) {
@@ -288,7 +288,7 @@ export const WorkspaceInspector = ({
                             }
                             return 'Start a draft to cite this change.'
                         })()}
-                </span>
+                </output>
                 <Button variant="secondary" size="sm" disabled={!canCite} onClick={onCite}>
                     Cite in entry
                 </Button>

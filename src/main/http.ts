@@ -1,17 +1,13 @@
 import { createHash } from 'node:crypto'
 
 import { required } from '../shared/required'
+import { wait } from '../shared/wait'
+import { readResponseBody } from './http-body'
+import { HttpError } from './http-error'
 import { WorkQueue } from './work-queue'
 
-export class HttpError extends Error {
-    readonly status: number
-    readonly retryAt?: number
-    constructor(status: number, message: string, retryAt?: number) {
-        super(message)
-        this.status = status
-        this.retryAt = retryAt
-    }
-}
+export { HttpError } from './http-error'
+
 interface ReadOptions {
     background?: boolean
     maxBytes?: number
@@ -24,6 +20,27 @@ interface CachedResponse {
     etag: string
     value: unknown
     bytes: number
+}
+
+const retry = (attempt: number) => wait(200 * 2 ** attempt + Math.floor(Math.random() * 100))
+const retryableReadFailure = (error: unknown, read: boolean, signal: AbortSignal | null | undefined, attempt: number) =>
+    read && !(error instanceof HttpError) && !signal?.aborted && attempt < 2
+const retryDelay = (header: string | null): number => {
+    if (!header) {
+        return 60_000
+    }
+    return /^\d+$/u.test(header) ? Number(header) * 1000 : Math.max(0, Date.parse(header) - Date.now())
+}
+const responseError = (response: Response): HttpError => {
+    const details: Record<number, string> = {
+        401: 'Reconnect the account in Settings.',
+        403: 'The connected account does not have permission for this source.',
+        404: 'This source is missing or inaccessible to the connected account.'
+    }
+    return new HttpError(
+        response.status,
+        `Source returned ${response.status}. ${details[response.status] ?? response.statusText}`
+    )
 }
 
 export class Http {
@@ -75,11 +92,9 @@ export class Http {
             lane = new WorkQueue(1)
             this.lanes.set(scope, lane)
         }
-        const request = (host === 'api.github.com' ? lane.run(run, options.background ? 0 : 1) : run()).finally(() => {
-            if (this.inflight.get(key) === request) {
-                this.inflight.delete(key)
-            }
-        })
+        const request = this.finishRequest(key, shared, () =>
+            host === 'api.github.com' ? lane.run(run, options.background ? 0 : 1) : run()
+        )
         if (shared) {
             this.inflight.set(key, request)
         }
@@ -89,6 +104,93 @@ export class Http {
         this.pauses[scope] = Math.max(this.pauses[scope] ?? 0, until)
         this.pauseStore?.changed()
     }
+
+    private async finishRequest<T>(key: string, shared: boolean, work: () => Promise<T>): Promise<T> {
+        try {
+            return await work()
+        } finally {
+            if (shared) {
+                this.inflight.delete(key)
+            }
+        }
+    }
+    private assertAvailable(scope: string, github: boolean, background = false): void {
+        const until = this.pauses[scope] ?? 0
+        if (until > Date.now()) {
+            throw new HttpError(
+                429,
+                `Service rate limit; requests paused until ${new Date(until).toLocaleString()}. Cached work is available.`,
+                until
+            )
+        }
+        const budget = this.budgets.get(scope)
+        if (github && background && budget && budget.reset > Date.now() && budget.remaining <= 500) {
+            throw new HttpError(
+                429,
+                'Background GitHub refresh paused to preserve quota for opening changes.',
+                budget.reset
+            )
+        }
+    }
+    private async admit(
+        scope: string,
+        github: boolean,
+        background: boolean | undefined,
+        signal?: AbortSignal
+    ): Promise<void> {
+        if (github && background) {
+            const delay = Math.max(0, 150 - (Date.now() - (this.lastRequest.get(scope) ?? 0)))
+            if (delay) {
+                await wait(delay)
+            }
+        }
+        signal?.throwIfAborted()
+        this.lastRequest.set(scope, Date.now())
+    }
+    private recordBudget(scope: string, response: Response): void {
+        const remaining = response.headers.get('x-ratelimit-remaining')
+        const reset = Number(response.headers.get('x-ratelimit-reset') ?? 0) * 1000
+        if (remaining !== null) {
+            this.budgets.set(scope, { remaining: Number(remaining), reset })
+        }
+        if (remaining === '0' && reset) {
+            this.pause(scope, reset)
+        }
+    }
+    private checkRateLimit(scope: string, response: Response, body: string): void {
+        const remaining = response.headers.get('x-ratelimit-remaining')
+        const secondary =
+            response.status === 403 &&
+            (/secondary rate limit|abuse detection/iu.test(body) || response.headers.has('retry-after'))
+        if (response.status !== 429 && !secondary && !(response.status === 403 && remaining === '0')) {
+            return
+        }
+        const reset = Number(response.headers.get('x-ratelimit-reset') ?? 0) * 1000
+        const retryAt = Math.max(
+            Date.now() + retryDelay(response.headers.get('retry-after')),
+            remaining === '0' ? reset : 0
+        )
+        this.pause(scope, retryAt)
+        throw new HttpError(
+            response.status,
+            `Source returned ${response.status}: rate limit. Retry after ${new Date(retryAt).toLocaleString()}.`,
+            retryAt
+        )
+    }
+    private remember(key: string, body: string, value: unknown, etag: string): void {
+        const previous = this.cache.get(key)
+        if (previous) {
+            this.cacheBytes -= previous.bytes
+        }
+        this.cache.delete(key)
+        this.cache.set(key, { bytes: body.length * 2, etag, value })
+        this.cacheBytes += body.length * 2
+        while (this.cacheBytes > 20_000_000 || this.cache.size > 200) {
+            const oldest = required(this.cache.keys().next().value)
+            this.cacheBytes -= required(this.cache.get(oldest)).bytes
+            this.cache.delete(oldest)
+        }
+    }
     private async perform<T>(
         scope: string,
         key: string,
@@ -96,168 +198,61 @@ export class Http {
         headers: Headers,
         init: RequestInit,
         format: 'json' | 'text',
-        options: ReadOptions
+        options: ReadOptions,
+        attempt = 0
     ): Promise<T> {
+        const result = await this.performAttempt<T>(scope, key, url, headers, init, format, options, attempt)
+        if (result) {
+            return result.value
+        }
+        await retry(attempt)
+        return await this.perform<T>(scope, key, url, headers, init, format, options, attempt + 1)
+    }
+    private async performAttempt<T>(
+        scope: string,
+        key: string,
+        url: string,
+        headers: Headers,
+        init: RequestInit,
+        format: 'json' | 'text',
+        options: ReadOptions,
+        attempt = 0
+    ): Promise<{ value: T } | undefined> {
         const github = new URL(url).host === 'api.github.com'
         const read = !init.method || init.method === 'GET'
         const cached = read ? this.cache.get(key) : undefined
         if (cached) {
             headers.set('If-None-Match', cached.etag)
         }
-        for (let attempt = 0; ; attempt += 1) {
-            const until = this.pauses[scope] ?? 0
-            if (until > Date.now()) {
-                throw new HttpError(
-                    429,
-                    `Service rate limit; requests paused until ${new Date(until).toLocaleString()}. Cached work is available.`,
-                    until
-                )
+        this.assertAvailable(scope, github, options.background)
+        await this.admit(scope, github, options.background, init.signal ?? undefined)
+        try {
+            const timeout = AbortSignal.timeout(30_000)
+            const signal = init.signal ? AbortSignal.any([timeout, init.signal]) : timeout
+            const response = await this.fetcher(url, { ...init, headers, signal })
+            this.recordBudget(scope, response)
+            if (response.status === 304 && cached) {
+                return { value: cached.value as T }
             }
-            const budget = this.budgets.get(scope)
-            if (github && options.background && budget && budget.reset > Date.now() && budget.remaining <= 500) {
-                throw new HttpError(
-                    429,
-                    'Background GitHub refresh paused to preserve quota for opening changes.',
-                    budget.reset
-                )
+            const body = await readResponseBody(response, options.maxBytes ?? 8_000_000)
+            this.checkRateLimit(scope, response, body)
+            if (!response.ok) {
+                if (read && response.status >= 500 && attempt < 2) {
+                    return undefined
+                }
+                throw responseError(response)
             }
-            if (github && options.background) {
-                const delay = Math.max(0, 150 - (Date.now() - (this.lastRequest.get(scope) ?? 0)))
-                if (delay) {
-                    await (() => {
-                        const { promise, resolve: done, reject } = Promise.withResolvers()
-                        try {
-                            setTimeout(done, delay)
-                        } catch (error) {
-                            reject(error)
-                        }
-                        return promise
-                    })()
-                }
+            const value: unknown = format === 'text' ? body : JSON.parse(body)
+            const etag = response.headers.get('etag')
+            if (read && etag) {
+                this.remember(key, body, value, etag)
             }
-            init.signal?.throwIfAborted()
-            this.lastRequest.set(scope, Date.now())
-            try {
-                const timeout = AbortSignal.timeout(30_000)
-                const signal = init.signal ? AbortSignal.any([timeout, init.signal]) : timeout
-                const response = await this.fetcher(url, { ...init, headers, signal })
-                const remaining = response.headers.get('x-ratelimit-remaining')
-                const reset = Number(response.headers.get('x-ratelimit-reset') ?? 0) * 1000
-                if (remaining !== null) {
-                    this.budgets.set(scope, { remaining: Number(remaining), reset })
-                }
-                if (remaining === '0' && reset) {
-                    this.pause(scope, reset)
-                }
-                if (response.status === 304 && cached) {
-                    return cached.value as T
-                }
-                const body = await this.body(response, options.maxBytes ?? 8_000_000)
-                const secondary =
-                    response.status === 403 &&
-                    (/secondary rate limit|abuse detection/iu.test(body) || response.headers.has('retry-after'))
-                if (response.status === 429 || secondary || (response.status === 403 && remaining === '0')) {
-                    const retry = response.headers.get('retry-after')
-                    const delay = (() => {
-                        if (retry) {
-                            if (/^\d+$/u.test(retry)) {
-                                return Number(retry) * 1000
-                            }
-                            return Math.max(0, Date.parse(retry) - Date.now())
-                        }
-                        return 60_000
-                    })()
-                    const retryAt = Math.max(Date.now() + delay, remaining === '0' ? reset : 0)
-                    this.pause(scope, retryAt)
-                    throw new HttpError(
-                        response.status,
-                        `Source returned ${response.status}: rate limit. Retry after ${new Date(retryAt).toLocaleString()}.`,
-                        retryAt
-                    )
-                }
-                if (!response.ok) {
-                    if (read && response.status >= 500 && attempt < 2) {
-                        await this.retry(attempt)
-                        continue
-                    }
-                    const detail = (() => {
-                        if (response.status === 401) {
-                            return 'Reconnect the account in Settings.'
-                        }
-                        if (response.status === 403) {
-                            return 'The connected account does not have permission for this source.'
-                        }
-                        if (response.status === 404) {
-                            return 'This source is missing or inaccessible to the connected account.'
-                        }
-
-                        return response.statusText
-                    })()
-                    throw new HttpError(response.status, `Source returned ${response.status}. ${detail}`)
-                }
-                const value = format === 'text' ? body : (JSON.parse(body) as unknown)
-                const etag = response.headers.get('etag')
-                if (read && etag) {
-                    const previous = this.cache.get(key)
-                    if (previous) {
-                        this.cacheBytes -= previous.bytes
-                    }
-                    this.cache.delete(key)
-                    this.cache.set(key, { bytes: body.length * 2, etag, value })
-                    this.cacheBytes += body.length * 2
-                    while (this.cacheBytes > 20_000_000 || this.cache.size > 200) {
-                        const oldest = required(this.cache.keys().next().value)
-                        this.cacheBytes -= required(this.cache.get(oldest)).bytes
-                        this.cache.delete(oldest)
-                    }
-                }
-                return value as T
-            } catch (error) {
-                if (read && !(error instanceof HttpError) && !init.signal?.aborted && attempt < 2) {
-                    await this.retry(attempt)
-                    continue
-                }
-                throw error
+            return { value: value as T }
+        } catch (error) {
+            if (retryableReadFailure(error, read, init.signal, attempt)) {
+                return undefined
             }
+            throw error
         }
-    }
-    private retry(attempt: number): Promise<void> {
-        return Promise.resolve(
-            (() => {
-                const { promise, resolve: done, reject } = Promise.withResolvers<void>()
-                try {
-                    setTimeout(done, 200 * 2 ** attempt + Math.floor(Math.random() * 100))
-                } catch (error) {
-                    reject(error)
-                }
-                return promise
-            })()
-        )
-    }
-    private async body(response: Response, maxBytes: number): Promise<string> {
-        if (Number(response.headers.get('content-length') ?? 0) > maxBytes) {
-            await response.body?.cancel()
-            throw new HttpError(413, 'Changes are too large to display. Open the source externally.')
-        }
-        const reader = response.body?.getReader()
-        if (!reader) {
-            return ''
-        }
-        const decoder = new TextDecoder()
-        let bytes = 0
-        let text = ''
-        while (true) {
-            const part = await reader.read()
-            if (part.done) {
-                break
-            }
-            bytes += part.value.byteLength
-            if (bytes > maxBytes) {
-                await reader.cancel()
-                throw new HttpError(413, 'Changes are too large to display. Open the source externally.')
-            }
-            text += decoder.decode(part.value, { stream: true })
-        }
-        return text + decoder.decode()
     }
 }

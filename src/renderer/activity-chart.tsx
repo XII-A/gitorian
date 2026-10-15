@@ -136,13 +136,14 @@ export const ActivityChart = ({
                 />
             </div>
             <PopoverContent
+                asChild
+                role={undefined}
                 className="activity-day-popover"
-                role="region"
+
                 id={summaryId}
                 align="start"
                 sideOffset={12}
                 updatePositionStrategy="always"
-                aria-label={day ? `Activity on ${formatDay(day)}` : 'Daily activity counts'}
                 onOpenAutoFocus={(event) => {
                     event.preventDefault()
                 }}
@@ -150,26 +151,28 @@ export const ActivityChart = ({
                     event.preventDefault()
                 }}
             >
-                <div className="activity-day-summary-heading">
-                    <h3>{day && formatDay(day, { day: 'numeric', month: 'short', weekday: 'short' })}</h3>
-                    <span>
-                        {total} {total === 1 ? 'event' : 'events'}
-                    </span>
-                </div>
-                <dl>
-                    <div>
-                        <dt>Commits</dt>
-                        <dd>{counts.commits}</dd>
+                <section aria-label={day ? `Activity on ${formatDay(day)}` : 'Daily activity counts'}>
+                    <div className="activity-day-summary-heading">
+                        <h3>{day && formatDay(day, { day: 'numeric', month: 'short', weekday: 'short' })}</h3>
+                        <span>
+                            {total} {total === 1 ? 'event' : 'events'}
+                        </span>
                     </div>
-                    <div>
-                        <dt>PRs</dt>
-                        <dd>{counts.prs}</dd>
-                    </div>
-                    <div>
-                        <dt>Reviews</dt>
-                        <dd>{counts.reviews}</dd>
-                    </div>
-                </dl>
+                    <dl>
+                        <div>
+                            <dt>Commits</dt>
+                            <dd>{counts.commits}</dd>
+                        </div>
+                        <div>
+                            <dt>PRs</dt>
+                            <dd>{counts.prs}</dd>
+                        </div>
+                        <div>
+                            <dt>Reviews</dt>
+                            <dd>{counts.reviews}</dd>
+                        </div>
+                    </dl>
+                </section>
             </PopoverContent>
         </Popover>
     )

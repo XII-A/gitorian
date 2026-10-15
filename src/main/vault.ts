@@ -6,13 +6,15 @@ import { safeStorage } from 'electron'
 export class Vault {
     private readonly session = new Map<string, string>()
     private readonly directory: string
-    constructor(directory: string) {
+    private readonly storage: typeof safeStorage
+    constructor(directory: string, storage = safeStorage) {
         this.directory = directory
+        this.storage = storage
     }
     protected(): boolean {
         return (
-            safeStorage.isEncryptionAvailable() &&
-            !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')
+            this.storage.isEncryptionAvailable() &&
+            !(process.platform === 'linux' && this.storage.getSelectedStorageBackend() === 'basic_text')
         )
     }
     get(service: string): string {
@@ -24,7 +26,7 @@ export class Vault {
             return ''
         }
         try {
-            return safeStorage.decryptString(readFileSync(path))
+            return this.storage.decryptString(readFileSync(path))
         } catch {
             return ''
         }
@@ -39,7 +41,7 @@ export class Vault {
             return
         }
         if (this.protected()) {
-            writeFileSync(nodePath.join(this.directory, `${service}.secret`), safeStorage.encryptString(token), {
+            writeFileSync(nodePath.join(this.directory, `${service}.secret`), this.storage.encryptString(token), {
                 mode: 0o600
             })
         }

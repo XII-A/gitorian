@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import type { Command, Reply, State } from '../shared/model'
 import { sourceProblems } from './background-work'
@@ -20,7 +20,9 @@ export const BackgroundNotifications = ({
 }) => {
     const { toast, update, dismiss } = useToastStack()
     const callbacks = useRef({ onSources, run })
-    callbacks.current = { onSources, run }
+    useLayoutEffect(() => {
+        callbacks.current = { onSources, run }
+    }, [onSources, run])
     const problemKey = useRef('')
     const importToast = useRef('')
     const lastImport = useRef('')

@@ -71,5 +71,20 @@ export default defineConfig({
     rules: {
         'no-console': ['error', { allow: ['warn', 'error', 'info'] }]
     },
-    settings: { react: { version: '19.3.0' } }
+    settings: {
+        'jsx-a11y': {
+            components: {
+                'motion.button': 'button',
+                'motion.dialog': 'dialog',
+                'motion.div': 'div',
+                'motion.input': 'input',
+                'motion.option': 'option',
+                'motion.output': 'output',
+                'motion.select': 'select',
+                'motion.span': 'span',
+                'motion.svg': 'svg'
+            }
+        },
+        react: { version: '19.3.0' }
+    }
 })

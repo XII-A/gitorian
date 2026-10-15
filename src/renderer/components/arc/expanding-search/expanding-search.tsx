@@ -265,9 +265,9 @@ const Listbox = ({
                 {groups.map((group) => {
                     const headingId = `${id}-${group.name || 'results'}`.replaceAll(/\s+/gu, '-')
                     return (
-                        <motion.div
+                        <motion.fieldset
                             key={group.name}
-                            role="group"
+
                             aria-labelledby={group.name ? headingId : undefined}
                             className={styles.group}
                             layout={reduced ? false : 'position'}
@@ -341,7 +341,7 @@ const Listbox = ({
                                     )
                                 })}
                             </AnimatePresence>
-                        </motion.div>
+                        </motion.fieldset>
                     )
                 })}
             </AnimatePresence>
@@ -680,9 +680,9 @@ export const ExpandingSearch = ({
                     </Panel>
                 )}
             </AnimatePresence>
-            <span className={styles.srOnly} role="status" aria-live="polite">
+            <output className={styles.srOnly} aria-live="polite">
                 {announcement}
-            </span>
+            </output>
         </div>
     )
 }

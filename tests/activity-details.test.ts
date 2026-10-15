@@ -58,7 +58,7 @@ describe('pull request lifecycle presentation', () => {
             Object.is(container.querySelector('time')?.getAttribute('datetime'), '2026-10-09T10:00:00.000Z'),
             container.querySelector('time')?.getAttribute('title')?.includes('1:00 PM'),
             container.querySelector('time')?.textContent?.includes('Oct 9, 1:00 PM'),
-            container.querySelectorAll('[role="heading"]')?.length,
+            container.querySelectorAll(`.${timelineStyles.day}`)?.length,
             container.querySelectorAll('ol')?.length,
             container.querySelectorAll(`.${timelineStyles.segment}`)?.length,
             container.textContent?.includes('update'),
@@ -127,7 +127,7 @@ describe('timeline date grouping', () => {
             container.querySelectorAll('li')?.length,
             container.querySelectorAll(`.${timelineStyles.segment}`)?.length,
             [...container.querySelectorAll('time')].map((time) => time.querySelector('[aria-hidden]')?.textContent),
-            container.querySelector('[role="heading"]') === null,
+            container.querySelector('h3') === null,
             container.querySelector('[aria-labelledby]') === null,
             container.textContent?.includes('update')
         ]).toStrictEqual([1, 2, 1, ['Oct 9, 1:00 PM', 'Oct 5, 1:00 PM'], true, true, false])
@@ -137,7 +137,7 @@ describe('timeline date grouping', () => {
         const container = render(createElement(Timeline, props))
         expect([
             container.querySelectorAll('ol')?.length,
-            container.querySelectorAll('[role="heading"]')?.length,
+            container.querySelectorAll('h3')?.length,
             container.querySelectorAll(`.${timelineStyles.segment}`)?.length,
             container.textContent?.includes('1 update'),
             Object.is(container.querySelector('time')?.querySelector('[aria-hidden]')?.textContent, '1:00 PM')

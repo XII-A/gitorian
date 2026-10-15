@@ -38,6 +38,7 @@
 }
 /* Day labels stay pinned while their updates scroll under them. Set --timeline-surface when the feed sits on another surface. */
 .day {
+    margin: 0;
     position: sticky;
     z-index: 2;
     top: 0;

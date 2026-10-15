@@ -16,4 +16,18 @@ const syncAppearance = () => {
 }
 syncAppearance()
 appearance.addEventListener('change', syncAppearance)
-createRoot(required(document.querySelector('#root'))).render(<App />)
+const parameters = new URLSearchParams(window.location.search)
+const requestedWeek = parameters.get('week')
+const referenceKind = parameters.get('reference')
+const referenceId = parameters.get('id')
+const route = {
+    reference: referenceKind && referenceId ? { id: referenceId, kind: referenceKind } : undefined,
+    screen: parameters.has('workspace') || parameters.has('reference') ? ('workspace' as const) : ('hub' as const),
+    week:
+        requestedWeek &&
+        /^\d{4}-\d{2}-\d{2}$/u.test(requestedWeek) &&
+        !Number.isNaN(Date.parse(`${requestedWeek}T12:00:00Z`))
+            ? requestedWeek
+            : ''
+}
+createRoot(required(document.querySelector('#root'))).render(<App route={route} />)

@@ -149,7 +149,7 @@ describe('github-signin', () => {
             expect(write).toHaveBeenCalledWith('ABCD-EFGH')
             expect([
                 button('Copy code').dataset.copyState,
-                surface.querySelector('[role="status"]')?.textContent?.includes('Copied')
+                surface.querySelector('output')?.textContent?.includes('Copied')
             ]).toStrictEqual(['copied', true])
             await update(() => Promise.resolve(vi.advanceTimersByTimeAsync(400)))
         } finally {

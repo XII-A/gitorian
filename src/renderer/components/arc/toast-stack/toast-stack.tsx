@@ -200,10 +200,10 @@ const layoutStack = (
     visibleToasts: number
 ) => {
     const front = toasts.length ? (heights[toasts[0].id] ?? 0) : 0
-    const tops = toasts.reduce<number[]>(
-        (sum, item, index) => [...sum, sum[index] + (index < visibleToasts ? (heights[item.id] ?? 0) + GAP : 0)],
-        [0]
-    )
+    const tops = [0]
+    for (const [index, item] of toasts.entries()) {
+        tops.push(tops[index] + (index < visibleToasts ? (heights[item.id] ?? 0) + GAP : 0))
+    }
     const targets = toasts.map((item, index): Target => {
         const visible = index < visibleToasts
         const depth = Math.min(index, visibleToasts)
@@ -320,7 +320,7 @@ const useStore = () => {
 
 /** Scopes a toast queue to its subtree, so two stacks on one page never share toasts. */
 export const ToastStackProvider = ({ children, duration = 5000, limit = 12 }: ToastStackProviderProps) => {
-    const [store] = useState(() => createToastStore(duration, limit))
+    const [store, _setStore] = useState(() => createToastStore(duration, limit))
     return <ToastStackContext.Provider value={store}>{children}</ToastStackContext.Provider>
 }
 

@@ -47,7 +47,7 @@ describe('workspace-inspector', () => {
     it('keeps loading distinct from an empty result', () => {
         const container = renderInspector({ loading: true })
         expect([
-            container.querySelector('[role="status"][aria-label="Loading changes"][aria-busy="true"]') === null,
+            container.querySelector('output[aria-label="Loading changes"][aria-busy="true"]') === null,
             container.querySelector('.ws-diff-tools') === null,
             container.textContent?.includes('No text diff')
         ]).toStrictEqual([false, false, false])

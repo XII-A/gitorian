@@ -174,7 +174,7 @@ const Bar = ({
     const [isPresent, safeToRemove] = usePresence()
     const amount = useMotionValue(0)
     const slot = usePlace(place, reduced)
-    const [firstDelay] = useState(delay)
+    const [firstDelay, _setFirstDelay] = useState(delay)
     const grown = useRef(false)
     const remove = useRef(safeToRemove)
     useEffect(() => {
@@ -484,8 +484,13 @@ export const BarChart = ({
     const titleId = useId()
     const count = Math.max(data.length, 1)
     const last = data.length - 1
-    const average = data.length ? data.reduce((sum, item) => sum + item.value, 0) / data.length : 0
-    const peak = data.reduce((max, item) => Math.max(max, item.value), 0)
+    let total = 0
+    let peak = 0
+    for (const item of data) {
+        total += item.value
+        peak = Math.max(peak, item.value)
+    }
+    const average = data.length ? total / data.length : 0
     const { top, ticks } = useMemo(() => scaleFor(peak), [peak])
     const signature = data.map((item) => item.key).join('|')
     const suffix = unit ? ` ${unit}` : ''
@@ -704,14 +709,16 @@ export const BarChart = ({
     useEffect(() => onActiveChange?.(scrubbed ?? null), [scrubbed, onActiveChange])
     const reading = scrubbed ?? data[last]
     const valueText = reading ? `${reading.label}: ${formatValue(reading.value)}${suffix}` : 'No data'
-    const highest = data.reduce<BarChartDatum | null>(
-        (best, item) => (!best || item.value > best.value ? item : best),
-        null
-    )
-    const lowest = data.reduce<BarChartDatum | null>(
-        (best, item) => (!best || item.value < best.value ? item : best),
-        null
-    )
+    let highest: BarChartDatum | null = null
+    let lowest: BarChartDatum | null = null
+    for (const item of data) {
+        if (!highest || item.value > highest.value) {
+            highest = item
+        }
+        if (!lowest || item.value < lowest.value) {
+            lowest = item
+        }
+    }
     const summary = `${label}, ${period}. ${averageLabel} ${formatValue(Math.round(average))}${suffix}.${highest ? ` Highest ${highest.label}, ${formatValue(highest.value)}${suffix}.` : ''}${lowest && lowest !== highest ? ` Lowest ${lowest.label}, ${formatValue(lowest.value)}${suffix}.` : ''}`
     const shown = inView || reduced
     const avoid = showAverage ? meanY : null

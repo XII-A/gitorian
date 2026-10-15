@@ -2,9 +2,10 @@ import { readFile, writeFile } from 'node:fs/promises'
 import nodePath from 'node:path'
 
 import { Effect } from 'effect'
+import type { IpcMainInvokeEvent } from 'electron'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 
-import type { RepositoryImportProgress } from '../shared/model'
+import type { Command, Reply, RepositoryImportProgress } from '../shared/model'
 import { commandSchema } from '../shared/model'
 import { inspectRepository } from './git'
 import { GitHub } from './github'
@@ -73,7 +74,8 @@ const folder = async (): Promise<string | undefined> => {
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
     return result.canceled ? undefined : result.filePaths[0]
 }
-void app.whenReady().then(() => {
+const startDesktop = async () => {
+    await app.whenReady()
     store = new Store(nodePath.join(app.getPath('userData'), 'weekly-j.sqlite'))
     const vault = new Vault(app.getPath('userData'))
     store.state.transportPauses ??= {}
@@ -97,15 +99,7 @@ void app.whenReady().then(() => {
         protectedStorage: vault.protected()
     }))
     mainWindow = windowFor()
-    ipcMain.handle('journal:command', async (event, input: unknown) => {
-        const command = commandSchema.parse(input)
-        const trusted = BrowserWindow.fromWebContents(event.sender)
-        if (!trusted) {
-            throw new Error('Unknown desktop window')
-        }
-        if (referenceWindows.has(event.sender.id) && !['state', 'details', 'open'].includes(command.type)) {
-            throw new Error('Reference windows are read-only')
-        }
+    const dispatchDesktop0 = async (command: Command, event: IpcMainInvokeEvent): Promise<Reply | undefined> => {
         switch (command.type) {
             case 'refresh': {
                 void service.refresh({ ...command, resume: true })
@@ -119,10 +113,15 @@ void app.whenReady().then(() => {
                 if (command.since > repository.trackingStart) {
                     throw new Error('Choose a date before the current history start.')
                 }
-                void service.backfill(command.repositoryId, command.since).catch((error: unknown) => {
-                    store.state.refreshError = error instanceof Error ? error.message : String(error)
-                    store.persist()
-                })
+                const acquireHistory = async () => {
+                    try {
+                        await service.backfill(command.repositoryId, command.since)
+                    } catch (error) {
+                        store.state.refreshError = error instanceof Error ? error.message : String(error)
+                        store.persist()
+                    }
+                }
+                acquireHistory()
                 return service.reply({ message: 'Older activity is being acquired in the background.' })
             }
             case 'details': {
@@ -137,7 +136,7 @@ void app.whenReady().then(() => {
                 if (path) {
                     await service.addRepository(path)
                 }
-                break
+                return undefined
             }
             case 'addRepositories': {
                 let lastStage = ''
@@ -162,14 +161,14 @@ void app.whenReady().then(() => {
                 }
                 store.state.repositoryImport = { completed: 0, status: 'running', total: 0 }
                 store.persist()
-                void service
-                    .addRepositories(path, progress)
-                    .then(() => {
+                const acquireRepositories = async () => {
+                    try {
+                        await service.addRepositories(path, progress)
+
                         if (store.state.settings.refreshMinutes > 0) {
                             void service.refresh({ afterCurrent: true })
                         }
-                    })
-                    .catch((error: unknown) => {
+                    } catch (error) {
                         store.state.repositoryImport = {
                             completed: 0,
                             id: store.state.repositoryImport?.id,
@@ -178,9 +177,19 @@ void app.whenReady().then(() => {
                             total: 0
                         }
                         store.persist()
-                    })
+                    }
+                }
+                acquireRepositories()
                 return service.reply({ message: 'Import started. You can close Settings and keep writing.' })
             }
+            default: {
+                throw new Error('Command routed to the wrong desktop handler')
+            }
+        }
+    }
+
+    const dispatchDesktop1 = async (command: Command, _event: IpcMainInvokeEvent): Promise<Reply | undefined> => {
+        switch (command.type) {
             case 'relocate': {
                 const path = await folder()
                 if (path) {
@@ -196,12 +205,12 @@ void app.whenReady().then(() => {
                     repository.removed = false
                     store.persist()
                 }
-                break
+                return undefined
             }
             case 'notionConnect': {
                 await new Notion(http, () => command.token).verify()
                 vault.set('notion', command.token)
-                break
+                return undefined
             }
             case 'githubStart': {
                 const device = await github.start(store.state.settings.githubClientId)
@@ -225,11 +234,11 @@ void app.whenReady().then(() => {
                     repository.emails = [...new Set([...repository.emails, ...account.emails])]
                 }
                 store.persist()
-                break
+                return undefined
             }
             case 'disconnect': {
                 vault.set(command.service, '')
-                break
+                return undefined
             }
             case 'export': {
                 const result = await dialog.showSaveDialog(mainWindow, {
@@ -239,7 +248,7 @@ void app.whenReady().then(() => {
                 if (result.filePath) {
                     await writeFile(result.filePath, store.export(), 'utf-8')
                 }
-                break
+                return undefined
             }
             case 'import': {
                 const result = await dialog.showOpenDialog(mainWindow, {
@@ -262,15 +271,23 @@ void app.whenReady().then(() => {
                         return service.reply({ message: 'Backup imported.' })
                     }
                 }
-                break
+                return undefined
             }
+            default: {
+                throw new Error('Command routed to the wrong desktop handler')
+            }
+        }
+    }
+
+    const dispatchDesktop2 = async (command: Command, _event: IpcMainInvokeEvent): Promise<Reply | undefined> => {
+        switch (command.type) {
             case 'open': {
                 await openExternal(command.url)
-                break
+                return undefined
             }
             case 'popout': {
                 windowFor(command)
-                break
+                return undefined
             }
             case 'state': {
                 const remotes: Record<string, string[]> = {}
@@ -280,8 +297,44 @@ void app.whenReady().then(() => {
                 return { ...service.reply(), remotes }
             }
             default: {
-                return await Effect.runPromise(service.execute(command))
+                throw new Error('Command routed to the wrong desktop handler')
             }
+        }
+    }
+    const desktopHandlers = { dispatchDesktop0, dispatchDesktop1, dispatchDesktop2 }
+    const desktopRoutes: Partial<Record<Command['type'], keyof typeof desktopHandlers>> = {
+        addRepositories: 'dispatchDesktop0',
+        addRepository: 'dispatchDesktop0',
+        backfill: 'dispatchDesktop0',
+        details: 'dispatchDesktop0',
+        disconnect: 'dispatchDesktop1',
+        export: 'dispatchDesktop1',
+        githubPoll: 'dispatchDesktop1',
+        githubStart: 'dispatchDesktop1',
+        import: 'dispatchDesktop1',
+        notionConnect: 'dispatchDesktop1',
+        open: 'dispatchDesktop2',
+        popout: 'dispatchDesktop2',
+        refresh: 'dispatchDesktop0',
+        relocate: 'dispatchDesktop1',
+        state: 'dispatchDesktop2'
+    }
+    ipcMain.handle('journal:command', async (event, input: unknown) => {
+        const command = commandSchema.parse(input)
+        const trusted = BrowserWindow.fromWebContents(event.sender)
+        if (!trusted) {
+            throw new Error('Unknown desktop window')
+        }
+        if (referenceWindows.has(event.sender.id) && !['state', 'details', 'open'].includes(command.type)) {
+            throw new Error('Reference windows are read-only')
+        }
+        const route = desktopRoutes[command.type]
+        if (!route) {
+            return await Effect.runPromise(service.execute(command))
+        }
+        const reply = await desktopHandlers[route](command, event)
+        if (reply) {
+            return reply
         }
         return service.reply()
     })
@@ -318,7 +371,8 @@ void app.whenReady().then(() => {
             mainWindow = windowFor()
         }
     })
-})
+}
+startDesktop()
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit()

@@ -124,7 +124,10 @@ export const commits = async (
         safeRef(branch)
     }
     safeRef(base)
-    const range = branch ? (view === 'introduced' ? `${base}..${branch}` : branch) : '--all'
+    let range = '--all'
+    if (branch) {
+        range = view === 'introduced' ? `${base}..${branch}` : branch
+    }
     const output = await git(
         repository.path,
         [
@@ -217,6 +220,11 @@ export const commitDetails = async (
 }
 
 /** Read shared commit bodies once; branch membership uses compact SHA-only walks. */
+const canRestartCommitScan = (error: unknown, excludedTips: string[]): boolean =>
+    excludedTips.length > 0 &&
+    error instanceof Error &&
+    /bad object|bad revision|unknown revision/iu.test(error.message)
+
 export const indexCommits = async (
     repository: Repository,
     previous: Record<string, string>,
@@ -254,11 +262,7 @@ export const indexCommits = async (
     try {
         captured = await commits(repository, '', 'history', repository.base, '', true, offset, 2000, excludedTips)
     } catch (error) {
-        if (
-            !excludedTips.length ||
-            !(error instanceof Error) ||
-            !/bad object|bad revision|unknown revision/iu.test(error.message)
-        ) {
+        if (!canRestartCommitScan(error, excludedTips)) {
             throw error
         }
         excludedTips = []

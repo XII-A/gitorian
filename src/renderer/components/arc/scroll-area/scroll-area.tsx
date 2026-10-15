@@ -254,7 +254,9 @@ const ScrollAreaRender: ForwardRefRenderFunction<HTMLDivElement, ScrollAreaProps
             scroll: axis === 'y' ? node.scrollTop : node.scrollLeft,
             start: axis === 'y' ? event.clientY : event.clientX
         }
-        rootRef.current?.setAttribute('data-dragging', axis)
+        if (rootRef.current) {
+            rootRef.current.dataset.dragging = axis
+        }
         node.style.scrollSnapType = 'none'
     }
     const onThumbMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -278,7 +280,9 @@ const ScrollAreaRender: ForwardRefRenderFunction<HTMLDivElement, ScrollAreaProps
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId)
         }
-        delete rootRef.current?.dataset.dragging
+        if (rootRef.current) {
+            delete rootRef.current.dataset.dragging
+        }
         if (viewport.current) {
             viewport.current.style.scrollSnapType = ''
         }
