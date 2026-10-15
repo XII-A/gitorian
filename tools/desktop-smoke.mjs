@@ -233,7 +233,7 @@ app.on('browser-window-created', (_, window) => {
                 await new Promise(resolve => setTimeout(resolve, 150))
                 const workspaceImplemented = !!document.querySelector('.ws-frame') && document.querySelector('.writing-workspace').dataset.layout === 'three-panes' && !document.querySelector('.variant-picker')
                 const noDraftCreated = (await window.journal.invoke({type:'state'})).state.drafts.length === before.state.drafts.length
-                document.querySelector('[aria-label="Journal breadcrumb"] button[data-label="Journal"]').click()
+                document.querySelector('[aria-label="Journal breadcrumb"] button[data-label="Hub"]').click()
                 await new Promise(resolve => setTimeout(resolve, 100))
                 const returnsToHub = !!document.querySelector('.hub-topbar')
                 document.querySelector('[aria-label="Open journal"]').click()
