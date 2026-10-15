@@ -6,8 +6,9 @@
     "main": "out/main/index.js",
     "type": "module",
     "scripts": {
+        "postinstall": "install-electron --no",
         "dev": "electron-vite dev --watch",
-        "build": "npm run typecheck && electron-vite build",
+        "build": "pnpm typecheck && electron-vite build",
         "start": "electron-vite preview",
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
@@ -15,9 +16,9 @@
         "lint:fix": "oxlint --type-aware --fix",
         "format": "oxfmt --write .",
         "format:check": "oxfmt --check .",
-        "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
-        "package": "npm run build && electron-builder",
-        "package:dir": "npm run build && electron-builder --dir",
+        "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
+        "package": "pnpm build && electron-builder",
+        "package:dir": "pnpm build && electron-builder --dir",
         "smoke": "electron tools/desktop-smoke.mjs",
         "smoke:activity-filters": "electron tools/activity-filter-smoke.mjs",
         "smoke:acquisition": "electron tools/acquisition-smoke.mjs",
@@ -97,6 +98,7 @@
         "vitest": "5.0.3"
     },
     "license": "MIT",
+    "packageManager": "pnpm@10.24.0",
     "engines": {
         "node": ">=22.19.0"
     }
