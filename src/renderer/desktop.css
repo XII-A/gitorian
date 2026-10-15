@@ -370,10 +370,6 @@ label:empty {
 .path {
     font-size: 12px;
 }
-.feature-controls {
-    padding: 8px 14px;
-    font-size: 12px;
-}
 .command-menu {
     width: min(520px, 90vw);
     border-radius: var(--radius-control);

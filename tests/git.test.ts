@@ -107,20 +107,13 @@ it('uses author dates after rewriting commits and compares ordinary branches aga
     }
 })
 
-it('retains captured metadata, diffs, features and journal associations after a branch is deleted', async () => {
+it('retains captured metadata, diffs and journal associations after a branch is deleted', async () => {
     const app = await workspace()
     try {
         await app.git('checkout', '-b', 'temporary')
         await app.git('commit', '--allow-empty', '-m', 'Temporary work')
         await app.service.handle({ type: 'refresh' })
         const activity = app.store.state.activities.find((item) => item.title === 'Temporary work')!
-        await app.service.handle({
-            type: 'feature',
-            id: 'feature',
-            name: 'Persistent thread',
-            archived: false,
-            members: [`branch:${app.repository.id}:temporary`]
-        })
         await app.service.handle({ type: 'details', activityId: activity.id })
         await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
         await app.service.handle({
@@ -136,7 +129,6 @@ it('retains captured metadata, diffs, features and journal associations after a 
         expect(activity.deletedBranches).toContain('temporary')
         expect(app.store.state.coverage[0].activityId).toBe(activity.id)
         expect(app.store.state.diffs).toHaveProperty(activity.id)
-        expect(app.store.state.features[0].members).toContain(`branch:${app.repository.id}:temporary`)
     } finally {
         await app.close()
     }

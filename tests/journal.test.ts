@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Store } from '../src/main/store'
-import { coveredEntries, featureActivities, inbox, weekOf } from '../src/shared/model'
+import { commandSchema, coveredEntries, inbox, weekOf } from '../src/shared/model'
 import { workspace } from './fixtures'
 import type { JournalNode } from '../src/shared/model'
 
@@ -157,20 +157,30 @@ describe('local journal workflow through application commands', () => {
             await app.close()
         }
     })
-    it('automatically groups future branch work into multiple features without granting coverage', async () => {
+    it('restores legacy feature data without retaining groups or losing journal activity', async () => {
         const app = await workspace()
         try {
             await app.service.handle({ type: 'refresh' })
-            const member = `branch:${app.repository.id}:development`
-            await app.service.handle({ type: 'feature', id: 'one', name: 'One', archived: false, members: [member] })
-            await app.service.handle({ type: 'feature', id: 'two', name: 'Two', archived: false, members: [member] })
-            await app.git('commit', '--allow-empty', '-m', 'Next work')
-            await app.service.handle({ type: 'refresh' })
-            expect(featureActivities(app.store.state, 'one')).toHaveLength(2)
-            expect(featureActivities(app.store.state, 'two')).toHaveLength(2)
-            expect(app.store.state.coverage).toEqual([])
-            await app.service.handle({ type: 'feature', id: 'one', name: 'Renamed', archived: true, members: [member] })
-            expect(featureActivities(app.store.state, 'one')).toHaveLength(2)
+            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            const draft = app.store.state.drafts[0]
+            await app.service.handle({ type: 'draft', draft: { ...draft, body: reflection } })
+            const activities = structuredClone(app.store.state.activities)
+            const feature = { id: 'old-group', name: 'Old group', archived: false, members: [activities[0].id] }
+            const backup = { ...JSON.parse(app.store.export()), features: [feature] }
+            app.store.restore(JSON.stringify(backup))
+            expect(app.store.state).not.toHaveProperty('features')
+            expect(app.store.state.activities).toEqual(activities)
+            expect(app.store.state.drafts[0].body).toEqual(reflection)
+            expect(JSON.parse(app.store.export())).not.toHaveProperty('features')
+            const reopened = new Store(`${app.directory}/tracking.sqlite`)
+            try {
+                expect(reopened.state).not.toHaveProperty('features')
+                expect(reopened.state.activities).toEqual(activities)
+                expect(reopened.state.drafts[0].body).toEqual(reflection)
+            } finally {
+                reopened.close()
+            }
+            expect(commandSchema.safeParse({ type: 'feature', ...feature }).success).toBe(false)
         } finally {
             await app.close()
         }

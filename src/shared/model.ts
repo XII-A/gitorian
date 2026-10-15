@@ -98,9 +98,6 @@ export const stateSchema = z.object({
     activities: z.array(activitySchema),
     drafts: z.array(draftSchema),
     entries: z.array(entrySchema),
-    features: z.array(
-        z.object({ id: z.string(), name: z.string(), archived: z.boolean(), members: z.array(z.string()) })
-    ),
     coverage: z.array(z.object({ activityId: z.string(), revision: z.string().optional(), entryId: z.string() })),
     revisions: z.array(
         z.object({
@@ -196,7 +193,6 @@ export function initialState(): State {
         version: 1,
         repositories: [],
         activities: [],
-        features: [],
         drafts: [],
         entries: [],
         coverage: [],
@@ -250,17 +246,6 @@ export function coveredEntries(state: State, activity: Activity): Entry[] {
         )
         .map((link) => link.entryId)
     return state.entries.filter((entry) => ids.includes(entry.id))
-}
-export function featureActivities(state: State, featureId: string): Activity[] {
-    const feature = state.features.find((item) => item.id === featureId)
-    return state.activities.filter((activity) =>
-        feature?.members.some(
-            (member) =>
-                member === activity.id ||
-                member === activity.prId ||
-                activity.branches.some((branch) => member === `branch:${activity.repositoryId}:${branch}`)
-        )
-    )
 }
 export function inbox(state: State, week: string): Activity[] {
     const end = shiftWeek(week, 1)
@@ -320,13 +305,6 @@ export const commandSchema = z.discriminatedUnion('type', [
         disposition: z.enum(['inbox', 'deferred', 'dismissed']),
         until: z.string().optional(),
         reason: z.string().optional()
-    }),
-    z.object({
-        type: z.literal('feature'),
-        id: z.string(),
-        name: z.string(),
-        archived: z.boolean(),
-        members: z.array(z.string())
     }),
     z.object({ type: z.literal('settings'), settings: stateSchema.shape.settings }),
     z.object({ type: z.literal('publish'), draftId: z.string() }),

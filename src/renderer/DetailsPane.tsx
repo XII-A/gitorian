@@ -1,5 +1,4 @@
 import { Disclosure } from './components/Disclosure'
-import { Input, Field } from './components/Fields'
 import { GitBranch } from 'lucide-react'
 import type { Activity, Command, Draft, Entry, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
@@ -118,72 +117,6 @@ export function DetailsPane({ state, activity, entry, draft, reference, run, set
                                     : undefined
                             }
                         />
-                        {!reference && (
-                            <Disclosure className="decisions" title="Features">
-                                {state.features.map((value) => (
-                                    <div key={value.id}>
-                                        <Field className="row">
-                                            <Input
-                                                type="checkbox"
-                                                checked={value.members.includes(activity.id)}
-                                                onChange={(event) =>
-                                                    run({
-                                                        type: 'feature',
-                                                        ...value,
-                                                        members: event.target.checked
-                                                            ? [...value.members, activity.id]
-                                                            : value.members.filter((id) => id !== activity.id)
-                                                    })
-                                                }
-                                            />
-                                            {value.name}
-                                            {value.archived && ' (archived)'}
-                                        </Field>
-                                        {activity.prId && (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() =>
-                                                    run({
-                                                        type: 'feature',
-                                                        ...value,
-                                                        members: value.members.includes(activity.prId!)
-                                                            ? value.members.filter((id) => id !== activity.prId)
-                                                            : [...value.members, activity.prId!]
-                                                    })
-                                                }
-                                            >
-                                                {value.members.includes(activity.prId)
-                                                    ? 'Remove PR membership'
-                                                    : 'Track future PR work'}
-                                            </Button>
-                                        )}
-                                        {activity.branches.map((name) => (
-                                            <Button
-                                                key={name}
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    const id = `branch:${activity.repositoryId}:${name}`
-                                                    return run({
-                                                        type: 'feature',
-                                                        ...value,
-                                                        members: value.members.includes(id)
-                                                            ? value.members.filter((member) => member !== id)
-                                                            : [...value.members, id]
-                                                    })
-                                                }}
-                                            >
-                                                {value.members.includes(`branch:${activity.repositoryId}:${name}`)
-                                                    ? 'Untrack'
-                                                    : 'Track'}{' '}
-                                                {name}
-                                            </Button>
-                                        ))}
-                                    </div>
-                                ))}
-                            </Disclosure>
-                        )}
                     </>
                 ) : (
                     <div className="empty">

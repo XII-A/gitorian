@@ -75,7 +75,7 @@ The daily activity preview uses Arc `BarChart` with three local, typed extension
 
 Arc `Select` supports a local `variant="ghost"` for filter chips and `contentMinWidth` for wider menus, constrained to the viewport. Options can include a numeric `count`, displayed separately from the label with `--space-2` (8px). Filter chips share medium weight and `--leading-body`, so selects align with buttons. Omit the visible label for an icon or inline chip only when it has an accessible name.
 
-The project chip follows PRs & reviews, shows the available project count at rest, and shows the selected project name when filtered. The Filters chip is icon-only and opens deliberate branch/history loading. Feature grouping and filtering are deferred in the writing UI until their design is decided. Existing backend feature data and commands remain intact; do not restore these controls without a new product decision.
+The project chip follows PRs & reviews, shows the available project count at rest, and shows the selected project name when filtered. The Filters chip is icon-only and opens deliberate branch/history loading. Feature collection, definition, grouping, and filtering are outside the app scope. The shared model, backend commands, details controls, and sample data no longer contain feature groups.
 
 Arc `TabsList` supports a local `edgeToEdge` option: the strip spans its pane with square outer corners while individual tabs retain their shared control radius. Related items reuse the activity row styles. Both writing and inspector footers use `--workspace-footer-height` (64px).
 

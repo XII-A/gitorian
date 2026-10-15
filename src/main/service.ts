@@ -756,18 +756,6 @@ export class JournalService {
                 })
                 if (command.disposition === 'inbox') this.activity(command.activityId).explicit = true
                 break
-            case 'feature': {
-                const current = state.features.find((item) => item.id === command.id)
-                const feature = {
-                    id: command.id || randomUUID(),
-                    name: command.name,
-                    archived: command.archived,
-                    members: command.members
-                }
-                if (current) Object.assign(current, feature)
-                else state.features.push(feature)
-                break
-            }
             case 'settings': {
                 new Intl.DateTimeFormat('en-US', { timeZone: command.settings.timezone })
                 const order = command.settings.layout.order

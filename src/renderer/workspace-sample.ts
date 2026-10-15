@@ -121,14 +121,6 @@ export function sampleState(week: string): State {
         deletedBranches: []
     }))
     state.diffs = Object.fromEntries(state.activities.map((activity) => [activity.id, patch]))
-    state.features = [
-        {
-            id: 'sample-offline',
-            name: 'Offline reliability',
-            archived: false,
-            members: state.activities.slice(0, 8).map((activity) => activity.id)
-        }
-    ]
     state.drafts = [
         {
             id: `sample-draft-${week}`,
