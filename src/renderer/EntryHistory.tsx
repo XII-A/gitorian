@@ -2,8 +2,9 @@ import { useRef, useState } from 'react'
 import { BookOpen, ChevronRight, History, X } from 'lucide-react'
 import type { JournalNode, State } from '../shared/model'
 import { Dialog, DialogClose, DialogContent } from './components/arc/dialog/dialog'
+import { useHistoryMotion } from './use-history-motion'
 import { historySamples } from './history-samples'
-import { Drawer, DrawerContent, DrawerTrigger } from './components/arc/drawer/drawer'
+import { Drawer, DrawerContent, DrawerTrigger, useDrawerItem } from './components/arc/drawer/drawer'
 import { Button } from './components/arc/button/button'
 import { SearchField } from './components/arc/search-field/search-field'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -29,6 +30,10 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
     const [showSamples, setShowSamples] = useState(true)
     const [selectedId, setSelectedId] = useState<string>()
     const [reading, setReading] = useState(false)
+    const motion = useHistoryMotion(open, reading, () => {
+        setReading(false)
+        setOpen(false)
+    })
     const reader = useRef<HTMLDivElement>(null)
     const selectedRow = useRef<HTMLButtonElement>(null)
     const sample =
@@ -41,7 +46,7 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
     const visible = entries.filter((entry) =>
         `${entry.title} ${entry.date} ${documentText(entry.body)}`.toLocaleLowerCase('en-US').includes(search)
     )
-    const selected = entries.find((entry) => entry.id === selectedId)
+    const selected = useDrawerItem(entries.find((entry) => entry.id === selectedId))
     const months = [...new Set(visible.map((entry) => entry.date.slice(0, 7)))]
     const openWeek = (date?: string) => {
         setReading(false)
@@ -56,7 +61,7 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                 setOpen(next)
                 if (!next) {
                     setReading(false)
-                } else {
+                } else if (!motion.drawer.present) {
                     setSelectedId(undefined)
                 }
             }}
@@ -69,8 +74,7 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
             </DrawerTrigger>
             <DrawerContent
                 className="entry-history"
-                data-reading={reading || (!open && !!selected)}
-                exitDistance="100vw"
+                coordinatedMotion={motion.drawer}
                 onInteractOutside={(event) => {
                     if (event.target instanceof Element && event.target.closest('.history-entry-dialog')) {
                         event.preventDefault()
@@ -195,7 +199,7 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                     title={selected?.title ?? 'Weekly entry'}
                     aria-describedby={undefined}
                     hideHeader
-                    motionPreset="slide-right"
+                    coordinatedMotion={motion.reader}
                     backdrop="none"
                     onOpenAutoFocus={(event) => event.preventDefault()}
                     onInteractOutside={(event) => {

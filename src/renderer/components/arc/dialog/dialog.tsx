@@ -7,6 +7,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { Transition } from 'motion/react'
 import { X } from 'lucide-react'
 import { motionTokens } from '../lib/motion-tokens'
+import type { CoordinatedSurface } from '../coordinated-surface'
 import styles from './dialog.module.css'
 
 /** Mirrors the open state so the content can stay mounted while it animates out, and retarget mid-flight if it is reopened or closed early. */
@@ -38,6 +39,8 @@ export const DialogTrigger = DialogPrimitive.Trigger
 export const DialogClose = DialogPrimitive.Close
 
 export interface DialogContentProps extends ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+    /** External controller owns mounting and transform; default motion is unchanged. */
+    coordinatedMotion?: CoordinatedSurface
     title: string
     description?: string
     /** Optional activity context or status displayed above the title. */
@@ -86,6 +89,7 @@ function SwapText({ text }: { text: string }) {
 }
 
 export function DialogContent({
+    coordinatedMotion,
     title,
     description,
     headerContent,
@@ -157,6 +161,18 @@ export function DialogContent({
                 </DialogPrimitive.Content>
             </DialogPrimitive.Portal>
         )
+    if (coordinatedMotion) {
+        return coordinatedMotion.present ? (
+            <DialogPrimitive.Portal forceMount>
+                <DialogPrimitive.Content {...props} onPointerDownOutside={pressOutside} forceMount asChild>
+                    <div ref={coordinatedMotion.ref} style={{ opacity: 0 }} className={classes}>
+                        {inner}
+                    </div>
+                </DialogPrimitive.Content>
+            </DialogPrimitive.Portal>
+        ) : null
+    }
+
     // The overlay fades while the dialog rises 8px and scales up on a spring. Closing is shorter and quieter, and starts from wherever the entrance is.
     return (
         <AnimatePresence>

@@ -7,6 +7,8 @@ export const motionTokens = {
         /** For elements that move while already on screen. */
         inOut: [0.65, 0, 0.35, 1]
     },
+    /** Coordinated journal index/reader. Seconds, with no bounce. */
+    history: { enter: 0.26, exit: 0.24, ease: [0.32, 0.72, 0, 1] },
     spring: {
         responsive: { type: 'spring', stiffness: 520, damping: 38 },
         gentle: { type: 'spring', stiffness: 340, damping: 34 },

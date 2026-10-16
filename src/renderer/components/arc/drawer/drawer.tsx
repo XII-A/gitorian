@@ -7,6 +7,7 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import type { PanInfo, Transition } from 'motion/react'
 import { X } from 'lucide-react'
 import { motionTokens } from '../lib/motion-tokens'
+import type { CoordinatedSurface } from '../coordinated-surface'
 import styles from './drawer.module.css'
 
 /**
@@ -65,6 +66,8 @@ export const DrawerTrigger = DialogPrimitive.Trigger
 export const DrawerClose = DialogPrimitive.Close
 
 export interface DrawerContentProps extends ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+    /** External controller owns mounting and transform; default motion is unchanged. */
+    coordinatedMotion?: CoordinatedSurface
     title: string
     description?: string
     children: ReactNode
@@ -119,6 +122,7 @@ function SwapText({ text }: { text: string }) {
 }
 
 export function DrawerContent({
+    coordinatedMotion,
     title,
     description,
     children,
@@ -138,7 +142,7 @@ export function DrawerContent({
     const sign = side === 'right' || side === 'bottom' ? 1 : -1
     const offscreen = { [axis]: `${sign * 100}%` }
     const classes = [styles.content, className].filter(Boolean).join(' ')
-    const draggable = drawer !== null && !reduced
+    const draggable = drawer !== null && !reduced && !coordinatedMotion
 
     const panelSize = () => (axis === 'x' ? panelRef.current?.offsetWidth : panelRef.current?.offsetHeight) ?? 480
 
@@ -168,7 +172,10 @@ export function DrawerContent({
     const inner = (
         <>
             <motion.div
-                className={[styles.header, draggable ? styles.handle : ''].filter(Boolean).join(' ')}
+                className={[styles.header, draggable || coordinatedMotion ? styles.handle : '']
+                    .filter(Boolean)
+                    .join(' ')}
+                {...coordinatedMotion?.handle}
                 onPanStart={panStart}
                 onPan={panMove}
                 onPanEnd={panEnd}
@@ -212,6 +219,29 @@ export function DrawerContent({
                 </DialogPrimitive.Content>
             </DialogPrimitive.Portal>
         )
+    }
+
+    if (coordinatedMotion && drawer) {
+        return coordinatedMotion.present ? (
+            <DialogPrimitive.Portal forceMount container={container}>
+                <DialogPrimitive.Overlay forceMount asChild>
+                    <div ref={coordinatedMotion.overlayRef} style={{ opacity: 0 }} className={styles.overlay} />
+                </DialogPrimitive.Overlay>
+                <DialogPrimitive.Content
+                    {...props}
+                    forceMount
+                    asChild
+                    onInteractOutside={(event) => {
+                        onInteractOutside?.(event)
+                        if (event.detail.originalEvent.timeStamp < drawer.openedAt.current) event.preventDefault()
+                    }}
+                >
+                    <div ref={coordinatedMotion.ref} style={{ opacity: 0 }} className={classes} data-side={side}>
+                        {inner}
+                    </div>
+                </DialogPrimitive.Content>
+            </DialogPrimitive.Portal>
+        ) : null
     }
 
     // The panel springs fully opaque from its own edge and returns to it faster than it arrived, from wherever it is.
