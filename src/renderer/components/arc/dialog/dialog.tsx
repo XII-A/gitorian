@@ -1,6 +1,7 @@
 'use client'
 
 import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { useFocusScopeBranch } from '@radix-ui/react-focus-scope'
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from 'react'
 import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
@@ -50,6 +51,8 @@ export interface DialogContentProps extends ComponentPropsWithoutRef<typeof Dial
     backdrop?: 'blur' | 'dim' | 'none'
     /** Content-only reader surfaces keep an accessible title without visible dialog controls. */
     hideHeader?: boolean
+    /** Allow a portalled companion to share its parent modal focus and scroll boundary. */
+    registerAsBranch?: boolean
     /** Use a horizontal entrance and exit for a reader beside another surface. */
     motionPreset?: 'scale' | 'slide-right'
 }
@@ -90,6 +93,7 @@ function SwapText({ text }: { text: string }) {
 
 export function DialogContent({
     coordinatedMotion,
+    registerAsBranch = false,
     title,
     description,
     headerContent,
@@ -101,6 +105,17 @@ export function DialogContent({
     motionPreset = 'scale',
     ...props
 }: DialogContentProps) {
+    const [branchNode, setBranchNode] = useState<HTMLDivElement | null>(null)
+    useFocusScopeBranch(registerAsBranch ? branchNode : null)
+    const coordinatedRef = coordinatedMotion?.ref
+    const surfaceRef = useCallback(
+        (node: HTMLDivElement | null) => {
+            setBranchNode(node)
+            if (typeof coordinatedRef === 'function') return coordinatedRef(node)
+            if (coordinatedRef) coordinatedRef.current = node
+        },
+        [coordinatedRef]
+    )
     const open = useContext(OpenContext)
     const reduced = useReducedMotion()
     // When the open state last changed. Radix waits for the click before treating a press as outside, and a press on the trigger
@@ -165,7 +180,7 @@ export function DialogContent({
         return coordinatedMotion.present ? (
             <DialogPrimitive.Portal forceMount>
                 <DialogPrimitive.Content {...props} onPointerDownOutside={pressOutside} forceMount asChild>
-                    <div ref={coordinatedMotion.ref} style={{ opacity: 0 }} className={classes}>
+                    <div ref={surfaceRef} style={{ opacity: 0 }} className={classes}>
                         {inner}
                     </div>
                 </DialogPrimitive.Content>

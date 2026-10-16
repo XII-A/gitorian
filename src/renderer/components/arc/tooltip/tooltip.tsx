@@ -13,7 +13,7 @@ export interface TooltipProps {
     side?: 'top' | 'bottom' | 'left' | 'right'
 }
 
-const DELAY = 250
+const DELAY = 400
 const SKIP_WINDOW = 300
 
 /* Every Tooltip brings its own provider, so the skip window is shared here: while any tooltip is open, and briefly after the last one closes, the next opens without delay or travel. */

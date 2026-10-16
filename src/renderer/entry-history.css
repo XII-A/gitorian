@@ -53,8 +53,19 @@
     cursor: pointer;
     --focus-outline-offset: -3px;
 }
-.history-row:hover {
+.history-hover {
+    position: relative;
+    isolation: isolate;
+    overflow: clip;
+}
+.history-hover-highlight {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: -1;
+    border-radius: var(--radius-control);
     background: var(--surface-muted);
+    pointer-events: none;
 }
 .history-row[aria-pressed='true'] {
     background: var(--accent-subtle);

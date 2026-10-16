@@ -14,7 +14,11 @@ app.whenReady().then(async () => {
         width: 1440,
         height: 1000,
         useContentSize: true,
-        webPreferences: { offscreen: true, backgroundThrottling: false }
+        webPreferences: {
+            offscreen: true,
+            backgroundThrottling: false,
+            preload: resolve('tools/history-smoke-preload.cjs')
+        }
     })
     window.webContents.on('paint', () => {
         /* Keep offscreen rendering active. */
@@ -152,7 +156,7 @@ app.whenReady().then(async () => {
             }})(${quiet})`
         )
     try {
-        await window.loadFile(resolve('out/renderer/index.html'), { query: { data: 'sample' } })
+        await window.loadFile(resolve('out/renderer/index.html'))
         for (let attempt = 0; attempt < 100; attempt++) {
             if (await evaluate(`!!document.querySelector('.history-trigger')`)) break
             await pause(30)
