@@ -316,13 +316,15 @@ export class JournalService {
         }
         // Notion refresh proceeds independently of a potentially long GitHub backlog.
         const notion =
-            !options.repositoryId &&
-            (!options.source || options.source === 'notion') &&
-            this.connections().notion &&
-            state.settings.destination
+            !options.repositoryId && (!options.source || options.source === 'notion') && this.connections().notion
                 ? this.source('notion', async () => {
-                      for (const page of await this.notion.pages(state.settings.destination!)) {
-                          const entry = await this.notion.entry(page)
+                      const ids = new Set([
+                          ...state.saves.filter((save) => save.status === 'confirmed').map((save) => save.entryId),
+                          ...state.drafts.map((draft) => draft.publishedEntryId)
+                      ])
+                      for (const id of ids) {
+                          if (!id) continue
+                          const entry = await this.notion.refreshEntry(id)
                           const index = state.entries.findIndex((item) => item.id === entry.id)
                           if (index < 0) state.entries.push(entry)
                           else state.entries[index] = entry

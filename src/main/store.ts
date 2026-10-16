@@ -34,7 +34,17 @@ export class Store {
         }
         // A process exit during a write is always an unknown outcome.
         for (const save of this.state.saves) if (save.status === 'pending') save.status = 'unknown'
+        this.retainPublishedEntries()
         this.persist()
+    }
+    private retainPublishedEntries(): void {
+        const ids = new Set([
+            ...this.state.saves.map((save) => save.entryId),
+            ...this.state.drafts.map((draft) => draft.publishedEntryId)
+        ])
+        this.state.entries = this.state.entries.filter((entry) => ids.has(entry.id))
+        const retained = new Set(this.state.entries.map((entry) => entry.id))
+        this.state.coverage = this.state.coverage.filter((link) => retained.has(link.entryId))
     }
     persist(): void {
         this.state.snapshotVersion = (this.state.snapshotVersion ?? 0) + 1
@@ -86,6 +96,7 @@ export class Store {
         }
         for (const save of restored.saves) if (save.status === 'pending') save.status = 'unknown'
         this.state = restored
+        this.retainPublishedEntries()
         this.persist()
     }
     close(): void {
