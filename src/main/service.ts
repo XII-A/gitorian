@@ -18,14 +18,25 @@ export class JournalService {
     private details = new Map<string, Promise<void>>()
     private importing = false
     private importStopped = false
+    private closing = false
+
+    prepareToClose(): () => void {
+        this.closing = true
+        this.importStopped = true
+        for (const status of Object.values(this.store.state.acquisition ?? {}))
+            if (status.status === 'running') status.status = 'cancelled'
+        return () => {
+            this.closing = false
+        }
+    }
     constructor(
         readonly store: Store,
         private readonly github: GitHub,
         private readonly notion: Notion,
         private readonly connections: () => Reply['connections']
     ) {}
-    reply(extra: Partial<Reply> = {}): Reply {
-        return { state: this.store.snapshot(), connections: this.connections(), ...extra }
+    reply(extra: Partial<Reply> = {}, state = this.store.snapshot()): Reply {
+        return { state, connections: this.connections(), ...extra }
     }
     execute(command: Command): Effect.Effect<Reply, Error> {
         return Effect.tryPromise({
@@ -238,6 +249,7 @@ export class JournalService {
             afterCurrent?: boolean
         } = {}
     ): Promise<void> {
+        if (this.closing) return
         if (this.refreshing) {
             if (!options.resume && !options.afterCurrent) return this.refreshing
             const key = `${options.repositoryId ?? '*'}:${options.source ?? '*'}:${!!options.resume}`
@@ -601,11 +613,13 @@ export class JournalService {
         }
         state.saves.push(save)
         this.store.persist()
+        await this.store.flush()
         try {
             this.confirm(
                 save,
-                await this.notion.publish(save, () => {
+                await this.notion.publish(save, async () => {
                     this.store.persist()
+                    await this.store.flush()
                 })
             )
         } catch (error) {
@@ -793,7 +807,6 @@ export class JournalService {
             default:
                 throw new Error('This command requires the desktop host')
         }
-        this.store.persist()
-        return this.reply()
+        return this.reply({}, this.store.persist())
     }
 }

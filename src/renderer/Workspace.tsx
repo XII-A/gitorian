@@ -219,6 +219,20 @@ export function Workspace({
         [state.activities, state.repositories, state.settings.timezone]
     )
     const items = useMemo(() => rangeActivities(activityState, week, offsetDay(week, 6)), [activityState, week])
+    const searchItems = useMemo(
+        () =>
+            searchExpanded
+                ? items.map((item) => ({
+                      id: item.id,
+                      title: item.title,
+                      group: state.repositories.find((repo) => repo.id === item.repositoryId)?.name,
+                      meta: `${formatDay(localDate(new Date(item.date), state.settings.timezone))} · ${item.sha?.slice(0, 7) ?? item.kind}`,
+                      keywords: [item.sha ?? '', item.description, ...item.branches],
+                      icon: <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'pr'} />
+                  }))
+                : [],
+        [searchExpanded, items, state.repositories, state.settings.timezone]
+    )
     const visible = useMemo(
         () => filterWorkspaceActivity(activityState, week, { project, branch, kind, authors, search: '' }),
         [activityState, week, project, branch, kind, authors]
@@ -431,14 +445,7 @@ export function Workspace({
                             placeholder="Find a change…"
                             expandedWidth="container"
                             onExpandedChange={setSearchExpanded}
-                            items={items.map((item) => ({
-                                id: item.id,
-                                title: item.title,
-                                group: state.repositories.find((repo) => repo.id === item.repositoryId)?.name,
-                                meta: `${formatDay(localDate(new Date(item.date), state.settings.timezone))} · ${item.sha?.slice(0, 7) ?? item.kind}`,
-                                keywords: [item.sha ?? '', item.description, ...item.branches],
-                                icon: <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'pr'} />
-                            }))}
+                            items={searchItems}
                             suggestions={items.slice(0, 4).map((item) => ({
                                 id: item.id,
                                 title: item.title,

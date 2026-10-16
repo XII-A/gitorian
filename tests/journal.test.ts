@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/main/store'
 import { commandSchema, coveredEntries, inbox, weekOf } from '../src/shared/model'
 import { workspace } from './fixtures'
@@ -23,6 +23,26 @@ const reflection: JournalNode = {
     ]
 }
 describe('local journal workflow through application commands', () => {
+    it('waits for durable publish intent before sending a Notion create request', async () => {
+        const app = await workspace()
+        try {
+            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            app.store.state.drafts[0].title = 'Durable intent'
+            let release: (() => void) | undefined
+            const commit = new Promise<void>((resolve) => {
+                release = resolve
+            })
+            vi.spyOn(app.store, 'flush').mockReturnValueOnce(commit)
+            const publishing = app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id })
+            await Promise.resolve()
+            expect(app.remote.pages).toHaveLength(0)
+            release?.()
+            await publishing
+            expect(app.remote.pages).toHaveLength(1)
+        } finally {
+            await app.close()
+        }
+    })
     it('refuses ambiguous matching pages after a lost creation response', async () => {
         const app = await workspace()
         try {

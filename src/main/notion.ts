@@ -122,7 +122,7 @@ export class Notion {
             refreshedAt: new Date().toISOString()
         }
     }
-    async publish(save: State['saves'][number], checkpoint?: () => void): Promise<Entry> {
+    async publish(save: State['saves'][number], checkpoint?: () => void | Promise<void>): Promise<Entry> {
         if (!save.title.trim() || save.title.length > 2000)
             throw new HttpError(400, 'Use a title between 1 and 2000 characters')
         const children = toNotion(save.body)
@@ -144,7 +144,7 @@ export class Notion {
             })
         })
         save.entryId = page.id
-        checkpoint?.()
+        await checkpoint?.()
         for (const children of batches.slice(1))
             await this.request(`blocks/${page.id}/children`, { method: 'PATCH', body: JSON.stringify({ children }) })
         return {

@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom'
 import type { Command, Draft, JournalNode, Reply, State } from '../shared/model'
 import { draftSchema } from '../shared/model'
 import { plainText } from '../shared/notion-format'
-import { Editor } from './Editor'
+import { Editor, type EditorHandle } from './Editor'
+import { journalWordCount, type EditorSnapshot } from './editor-snapshot'
 import { Button } from './components/arc/button/button'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
@@ -40,6 +41,10 @@ export function WorkspaceDraft({
     const [draft, setDraft] = useState<Draft>()
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState(false)
+    const [words, setWords] = useState(0)
+    const editor = useRef<EditorHandle>(null)
+    const bodySnapshot = useRef<EditorSnapshot | undefined>(undefined)
+    const wordTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     const { toast, dismiss } = useToastStack()
     const latest = useRef<Draft | undefined>(undefined)
     const dirty = useRef(false)
@@ -51,21 +56,28 @@ export function WorkspaceDraft({
     const drafts = state.drafts.filter((item) => item.week === week)
     const ready = !!draft && !draft.publishedEntryId && !busy
     const storageKey = `weekly-j:recovery:${sample ? 'sample' : (state.restoreId ?? 'local')}:${week}`
+    const snapshot = useCallback(() => {
+        if (bodySnapshot.current && latest.current) {
+            latest.current = { ...latest.current, body: bodySnapshot.current.read() }
+            bodySnapshot.current = undefined
+        }
+        return latest.current
+    }, [])
     const cache = useCallback(() => {
         if (!dirty.current || !latest.current || sample) return
         try {
-            localStorage.setItem(storageKey, JSON.stringify(latest.current))
+            localStorage.setItem(storageKey, JSON.stringify(snapshot()))
         } catch {
             if (mounted.current) setStatus('Recovery storage is unavailable. Saving to the journal…')
         }
-    }, [storageKey, sample])
+    }, [storageKey, sample, snapshot])
     const persist = useCallback(async (): Promise<boolean> => {
         while (pending.current) {
             const saved = await pending.current
             if (!saved) return false
         }
         if (!dirty.current || !latest.current || latest.current.publishedEntryId) return true
-        const writing = latest.current
+        const writing = snapshot()!
         const request = (async () => {
             const result = await run({ type: 'draft', draft: writing })
             if (!result) {
@@ -90,7 +102,7 @@ export function WorkspaceDraft({
         const result = await request
         if (pending.current === request) pending.current = undefined
         return result
-    }, [run, storageKey, sample])
+    }, [run, storageKey, sample, snapshot])
     const choose = useCallback(
         (item: Draft) => {
             let recovered = item
@@ -110,7 +122,9 @@ export function WorkspaceDraft({
                 /* An unavailable recovery cache does not prevent opening saved writing. */
             }
             latest.current = recovered
+            bodySnapshot.current = undefined
             setDraft(recovered)
+            setWords(journalWordCount(recovered.body))
             setStatus(
                 dirty.current
                     ? 'Recovered your latest writing. Saving…'
@@ -130,8 +144,10 @@ export function WorkspaceDraft({
         const confirmed = drafts.find((item) => item.id === latest.current?.id && item.publishedEntryId)
         if (confirmed && !latest.current?.publishedEntryId) {
             latest.current = confirmed
+            bodySnapshot.current = undefined
             dirty.current = false
             setDraft(confirmed)
+            setWords(journalWordCount(confirmed.body))
             setStatus(sample ? 'Sample published. Nothing was sent to Notion.' : 'Published to Notion')
         }
     }, [drafts, choose, sample])
@@ -150,17 +166,18 @@ export function WorkspaceDraft({
             mounted.current = false
             clearTimeout(timer.current)
             clearTimeout(checkpoint.current)
+            clearTimeout(wordTimer.current)
             cache()
             window.removeEventListener('pagehide', flush)
             void persist()
         }
     }, [persist, cache])
     const edit = useCallback(
-        (value: Draft) => {
+        (value: Draft, render = true) => {
             const updated = { ...value, updatedAt: new Date().toISOString() }
             latest.current = updated
             dirty.current = true
-            setDraft(updated)
+            if (render) setDraft(updated)
             setStatus('Saving…')
             clearTimeout(timer.current)
             timer.current = setTimeout(() => {
@@ -181,8 +198,16 @@ export function WorkspaceDraft({
     )
 
     const editBody = useCallback(
-        (body: JournalNode) => {
-            if (latest.current) edit({ ...latest.current, body })
+        (document: EditorSnapshot) => {
+            if (!latest.current) return
+            bodySnapshot.current = document
+            edit(latest.current, false)
+            if (!wordTimer.current)
+                wordTimer.current = setTimeout(() => {
+                    wordTimer.current = undefined
+                    const current = bodySnapshot.current
+                    setWords(current ? current.wordCount() : journalWordCount(latest.current!.body))
+                }, 200)
         },
         [edit]
     )
@@ -198,9 +223,8 @@ export function WorkspaceDraft({
                 }
             ]
         }
-        const body: JournalNode = { type: 'doc', content: [...(latest.current.body.content ?? []), content] }
-        editBody(body)
-    }, [citation, editBody])
+        editor.current?.insertBlock(content)
+    }, [citation])
     const create = async () => {
         setBusy(true)
         if (!(await persist())) {
@@ -343,14 +367,15 @@ export function WorkspaceDraft({
                                     placeholder="Give your week a title"
                                     readOnly={!!draft.publishedEntryId || busy}
                                     rows={2}
-                                    onChange={(event) => edit({ ...draft, title: event.target.value })}
+                                    onChange={(event) => edit({ ...snapshot()!, title: event.target.value })}
                                 />
                             </h1>
                             <Editor
                                 key={draft.id}
+                                ref={editor}
                                 value={draft.body}
                                 template={entryTemplate}
-                                onChange={editBody}
+                                onEdit={editBody}
                                 readOnly={!!draft.publishedEntryId || busy}
                             />
                         </>
@@ -366,9 +391,7 @@ export function WorkspaceDraft({
                 </div>
             </ScrollArea>
             <footer className={`ws-writing-footer${needsNotion ? ' ws-needs-notion' : ''}`}>
-                <span>
-                    {draft ? `${plainText(draft.body).trim().split(/\s+/).filter(Boolean).length} words` : '0 words'}
-                </span>
+                <span>{draft ? `${words} words` : '0 words'}</span>
                 <span role="status">
                     <WorkspaceIcon name="check" width="14" height="14" />
                     {status || 'Ready when you are'}

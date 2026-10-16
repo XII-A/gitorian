@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { StateCursor, UpdateReply } from './state-updates'
 
 export const documentSchema: z.ZodType<JournalNode> = z.lazy(() =>
     z.object({
@@ -339,6 +340,7 @@ export interface Reply {
 }
 export interface DesktopBridge {
     invoke: (command: Command) => Promise<Reply>
+    updates?: (command: Command, base?: StateCursor) => Promise<UpdateReply>
     onRepositoryImportProgress?: (listener: (progress: RepositoryImportProgress) => void) => () => void
 }
 export type RepositoryImportProgress =

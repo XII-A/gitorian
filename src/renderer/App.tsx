@@ -14,6 +14,7 @@ import { AcquisitionStatus } from './AcquisitionStatus'
 import { BackgroundNotifications } from './BackgroundNotifications'
 import { ToastStack, ToastStackProvider } from './components/arc/toast-stack/toast-stack'
 import { reconcileReply } from './activity-cache'
+import { expandReply, stateCursor } from '../shared/state-updates'
 
 export function App() {
     return (
@@ -40,7 +41,10 @@ function JournalApp() {
     currentReply.current = reply
     const run = useCallback(async (command: Command): Promise<Reply | undefined> => {
         try {
-            const result = await window.journal.invoke(command)
+            const base = currentReply.current?.state
+            const result = window.journal.updates
+                ? expandReply(await window.journal.updates(command, base && stateCursor(base)), base)
+                : await window.journal.invoke(command)
             startTransition(() => setReply((current) => reconcileReply(current, result, command)))
             if ('remotes' in result) {
                 const next = result.remotes as Record<string, string[]>

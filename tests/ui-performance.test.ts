@@ -3,6 +3,20 @@ import { initialState, localDate } from '../src/shared/model'
 import type { Reply } from '../src/shared/model'
 import { sampleState } from '../src/renderer/workspace-sample'
 import { hasCachedDetails, unchangedStateReply } from '../src/renderer/activity-cache'
+import { formatDay } from '../src/renderer/workspace-model'
+
+it('reuses a date formatter across activity search entries while retaining per-call options', () => {
+    const constructor = vi.spyOn(Intl, 'DateTimeFormat')
+    try {
+        const options = { month: 'long', day: '2-digit', year: 'numeric' } as const
+        for (let index = 0; index < 600; index++) expect(formatDay('2026-10-16', options)).toBe('October 16, 2026')
+        expect(constructor).toHaveBeenCalledTimes(1)
+        expect(formatDay('2026-10-16', { weekday: 'long' })).toBe('Friday')
+        expect(constructor).toHaveBeenCalledTimes(2)
+    } finally {
+        constructor.mockRestore()
+    }
+})
 
 it('reuses formatters while preserving timezone and daylight-saving date boundaries', () => {
     const constructor = vi.spyOn(Intl, 'DateTimeFormat')

@@ -1,11 +1,12 @@
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
-import { useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Ref } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor as TiptapEditor } from '@tiptap/react'
 import { journalExtensions } from './journal-extensions'
 import './journal-editor.css'
 import type { JournalNode } from '../shared/model'
+import { editorSnapshot, type EditorSnapshot } from './editor-snapshot'
 import {
     Bold,
     Italic,
@@ -55,11 +56,13 @@ interface Menu {
 export interface EditorHandle {
     undo: () => void
     redo: () => void
+    insertBlock: (block: JournalNode) => void
 }
 
-export function Editor({
+export const Editor = memo(function Editor({
     value,
     onChange,
+    onEdit,
     readOnly = false,
     insertLink,
     ref,
@@ -69,6 +72,7 @@ export function Editor({
 }: {
     value: JournalNode
     onChange?: (body: JournalNode) => void
+    onEdit?: (snapshot: EditorSnapshot) => void
     readOnly?: boolean
     insertLink?: { url: string; title: string; nonce: number }
     ref?: Ref<EditorHandle>
@@ -216,6 +220,7 @@ export function Editor({
                 return false
             },
             handleKeyDown: (_view, event) => {
+                if (event.isComposing || _view.composing) return false
                 const current = menuRef.current
                 if (!current || !editorRef.current) return false
                 const filtered = availableBlocks.filter((block) =>
@@ -240,9 +245,13 @@ export function Editor({
             }
         },
         onUpdate: ({ editor: updated }) => {
-            const body = updated.getJSON() as JournalNode
-            emitted.current = body
-            onChange?.(body)
+            const snapshot = editorSnapshot(updated.state.doc)
+            if (onEdit) onEdit(snapshot)
+            if (onChange) {
+                const body = snapshot.read()
+                emitted.current = body
+                onChange(body)
+            }
             updateMenu(updated)
         },
         onTransaction: ({ editor: updated }) =>
@@ -257,6 +266,10 @@ export function Editor({
             },
             redo: () => {
                 editor?.commands.redo()
+            },
+            insertBlock: (block) => {
+                if (editor?.isEditable)
+                    editor.commands.insertContentAt(editor.state.doc.content.size, block, { updateSelection: false })
             }
         }),
         [editor]
@@ -455,4 +468,4 @@ export function Editor({
             )}
         </div>
     )
-}
+})

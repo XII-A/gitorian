@@ -3,6 +3,7 @@ import type { DesktopBridge, RepositoryImportProgress } from '../shared/model'
 
 const bridge: DesktopBridge = {
     invoke: (command) => ipcRenderer.invoke('journal:command', command),
+    updates: (command, base) => ipcRenderer.invoke('journal:updates', { command, base }),
     onRepositoryImportProgress: (listener) => {
         const receive = (_event: Electron.IpcRendererEvent, progress: RepositoryImportProgress) => listener(progress)
         ipcRenderer.on('journal:repository-import', receive)

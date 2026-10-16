@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
 import { sampleState } from '../src/renderer/workspace-sample'
 import type { Command, JournalNode } from '../src/shared/model'
+import type { EditorSnapshot } from '../src/renderer/editor-snapshot'
 
 const notifications = vi.hoisted(() => ({
     toast: vi.fn<(options: unknown) => string>(() => 'publish'),
@@ -12,12 +13,14 @@ const notifications = vi.hoisted(() => ({
 }))
 const writer = vi.hoisted(() => ({
     change: undefined as ((body: JournalNode) => void) | undefined,
-    template: undefined as JournalNode | undefined
+    template: undefined as JournalNode | undefined,
+    edit: undefined as ((snapshot: EditorSnapshot) => void) | undefined
 }))
 vi.mock('../src/renderer/components/arc/toast-stack/toast-stack', () => ({ useToastStack: () => notifications }))
 vi.mock('../src/renderer/Editor', () => ({
-    Editor: (props: { onChange: (body: JournalNode) => void; template?: JournalNode }) => {
-        writer.change = props.onChange
+    Editor: (props: { onEdit: (snapshot: EditorSnapshot) => void; template?: JournalNode }) => {
+        writer.edit = props.onEdit
+        writer.change = (body) => props.onEdit({ read: () => body, wordCount: () => 2 })
         writer.template = props.template
         return null
     }

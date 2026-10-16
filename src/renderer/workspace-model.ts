@@ -5,8 +5,17 @@ import type { ActivityRangeState } from './hub-model'
 export const dateValue = (value: string) => new Date(`${value}T12:00:00`)
 export const dateKey = (date: Date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-export const formatDay = (date: string, options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }) =>
-    dateValue(date).toLocaleDateString('en-US', options)
+const dayFormatters = new Map<string, Intl.DateTimeFormat>()
+export function formatDay(date: string, options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }) {
+    const key = JSON.stringify(options)
+    let formatter = dayFormatters.get(key)
+    if (!formatter) {
+        formatter = new Intl.DateTimeFormat('en-US', options)
+        if (dayFormatters.size >= 32) dayFormatters.delete(dayFormatters.keys().next().value!)
+        dayFormatters.set(key, formatter)
+    }
+    return formatter.format(dateValue(date))
+}
 export function filterWorkspaceActivity(
     state: ActivityRangeState,
     start: string,

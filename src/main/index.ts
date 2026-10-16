@@ -1,4 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
+import { z } from 'zod'
+import { ReplyUpdates } from '../shared/state-updates'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, writeFile } from 'node:fs/promises'
@@ -18,6 +21,16 @@ let mainWindow: BrowserWindow
 let store: Store
 let service: JournalService
 const referenceWindows = new Set<number>()
+const work = new Set<Promise<unknown>>()
+function track<T>(promise: Promise<T>): Promise<T> {
+    work.add(promise)
+    void promise
+        .finally(() => work.delete(promise))
+        .catch(() => {
+            // The command caller or background task owns its error presentation.
+        })
+    return promise
+}
 function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
     const window = new BrowserWindow({
         title: 'weekly-j',
@@ -66,6 +79,7 @@ async function folder(): Promise<string | undefined> {
 }
 void app.whenReady().then(() => {
     store = new Store(join(app.getPath('userData'), 'weekly-j.sqlite'))
+    store.enableBackgroundWrites()
     const vault = new Vault(app.getPath('userData'))
     store.state.transportPauses ??= {}
     const http = new Http(fetch, { pauses: store.state.transportPauses, changed: () => store.persist() })
@@ -83,7 +97,7 @@ void app.whenReady().then(() => {
         protectedStorage: vault.protected()
     }))
     mainWindow = windowFor()
-    ipcMain.handle('journal:command', async (event, input: unknown) => {
+    const commandHandler = async (event: IpcMainInvokeEvent, input: unknown) => {
         const command = commandSchema.parse(input)
         const trusted = BrowserWindow.fromWebContents(event.sender)
         if (!trusted) throw new Error('Unknown desktop window')
@@ -91,17 +105,19 @@ void app.whenReady().then(() => {
             throw new Error('Reference windows are read-only')
         switch (command.type) {
             case 'refresh':
-                void service.refresh({ ...command, resume: true })
+                void track(service.refresh({ ...command, resume: true }))
                 return service.reply({ message: 'Activity refresh started. You can keep writing.' })
             case 'backfill': {
                 const repository = store.state.repositories.find((item) => item.id === command.repositoryId)
                 if (!repository || repository.removed) throw new Error('Choose a tracked repository.')
                 if (command.since > repository.trackingStart)
                     throw new Error('Choose a date before the current history start.')
-                void service.backfill(command.repositoryId, command.since).catch((error: unknown) => {
-                    store.state.refreshError = error instanceof Error ? error.message : String(error)
-                    store.persist()
-                })
+                void track(
+                    service.backfill(command.repositoryId, command.since).catch((error: unknown) => {
+                        store.state.refreshError = error instanceof Error ? error.message : String(error)
+                        store.persist()
+                    })
+                )
                 return service.reply({ message: 'Older activity is being acquired in the background.' })
             }
             case 'details':
@@ -134,21 +150,20 @@ void app.whenReady().then(() => {
                     return service.reply({ message: 'A repository import is already running.' })
                 store.state.repositoryImport = { status: 'running', completed: 0, total: 0 }
                 store.persist()
-                void service
-                    .addRepositories(path, progress)
-                    .then(() => {
-                        if (store.state.settings.refreshMinutes > 0) void service.refresh({ afterCurrent: true })
+                void track(
+                    service.addRepositories(path, progress).then(() => {
+                        if (store.state.settings.refreshMinutes > 0) void track(service.refresh({ afterCurrent: true }))
                     })
-                    .catch((error: unknown) => {
-                        store.state.repositoryImport = {
-                            id: store.state.repositoryImport?.id,
-                            status: 'error',
-                            completed: 0,
-                            total: 0,
-                            message: error instanceof Error ? error.message : String(error)
-                        }
-                        store.persist()
-                    })
+                ).catch((error: unknown) => {
+                    store.state.repositoryImport = {
+                        id: store.state.repositoryImport?.id,
+                        status: 'error',
+                        completed: 0,
+                        total: 0,
+                        message: error instanceof Error ? error.message : String(error)
+                    }
+                    store.persist()
+                })
                 return service.reply({ message: 'Import started. You can close Settings and keep writing.' })
             }
             case 'relocate': {
@@ -223,6 +238,7 @@ void app.whenReady().then(() => {
                     })
                     if (confirmation.response === 1) {
                         store.restore(await readFile(result.filePaths[0], 'utf8'))
+                        await store.flush()
                         vault.set('github', '')
                         vault.set('notion', '')
                         return service.reply({ message: 'Backup imported.' })
@@ -245,8 +261,29 @@ void app.whenReady().then(() => {
                 return Effect.runPromise(service.execute(command))
         }
         return service.reply()
+    }
+    const durableCommand: typeof commandHandler = async (event, input) => {
+        if (closing) throw new Error('Journal is closing; retry after reopening the app')
+        return track(
+            (async () => {
+                const reply = await commandHandler(event, input)
+                await store.flush()
+                return reply
+            })()
+        )
+    }
+    ipcMain.handle('journal:command', durableCommand)
+    const updates = new ReplyUpdates()
+    const updateRequest = z.object({
+        command: commandSchema,
+        base: z.object({ snapshotVersion: z.number().int().nonnegative(), restoreId: z.string().optional() }).optional()
+    })
+    ipcMain.handle('journal:updates', async (event, input: unknown) => {
+        const request = updateRequest.parse(input)
+        return updates.pack(await durableCommand(event, request.command), request.base)
     })
     const refreshIfActive = () => {
+        if (closing) return
         const minutes = store.state.settings.refreshMinutes
         const elapsed =
             Date.now() - new Date(store.state.lastRefreshAttempt ?? store.state.lastRefreshed ?? 0).getTime()
@@ -263,14 +300,14 @@ void app.whenReady().then(() => {
         )
         if (pending) {
             const [source, repositoryId] = pending[0].split(':')
-            void service.refresh({ repositoryId, source: source === 'git' ? 'git' : 'github' })
+            void track(service.refresh({ repositoryId, source: source === 'git' ? 'git' : 'github' }))
             return
         }
         if (minutes > 0 && !mainWindow.isDestroyed() && mainWindow.isVisible() && elapsed >= minutes * 60000)
-            void service.refresh()
+            void track(service.refresh())
     }
     setInterval(refreshIfActive, 5000).unref()
-    if (store.state.settings.refreshMinutes > 0) void service.refresh()
+    if (store.state.settings.refreshMinutes > 0) void track(service.refresh())
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) mainWindow = windowFor()
     })
@@ -278,6 +315,30 @@ void app.whenReady().then(() => {
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
 })
-app.on('before-quit', () => {
-    store?.close()
+let closed = false
+let closing = false
+app.on('before-quit', (event) => {
+    if (!store || closed) return
+    event.preventDefault()
+    if (closing) return
+    closing = true
+    const resume = service?.prepareToClose()
+    void (async () => {
+        // Stop producers before sealing the writer queue. Already accepted operations
+        // may still checkpoint while their network requests finish.
+        while (work.size) await Promise.allSettled([...work])
+        await store.shutdown()
+    })()
+        .then(() => {
+            closed = true
+            app.quit()
+        })
+        .catch((error: unknown) => {
+            closing = false
+            resume?.()
+            dialog.showErrorBox(
+                'Journal could not be saved',
+                `${error instanceof Error ? error.message : String(error)}\nRetry saving before closing the app.`
+            )
+        })
 })
