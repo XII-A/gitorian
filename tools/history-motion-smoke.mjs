@@ -107,10 +107,12 @@ app.whenReady().then(async () => {
                     }
                 }
                 const node = get('.history-entry-dialog')
-                click('.history-month li:nth-child(2) .history-row')
+                const nextRow = get('.history-month li:nth-child(2) .history-row') ?? get('.history-row')
+                const nextTitle = nextRow.querySelector('.history-row-title').textContent
+                click(nextRow === get('.history-row') ? '.history-row' : '.history-month li:nth-child(2) .history-row')
                 await pause(30)
                 assert(
-                    get('.history-entry-dialog') === node && snapshot().title !== final.title,
+                    get('.history-entry-dialog') === node && snapshot().title === nextTitle,
                     'Row selection remounted or failed to update reader'
                 )
                 const closing = await record(() => click('.history-reader-close'))

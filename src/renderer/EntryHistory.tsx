@@ -5,6 +5,7 @@ import { Dialog, DialogClose, DialogContent } from './components/arc/dialog/dial
 import { useHistoryMotion } from './use-history-motion'
 import { historySamples } from './history-samples'
 import { Drawer, DrawerContent, DrawerTrigger, useDrawerItem } from './components/arc/drawer/drawer'
+import { Tooltip } from './components/arc/tooltip/tooltip'
 import { Button } from './components/arc/button/button'
 import { SearchField } from './components/arc/search-field/search-field'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -27,7 +28,6 @@ function entryDate(date: string, options: Intl.DateTimeFormatOptions) {
 export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week: string) => void }) {
     const [open, setOpen] = useState(false)
     const [query, setQuery] = useState('')
-    const [showSamples, setShowSamples] = useState(true)
     const [selectedId, setSelectedId] = useState<string>()
     const [reading, setReading] = useState(false)
     const motion = useHistoryMotion(open, reading, () => {
@@ -36,10 +36,8 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
     })
     const reader = useRef<HTMLDivElement>(null)
     const selectedRow = useRef<HTMLButtonElement>(null)
-    const sample =
-        showSamples ||
-        (state.entries.length > 0 && state.entries.every((entry) => entry.id.startsWith('history-sample-')))
-    const entries = [...(sample ? historySamples : state.entries)].sort(
+    const preview = historySamples[0]
+    const entries = [...state.entries.filter((entry) => entry.id !== preview.id), preview].sort(
         (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id)
     )
     const search = query.trim().toLocaleLowerCase('en-US')
@@ -66,12 +64,13 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                 }
             }}
         >
-            <DrawerTrigger asChild>
-                <Button className="history-trigger" variant="secondary" size="sm">
-                    <History size={16} strokeWidth={1.75} aria-hidden="true" />
-                    Previous entries
-                </Button>
-            </DrawerTrigger>
+            <Tooltip content="Previous entries" side="bottom">
+                <DrawerTrigger asChild>
+                    <Button className="history-trigger" variant="ghost" size="sm" aria-label="Previous entries">
+                        <History size={16} strokeWidth={1.75} aria-hidden="true" />
+                    </Button>
+                </DrawerTrigger>
+            </Tooltip>
             <DrawerContent
                 className="entry-history"
                 coordinatedMotion={motion.drawer}
@@ -81,9 +80,7 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                     }
                 }}
                 title="Previous entries"
-                description={
-                    sample ? 'Sample entries. A preview of your weekly journal.' : 'Your weeks, ready to revisit.'
-                }
+                description="Your weeks, ready to revisit."
             >
                 <div className="history-layout">
                     <section className="history-index" aria-label="Saved entries">
@@ -94,7 +91,12 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                             value={query}
                             onValueChange={setQuery}
                         />
-                        <ScrollArea className="history-list" label="Previous weekly entries" fade={16}>
+                        <ScrollArea
+                            className="history-list"
+                            viewportClassName="history-list-viewport"
+                            label="Previous weekly entries"
+                            fade={16}
+                        >
                             {visible.length ? (
                                 months.map((month) => (
                                     <section
@@ -171,25 +173,6 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                                 />
                             )}
                         </ScrollArea>
-                        <p className="history-index-note">
-                            {sample
-                                ? 'Sample data for design review'
-                                : search
-                                  ? 'Searching titles and entry text'
-                                  : 'Your published entries, all in one place'}
-                        </p>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                                setReading(false)
-                                setShowSamples((value) => !value)
-                                setSelectedId(undefined)
-                                setQuery('')
-                            }}
-                        >
-                            {showSamples ? 'View saved entries' : 'View sample entries'}
-                        </Button>
                     </section>
                 </div>
             </DrawerContent>

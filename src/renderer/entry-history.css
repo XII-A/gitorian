@@ -1,8 +1,3 @@
-.hub-utilities button.history-trigger {
-    width: auto;
-    padding-inline: var(--space-3);
-    min-height: var(--control-height-md);
-}
 .history-layout * {
     min-width: 0;
 }
@@ -19,6 +14,8 @@
 }
 .history-list {
     margin-top: var(--space-5);
+    /* Use the sheet's existing right gutter for the bar; card widths stay intact. */
+    margin-right: calc(-1 * var(--space-4));
 }
 .history-month-count {
     font-variant-numeric: tabular-nums;
@@ -91,11 +88,6 @@
 }
 .history-row[aria-pressed='true'] .history-row-arrow {
     color: var(--accent);
-}
-.history-index-note {
-    margin: var(--space-4) 0 0;
-    font-size: var(--text-xs);
-    color: var(--text-muted);
 }
 .history-article {
     max-width: none;
@@ -222,4 +214,8 @@
     .history-article {
         padding-top: var(--space-16);
     }
+}
+
+.history-list-viewport {
+    padding-right: var(--space-4);
 }

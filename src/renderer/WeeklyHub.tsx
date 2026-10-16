@@ -16,6 +16,7 @@ import { HubActivityDialog, type HubActivityDialogHandle } from './HubActivityDi
 import landscape from './assets/week-landscape.jpg'
 import './hub.css'
 import { offsetDay, rangeActivities, journalWeek } from './hub-model'
+import { Tooltip } from './components/arc/tooltip/tooltip'
 import { EntryHistory } from './EntryHistory'
 
 const dateValue = (value: string) => new Date(`${value}T12:00:00`)
@@ -181,41 +182,41 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                     />
                 </div>
                 <div className="hub-utilities">
+                    <Tooltip content="Open journal" side="bottom">
+                        <Button variant="ghost" size="sm" onClick={() => onWrite(start)} aria-label="Open journal">
+                            <BookOpen size={17} aria-hidden="true" />
+                        </Button>
+                    </Tooltip>
                     <EntryHistory state={state} onWrite={(week) => onWrite(week || currentWeek)} />
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onWrite(start)}
-                        aria-label="Open journal"
-                        title="Open journal"
-                    >
-                        <BookOpen size={17} />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        loading={busy || activityUpdating(state)}
-                        onClick={() => void refresh()}
-                        aria-label="Refresh activity"
-                        title="Refresh activity"
-                    >
-                        <RefreshCw size={16} />
-                    </Button>
-                    {actionableSources(state).length > 0 && (
+                    <Tooltip content="Refresh activity" side="bottom">
                         <Button
                             variant="ghost"
                             size="sm"
-                            data-source-status
-                            onClick={onSources}
-                            aria-label="Activity sources"
-                            title="Activity sources"
+                            loading={busy || activityUpdating(state)}
+                            onClick={() => void refresh()}
+                            aria-label="Refresh activity"
                         >
-                            <StackIcon size={18} weight="bold" aria-hidden="true" />
+                            <RefreshCw size={16} aria-hidden="true" />
                         </Button>
+                    </Tooltip>
+                    {actionableSources(state).length > 0 && (
+                        <Tooltip content="Activity sources" side="bottom">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                data-source-status
+                                onClick={onSources}
+                                aria-label="Activity sources"
+                            >
+                                <StackIcon size={18} weight="bold" aria-hidden="true" />
+                            </Button>
+                        </Tooltip>
                     )}
-                    <Button variant="ghost" size="sm" onClick={onSettings} aria-label="Open settings" title="Settings">
-                        <Settings2 size={17} />
-                    </Button>
+                    <Tooltip content="Open settings" side="bottom">
+                        <Button variant="ghost" size="sm" onClick={onSettings} aria-label="Open settings">
+                            <Settings2 size={17} aria-hidden="true" />
+                        </Button>
+                    </Tooltip>
                 </div>
             </nav>
             <div className="hub-content" id="hub-content">
