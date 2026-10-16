@@ -112,6 +112,45 @@ it('unwraps from the first body paragraph while preserving the summary and body'
     expect(writing.getText()).toContain('Keep this text')
 })
 
+it.each([
+    ['Backspace', false],
+    ['Backspace', true],
+    ['Ctrl-Backspace', false],
+    ['Ctrl-Backspace', true],
+    ['beforeinput', false],
+    ['beforeinput', true]
+])('returns from an empty body to the toggle title with %s (empty title: %s)', (input, emptyTitle) => {
+    const title = emptyTitle ? '' : 'Notes'
+    const writing = open(
+        `<p>Keep above</p><div data-type="toggle"><div data-type="toggleSummary">${title}</div><div data-type="toggleContent"><p></p></div></div>`
+    )
+    let titleEnd = 0
+    writing.state.doc.descendants((node, offset) => {
+        if (node.type.name === 'toggleSummary') titleEnd = offset + 1 + node.content.size
+    })
+    writing.commands.setTextSelection(titleEnd)
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(writing.state.selection.$from.parent.type.name).toBe('paragraph')
+    const before = writing.getJSON()
+    const event =
+        input === 'beforeinput'
+            ? new InputEvent('beforeinput', { inputType: 'deleteWordBackward', bubbles: true, cancelable: true })
+            : new KeyboardEvent('keydown', {
+                  key: 'Backspace',
+                  ctrlKey: input === 'Ctrl-Backspace',
+                  bubbles: true,
+                  cancelable: true
+              })
+    writing.view.dom.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(writing.getJSON()).toEqual(before)
+    expect(writing.state.selection.from).toBe(titleEnd)
+    expect(writing.state.selection.$from.parent.type.name).toBe('toggleSummary')
+    writing.commands.insertContent('More')
+    expect(writing.state.doc.child(1).firstChild?.textContent).toBe(`${title}More`)
+    expect(writing.state.doc.firstChild?.textContent).toBe('Keep above')
+})
+
 it.each(['beforeinput', 'ctrl'])('protects the paragraph above a toggle during word deletion (%s)', (input) => {
     const writing = open(
         '<p>Keep the previous line</p><div data-type="toggle"><div data-type="toggleSummary">Toggle notes</div><div data-type="toggleContent"><p>Keep the body</p></div></div>'

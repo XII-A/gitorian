@@ -18,7 +18,8 @@ function deleteToggleWordBackward(editor: Editor): boolean {
             $from.parent.type.name === 'paragraph' &&
             $from.node($from.depth - 1).type.name === 'toggleContent' &&
             $from.index($from.depth - 1) === 0
-        if ($from.parent.type.name === 'toggleSummary' || firstBodyParagraph) return unwrapToggle(editor, depth)
+        if ($from.parent.type.name === 'toggleSummary') return unwrapToggle(editor, depth)
+        if (firstBodyParagraph) return backspaceFromToggleBody(editor, depth)
         // Word deletion stays within its text block, including nested list items.
         return true
     }
@@ -27,6 +28,15 @@ function deleteToggleWordBackward(editor: Editor): boolean {
     const word = /[\p{L}\p{N}_]+$|[^\p{L}\p{N}_\s]+$/u.exec(trimmed)
     const start = word?.index ?? 0
     return editor.commands.deleteRange({ from: from - (prefix.length - start), to: from })
+}
+
+function backspaceFromToggleBody(editor: Editor, depth: number): boolean {
+    const { $from } = editor.state.selection
+    if (!$from.parent.content.size) {
+        const summary = $from.node(depth).firstChild!
+        return editor.commands.setTextSelection($from.before(depth) + 2 + summary.content.size)
+    }
+    return unwrapToggle(editor, depth)
 }
 
 function unwrapToggle(editor: Editor, depth: number) {
@@ -165,6 +175,7 @@ const ToggleContent = Node.create({
             Backspace: () => {
                 const { $from, empty } = this.editor.state.selection
                 if (
+                    !this.editor.isEditable ||
                     !empty ||
                     $from.parent.type.name !== 'paragraph' ||
                     $from.parentOffset ||
@@ -173,7 +184,7 @@ const ToggleContent = Node.create({
                     $from.index($from.depth - 1) !== 0
                 )
                     return false
-                return unwrapToggle(this.editor, $from.depth - 2)
+                return backspaceFromToggleBody(this.editor, $from.depth - 2)
             }
         }
     }
