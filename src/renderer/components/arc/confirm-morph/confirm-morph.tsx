@@ -32,7 +32,7 @@ import styles from './confirm-morph.module.css'
 export type ConfirmMorphState = 'idle' | 'confirming' | 'pending' | 'done' | 'error'
 
 /** How the question is answered: a press, a press held until the fill completes, or a press followed by a short countdown. */
-export type ConfirmMorphMode = 'press' | 'hold' | 'countdown'
+export type ConfirmMorphMode = 'press' | 'hold' | 'countdown' | 'immediate'
 
 /**
  * A button for destructive or important actions that asks in place. Pressing it morphs the same pill into an inline question
@@ -63,7 +63,9 @@ export interface ConfirmMorphProps {
      * accent, for important actions that can be reversed. The resting button is neutral either way.
      */
     tone?: 'danger' | 'neutral'
-    /** `press` confirms on a press. `hold` asks for a press held for `holdDuration`. `countdown` confirms, then counts down `countdown` seconds that Cancel or Escape can still stop. */
+    /** Surface treatment. Secondary matches form fields; ghost leaves the surface and border transparent. */
+    variant?: 'raised' | 'secondary' | 'ghost'
+    /** `immediate` runs a safe action on the first press. `press` asks for confirmation. `hold` asks for a press held for `holdDuration`. `countdown` confirms, then counts down `countdown` seconds that Cancel or Escape can still stop. */
     confirmMode?: ConfirmMorphMode
     /** Milliseconds the confirm button must be held in `hold` mode. */
     holdDuration?: number
@@ -281,6 +283,7 @@ export function ConfirmMorph({
     undoLabel = 'Undo',
     undoingLabel = 'Restoring',
     tone = 'danger',
+    variant = 'raised',
     confirmMode = 'press',
     holdDuration = 1000,
     countdown = 3,
@@ -720,6 +723,10 @@ export function ConfirmMorph({
                             data-autofocus
                             disabled={disabled}
                             onClick={() => {
+                                if (confirmMode === 'immediate') {
+                                    void perform('confirm')
+                                    return
+                                }
                                 setAnnouncement(typeof shownPrompt === 'string' ? shownPrompt : '')
                                 go('confirming')
                             }}
@@ -745,6 +752,7 @@ export function ConfirmMorph({
             data-state={state}
             data-face={faceKey}
             data-tone={tone}
+            data-variant={variant}
             data-mode={confirmMode}
             data-disabled={disabled || undefined}
             tabIndex={-1}

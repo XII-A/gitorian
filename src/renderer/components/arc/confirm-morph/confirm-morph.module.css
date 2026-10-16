@@ -46,6 +46,18 @@
 .root[data-disabled][data-state='idle'] .surface::after {
     border-color: var(--border-subtle);
 }
+.root[data-variant='secondary'] .surface {
+    background: var(--surface);
+    box-shadow: none;
+}
+.root[data-variant='ghost'] .surface {
+    background: transparent;
+    box-shadow: none;
+}
+.root[data-variant='ghost'] .surface::after,
+.root[data-variant='ghost'][data-disabled][data-state='idle'] .surface::after {
+    border-color: transparent;
+}
 
 .face {
     display: flex;
