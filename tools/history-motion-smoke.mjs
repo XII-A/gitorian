@@ -171,15 +171,53 @@ app.whenReady().then(async () => {
         await evaluate(`document.querySelector('.history-row').click()`)
         await pause(300)
         for (const width of [1440, 768, 390, 1024]) {
+            // Arm the renderer before asking the native window to resize. Windows
+            // may deliver its resize after setContentSize returns (including at 125% DPI).
+            await evaluate(`(() => {
+                window.__historyResize = {received:false, beforeWidth:innerWidth, previousAnimations:new Set([...document.querySelectorAll('.entry-history,.history-entry-dialog')].flatMap(element=>element.getAnimations()))};
+                const state=window.__historyResize;
+                const receive=()=>{state.received=true;state.receivedAt=performance.now();clearTimeout(timeout)};
+                const timeout=setTimeout(()=>removeEventListener('resize',receive),2000);
+                addEventListener('resize',receive,{once:true});
+                return true;
+            })()`)
             window.setContentSize(width, 1000)
-            await pause(300)
+            const synchronization = await evaluate(`(async () => {
+                const state=window.__historyResize;
+                const deadline=performance.now()+2000;
+                while(!state.received && performance.now()<deadline) await new Promise(resolve=>setTimeout(resolve,10));
+                if(!state.received) return {received:false,beforeWidth:state.beforeWidth,error:'Renderer did not acknowledge native resize'};
+                // React handles the resize in a follow-up commit. Give that commit
+                // two frames to publish its animations, then observe actual settling.
+                await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
+                const start=performance.now(), observed=[];
+                while(performance.now()-start<1000) {
+                    const animations=[...document.querySelectorAll('.entry-history,.history-entry-dialog')].flatMap(element=>element.getAnimations()).filter(animation=>!state.previousAnimations.has(animation));
+                    for(const animation of animations) observed.push({duration:animation.effect.getComputedTiming().duration,state:animation.playState});
+                    if(animations.length>=2 && animations.every(animation=>animation.playState==='finished')) {
+                        await new Promise(requestAnimationFrame);
+                        return {received:true,beforeWidth:state.beforeWidth,settledAfter:performance.now()-state.receivedAt,observed};
+                    }
+                    await new Promise(requestAnimationFrame);
+                }
+                return {received:true,beforeWidth:state.beforeWidth,error:'Resize controller did not publish and settle both panel animations',observed};
+            })()`)
+            const bounds = await evaluate(`(() => {
+                const sheet=document.querySelector('.entry-history'), reader=document.querySelector('.history-entry-dialog');
+                const a=sheet.getBoundingClientRect(), b=reader.getBoundingClientRect();
+                const animations=[sheet,reader].flatMap(element=>element.getAnimations().map(animation=>({
+                    currentTime:animation.currentTime, playState:animation.playState, timing:animation.effect.getComputedTiming()
+                })));
+                return {viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio,scrollWidth:document.documentElement.scrollWidth},
+                    sheet:a.toJSON(), reader:b.toJSON(), gap:b.left-a.right, animations,
+                    passed:Math.abs(a.height-b.height)<1 && Math.abs(b.right-(innerWidth > 800 ? innerWidth-24 : innerWidth-12))<1 &&
+                        document.documentElement.scrollWidth===innerWidth && (innerWidth<=800 || Math.abs(b.left-a.right-24)<1)}
+            })()`)
             assert(
-                await evaluate(`(() => {
-            const a = document.querySelector('.entry-history').getBoundingClientRect(), b = document.querySelector('.history-entry-dialog').getBoundingClientRect();
-            return Math.abs(a.height-b.height)<1 && Math.abs(b.right-(innerWidth > 800 ? innerWidth-24 : innerWidth-12))<1 && document.documentElement.scrollWidth===innerWidth &&
-                (innerWidth<=800 || Math.abs(b.left-a.right-24)<1)
-        })()`),
-                'Open-pair resize geometry failed'
+                !synchronization.error &&
+                    synchronization.observed.every((animation) => Number(animation.duration) <= 300) &&
+                    bounds.passed,
+                `Open-pair resize geometry failed: ${JSON.stringify({ requestedWidth: width, nativeContentSize: window.getContentSize(), synchronization, bounds })}`
             )
         }
         // An actual outside pointer dismisses both Radix surfaces and releases the body.
