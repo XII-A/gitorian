@@ -1,3 +1,5 @@
+import { sampleState } from './workspace-sample'
+import { historySamples } from './history-samples'
 import { activityUpdating } from './background-work'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Command, Reply } from '../shared/model'
@@ -40,7 +42,13 @@ function JournalApp() {
     currentReply.current = reply
     const run = useCallback(async (command: Command): Promise<Reply | undefined> => {
         try {
-            const result = await window.journal.invoke(command)
+            const browserPreview =
+                !window.journal && new URLSearchParams(window.location.search).get('data') === 'sample'
+            const previewState = browserPreview ? sampleState('2026-10-12') : undefined
+            if (previewState) previewState.entries = historySamples
+            const result: Reply = previewState
+                ? { state: previewState, connections: { github: false, notion: false, protectedStorage: false } }
+                : await window.journal.invoke(command)
             setReply((current) => {
                 if (unchangedStateReply(current, result, command)) return current
                 if (

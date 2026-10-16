@@ -16,6 +16,7 @@ import { HubActivityDialog, type HubActivityDialogHandle } from './HubActivityDi
 import landscape from './assets/week-landscape.jpg'
 import './hub.css'
 import { offsetDay, rangeActivities, journalWeek } from './hub-model'
+import { EntryHistory } from './EntryHistory'
 
 const dateValue = (value: string) => new Date(`${value}T12:00:00`)
 const dateKey = (date: Date) =>
@@ -180,6 +181,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                     />
                 </div>
                 <div className="hub-utilities">
+                    <EntryHistory state={state} onWrite={(week) => onWrite(week || currentWeek)} />
                     <Button
                         variant="ghost"
                         size="sm"

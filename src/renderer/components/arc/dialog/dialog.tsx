@@ -44,7 +44,11 @@ export interface DialogContentProps extends ComponentPropsWithoutRef<typeof Dial
     headerContent?: ReactNode
     children: ReactNode
     /** Dim large data views without repainting the whole page through a backdrop blur. */
-    backdrop?: 'blur' | 'dim'
+    backdrop?: 'blur' | 'dim' | 'none'
+    /** Content-only reader surfaces keep an accessible title without visible dialog controls. */
+    hideHeader?: boolean
+    /** Use a horizontal entrance and exit for a reader beside another surface. */
+    motionPreset?: 'scale' | 'slide-right'
 }
 
 const fade: Transition = { duration: motionTokens.duration.instant }
@@ -89,6 +93,8 @@ export function DialogContent({
     className,
     onPointerDownOutside,
     backdrop = 'blur',
+    hideHeader = false,
+    motionPreset = 'scale',
     ...props
 }: DialogContentProps) {
     const open = useContext(OpenContext)
@@ -107,22 +113,26 @@ export function DialogContent({
     const classes = [styles.content, className].filter(Boolean).join(' ')
     const inner = (
         <>
-            <div className={styles.header} data-arc-dialog-header>
-                <div>
-                    {headerContent ? <div className={styles.headerContent}>{headerContent}</div> : null}
-                    <DialogPrimitive.Title className={styles.title}>
-                        <SwapText text={title} />
-                    </DialogPrimitive.Title>
-                    {description ? (
-                        <DialogPrimitive.Description className={styles.description}>
-                            <SwapText text={description} />
-                        </DialogPrimitive.Description>
-                    ) : null}
+            {hideHeader ? (
+                <DialogPrimitive.Title className={styles.visuallyHidden}>{title}</DialogPrimitive.Title>
+            ) : (
+                <div className={styles.header} data-arc-dialog-header>
+                    <div>
+                        {headerContent ? <div className={styles.headerContent}>{headerContent}</div> : null}
+                        <DialogPrimitive.Title className={styles.title}>
+                            <SwapText text={title} />
+                        </DialogPrimitive.Title>
+                        {description ? (
+                            <DialogPrimitive.Description className={styles.description}>
+                                <SwapText text={description} />
+                            </DialogPrimitive.Description>
+                        ) : null}
+                    </div>
+                    <DialogPrimitive.Close className={styles.close} aria-label="Close dialog">
+                        <X size={16} strokeWidth={1.75} aria-hidden="true" />
+                    </DialogPrimitive.Close>
                 </div>
-                <DialogPrimitive.Close className={styles.close} aria-label="Close dialog">
-                    <X size={16} strokeWidth={1.75} aria-hidden="true" />
-                </DialogPrimitive.Close>
-            </div>
+            )}
             <div className={styles.body} data-arc-dialog-body>
                 {children}
             </div>
@@ -132,7 +142,12 @@ export function DialogContent({
     if (open === null)
         return (
             <DialogPrimitive.Portal>
-                <DialogPrimitive.Overlay data-backdrop={backdrop} className={`${styles.overlay} ${styles.keyframes}`} />
+                {backdrop !== 'none' && (
+                    <DialogPrimitive.Overlay
+                        data-backdrop={backdrop}
+                        className={`${styles.overlay} ${styles.keyframes}`}
+                    />
+                )}
                 <DialogPrimitive.Content
                     {...props}
                     onPointerDownOutside={pressOutside}
@@ -147,29 +162,48 @@ export function DialogContent({
         <AnimatePresence>
             {open && (
                 <DialogPrimitive.Portal key="dialog" forceMount>
-                    <DialogPrimitive.Overlay asChild forceMount>
-                        <motion.div
-                            className={styles.overlay}
-                            data-backdrop={backdrop}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0, transition: reduced ? fade : leave }}
-                            transition={
-                                reduced
-                                    ? fade
-                                    : { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
-                            }
-                        />
-                    </DialogPrimitive.Overlay>
+                    {backdrop !== 'none' && (
+                        <DialogPrimitive.Overlay asChild forceMount>
+                            <motion.div
+                                className={styles.overlay}
+                                data-backdrop={backdrop}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0, transition: reduced ? fade : leave }}
+                                transition={
+                                    reduced
+                                        ? fade
+                                        : {
+                                              duration: motionTokens.duration.standard,
+                                              ease: [...motionTokens.ease.enter]
+                                          }
+                                }
+                            />
+                        </DialogPrimitive.Overlay>
+                    )}
                     <DialogPrimitive.Content {...props} onPointerDownOutside={pressOutside} asChild forceMount>
                         <motion.div
                             className={classes}
-                            initial={reduced ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.96 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            initial={
+                                reduced
+                                    ? { opacity: 0 }
+                                    : motionPreset === 'slide-right'
+                                      ? { opacity: 1, x: '100vw' }
+                                      : { opacity: 0, y: 8, scale: 0.96 }
+                            }
+                            animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
                             exit={
                                 reduced
                                     ? { opacity: 0, transition: fade }
-                                    : { opacity: 0, y: 4, scale: 0.98, transition: leave }
+                                    : motionPreset === 'slide-right'
+                                      ? {
+                                            x: '100vw',
+                                            transition: {
+                                                duration: motionTokens.duration.standard,
+                                                ease: [...motionTokens.ease.standard]
+                                            }
+                                        }
+                                      : { opacity: 0, y: 4, scale: 0.98, transition: leave }
                             }
                             transition={
                                 reduced
