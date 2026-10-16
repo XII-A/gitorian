@@ -1,10 +1,11 @@
-import { Node } from '@tiptap/react'
+import { Extension, Node } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import type { JournalNode } from '../shared/model'
 import StarterKit from '@tiptap/starter-kit'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import { Plugin } from '@tiptap/pm/state'
+import { moveToggleBlock } from './toggle-indentation'
 
 function deleteToggleWordBackward(editor: Editor): boolean {
     const { $from, from, empty } = editor.state.selection
@@ -178,11 +179,23 @@ const ToggleContent = Node.create({
     }
 })
 
+const ToggleIndentation = Extension.create({
+    name: 'toggleIndentation',
+    priority: 1100,
+    addKeyboardShortcuts() {
+        return {
+            Tab: () => moveToggleBlock(this.editor, false),
+            'Shift-Tab': () => moveToggleBlock(this.editor, true)
+        }
+    }
+})
+
 export const journalExtensions = () => [
     StarterKit.configure({ heading: { levels: [1, 2, 3, 4] }, link: { openOnClick: false } }),
     TaskList,
     TaskItem.configure({ nested: true }),
     Toggle,
     ToggleSummary,
-    ToggleContent
+    ToggleContent,
+    ToggleIndentation
 ]
