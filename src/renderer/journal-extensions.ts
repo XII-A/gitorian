@@ -190,6 +190,17 @@ const ToggleIndentation = Extension.create({
     }
 })
 
+const EditorTabFallback = Extension.create({
+    name: 'editorTabFallback',
+    // Let toggle and list shortcuts act first. An unsupported indent must not
+    // become browser focus navigation to a toggle button or an earlier control.
+    priority: -100,
+    addKeyboardShortcuts() {
+        const consume = () => this.editor.isEditable && !this.editor.view.composing
+        return { Tab: consume, 'Shift-Tab': consume }
+    }
+})
+
 export const journalExtensions = () => [
     StarterKit.configure({ heading: { levels: [1, 2, 3, 4] }, link: { openOnClick: false } }),
     TaskList,
@@ -197,5 +208,6 @@ export const journalExtensions = () => [
     Toggle,
     ToggleSummary,
     ToggleContent,
-    ToggleIndentation
+    ToggleIndentation,
+    EditorTabFallback
 ]

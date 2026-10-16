@@ -28,6 +28,44 @@ function tab(writing: Editor, shiftKey = false) {
     return event.defaultPrevented
 }
 
+it.each([
+    ['paragraph', '<p>Outside</p>'],
+    ['heading', '<h2>Outside</h2>'],
+    ['code block', '<pre><code>Outside</code></pre>']
+])('keeps unsupported Tab and Shift+Tab in the %s without moving the caret or document', (_name, html) => {
+    const writing = open(`${toggle()}<p>Between</p>${html}`)
+    select(writing, 'Outside')
+    const before = writing.state
+    for (const shift of [false, true]) {
+        expect(tab(writing, shift)).toBe(true)
+        expect(writing.state.doc.eq(before.doc)).toBe(true)
+        expect(writing.state.selection.eq(before.selection)).toBe(true)
+    }
+})
+
+it('consumes Tab and Shift+Tab in a standalone heading with no toggle', () => {
+    const writing = open('<h2>Outside</h2>')
+    select(writing, 'Outside')
+    const before = writing.state
+    expect(tab(writing)).toBe(true)
+    expect(tab(writing, true)).toBe(true)
+    expect(writing.state.doc.eq(before.doc)).toBe(true)
+    expect(writing.state.selection.eq(before.selection)).toBe(true)
+})
+
+it('consumes an unsupported first-list-item Tab but retains normal list outdent', () => {
+    const writing = open(`${toggle()}<p>Between</p><ul><li><p>Outside</p></li></ul>`)
+    select(writing, 'Outside')
+    const before = writing.state
+    expect(tab(writing)).toBe(true)
+    expect(writing.state.doc.eq(before.doc)).toBe(true)
+    expect(writing.state.selection.eq(before.selection)).toBe(true)
+    expect(tab(writing, true)).toBe(true)
+    expect(writing.state.doc.child(2).type.name).toBe('paragraph')
+    expect(writing.state.doc.child(2).textContent).toBe('Outside')
+    expect(writing.state.selection.$from.parentOffset).toBe(2)
+})
+
 it('moves a marked paragraph into a preceding collapsed toggle, opens it, and preserves the caret and undo', () => {
     const writing = open(`${toggle()}<p><strong>Outside</strong></p>`)
     const button = writing.view.dom.querySelector('button')!
