@@ -42,7 +42,6 @@ export function Editor({
     const [active, setActive] = useState(0)
     const activeRef = useRef(0)
     const host = useRef<HTMLDivElement>(null)
-    const lastEmitted = useRef<JournalNode | undefined>(undefined)
     const id = useId()
     const updateMenu = (editor: TiptapEditor) => {
         const { $from, empty, from } = editor.state.selection
@@ -145,7 +144,6 @@ export function Editor({
         },
         onUpdate: ({ editor: updated }) => {
             const body = updated.getJSON() as JournalNode
-            lastEmitted.current = body
             onChange?.(body)
             updateMenu(updated)
         },
@@ -155,15 +153,11 @@ export function Editor({
         editorRef.current = editor
     }, [editor])
     useEffect(() => {
-        if (
-            editor &&
-            JSON.stringify(value) !== JSON.stringify(lastEmitted.current) &&
-            JSON.stringify(value) !== JSON.stringify(editor.getJSON())
-        )
+        if (editor && JSON.stringify(value) !== JSON.stringify(editor.getJSON()))
             editor.commands.setContent(value, { emitUpdate: false })
     }, [value, editor])
     useEffect(() => {
-        editor?.setEditable(!readOnly)
+        editor?.setEditable(!readOnly, false)
     }, [editor, readOnly])
     useEffect(() => {
         if (insertLink && editor && !readOnly)
