@@ -14,13 +14,13 @@ import { Combobox } from './components/arc/combobox/combobox'
 import { DatePicker } from './components/arc/date-picker/date-picker'
 import { TagInput } from './components/arc/tag-input/tag-input'
 import { ImportProgressLabel } from './ImportProgressLabel'
-import { Folder, RefreshCw } from 'lucide-react'
+import { Folder, Plug, RefreshCw } from 'lucide-react'
 import { GitHubSignIn, githubSignInFailure, type GitHubSignInFeedback } from './GitHubSignIn'
 import { Switch } from './components/arc/switch/switch'
 import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
 import { NumberField } from './components/arc/number-field/number-field'
 import { SearchField } from './components/arc/search-field/search-field'
-import { ConfirmMorph } from './components/arc/confirm-morph/confirm-morph'
+import { ConfirmMorph, type ConfirmMorphState } from './components/arc/confirm-morph/confirm-morph'
 import type { EditorHandle } from './Editor'
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
 import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise'
@@ -45,6 +45,27 @@ export function Settings({
     const [settings, setSettings] = useState(state.settings)
     const [repositories, setRepositories] = useState(state.repositories)
     const [token, setToken] = useState('')
+    const [notionIdentity, setNotionIdentity] = useState<Reply['notionIdentity']>()
+    const [destinationTest, setDestinationTest] = useState<{ key: string; state: ConfirmMorphState }>()
+    const destinationKey = JSON.stringify([connections.notion, settings.destination])
+    const currentDestinationKey = useRef(destinationKey)
+    currentDestinationKey.current = destinationKey
+    useEffect(() => {
+        let cancelled = false
+        setNotionIdentity(undefined)
+        if (connections.notion)
+            void window.journal.invoke({ type: 'notionProfile' }).then(
+                (reply) => {
+                    if (!cancelled) setNotionIdentity(reply.notionIdentity)
+                },
+                () => {
+                    // Profile details are optional; the connection remains usable if they cannot be loaded.
+                }
+            )
+        return () => {
+            cancelled = true
+        }
+    }, [connections.notion])
     const [device, setDevice] = useState<Reply['device']>()
     const [githubFeedback, setGithubFeedback] = useState<GitHubSignInFeedback>()
     const [githubNotice, setGithubNotice] = useState('')
@@ -111,7 +132,8 @@ export function Settings({
             ),
         [state.repositories]
     )
-    const destination = (patch: Partial<Destination>) =>
+    const destination = (patch: Partial<Destination>) => {
+        setError('')
         setSettings((current) => ({
             ...current,
             destination: {
@@ -123,6 +145,7 @@ export function Settings({
                 ...patch
             }
         }))
+    }
     useEffect(() => {
         if (!device) return
         const attempt = githubAttempt.current
@@ -437,6 +460,7 @@ export function Settings({
                                                 }
                                                 confirmLabel="Disconnect"
                                                 confirmMode="hold"
+                                                variant="secondary"
                                                 pendingLabel="Disconnecting"
                                                 doneLabel="Disconnected"
                                                 errorLabel="Could not disconnect"
@@ -530,9 +554,57 @@ export function Settings({
                             <section className="settings-section" aria-label="Notion connection">
                                 <div className="settings-section-heading">
                                     <h3>Notion</h3>
-                                    <span className="settings-connection-status">
-                                        {connections.notion ? 'Connected' : 'Not connected'}
-                                    </span>
+                                    {connections.notion ? (
+                                        <div className="settings-github-account">
+                                            <span className="settings-github-identity">
+                                                <span className="settings-github-avatar" aria-hidden="true">
+                                                    {notionIdentity?.name.slice(0, 1).toUpperCase() || 'N'}
+                                                    {notionIdentity?.avatarUrl && (
+                                                        <img
+                                                            key={notionIdentity.avatarUrl}
+                                                            src={notionIdentity.avatarUrl}
+                                                            width={32}
+                                                            height={32}
+                                                            alt=""
+                                                            onError={(event) => {
+                                                                event.currentTarget.hidden = true
+                                                            }}
+                                                        />
+                                                    )}
+                                                </span>
+                                                <span>{notionIdentity?.name || 'Connected'}</span>
+                                            </span>
+                                            <ConfirmMorph
+                                                label="Disconnect"
+                                                prompt={
+                                                    <span className="settings-disconnect-question">
+                                                        Disconnect Notion?
+                                                    </span>
+                                                }
+                                                confirmLabel="Disconnect"
+                                                confirmMode="hold"
+                                                variant="secondary"
+                                                pendingLabel="Disconnecting"
+                                                doneLabel="Disconnected"
+                                                errorLabel="Could not disconnect"
+                                                tone="danger"
+                                                disabled={!!busy}
+                                                onConfirm={async () => {
+                                                    setBusy('disconnect-notion')
+                                                    setError('')
+                                                    try {
+                                                        await invoke({ type: 'disconnect', service: 'notion' })
+                                                        setStatus('Notion disconnected.')
+                                                        setDestinationTest(undefined)
+                                                    } finally {
+                                                        setBusy('')
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <span className="settings-connection-status">Not connected</span>
+                                    )}
                                 </div>
                                 {!connections.notion ? (
                                     <>
@@ -561,21 +633,7 @@ export function Settings({
                                             </Button>
                                         </div>
                                     </>
-                                ) : (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        disabled={!!busy}
-                                        onClick={() =>
-                                            action('disconnect-notion', async () => {
-                                                await invoke({ type: 'disconnect', service: 'notion' })
-                                                setStatus('Notion disconnected.')
-                                            })
-                                        }
-                                    >
-                                        Disconnect Notion
-                                    </Button>
-                                )}
+                                ) : null}
                                 {(connections.github || connections.notion) && !connections.protectedStorage && (
                                     <p className="settings-hint">Credentials are kept for this session only.</p>
                                 )}
@@ -609,7 +667,36 @@ export function Settings({
                                         />
                                     </div>
                                 )}
-                                <p className="settings-hint">Share the destination with your Notion integration.</p>
+                                <div className="settings-actions">
+                                    <ConfirmMorph
+                                        key={destinationKey}
+                                        label="Test destination"
+                                        icon={<Plug size={16} strokeWidth={1.75} />}
+                                        confirmMode="immediate"
+                                        variant="secondary"
+                                        tone="neutral"
+                                        pendingLabel="Testing"
+                                        doneLabel="Reachable"
+                                        errorLabel="Unreachable"
+                                        state={destinationTest?.key === destinationKey ? destinationTest.state : 'idle'}
+                                        onStateChange={(next) => {
+                                            if (currentDestinationKey.current === destinationKey)
+                                                setDestinationTest({ key: destinationKey, state: next })
+                                        }}
+                                        disabled={!connections.notion || !settings.destination?.id.trim() || !!busy}
+                                        onConfirm={async () => {
+                                            setBusy('notion-test')
+                                            try {
+                                                await window.journal.invoke({
+                                                    type: 'notionTestDestination',
+                                                    destination: settings.destination!
+                                                })
+                                            } finally {
+                                                setBusy('')
+                                            }
+                                        }}
+                                    />
+                                </div>
                             </section>
                         </TabsContent>
                         <TabsContent value="preferences" className="settings-content">

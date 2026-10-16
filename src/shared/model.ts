@@ -311,6 +311,8 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('reconcile'), saveId: z.string() }),
     z.object({ type: z.literal('coverage'), activityId: z.string(), entryId: z.string(), linked: z.boolean() }),
     z.object({ type: z.literal('notionConnect'), token: z.string() }),
+    z.object({ type: z.literal('notionProfile') }),
+    z.object({ type: z.literal('notionTestDestination'), destination: destinationSchema }),
     z.object({ type: z.literal('githubStart') }),
     z.object({ type: z.literal('githubPoll') }),
     z.object({ type: z.literal('disconnect'), service: z.enum(['github', 'notion']) }),
@@ -320,7 +322,12 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('popout'), kind: z.enum(['entry', 'activity']), id: z.string() })
 ])
 export type Command = z.infer<typeof commandSchema>
+export interface NotionIdentity {
+    name: string
+    avatarUrl?: string
+}
 export interface Reply {
+    notionIdentity?: NotionIdentity
     state: State
     diff?: string
     activityIds?: string[]

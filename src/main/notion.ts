@@ -1,6 +1,6 @@
 import { fromNotion, toNotion } from '../shared/notion-format'
 import type { NotionBlock } from '../shared/notion-format'
-import type { Destination, Entry, State } from '../shared/model'
+import type { Destination, Entry, NotionIdentity, State } from '../shared/model'
 import type { Http } from './http'
 import { HttpError } from './http'
 
@@ -26,7 +26,40 @@ export class Notion {
         return this.http.request<T>(`https://api.notion.com/v1/${path}`, token, init)
     }
     async verify(): Promise<void> {
-        await this.request('users/me')
+        await this.profile()
+    }
+    async profile(): Promise<NotionIdentity> {
+        const user = await this.request<{ name?: string | null; avatar_url?: string | null }>('users/me')
+        return {
+            name: user.name?.trim() || 'Notion integration',
+            avatarUrl: user.avatar_url?.startsWith('https://') ? user.avatar_url : undefined
+        }
+    }
+    async verifyDestination(destination: Destination): Promise<void> {
+        if (!destination.id.trim()) throw new Error('Enter a destination ID first.')
+        const kind = destination.kind === 'page' ? 'Page' : 'Database data source'
+        try {
+            await this.request(
+                `${destination.kind === 'page' ? 'pages' : 'data_sources'}/${encodeURIComponent(destination.id.trim())}`
+            )
+        } catch (error) {
+            if (error instanceof HttpError) {
+                if (error.status === 401)
+                    throw new Error('Reconnect Notion with a valid integration token and try again.')
+                if (error.status === 403 || error.status === 404)
+                    throw new Error(
+                        `${kind} could not be reached. Check the ID and share it with your Notion integration.`
+                    )
+                if (error.status === 400)
+                    throw new Error(
+                        `Check the ${destination.kind === 'page' ? 'page' : 'data source'} ID and try again.`
+                    )
+            }
+            throw new Error('Could not test the destination. Check your connection and try again.')
+        }
+    }
+    async refreshEntry(id: string): Promise<Entry> {
+        return this.entry(await this.request<Page>(`pages/${encodeURIComponent(id)}`))
     }
     async blocks(id: string): Promise<NotionBlock[]> {
         const blocks: NotionBlock[] = []

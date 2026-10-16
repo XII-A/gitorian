@@ -15,7 +15,7 @@
     width: 100%;
     min-height: var(--control-height-md);
     padding: 0 var(--space-3);
-    border: 1px solid var(--border-strong);
+    border: 1px solid var(--border);
     border-radius: var(--radius-control);
     background: var(--surface);
     color: var(--foreground);
@@ -33,7 +33,7 @@
 }
 @media (hover: hover) and (pointer: fine) {
     .input:hover:not(:disabled, [aria-invalid='true']) {
-        border-color: var(--foreground);
+        border-color: var(--border-strong);
     }
 }
 .input:focus-visible {

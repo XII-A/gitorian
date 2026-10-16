@@ -170,6 +170,11 @@ void app.whenReady().then(() => {
                 await new Notion(http, () => command.token).verify()
                 vault.set('notion', command.token)
                 break
+            case 'notionTestDestination':
+                await notion.verifyDestination(command.destination)
+                return service.reply({ message: 'Destination is reachable.' })
+            case 'notionProfile':
+                return service.reply({ notionIdentity: await notion.profile() })
             case 'githubStart': {
                 const device = await github.start(store.state.settings.githubClientId)
                 try {
