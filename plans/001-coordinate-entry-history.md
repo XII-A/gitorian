@@ -1,6 +1,6 @@
 # 001 - Coordinate the previous entries surfaces
 
-- **Status**: TODO
+- **Status**: DONE
 - **Commit**: b921add
 - **Severity**: HIGH
 - **Category**: Easing, physicality, interruptibility, performance, cohesion
@@ -23,6 +23,7 @@ These create long entrance tails, apparent fast exits and inconsistent reversal.
 One transform owner per panel, compositor-friendly full transform strings (or native CSS transitions/WAAPI), no simultaneously animated CSS translate and Motion x. Retarget from current visual position on interruptions. Keep both surfaces mounted long enough to finish exits, retaining entry content. Do not restart or animate panel movement when merely selecting another entry.
 
 Add a named shared history motion profile following motionTokens conventions:
+
 - Pointer entrance and companion displacement: 260ms.
 - Pointer exit and drawer return: 240ms, so responses are slightly quicker without a rushed viewport-wide flight.
 - Curve for coordinated panel motion: cubic-bezier(0.32, 0.72, 0, 1), the exact drawer curve from C:/Users/LENOVO/.agents/skills/improve-animations/AUDIT.md.
@@ -58,3 +59,15 @@ No new dependencies. No global redesign or unrelated animation audit fixes. No f
 - Verify at desktop 1440, 1024, tablet768 and mobile390. Resize with reader open: preserve correct final bounds, matching heights, no sideways scroll.
 - Reduced motion: only 120ms opacity, no travel. Keyboard opens/Escape show no positional animation, focus remains usable.
 - Done when the above checks pass and independent review-animations accepts, or any unresolved findings are explicitly reported.
+
+## Execution and review record
+
+- Branch: `feat/entry-history-motion`.
+- Baseline UI commit: `b921add`.
+- Motion implementation integrated as `cce6396` from an isolated executor checkout.
+- Replaced history-only CSS translate plus Motion shorthand with one native WAAPI transform owner per surface. Shared profile: 260ms entrance, 240ms exit, cubic-bezier(0.32, 0.72, 0, 1); 120ms opacity-only feedback for reduced motion and keyboard input.
+- Preserved installed Arc/Radix surfaces and defaults for other callers, current-position reversal, immediate row switching, measured travel, retained exit content and paired drag.
+- Independent review-animations reviewer initially blocked a drag defect: both surfaces froze but only the drawer followed the pointer. Executor captured both visual origins and applied the same displacement; reviewer rechecked the correction and approved exact final source commit `cce6396`. No remaining source-level motion blockers.
+- Parent production build and all 158 tests in 24 files passed. Executor typecheck, type-aware lint and formatting passed. Focused Electron smoke passed normal motion, 1440/1024/768/390 layouts, rapid reversals, constant-gap combined exits, mounted resize, paired drag/cancel/dismiss, quiet input, focus and body cleanup.
+- Parent encountered one intermittent resize smoke failure. A passing rerun and a deliberate 180ms renderer stall confirmed fixed-delay synchronization: the assertion sampled at 83ms of a 260ms transition. A test-only follow-up now waits for renderer acknowledgement and animation completion, retains strict <1px final geometry and <=300ms budgets, and prints viewport/DPI/bounds/timing on failure. Normal and delayed-renderer smoke passed; no application source change was needed.
+- Limits: physical touch-device feel remains unverified. Source review and measured Electron trajectories supplement desktop interaction checks; they do not establish subjective feel on every device.
