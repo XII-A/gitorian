@@ -108,7 +108,7 @@ function listMarkdown(lines: string[]) {
     return html
 }
 
-/** Converts Markdown to the editor's HTML: headings (three levels), lists, quotes, fenced code, rules, and inline marks. */
+/** Converts Markdown to journal HTML: headings (four levels), lists, quotes, fenced code, rules, and inline marks. */
 export function markdownToHtml(markdown: string) {
     const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
     const out: string[] = []
@@ -139,7 +139,7 @@ export function markdownToHtml(markdown: string) {
         const heading = /^(#{1,6})\s+(.*)$/.exec(line)
         if (heading) {
             flush()
-            const level = Math.min(3, heading[1].length)
+            const level = Math.min(4, heading[1].length)
             out.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`)
             index++
             continue

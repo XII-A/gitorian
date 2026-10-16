@@ -4,12 +4,10 @@ import type { Command, Draft, JournalNode, Reply, State } from '../shared/model'
 import { draftSchema } from '../shared/model'
 import { plainText } from '../shared/notion-format'
 import { Editor } from './Editor'
-import { RichTextEditor } from './components/arc/rich-text-editor/rich-text-editor'
-import type { RichTextEditorHandle } from './components/arc/rich-text-editor/rich-text-editor'
 import { Button } from './components/arc/button/button'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
-import { journalFromHTML, journalHTML, needsLegacyEditor } from './workspace-model'
+import { useToastStack } from './components/arc/toast-stack/toast-stack'
 
 export interface Citation {
     id: number
@@ -42,16 +40,25 @@ export function WorkspaceDraft({
     const [draft, setDraft] = useState<Draft>()
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState(false)
-    const [failure, setFailure] = useState('')
-    const editor = useRef<RichTextEditorHandle>(null)
+    const { toast, dismiss } = useToastStack()
     const latest = useRef<Draft | undefined>(undefined)
     const dirty = useRef(false)
     const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+    const checkpoint = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     const pending = useRef<Promise<boolean> | undefined>(undefined)
     const mounted = useRef(true)
+    const notifiedSave = useRef('')
     const drafts = state.drafts.filter((item) => item.week === week)
     const ready = !!draft && !draft.publishedEntryId && !busy
     const storageKey = `weekly-j:recovery:${sample ? 'sample' : (state.restoreId ?? 'local')}:${week}`
+    const cache = useCallback(() => {
+        if (!dirty.current || !latest.current || sample) return
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(latest.current))
+        } catch {
+            if (mounted.current) setStatus('Recovery storage is unavailable. Saving to the journal…')
+        }
+    }, [storageKey, sample])
     const persist = useCallback(async (): Promise<boolean> => {
         while (pending.current) {
             const saved = await pending.current
@@ -120,7 +127,14 @@ export function WorkspaceDraft({
         if (!latest.current && first) {
             choose(first)
         }
-    }, [drafts, choose])
+        const confirmed = drafts.find((item) => item.id === latest.current?.id && item.publishedEntryId)
+        if (confirmed && !latest.current?.publishedEntryId) {
+            latest.current = confirmed
+            dirty.current = false
+            setDraft(confirmed)
+            setStatus(sample ? 'Sample published. Nothing was sent to Notion.' : 'Published to Notion')
+        }
+    }, [drafts, choose, sample])
     useEffect(() => {
         onReady(ready)
         return () => onReady(false)
@@ -128,35 +142,50 @@ export function WorkspaceDraft({
     useEffect(() => {
         mounted.current = true
         const flush = () => {
+            cache()
             void persist()
         }
         window.addEventListener('pagehide', flush)
         return () => {
             mounted.current = false
             clearTimeout(timer.current)
+            clearTimeout(checkpoint.current)
+            cache()
             window.removeEventListener('pagehide', flush)
             void persist()
         }
-    }, [persist])
-    const edit = (value: Draft) => {
-        const updated = { ...value, updatedAt: new Date().toISOString() }
-        latest.current = updated
-        dirty.current = true
-        setDraft(updated)
-        setStatus('Saving…')
-        try {
-            localStorage.setItem(storageKey, JSON.stringify(updated))
-        } catch {
-            setStatus('Saving… Recovery storage is unavailable.')
-        }
-        clearTimeout(timer.current)
-        timer.current = setTimeout(() => {
-            void persist()
-        }, 450)
-    }
-    const editBody = (body: JournalNode) => {
-        if (latest.current) edit({ ...latest.current, body })
-    }
+    }, [persist, cache])
+    const edit = useCallback(
+        (value: Draft) => {
+            const updated = { ...value, updatedAt: new Date().toISOString() }
+            latest.current = updated
+            dirty.current = true
+            setDraft(updated)
+            setStatus('Saving…')
+            clearTimeout(timer.current)
+            timer.current = setTimeout(() => {
+                clearTimeout(checkpoint.current)
+                checkpoint.current = undefined
+                cache()
+                void persist()
+            }, 1000)
+            if (!checkpoint.current)
+                checkpoint.current = setTimeout(() => {
+                    checkpoint.current = undefined
+                    clearTimeout(timer.current)
+                    cache()
+                    void persist()
+                }, 5000)
+        },
+        [cache, persist]
+    )
+
+    const editBody = useCallback(
+        (body: JournalNode) => {
+            if (latest.current) edit({ ...latest.current, body })
+        },
+        [edit]
+    )
     useEffect(() => {
         if (!citation || !latest.current || latest.current.publishedEntryId) return
         const content: JournalNode = {
@@ -170,24 +199,10 @@ export function WorkspaceDraft({
             ]
         }
         const body: JournalNode = { type: 'doc', content: [...(latest.current.body.content ?? []), content] }
-        // Arc keeps this replacement as one undo step. The onChange callback persists it.
-        if (editor.current) editor.current.setHTML(journalHTML(body))
-        else {
-            const updated = { ...latest.current, body, updatedAt: new Date().toISOString() }
-            latest.current = updated
-            dirty.current = true
-            setDraft(updated)
-            try {
-                localStorage.setItem(storageKey, JSON.stringify(updated))
-            } catch {
-                /* Persist below still saves to the journal. */
-            }
-            void persist()
-        }
-    }, [citation, persist, storageKey])
+        editBody(body)
+    }, [citation, editBody])
     const create = async () => {
         setBusy(true)
-        setFailure('')
         if (!(await persist())) {
             setBusy(false)
             return
@@ -197,13 +212,14 @@ export function WorkspaceDraft({
             .filter((item) => item.week === week && !state.drafts.some((old) => old.id === item.id))
             .at(-1)
         if (created) choose(created)
-        else setFailure('Could not create an entry. Try creating it again.')
+        else toast({ type: 'error', title: 'Could not create an entry', description: 'Try starting an entry again.' })
         setBusy(false)
     }
     const publish = async () => {
         setBusy(true)
-        setFailure('')
         clearTimeout(timer.current)
+        clearTimeout(checkpoint.current)
+        checkpoint.current = undefined
         if (!(await persist()) || !latest.current) {
             setBusy(false)
             return
@@ -219,16 +235,74 @@ export function WorkspaceDraft({
             latest.current = saved
             setDraft(saved)
             setStatus(sample ? 'Sample published. Nothing was sent to Notion.' : 'Published to Notion')
-        } else
-            setFailure(
-                'Publishing did not finish. Your writing is kept. Check the save status below before trying again.'
-            )
+        } else if (!result || !result.state.saves.some((save) => save.draftId === latest.current?.id))
+            toast({
+                id: 'workspace-publish',
+                type: 'error',
+                title: 'Could not publish to Notion',
+                description: 'Your draft is safe. Check the Notion connection and destination in settings.',
+                action: { label: 'Review settings', onClick: onSettings }
+            })
         setBusy(false)
     }
-    const unresolved = state.saves.filter((save) => save.draftId === draft?.id && save.status !== 'confirmed')
-    const uncertain = unresolved.some((save) => ['unknown', 'pending'].includes(save.status))
-    const legacy = draft ? needsLegacyEditor(draft.body) : false
+    const publishSave = state.saves.filter((save) => save.draftId === draft?.id).at(-1)
+    const uncertain = !!publishSave && ['unknown', 'pending'].includes(publishSave.status)
+    const verify = useCallback(
+        async function verifySave(saveId: string): Promise<void> {
+            const result = await run({ type: 'reconcile', saveId })
+            if (!result || result.state.saves.find((save) => save.id === saveId)?.status !== 'confirmed')
+                toast({
+                    id: 'workspace-publish',
+                    type: 'error',
+                    title: 'Notion has not confirmed this save',
+                    description: 'Your draft is safe. Inspect Notion or try verification again before publishing.',
+                    duration: Infinity,
+                    action: {
+                        label: 'Verify again',
+                        onClick: () => {
+                            void verifySave(saveId)
+                        }
+                    }
+                })
+        },
+        [run, toast]
+    )
+    useEffect(() => {
+        const save = publishSave
+        if (!save || save.status === 'confirmed') {
+            notifiedSave.current = ''
+            dismiss('workspace-publish')
+            return
+        }
+        if (save.status === 'pending') return
+        const key = `${save.id}:${save.status}:${save.error ?? ''}`
+        if (key === notifiedSave.current) return
+        notifiedSave.current = key
+        const unknown = save.status === 'unknown'
+        toast({
+            id: 'workspace-publish',
+            type: 'error',
+            title: unknown ? 'Verify the Notion save' : 'Could not publish to Notion',
+            description: unknown
+                ? 'Your draft is safe. Verify the previous save before publishing again.'
+                : 'Your draft is safe. Check the Notion connection and destination in settings, then retry.',
+            duration: Infinity,
+            action: unknown
+                ? {
+                      label: 'Verify save',
+                      onClick: () => {
+                          void verify(save.id)
+                      }
+                  }
+                : { label: 'Review settings', onClick: onSettings }
+        })
+    }, [publishSave, toast, dismiss, verify, onSettings])
     const needsNotion = !sample && (!notionConnected || !state.settings.destination) && !draft?.publishedEntryId
+    const entryTemplate = state.settings.template.content?.some(
+        (node) => node.type !== 'paragraph' || plainText(node).trim()
+    )
+        ? state.settings.template
+        : undefined
     return (
         <section className="ws-writing" aria-label="Weekly journal">
             {publishTarget &&
@@ -272,49 +346,13 @@ export function WorkspaceDraft({
                                     onChange={(event) => edit({ ...draft, title: event.target.value })}
                                 />
                             </h1>
-                            {legacy ? (
-                                <Editor
-                                    key={draft.id}
-                                    value={draft.body}
-                                    onChange={editBody}
-                                    readOnly={!!draft.publishedEntryId || busy}
-                                />
-                            ) : (
-                                <RichTextEditor
-                                    key={draft.id}
-                                    ref={editor}
-                                    aria-label="Journal body"
-                                    defaultValue={journalHTML(draft.body)}
-                                    placeholder="What stayed with you this week?"
-                                    blockHint="Type / for formatting"
-                                    readOnly={!!draft.publishedEntryId || busy}
-                                    onChange={(value) => editBody(journalFromHTML(value.html))}
-                                />
-                            )}
-                            {unresolved.map((save) => (
-                                <div className="ws-inline-error" role="alert" key={save.id}>
-                                    <p>
-                                        {save.status === 'failed'
-                                            ? 'Publishing failed. Your draft is safe; you can retry.'
-                                            : 'The publishing outcome is uncertain. Verify it before publishing again.'}
-                                    </p>
-                                    <p>{save.error}</p>
-                                    {save.status === 'unknown' && (
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            onClick={() => run({ type: 'reconcile', saveId: save.id })}
-                                        >
-                                            Verify Notion save
-                                        </Button>
-                                    )}
-                                </div>
-                            ))}
-                            {failure && (
-                                <p className="ws-inline-error" role="alert">
-                                    {failure}
-                                </p>
-                            )}
+                            <Editor
+                                key={draft.id}
+                                value={draft.body}
+                                template={entryTemplate}
+                                onChange={editBody}
+                                readOnly={!!draft.publishedEntryId || busy}
+                            />
                         </>
                     ) : (
                         <div className="ws-new-entry">
@@ -323,7 +361,6 @@ export function WorkspaceDraft({
                             <Button loading={busy} onClick={create}>
                                 Start this week’s entry
                             </Button>
-                            {failure && <p role="alert">{failure}</p>}
                         </div>
                     )}
                 </div>

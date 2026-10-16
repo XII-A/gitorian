@@ -110,7 +110,7 @@ it('resumes a verified partial Notion save without creating a second page and ma
         expect(app.store.state.coverage).toEqual([])
         await app.service.handle({ type: 'reconcile', saveId: app.store.state.saves[0].id })
         expect(app.remote.pages).toHaveLength(1)
-        expect(app.remote.pages[0].blocks).toHaveLength(121)
+        expect(app.remote.pages[0].blocks).toHaveLength(120)
         const creation = app.remote.requests.find(
             (request) => request.method === 'POST' && request.url.endsWith('/pages')
         )!

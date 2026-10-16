@@ -1,5 +1,6 @@
 import type { Activity, JournalNode, State } from '../shared/model'
 import { offsetDay, rangeActivities } from './hub-model'
+import type { ActivityRangeState } from './hub-model'
 
 export const dateValue = (value: string) => new Date(`${value}T12:00:00`)
 export const dateKey = (date: Date) =>
@@ -7,7 +8,7 @@ export const dateKey = (date: Date) =>
 export const formatDay = (date: string, options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }) =>
     dateValue(date).toLocaleDateString('en-US', options)
 export function filterWorkspaceActivity(
-    state: State,
+    state: ActivityRangeState,
     start: string,
     filters: { project: string; branch: string; kind: string; search: string; authors?: string[] }
 ) {
@@ -60,7 +61,7 @@ export function journalHTML(node: JournalNode): string {
     if (node.type === 'codeBlock') return `<pre>${content}</pre>`
     const tag =
         node.type === 'heading'
-            ? `h${Math.min(3, Number(node.attrs?.level ?? 1))}`
+            ? `h${Math.min(4, Number(node.attrs?.level ?? 1))}`
             : (
                   {
                       paragraph: 'p',
@@ -72,6 +73,8 @@ export function journalHTML(node: JournalNode): string {
                       taskItem: 'li'
                   } as Record<string, string>
               )[node.type]
+    if (['toggle', 'toggleSummary', 'toggleContent'].includes(node.type))
+        return `<div data-type="${node.type}">${content}</div>`
     return tag ? `<${tag}>${content}</${tag}>` : content
 }
 export function journalFromHTML(html: string): JournalNode {
@@ -99,7 +102,12 @@ export function journalFromHTML(html: string): JournalNode {
         })
     const blocks = (parent: Element): JournalNode[] =>
         Array.from(parent.children).map((node): JournalNode => {
-            if (/^H[123]$/.test(node.tagName))
+            if (['toggle', 'toggleSummary', 'toggleContent'].includes(node.getAttribute('data-type') ?? ''))
+                return {
+                    type: node.getAttribute('data-type')!,
+                    content: node.getAttribute('data-type') === 'toggleSummary' ? inline(node) : blocks(node)
+                }
+            if (/^H[1234]$/.test(node.tagName))
                 return { type: 'heading', attrs: { level: Number(node.tagName[1]) }, content: inline(node) }
             if (node.tagName === 'HR') return { type: 'horizontalRule' }
             if (node.tagName === 'PRE')

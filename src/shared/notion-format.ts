@@ -42,6 +42,15 @@ function block(type: string, data: Record<string, unknown>): NotionBlock {
 }
 export function toNotion(document: JournalNode): NotionBlock[] {
     return (document.content ?? []).flatMap((node) => {
+        if (node.type === 'toggle') {
+            const [summary, contents] = node.content ?? []
+            return [
+                block('toggle', {
+                    rich_text: richText(summary?.content),
+                    children: toNotion({ type: 'doc', content: contents?.content ?? [] })
+                })
+            ]
+        }
         if (node.type === 'horizontalRule') return [block('divider', {})]
         if (node.type === 'bulletList' || node.type === 'orderedList' || node.type === 'taskList') {
             return (node.content ?? []).map((item) => {
@@ -72,7 +81,7 @@ export function toNotion(document: JournalNode): NotionBlock[] {
             return [block('code', { rich_text: richText(node.content), language: 'plain text' })]
         if (node.type === 'heading')
             return [
-                block(`heading_${Math.min(3, Number(node.attrs?.level ?? 1))}`, { rich_text: richText(node.content) })
+                block(`heading_${Math.min(4, Number(node.attrs?.level ?? 1))}`, { rich_text: richText(node.content) })
             ]
         if (node.type === 'paragraph') return [block('paragraph', { rich_text: richText(node.content) })]
         throw new Error(`Unsupported journal formatting: ${node.type}`)
@@ -123,8 +132,16 @@ export function fromNotion(blocks: NotionBlock[]): JournalNode {
                 content: [{ type: 'paragraph', content: text }, ...nested]
             })
         } else if (item.type === 'divider') content.push({ type: 'horizontalRule' })
-        else if (/^heading_[123]$/.test(item.type))
+        else if (/^heading_[1234]$/.test(item.type))
             content.push({ type: 'heading', attrs: { level: Number(item.type.slice(-1)) }, content: text }, ...nested)
+        else if (item.type === 'toggle')
+            content.push({
+                type: 'toggle',
+                content: [
+                    { type: 'toggleSummary', content: text },
+                    { type: 'toggleContent', content: nested.length ? nested : [{ type: 'paragraph' }] }
+                ]
+            })
         else if (item.type === 'code') content.push({ type: 'codeBlock', content: text })
         else if (item.type === 'quote')
             content.push({ type: 'blockquote', content: [{ type: 'paragraph', content: text }, ...nested] })

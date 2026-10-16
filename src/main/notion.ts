@@ -93,21 +93,6 @@ export class Notion {
         if (!save.title.trim() || save.title.length > 2000)
             throw new HttpError(400, 'Use a title between 1 and 2000 characters')
         const children = toNotion(save.body)
-        children.unshift({
-            object: 'block',
-            type: 'paragraph',
-            paragraph: {
-                rich_text: [
-                    {
-                        type: 'text',
-                        text: {
-                            content: 'Published with weekly-j',
-                            link: { url: `https://github.com/XII-A/weekly-j#${save.marker}` }
-                        }
-                    }
-                ]
-            }
-        })
         const batches = this.batches(children)
         const destination = save.destination
         const properties: Record<string, unknown> = {
@@ -122,7 +107,7 @@ export class Notion {
             body: JSON.stringify({
                 parent: destination.kind === 'page' ? { page_id: destination.id } : { data_source_id: destination.id },
                 properties,
-                children: batches[0]
+                children: batches[0] ?? []
             })
         })
         save.entryId = page.id
@@ -142,28 +127,50 @@ export class Notion {
         const pages = save.entryId
             ? [await this.request<Page>(`pages/${save.entryId}`)]
             : await this.pages(save.destination)
+        const candidates: { page: Page; blocks: NotionBlock[] }[] = []
         for (const page of pages) {
             const blocks = await this.blocks(page.id)
-            const matches = blocks.some(
+            const legacyMarker = blocks.some(
                 (block) => block.type === 'paragraph' && JSON.stringify(block.paragraph).includes(save.marker)
             )
-            if (matches) {
-                const body = fromNotion(blocks)
-                const actual = toNotion(body)
-                const expected = toNotion(save.body)
-                if (JSON.stringify(actual) === JSON.stringify(expected)) return { ...(await this.entry(page)), body }
-                if (JSON.stringify(actual) !== JSON.stringify(expected.slice(0, actual.length)))
-                    throw new Error(
-                        'The possible saved page differs from the draft. Coverage remains pending; inspect it in Notion.'
-                    )
-                // Re-read and verify an exact prefix before resuming a partial append.
-                for (const children of this.batches(expected.slice(actual.length)))
-                    await this.request(`blocks/${page.id}/children`, {
-                        method: 'PATCH',
-                        body: JSON.stringify({ children })
-                    })
-                return { ...(await this.entry(page)), body: save.body }
-            }
+            const title = Object.values(page.properties)
+                .find((property) => property.title)
+                ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
+                .join('')
+            const elapsed = Date.parse(page.created_time) - Date.parse(save.createdAt)
+            const body = fromNotion(blocks)
+            // New pages contain only user writing. Without a checkpointed ID, adopt
+            // only one complete matching page created during this publish attempt.
+            if (
+                save.entryId ||
+                legacyMarker ||
+                (title === save.title &&
+                    elapsed >= -1000 &&
+                    elapsed <= 120000 &&
+                    JSON.stringify(toNotion(body)) === JSON.stringify(toNotion(save.body)))
+            )
+                candidates.push({ page, blocks })
+        }
+        if (candidates.length > 1)
+            throw new Error(
+                'More than one matching Notion page was found. Inspect them in Notion before retrying verification.'
+            )
+        for (const { page, blocks } of candidates) {
+            const body = fromNotion(blocks)
+            const actual = toNotion(body)
+            const expected = toNotion(save.body)
+            if (JSON.stringify(actual) === JSON.stringify(expected)) return { ...(await this.entry(page)), body }
+            if (JSON.stringify(actual) !== JSON.stringify(expected.slice(0, actual.length)))
+                throw new Error(
+                    'The possible saved page differs from the draft. Coverage remains pending; inspect it in Notion.'
+                )
+            // A checkpointed ID (or legacy marker) identifies a partial page safely.
+            for (const children of this.batches(expected.slice(actual.length)))
+                await this.request(`blocks/${page.id}/children`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ children })
+                })
+            return { ...(await this.entry(page)), body: save.body }
         }
         return undefined
     }

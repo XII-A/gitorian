@@ -1,0 +1,179 @@
+.journal-editor {
+    position: relative;
+}
+.journal-menu-anchor {
+    position: absolute;
+    width: 1px;
+    pointer-events: none;
+}
+.journal-format-bar {
+    position: absolute;
+    z-index: 20;
+    display: flex;
+    padding: var(--space-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    box-shadow: var(--shadow-md);
+}
+.journal-link-form {
+    display: grid;
+    gap: var(--space-3);
+}
+.journal-editor .tiptap {
+    padding: 0;
+    min-height: 120px;
+    max-width: none;
+    color: var(--foreground);
+    font-family: var(--font-body);
+    font-size: var(--text-base);
+    line-height: var(--leading-relaxed, 1.75);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+.journal-editor .tiptap p {
+    margin: 0 0 var(--space-4);
+}
+.journal-editor .tiptap[contenteditable='true'] > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+    content: 'Type / for formatting';
+    float: left;
+    height: 0;
+    color: var(--text-secondary);
+    pointer-events: none;
+}
+.journal-editor .tiptap :is(h1, h2, h3, h4) {
+    margin: var(--space-6) 0 var(--space-3);
+    font-family: var(--font-body);
+    font-weight: 500;
+    line-height: var(--leading-body);
+    letter-spacing: var(--tracking-body);
+}
+.journal-editor .tiptap h1 {
+    font-size: var(--text-3xl);
+}
+.journal-editor .tiptap h2 {
+    font-size: var(--text-2xl);
+}
+.journal-editor .tiptap h3 {
+    font-size: var(--text-xl);
+}
+.journal-editor .tiptap h4 {
+    font-size: var(--text-lg);
+}
+.journal-editor .tiptap > :first-child {
+    margin-top: 0;
+}
+.journal-editor .tiptap strong {
+    font-weight: 500;
+}
+.journal-editor .tiptap code {
+    border-radius: var(--radius-key);
+    padding: var(--space-1);
+    background: var(--surface-muted);
+    font-family: monospace;
+    font-size: var(--text-sm);
+}
+.journal-editor .tiptap pre {
+    padding: var(--space-4);
+    overflow-x: auto;
+    background: var(--surface-muted);
+    border-radius: var(--radius-inset);
+}
+.journal-editor .tiptap pre code {
+    padding: 0;
+}
+.journal-editor .tiptap ul {
+    list-style: disc;
+    padding-left: var(--space-6);
+}
+.journal-editor .tiptap ol {
+    list-style: decimal;
+    padding-left: var(--space-6);
+}
+.journal-editor .tiptap blockquote {
+    border-left: 2px solid var(--border-strong);
+    padding-left: var(--space-4);
+    color: var(--text-secondary);
+}
+.journal-editor .tiptap [data-type='taskList'] {
+    list-style: none;
+    padding-left: 0;
+}
+.journal-editor .tiptap [data-type='taskItem'] {
+    display: flex;
+    gap: var(--space-2);
+}
+.journal-editor .tiptap [data-type='taskItem'] > div {
+    flex: 1;
+    min-width: 0;
+}
+.journal-editor [data-type='toggle'] {
+    position: relative;
+    padding-left: calc(1lh + var(--space-1));
+    margin-block: var(--space-2);
+}
+.journal-editor [data-type='toggle'] > button {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1lh;
+    height: 1lh;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font: inherit;
+}
+.journal-editor [data-type='toggle'] > button > svg {
+    display: block;
+    transform: rotate(0deg);
+    transform-origin: center;
+    transition: transform var(--duration-fast) var(--ease-standard);
+}
+.journal-editor [data-type='toggle'][data-open='true'] > button > svg {
+    transform: rotate(90deg);
+}
+.journal-editor [data-type='toggle'][data-open='false'] > div > [data-type='toggleContent'] {
+    display: none;
+}
+.journal-editor [data-type='toggleSummary'] {
+    min-height: 1lh;
+}
+.journal-editor [data-type='toggleContent'] {
+    padding-top: var(--space-2);
+}
+@media (pointer: coarse) {
+    .journal-editor [data-type='toggle'] {
+        padding-left: var(--space-12);
+    }
+    .journal-editor [data-type='toggle'] > button {
+        width: 44px;
+        height: 44px;
+        top: calc((1lh - 44px) / 2);
+    }
+}
+
+.journal-editor .tiptap :is(ul, ol) {
+    margin-block: var(--space-2);
+}
+.journal-editor .tiptap li > p {
+    margin: 0;
+}
+.journal-editor .tiptap li + li {
+    margin-top: var(--space-1);
+}
+.journal-editor [data-type='toggleContent'] > :first-child {
+    margin-top: 0;
+}
+.journal-editor [data-type='toggleContent'] > :last-child {
+    margin-bottom: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+    .journal-editor [data-type='toggle'] > button > svg {
+        transition: none;
+    }
+}

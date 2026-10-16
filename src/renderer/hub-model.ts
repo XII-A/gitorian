@@ -15,7 +15,11 @@ export function journalWeek(date: string, weekStart: number) {
     return offsetDay(date, -((day - weekStart + 7) % 7))
 }
 
-export function rangeActivities(state: State, start: string, end: string) {
+export type ActivityRangeState = Pick<State, 'activities' | 'repositories'> & {
+    settings: Pick<State['settings'], 'timezone'>
+}
+
+export function rangeActivities(state: ActivityRangeState, start: string, end: string) {
     const inRange = (date: string) => {
         const day = localDate(new Date(date), state.settings.timezone)
         return day >= start && day <= end

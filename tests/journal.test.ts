@@ -23,6 +23,36 @@ const reflection: JournalNode = {
     ]
 }
 describe('local journal workflow through application commands', () => {
+    it('refuses ambiguous matching pages after a lost creation response', async () => {
+        const app = await workspace()
+        try {
+            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            const draft = app.store.state.drafts[0]
+            app.remote.loseCreateResponse = true
+            await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('Connection lost')
+            app.remote.pages.push({ ...structuredClone(app.remote.pages[0]), id: 'another-page' })
+            await expect(
+                app.service.handle({ type: 'reconcile', saveId: app.store.state.saves[0].id })
+            ).rejects.toThrow('More than one matching')
+            expect(app.store.state.saves[0].status).toBe('unknown')
+            expect(app.store.state.coverage).toEqual([])
+        } finally {
+            await app.close()
+        }
+    })
+    it('publishes only the writing, without an attribution block', async () => {
+        const app = await workspace()
+        try {
+            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            const draft = app.store.state.drafts[0]
+            await app.service.handle({ type: 'draft', draft: { ...draft, body: reflection } })
+            await app.service.handle({ type: 'publish', draftId: draft.id })
+            expect(JSON.stringify(app.remote.pages[0].blocks)).not.toContain('Published with weekly-j')
+            expect(app.remote.pages[0].blocks).toHaveLength(reflection.content!.length)
+        } finally {
+            await app.close()
+        }
+    })
     it('recovers a formatted draft and captured selection after layout changes and restart', async () => {
         const app = await workspace()
         try {

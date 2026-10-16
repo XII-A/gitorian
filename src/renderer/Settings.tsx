@@ -21,11 +21,11 @@ import { ExpandableCard } from './components/arc/expandable-card/expandable-card
 import { NumberField } from './components/arc/number-field/number-field'
 import { SearchField } from './components/arc/search-field/search-field'
 import { ConfirmMorph } from './components/arc/confirm-morph/confirm-morph'
-import { RichTextEditor, type RichTextEditorHandle } from './components/arc/rich-text-editor/rich-text-editor'
+import type { EditorHandle } from './Editor'
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
 import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise'
 import { Editor } from './Editor'
-import { dateKey, dateValue, journalFromHTML, journalHTML, needsLegacyEditor } from './workspace-model'
+import { dateKey, dateValue } from './workspace-model'
 import { hasUnsavedSettings, timezoneOptions } from './settings-model'
 import './settings.css'
 
@@ -59,7 +59,7 @@ export function Settings({
     const [importProgress, setImportProgress] = useState<RepositoryImportProgress>()
     const keepEditing = useRef<HTMLButtonElement>(null)
     const previousFocus = useRef<Element | null>(null)
-    const templateEditor = useRef<RichTextEditorHandle>(null)
+    const templateEditor = useRef<EditorHandle>(null)
     const [templateHistory, setTemplateHistory] = useState({ canUndo: false, canRedo: false })
     const templateWords = plainText(settings.template).trim().split(/\s+/).filter(Boolean).length
     const zones = useMemo(() => timezoneOptions(state.settings.timezone), [state.settings.timezone])
@@ -664,9 +664,7 @@ export function Settings({
                                                 variant="ghost"
                                                 size="sm"
                                                 aria-label="Undo template edit"
-                                                disabled={
-                                                    !templateHistory.canUndo || needsLegacyEditor(settings.template)
-                                                }
+                                                disabled={!templateHistory.canUndo}
                                                 onClick={() => templateEditor.current?.undo()}
                                             >
                                                 <ArrowCounterClockwiseIcon aria-hidden="true" />
@@ -675,9 +673,7 @@ export function Settings({
                                                 variant="ghost"
                                                 size="sm"
                                                 aria-label="Redo template edit"
-                                                disabled={
-                                                    !templateHistory.canRedo || needsLegacyEditor(settings.template)
-                                                }
+                                                disabled={!templateHistory.canRedo}
                                                 onClick={() => templateEditor.current?.redo()}
                                             >
                                                 <ArrowClockwiseIcon aria-hidden="true" />
@@ -688,29 +684,15 @@ export function Settings({
                                         </span>
                                     </header>
                                     <div className="settings-template-body">
-                                        {needsLegacyEditor(settings.template) ? (
-                                            <Editor
-                                                value={settings.template}
-                                                onChange={(template) =>
-                                                    setSettings((current) => ({ ...current, template }))
-                                                }
-                                            />
-                                        ) : (
-                                            <RichTextEditor
-                                                ref={templateEditor}
-                                                onHistoryChange={setTemplateHistory}
-                                                aria-label="Entry template"
-                                                defaultValue={journalHTML(settings.template)}
-                                                placeholder="Give each week a starting point…"
-                                                blockHint="Type / for formatting"
-                                                onChange={({ html }) =>
-                                                    setSettings((current) => ({
-                                                        ...current,
-                                                        template: journalFromHTML(html)
-                                                    }))
-                                                }
-                                            />
-                                        )}
+                                        <Editor
+                                            ref={templateEditor}
+                                            onHistoryChange={setTemplateHistory}
+                                            label="Entry template"
+                                            value={settings.template}
+                                            onChange={(template) =>
+                                                setSettings((current) => ({ ...current, template }))
+                                            }
+                                        />
                                     </div>
                                 </div>
                             </section>
