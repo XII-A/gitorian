@@ -84,7 +84,7 @@ it.each(['page', 'database'] as const)('refreshes only app-published entries for
     }
 })
 
-it('drops previously imported entries on restore and restart while keeping app publications', async () => {
+it('preserves existing entries and coverage on restore and restart', async () => {
     const app = await workspace()
     try {
         await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
@@ -93,18 +93,19 @@ it('drops previously imported entries on restore and restart while keeping app p
         const unrelated = { ...published, id: 'unrelated' }
         app.store.state.entries.push(unrelated)
         app.store.state.coverage.push({ activityId: 'old-activity', entryId: unrelated.id })
+        const coverage = structuredClone(app.store.state.coverage)
         const backup = app.store.export()
         app.store.persist()
         const reopened = new Store(`${app.directory}/tracking.sqlite`)
         try {
-            expect(reopened.state.entries).toEqual([published])
-            expect(reopened.state.coverage).toEqual([])
+            expect(reopened.state.entries).toEqual([published, unrelated])
+            expect(reopened.state.coverage).toEqual(coverage)
         } finally {
             reopened.close()
         }
         app.store.restore(backup)
-        expect(app.store.state.entries).toEqual([published])
-        expect(app.store.state.coverage).toEqual([])
+        expect(app.store.state.entries).toEqual([published, unrelated])
+        expect(app.store.state.coverage).toEqual(coverage)
     } finally {
         await app.close()
     }
