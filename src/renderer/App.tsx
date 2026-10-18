@@ -1,5 +1,5 @@
 import { activityUpdating } from './background-work'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import type { Command, Reply } from '../shared/model'
 import { WeeklyHub } from './WeeklyHub'
 import { Settings } from './Settings'
@@ -13,7 +13,8 @@ import { journalWeek } from './hub-model'
 import { AcquisitionStatus } from './AcquisitionStatus'
 import { BackgroundNotifications } from './BackgroundNotifications'
 import { ToastStack, ToastStackProvider } from './components/arc/toast-stack/toast-stack'
-import { unchangedStateReply } from './activity-cache'
+import { reconcileReply } from './activity-cache'
+import { expandReply, stateCursor } from '../shared/state-updates'
 
 export function App() {
     return (
@@ -40,18 +41,11 @@ function JournalApp() {
     currentReply.current = reply
     const run = useCallback(async (command: Command): Promise<Reply | undefined> => {
         try {
-            const result = await window.journal.invoke(command)
-            setReply((current) => {
-                if (unchangedStateReply(current, result, command)) return current
-                if (
-                    current?.state.restoreId === result.state.restoreId &&
-                    (current?.state.snapshotVersion ?? 0) > (result.state.snapshotVersion ?? 0)
-                )
-                    return current
-                const diffs = current?.state.restoreId === result.state.restoreId ? { ...current?.state.diffs } : {}
-                if (command.type === 'details' && result.diff !== undefined) diffs[command.activityId] = result.diff
-                return { ...result, state: { ...result.state, diffs: { ...diffs, ...result.state.diffs } } }
-            })
+            const base = currentReply.current?.state
+            const result = window.journal.updates
+                ? expandReply(await window.journal.updates(command, base && stateCursor(base)), base)
+                : await window.journal.invoke(command)
+            startTransition(() => setReply((current) => reconcileReply(current, result, command)))
             if ('remotes' in result) {
                 const next = result.remotes as Record<string, string[]>
                 setRemotes((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next))
@@ -59,7 +53,19 @@ function JournalApp() {
             setError('')
             return result
         } catch (failure) {
-            setError(String(failure))
+            if (['publish', 'reconcile'].includes(command.type)) {
+                // The writing pane owns actionable publishing toasts. Refresh save state
+                // even when the command failed, so uncertain writes stay blocked.
+                try {
+                    const refreshed = await window.journal.invoke({ type: 'state' })
+                    startTransition(() => setReply((current) => reconcileReply(current, refreshed, { type: 'state' })))
+                    setError('')
+                    return refreshed
+                } catch {
+                    /* Keep the current draft available. */
+                }
+                setError('')
+            } else setError(String(failure))
             return undefined
         }
     }, [])

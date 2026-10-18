@@ -18,14 +18,25 @@ export class JournalService {
     private details = new Map<string, Promise<void>>()
     private importing = false
     private importStopped = false
+    private closing = false
+
+    prepareToClose(): () => void {
+        this.closing = true
+        this.importStopped = true
+        for (const status of Object.values(this.store.state.acquisition ?? {}))
+            if (status.status === 'running') status.status = 'cancelled'
+        return () => {
+            this.closing = false
+        }
+    }
     constructor(
         readonly store: Store,
         private readonly github: GitHub,
         private readonly notion: Notion,
         private readonly connections: () => Reply['connections']
     ) {}
-    reply(extra: Partial<Reply> = {}): Reply {
-        return { state: this.store.snapshot(), connections: this.connections(), ...extra }
+    reply(extra: Partial<Reply> = {}, state = this.store.snapshot()): Reply {
+        return { state, connections: this.connections(), ...extra }
     }
     execute(command: Command): Effect.Effect<Reply, Error> {
         return Effect.tryPromise({
@@ -238,6 +249,7 @@ export class JournalService {
             afterCurrent?: boolean
         } = {}
     ): Promise<void> {
+        if (this.closing) return
         if (this.refreshing) {
             if (!options.resume && !options.afterCurrent) return this.refreshing
             const key = `${options.repositoryId ?? '*'}:${options.source ?? '*'}:${!!options.resume}`
@@ -554,7 +566,9 @@ export class JournalService {
     }
     private confirm(save: State['saves'][number], entry: State['entries'][number]): void {
         const state = this.store.state
-        if (!state.entries.some((item) => item.id === entry.id)) state.entries.push(entry)
+        const index = state.entries.findIndex((item) => item.id === entry.id)
+        if (index < 0) state.entries.push(entry)
+        else state.entries[index] = entry
         for (const selected of save.selections)
             if (
                 !state.coverage.some(
@@ -569,23 +583,21 @@ export class JournalService {
         save.entryId = entry.id
         save.error = undefined
         const draft = state.drafts.find((item) => item.id === save.draftId)
-        if (
-            draft &&
-            draft.title === save.title &&
-            JSON.stringify(draft.body) === JSON.stringify(save.body) &&
-            JSON.stringify(draft.selections) === JSON.stringify(save.selections)
-        )
-            draft.publishedEntryId = entry.id
+        // The page belongs to this weekly draft even if newer local edits arrived
+        // while publishing. The next publish must update that page.
+        if (draft) draft.publishedEntryId = entry.id
         this.store.persist()
     }
     private async publish(draftId: string): Promise<void> {
         const state = this.store.state
         const draft = state.drafts.find((item) => item.id === draftId)
         if (!draft) throw new Error('Draft does not exist')
-        if (draft.publishedEntryId) throw new Error('This draft has already been published; create another entry')
         if (state.saves.some((save) => save.draftId === draftId && ['pending', 'unknown'].includes(save.status)))
             throw new Error('This draft has an uncertain save. Verify it before publishing again.')
-        const destination = state.settings.destination
+        const previous = state.saves
+            .filter((save) => save.entryId === draft.publishedEntryId && save.status === 'confirmed')
+            .at(-1)
+        const destination = previous?.destination ?? state.settings.destination
         if (!destination || !this.connections().notion) throw new Error('Connect Notion and choose a destination first')
         const save: State['saves'][number] = {
             id: randomUUID(),
@@ -599,19 +611,23 @@ export class JournalService {
             createdAt: new Date().toISOString(),
             week: draft.week
         }
+        save.entryId = draft.publishedEntryId
+        save.updateExisting = !!draft.publishedEntryId
         state.saves.push(save)
         this.store.persist()
+        await this.store.flush()
         try {
             this.confirm(
                 save,
-                await this.notion.publish(save, () => {
+                await this.notion.publish(save, async () => {
                     this.store.persist()
+                    await this.store.flush()
                 })
             )
         } catch (error) {
             // Server-side errors and network failures may occur after a committed write.
             save.status =
-                !save.entryId &&
+                (!save.entryId || (save.updateExisting && !save.replacedBlockIds)) &&
                 error instanceof HttpError &&
                 error.status >= 400 &&
                 error.status < 500 &&
@@ -626,7 +642,10 @@ export class JournalService {
     private async reconcile(saveId: string): Promise<void> {
         const save = this.store.state.saves.find((item) => item.id === saveId)
         if (!save || save.status !== 'unknown') throw new Error('No uncertain save to verify')
-        const entry = await this.notion.reconcile(save)
+        const entry = await this.notion.reconcile(save, async () => {
+            this.store.persist()
+            await this.store.flush()
+        })
         if (entry) this.confirm(save, entry)
         else {
             save.error =
@@ -715,6 +734,7 @@ export class JournalService {
                 return this.reply(includeDiff ? { diff: state.diffs[activity.id] ?? '' } : {})
             }
             case 'newDraft':
+                if (state.drafts.some((draft) => draft.week === command.week)) break
                 state.drafts.push({
                     id: randomUUID(),
                     week: command.week,
@@ -726,7 +746,7 @@ export class JournalService {
                 break
             case 'draft': {
                 const draft = state.drafts.find((item) => item.id === command.draft.id)
-                if (!draft || draft.publishedEntryId) throw new Error('Draft is read-only or unavailable')
+                if (!draft) throw new Error('Draft is unavailable')
                 draft.body = command.draft.body
                 draft.title = command.draft.title
                 draft.updatedAt = new Date().toISOString()
@@ -734,7 +754,7 @@ export class JournalService {
             }
             case 'select': {
                 const draft = state.drafts.find((item) => item.id === command.draftId)
-                if (!draft || draft.publishedEntryId) throw new Error('Choose an editable draft')
+                if (!draft) throw new Error('Choose an editable draft')
                 const activity = this.activity(command.activityId)
                 if (command.included) {
                     if (draft.selections.some((item) => item.activityId === activity.id)) break
@@ -793,7 +813,6 @@ export class JournalService {
             default:
                 throw new Error('This command requires the desktop host')
         }
-        this.store.persist()
-        return this.reply()
+        return this.reply({}, this.store.persist())
     }
 }

@@ -1,5 +1,16 @@
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { isCombinedDiff } from '../shared/diff-format'
+import { shareSnapshot } from '../shared/snapshot'
+
+export function reconcileReply(current: Reply | undefined, result: Reply, command: Command): Reply {
+    if (unchangedStateReply(current, result, command)) return current!
+    const sameStore = !!current && current.state.restoreId === result.state.restoreId
+    if (sameStore && (current.state.snapshotVersion ?? 0) > (result.state.snapshotVersion ?? 0)) return current
+    const diffs = sameStore ? { ...current.state.diffs } : {}
+    if (command.type === 'details' && result.diff !== undefined) diffs[command.activityId] = result.diff
+    const next = { ...result, state: { ...result.state, diffs: { ...diffs, ...result.state.diffs } } }
+    return sameStore ? shareSnapshot(current, next) : next
+}
 
 export function unchangedStateReply(current: Reply | undefined, result: Reply, command: Command): boolean {
     return (

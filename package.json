@@ -24,7 +24,8 @@
         "smoke:history-motion": "electron tools/history-motion-smoke.mjs",
         "smoke:activity-filters": "electron tools/activity-filter-smoke.mjs",
         "smoke:acquisition": "electron tools/acquisition-smoke.mjs",
-        "smoke:dev-reload": "node tools/dev-reload-smoke.mjs"
+        "smoke:dev-reload": "node tools/dev-reload-smoke.mjs",
+        "smoke:writing": "node tools/workspace-writing-dev-profile.mjs --assert"
     },
     "build": {
         "appId": "io.github.xiia.weeklyj",
@@ -67,6 +68,7 @@
         "@tanstack/react-virtual": "^3.14.15",
         "@tiptap/extension-task-item": "3.31.4",
         "@tiptap/extension-task-list": "3.31.4",
+        "@tiptap/pm": "3.31.4",
         "@tiptap/react": "3.31.4",
         "@tiptap/starter-kit": "3.31.4",
         "effect": "3.22.2",

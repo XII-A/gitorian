@@ -77,3 +77,36 @@ it('renders unsupported historical content with a placeholder and child-page lin
     expect(plainText(body)).toContain('Unsupported content: table')
     expect(body.content?.[1].content?.[0].marks?.[0].attrs?.href).toBe('https://www.notion.so/abcdef')
 })
+
+it('preserves toggle summaries, children and inline code in Notion', () => {
+    const blocks = [
+        {
+            type: 'toggle',
+            toggle: { rich_text: [{ type: 'text', text: { content: 'Implementation notes' } }] },
+            children: [
+                {
+                    type: 'paragraph',
+                    paragraph: {
+                        rich_text: [{ type: 'text', text: { content: 'run()' }, annotations: { code: true } }]
+                    }
+                }
+            ]
+        }
+    ]
+    const body = fromNotion(blocks)
+    expect(body.content?.[0].type).toBe('toggle')
+    const published = toNotion(body)[0]
+    expect(published.type).toBe('toggle')
+    expect(published.toggle).toMatchObject({
+        children: [{ type: 'paragraph', paragraph: { rich_text: [{ annotations: { code: true } }] } }]
+    })
+})
+
+it('publishes heading four using Notion’s deepest supported heading level', () => {
+    expect(
+        toNotion({
+            type: 'doc',
+            content: [{ type: 'heading', attrs: { level: 4 }, content: [{ type: 'text', text: 'Details' }] }]
+        })[0].type
+    ).toBe('heading_4')
+})

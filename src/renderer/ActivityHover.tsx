@@ -14,11 +14,13 @@ export function ActivityHover({ children }: { children: ReactNode }) {
     const measureTimeline = useCallback(() => {
         if (!root.current) return
         const bounds = root.current.getBoundingClientRect()
+        const viewport = root.current.closest('[role="region"]')?.getBoundingClientRect()
         const paths = { neutral: '', merged: '' }
         for (const row of root.current.querySelectorAll<HTMLButtonElement>('.activity-row')) {
             const node = row.querySelector<HTMLElement>('.activity-row-node')
             if (!node) continue
             const rect = row.getBoundingClientRect()
+            if (viewport && (rect.bottom < viewport.top || rect.top > viewport.bottom)) continue
             const circle = node.getBoundingClientRect()
             if (!rect.height || !circle.width) continue
             const cx = circle.left - bounds.left + circle.width / 2
@@ -43,11 +45,49 @@ export function ActivityHover({ children }: { children: ReactNode }) {
         )
     }, [root])
 
-    useLayoutEffect(measureTimeline, [children, measureTimeline])
+    useLayoutEffect(measureTimeline, [measureTimeline])
     useEffect(() => {
-        const observer = new ResizeObserver(measureTimeline)
+        let frame = 0
+        const schedule = () => {
+            cancelAnimationFrame(frame)
+            frame = requestAnimationFrame(measureTimeline)
+        }
+        const observer = new ResizeObserver(schedule)
         if (root.current) observer.observe(root.current)
-        return () => observer.disconnect()
+        // React can render new children without changing any row geometry.
+        // Only DOM changes in the activity list invalidate the measured paths.
+        const mutations = new MutationObserver((records) => {
+            if (
+                records.some((record) => {
+                    const target = record.target instanceof Element ? record.target : record.target.parentElement
+                    return (
+                        target?.closest('.activity-row-list') ||
+                        [...record.addedNodes, ...record.removedNodes].some(
+                            (node) =>
+                                node instanceof Element &&
+                                (node.matches('.activity-row-list') || node.querySelector('.activity-row'))
+                        )
+                    )
+                })
+            )
+                schedule()
+        })
+        if (root.current)
+            mutations.observe(root.current, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+                attributes: true,
+                attributeFilter: ['data-kind', 'data-connected']
+            })
+        const viewport = root.current?.closest('[role="region"]')
+        viewport?.addEventListener('scroll', schedule, { passive: true })
+        return () => {
+            observer.disconnect()
+            mutations.disconnect()
+            viewport?.removeEventListener('scroll', schedule)
+            cancelAnimationFrame(frame)
+        }
     }, [root, measureTimeline])
 
     return (

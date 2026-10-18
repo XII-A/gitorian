@@ -21,8 +21,7 @@ import { activityLink, dateKey, dateValue, filterWorkspaceActivity, formatDay } 
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
 import { ActivityChart } from './ActivityChart'
-import { ActivityRow } from './ActivityRow'
-import { ActivityHover } from './ActivityHover'
+import { WorkspaceActivityList } from './WorkspaceActivityList'
 import { ProjectFilter } from './ProjectFilter'
 import { hasCachedDetails } from './activity-cache'
 import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
@@ -135,11 +134,12 @@ export function Workspace({
                     break
                 }
                 case 'newDraft':
+                    if (next.drafts.some((draft) => draft.week === command.week)) break
                     next.drafts.push({
                         id: `sample-draft-${crypto.randomUUID()}`,
                         week: command.week,
                         title: '',
-                        body: { type: 'doc', content: [{ type: 'paragraph' }] },
+                        body: structuredClone(next.settings.template),
                         selections: [],
                         updatedAt: new Date().toISOString()
                     })
@@ -148,14 +148,17 @@ export function Workspace({
                     const draft = next.drafts.find((item) => item.id === command.draftId)
                     if (draft) {
                         draft.publishedEntryId = `sample-entry-${draft.id}`
-                        next.entries.push({
+                        const entry = {
                             id: draft.publishedEntryId,
                             title: draft.title,
                             body: draft.body,
                             date: draft.week,
                             url: 'https://notion.so/example',
                             refreshedAt: new Date().toISOString()
-                        })
+                        }
+                        const index = next.entries.findIndex((item) => item.id === entry.id)
+                        if (index < 0) next.entries.push(entry)
+                        else next.entries[index] = entry
                     }
                     break
                 }
@@ -176,13 +179,15 @@ export function Workspace({
         },
         [realRun, sample, week]
     )
+    const inspectionState = useRef(realState)
+    inspectionState.current = realState
     const inspect = useCallback(
         async (item: Activity, tab: 'diff' | 'details' = 'diff') => {
             const id = ++requestId.current
             setSelectedId(item.id)
             setInspectionTab(tab)
             setDetailError('')
-            if (sample || hasCachedDetails(realState, item, tab === 'details' ? 'files' : 'diff')) {
+            if (sample || hasCachedDetails(inspectionState.current, item, tab === 'details' ? 'files' : 'diff')) {
                 setDetailBusy(false)
                 return
             }
@@ -197,7 +202,7 @@ export function Workspace({
                 setDetailError(reply?.detailError ?? 'Could not load these changes. Retry loading the activity.')
             setDetailBusy(false)
         },
-        [sample, realRun, realState]
+        [sample, realRun]
     )
     const initialInspected = useRef(false)
     useEffect(() => {
@@ -209,10 +214,32 @@ export function Workspace({
         }
     }, [initialActivity, realState.activities, inspect])
     const selected = state.activities.find((item) => item.id === selectedId)
-    const items = useMemo(() => rangeActivities(state, week, offsetDay(week, 6)), [state, week])
+    const activityState = useMemo(
+        () => ({
+            activities: state.activities,
+            repositories: state.repositories,
+            settings: { timezone: state.settings.timezone }
+        }),
+        [state.activities, state.repositories, state.settings.timezone]
+    )
+    const items = useMemo(() => rangeActivities(activityState, week, offsetDay(week, 6)), [activityState, week])
+    const searchItems = useMemo(
+        () =>
+            searchExpanded
+                ? items.map((item) => ({
+                      id: item.id,
+                      title: item.title,
+                      group: state.repositories.find((repo) => repo.id === item.repositoryId)?.name,
+                      meta: `${formatDay(localDate(new Date(item.date), state.settings.timezone))} · ${item.sha?.slice(0, 7) ?? item.kind}`,
+                      keywords: [item.sha ?? '', item.description, ...item.branches],
+                      icon: <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'pr'} />
+                  }))
+                : [],
+        [searchExpanded, items, state.repositories, state.settings.timezone]
+    )
     const visible = useMemo(
-        () => filterWorkspaceActivity(state, week, { project, branch, kind, authors, search: '' }),
-        [state, week, project, branch, kind, authors]
+        () => filterWorkspaceActivity(activityState, week, { project, branch, kind, authors, search: '' }),
+        [activityState, week, project, branch, kind, authors]
     )
     const currentWeek = weekOf(new Date(), state.settings)
     const cite = useCallback(
@@ -221,7 +248,11 @@ export function Workspace({
                 setNotice('Open or create an editable draft to add a citation.')
                 return
             }
-            setCitation({ id: Date.now(), title: activity.title, url: activityLink(activity, state) })
+            setCitation({
+                id: Date.now(),
+                title: activity.sha ? `${activity.title} (${activity.sha.slice(0, 7)})` : activity.title,
+                url: activityLink(activity, state)
+            })
         },
         [canCite, state]
     )
@@ -277,11 +308,18 @@ export function Workspace({
             else setNotice('The browser blocked the window. Allow pop-ups for this app and try again.')
         }
     }
-    const refresh = async () => {
+    const refresh = useCallback(async () => {
         setRefreshing(true)
         await run({ type: 'refresh' })
         setRefreshing(false)
-    }
+    }, [run])
+    const emptyActivityAction = useCallback(() => {
+        setProject('all')
+        setBranch('all')
+        setKind('all')
+        setAuthors([])
+        if (!items.length) void refresh()
+    }, [items.length, refresh])
     const browse = async () => {
         if (project === 'all' || branch === 'all') return
         setHistoryBusy(true)
@@ -411,14 +449,7 @@ export function Workspace({
                             placeholder="Find a change…"
                             expandedWidth="container"
                             onExpandedChange={setSearchExpanded}
-                            items={items.map((item) => ({
-                                id: item.id,
-                                title: item.title,
-                                group: state.repositories.find((repo) => repo.id === item.repositoryId)?.name,
-                                meta: `${formatDay(localDate(new Date(item.date), state.settings.timezone))} · ${item.sha?.slice(0, 7) ?? item.kind}`,
-                                keywords: [item.sha ?? '', item.description, ...item.branches],
-                                icon: <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'pr'} />
-                            }))}
+                            items={searchItems}
                             suggestions={items.slice(0, 4).map((item) => ({
                                 id: item.id,
                                 title: item.title,
@@ -522,74 +553,16 @@ export function Workspace({
                         label="Weekly activity list"
                         fade={16}
                     >
-                        <ActivityHover>
-                            {visible.length ? (
-                                [
-                                    ...new Set(
-                                        visible.map((item) => localDate(new Date(item.date), state.settings.timezone))
-                                    )
-                                ].map((day) => (
-                                    <section className="ws-day-group" key={day}>
-                                        <header>
-                                            <h3>{formatDay(day, { weekday: 'long' })}</h3>
-                                            <span>{formatDay(day)}</span>
-                                        </header>
-                                        <ul className="activity-row-list">
-                                            {visible
-                                                .filter(
-                                                    (item) =>
-                                                        localDate(new Date(item.date), state.settings.timezone) === day
-                                                )
-                                                .map((item, index, dayItems) => (
-                                                    <li key={item.id}>
-                                                        <ActivityRow
-                                                            activity={item}
-                                                            repositoryName={
-                                                                state.repositories.find(
-                                                                    (repo) => repo.id === item.repositoryId
-                                                                )?.name ?? 'Repository'
-                                                            }
-                                                            connected={index < dayItems.length - 1}
-                                                            className="ws-activity-row"
-                                                            aria-pressed={selectedId === item.id}
-                                                            draggable={canCite}
-                                                            onDragStart={(event) => {
-                                                                event.dataTransfer.setData(
-                                                                    'application/x-weekly-j-activity',
-                                                                    item.id
-                                                                )
-                                                                event.dataTransfer.effectAllowed = 'copy'
-                                                            }}
-                                                            onClick={() => void inspect(item)}
-                                                        />
-                                                    </li>
-                                                ))}
-                                        </ul>
-                                    </section>
-                                ))
-                            ) : (
-                                <div className="ws-activity-empty">
-                                    <h3>{items.length ? 'No matching changes' : 'A quiet week so far.'}</h3>
-                                    <p>
-                                        {items.length
-                                            ? 'Choose another project or clear the activity filters.'
-                                            : 'Choose another week or refresh your repositories. You can write at any time.'}
-                                    </p>
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        onClick={() => {
-                                            setProject('all')
-                                            setBranch('all')
-                                            setKind('all')
-                                            if (!items.length) void refresh()
-                                        }}
-                                    >
-                                        {items.length ? 'Clear activity filters' : 'Refresh activity'}
-                                    </Button>
-                                </div>
-                            )}
-                        </ActivityHover>
+                        <WorkspaceActivityList
+                            activities={visible}
+                            repositories={state.repositories}
+                            timezone={state.settings.timezone}
+                            selectedId={selectedId}
+                            canCite={canCite}
+                            onInspect={inspect}
+                            hasActivity={items.length > 0}
+                            onEmptyAction={emptyActivityAction}
+                        />
                     </ScrollArea>
                     {detached && (
                         <div className="ws-detached-status">

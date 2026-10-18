@@ -2,61 +2,180 @@ import { DatabaseSync } from 'node:sqlite'
 import { randomUUID } from 'node:crypto'
 import { initialState, stateSchema } from '../shared/model'
 import type { State } from '../shared/model'
+import { shareSnapshot } from '../shared/snapshot'
+import { recordCollections } from '../shared/state-updates'
+import { writeStore, type StoreWrite } from './store-writes'
+import { StoreWriter } from './store-writer-client'
 
 export class Store {
     private readonly db: DatabaseSync
     state: State
     private patches = new Map<string, string>()
-    constructor(path: string) {
+    private lastSnapshot: State | undefined
+    private persistedSnapshot: State | undefined
+    private partKeys = new Set<string>()
+    private storageVersion = 0
+    private writer: StoreWriter | undefined
+    private writerFile: URL | undefined
+    private writeError: Error | undefined
+    private writeEpoch = 0
+    private lastWrite: Promise<void> = Promise.resolve()
+    private closing = false
+    constructor(private readonly path: string) {
         this.db = new DatabaseSync(path)
-        this.db.exec(
-            'PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)'
-        )
-        this.db.exec('CREATE TABLE IF NOT EXISTS patches (id TEXT PRIMARY KEY, content TEXT NOT NULL)')
-        const row = this.db.prepare('SELECT json FROM state WHERE id=1').get()
-        this.state = row ? stateSchema.parse(JSON.parse(String(row.json))) : initialState()
-        for (const patch of this.db.prepare('SELECT id, content FROM patches').all()) {
-            const id = String(patch.id)
-            const content = String(patch.content)
-            this.patches.set(id, content)
-            if (id.startsWith('diff:')) this.state.diffs[id.slice(5)] = content
-            else {
-                const revision = this.state.revisions.find((item) => `revision:${item.id}` === id)
-                if (revision) revision.diff = content
+        try {
+            this.db.exec(
+                'PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)'
+            )
+            this.db.exec('CREATE TABLE IF NOT EXISTS patches (id TEXT PRIMARY KEY, content TEXT NOT NULL)')
+            this.db.exec('CREATE TABLE IF NOT EXISTS state_parts (key TEXT PRIMARY KEY, json TEXT NOT NULL)')
+            this.db.exec(
+                'CREATE TABLE IF NOT EXISTS state_records (collection TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(collection,id))'
+            )
+            const row = this.db.prepare('SELECT json FROM state WHERE id=1').get()
+            const stored = row ? (JSON.parse(String(row.json)) as Record<string, unknown>) : undefined
+            this.storageVersion = Number(stored?.storageVersion ?? 0)
+            if (this.storageVersion && ![2, 3].includes(this.storageVersion))
+                throw new Error('Unsupported journal storage version')
+            if (this.storageVersion) {
+                const parts = this.db.prepare('SELECT key, json FROM state_parts').all()
+                this.partKeys = new Set(parts.map((part) => String(part.key)))
+                const data = Object.fromEntries(parts.map((part) => [String(part.key), JSON.parse(String(part.json))]))
+                if (this.storageVersion === 3)
+                    for (const key of recordCollections) {
+                        const records = new Map(
+                            this.db
+                                .prepare('SELECT id, json FROM state_records WHERE collection=?')
+                                .all(key)
+                                .map((record) => [String(record.id), JSON.parse(String(record.json)) as unknown])
+                        )
+                        data[key] = (data[key] as string[]).map((id) => {
+                            if (!records.has(id)) throw new Error(`Missing ${key} record in journal storage`)
+                            return records.get(id)
+                        })
+                    }
+                this.state = stateSchema.parse(data)
+                if (this.storageVersion === 3) {
+                    this.persistedSnapshot = shareSnapshot(undefined, this.metadata())
+                    this.lastSnapshot = this.persistedSnapshot
+                }
+            } else this.state = stored ? stateSchema.parse(stored) : initialState()
+            for (const patch of this.db.prepare('SELECT id, content FROM patches').all()) {
+                const id = String(patch.id)
+                const content = String(patch.content)
+                this.patches.set(id, content)
+                if (id.startsWith('diff:')) this.state.diffs[id.slice(5)] = content
+                else {
+                    const revision = this.state.revisions.find((item) => `revision:${item.id}` === id)
+                    if (revision) revision.diff = content
+                }
             }
+            for (const status of Object.values(this.state.acquisition ?? {}))
+                if (status.status === 'running') status.status = 'idle'
+            if (this.state.repositoryImport?.status === 'running') {
+                this.state.repositoryImport.status = 'error'
+                this.state.repositoryImport.message =
+                    'Import was interrupted. Add the folder again to continue; existing repositories are kept.'
+            }
+            // A process exit during a write is always an unknown outcome.
+            for (const save of this.state.saves) if (save.status === 'pending') save.status = 'unknown'
+            this.persist()
+        } catch (error) {
+            this.db.close()
+            throw error
         }
-        for (const status of Object.values(this.state.acquisition ?? {}))
-            if (status.status === 'running') status.status = 'idle'
-        if (this.state.repositoryImport?.status === 'running') {
-            this.state.repositoryImport.status = 'error'
-            this.state.repositoryImport.message =
-                'Import was interrupted. Add the folder again to continue; existing repositories are kept.'
-        }
-        // A process exit during a write is always an unknown outcome.
-        for (const save of this.state.saves) if (save.status === 'pending') save.status = 'unknown'
-        this.persist()
     }
-    persist(): void {
+    persist(): State {
+        if (this.closing) throw new Error('Journal is closing; no new saves are accepted')
+        const reset = !!this.writeError
+        if (reset) {
+            if (this.writer?.unavailable && this.writerFile) {
+                void this.writer.close()
+                this.writer = new StoreWriter(this.path, this.writerFile)
+            }
+            this.persistedSnapshot = undefined
+            this.patches = new Map()
+            this.partKeys = new Set()
+            this.writeError = undefined
+            this.writeEpoch++
+            this.lastWrite = Promise.resolve()
+        }
         this.state.snapshotVersion = (this.state.snapshotVersion ?? 0) + 1
         const patches = new Map<string, string>([
             ...Object.entries(this.state.diffs).map(([id, text]) => [`diff:${id}`, text] as const),
             ...this.state.revisions.map((revision) => [`revision:${revision.id}`, revision.diff] as const)
         ])
-        this.db.exec('BEGIN IMMEDIATE')
-        try {
-            const write = this.db.prepare(
-                'INSERT INTO patches VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET content=excluded.content'
+        const metadata = this.snapshot()
+        const parts = Object.entries(metadata).filter(([, value]) => value !== undefined)
+        const keys = new Set(parts.map(([key]) => key))
+        const batch: StoreWrite = {
+            parts: [],
+            removeParts: [],
+            records: [],
+            removeRecords: [],
+            patches: [...patches].filter(([id, text]) => this.patches.get(id) !== text),
+            removePatches: [...this.patches.keys()].filter((id) => !patches.has(id)),
+            initialize: this.storageVersion !== 3 || reset,
+            reset
+        }
+        for (const [key, value] of parts) {
+            if ((recordCollections as readonly string[]).includes(key)) continue
+            if (!this.persistedSnapshot || value !== this.persistedSnapshot[key as keyof State])
+                batch.parts.push([key, JSON.stringify(value)])
+        }
+        for (const key of recordCollections) {
+            const previous = this.persistedSnapshot?.[key]
+            if (previous === metadata[key]) continue
+            const before = new Map(previous?.map((record) => [record.id, record]))
+            const ids = metadata[key].map((record) => record.id)
+            if (new Set(ids).size !== ids.length) throw new Error(`Duplicate ${key} record identifiers`)
+            for (const record of metadata[key])
+                if (before.get(record.id) !== record) batch.records.push([key, record.id, JSON.stringify(record)])
+            const retained = new Set(ids)
+            for (const id of before.keys()) if (!retained.has(id)) batch.removeRecords.push([key, id])
+            if (
+                !previous ||
+                previous.length !== ids.length ||
+                previous.some((record, index) => record.id !== ids[index])
             )
-            for (const [id, text] of patches) if (this.patches.get(id) !== text) write.run(id, text)
-            for (const id of this.patches.keys())
-                if (!patches.has(id)) this.db.prepare('DELETE FROM patches WHERE id=?').run(id)
-            this.db
-                .prepare('INSERT INTO state VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET json=excluded.json')
-                .run(JSON.stringify(this.metadata()))
-            this.db.exec('COMMIT')
-            this.patches = patches
+                batch.parts.push([key, JSON.stringify(ids)])
+        }
+        for (const key of this.partKeys) if (!keys.has(key)) batch.removeParts.push(key)
+        if (this.writer) {
+            const epoch = this.writeEpoch
+            this.lastWrite = Promise.all([this.lastWrite, this.writer.write(batch)]).then(() => undefined)
+            void this.lastWrite.catch((error: unknown) => {
+                if (epoch === this.writeEpoch)
+                    this.writeError = error instanceof Error ? error : new Error(String(error))
+            })
+        } else writeStore(this.db, batch)
+        this.patches = patches
+        this.partKeys = keys
+        this.persistedSnapshot = metadata
+        this.storageVersion = 3
+        return metadata
+    }
+
+    enableBackgroundWrites(file = new URL('./store-writer.js', import.meta.url)): void {
+        if (this.writer) return
+        this.writerFile = file
+        this.writer = new StoreWriter(this.path, file)
+    }
+
+    flush(): Promise<void> {
+        return this.lastWrite
+    }
+
+    async shutdown(): Promise<void> {
+        if (!this.db.isOpen) return
+        this.closing = true
+        try {
+            await this.flush()
+            await this.writer?.close()
+            this.writer = undefined
+            this.db.close()
         } catch (error) {
-            this.db.exec('ROLLBACK')
+            this.closing = false
             throw error
         }
     }
@@ -68,7 +187,19 @@ export class Store {
         }
     }
     snapshot(): State {
-        return structuredClone(this.metadata())
+        const previous = this.lastSnapshot
+        this.lastSnapshot = shareSnapshot(previous, this.metadata())
+        // Acquisition can change records between persisted checkpoints. Every exposed
+        // immutable snapshot needs its own cursor, including those intermediate states.
+        if (
+            previous &&
+            previous !== this.lastSnapshot &&
+            previous.snapshotVersion === this.lastSnapshot.snapshotVersion
+        ) {
+            this.state.snapshotVersion = (this.state.snapshotVersion ?? 0) + 1
+            this.lastSnapshot = { ...this.lastSnapshot, snapshotVersion: this.state.snapshotVersion }
+        }
+        return this.lastSnapshot
     }
     export(): string {
         const backup = structuredClone(this.state)
@@ -89,6 +220,7 @@ export class Store {
         this.persist()
     }
     close(): void {
+        if (this.writer) throw new Error('Use shutdown() to flush the journal writer before closing')
         if (this.db.isOpen) this.db.close()
     }
 }
