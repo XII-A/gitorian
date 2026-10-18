@@ -174,8 +174,12 @@ it('keeps edits made after an uncertain save editable when the earlier captured 
         await app.service.handle({ type: 'draft', draft: { ...draft, title: 'Further reflection' } })
         await app.service.handle({ type: 'reconcile', saveId: app.store.state.saves[0].id })
         expect(draft.title).toBe('Further reflection')
-        expect(draft.publishedEntryId).toBeUndefined()
+        expect(draft.publishedEntryId).toBe(app.store.state.entries[0].id)
         expect(app.store.state.entries[0].title).not.toBe('Further reflection')
+        await app.service.handle({ type: 'draft', draft: { ...draft, title: 'Further reflection, edited again' } })
+        await app.service.handle({ type: 'publish', draftId: draft.id })
+        expect(app.remote.pages).toHaveLength(1)
+        expect(app.store.state.entries[0].title).toBe('Further reflection, edited again')
     } finally {
         await app.close()
     }

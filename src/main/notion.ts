@@ -125,6 +125,7 @@ export class Notion {
     async publish(save: State['saves'][number], checkpoint?: () => void | Promise<void>): Promise<Entry> {
         if (!save.title.trim() || save.title.length > 2000)
             throw new HttpError(400, 'Use a title between 1 and 2000 characters')
+        if (save.entryId) return this.update(save, checkpoint)
         const children = toNotion(save.body)
         const batches = this.batches(children)
         const destination = save.destination
@@ -156,7 +157,8 @@ export class Notion {
             refreshedAt: new Date().toISOString()
         }
     }
-    async reconcile(save: State['saves'][number]): Promise<Entry | undefined> {
+    async reconcile(save: State['saves'][number], checkpoint?: () => void | Promise<void>): Promise<Entry | undefined> {
+        if (save.updateExisting) return this.update(save, checkpoint)
         const pages = save.entryId
             ? [await this.request<Page>(`pages/${save.entryId}`)]
             : await this.pages(save.destination)
@@ -206,6 +208,48 @@ export class Notion {
             return { ...(await this.entry(page)), body: save.body }
         }
         return undefined
+    }
+    private async update(save: State['saves'][number], checkpoint?: () => void | Promise<void>): Promise<Entry> {
+        const expected = toNotion(save.body)
+        this.batches(expected)
+        const blocks = await this.blocks(save.entryId!)
+        if (!save.replacedBlockIds) {
+            if (blocks.some((block) => !block.id))
+                throw new Error('Notion did not return block IDs. Retry verification.')
+            save.replacedBlockIds = blocks.map((block) => block.id!)
+            // Persist the replacement boundary before mutating remote content, so a
+            // lost response or restart cannot cause newly appended writing to be deleted.
+            await checkpoint?.()
+        }
+        const oldIds = new Set(save.replacedBlockIds)
+        const remaining = blocks.filter((block) => !oldIds.has(block.id!))
+        const actual = remaining.length ? toNotion(fromNotion(remaining)) : []
+        if (JSON.stringify(actual) !== JSON.stringify(expected.slice(0, actual.length)))
+            throw new Error('The Notion page changed during publishing. Inspect it in Notion before verifying again.')
+        const properties = {
+            [save.destination.kind === 'page' ? 'title' : save.destination.titleProperty]: {
+                title: [{ text: { content: save.title } }]
+            }
+        }
+        const page = await this.request<Page>(`pages/${save.entryId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ properties })
+        })
+        for (const block of blocks.filter((block) => oldIds.has(block.id!)))
+            await this.request(`blocks/${block.id}`, { method: 'DELETE' })
+        for (const children of this.batches(expected.slice(actual.length)))
+            await this.request(`blocks/${save.entryId}/children`, {
+                method: 'PATCH',
+                body: JSON.stringify({ children })
+            })
+        return {
+            id: page.id,
+            url: page.url,
+            title: save.title,
+            date: page.created_time,
+            body: save.body,
+            refreshedAt: new Date().toISOString()
+        }
     }
     private batches(blocks: NotionBlock[]): NotionBlock[][] {
         const batches: NotionBlock[][] = []

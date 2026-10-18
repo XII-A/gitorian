@@ -4,6 +4,7 @@ import type { Ref } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor as TiptapEditor } from '@tiptap/react'
 import { journalExtensions } from './journal-extensions'
+import { applyBlockFormat } from './block-format'
 import './journal-editor.css'
 import type { JournalNode } from '../shared/model'
 import { editorSnapshot, type EditorSnapshot } from './editor-snapshot'
@@ -44,6 +45,25 @@ const blocks = [
     { id: 'quote', label: 'Quote', icon: Quote },
     { id: 'code', label: 'Code block', icon: FileCode }
 ]
+function blockQuery(query: string) {
+    const turn = /^turn(?:\s*into)?\s*/i.exec(query)
+    const search = (turn ? query.slice(turn[0].length) : query).toLowerCase()
+    const aliases: Record<string, string> = {
+        h1: 'heading 1',
+        h2: 'heading 2',
+        h3: 'heading 3',
+        h4: 'heading 4',
+        heading1: 'heading 1',
+        heading2: 'heading 2',
+        heading3: 'heading 3',
+        heading4: 'heading 4',
+        plain: 'text',
+        todo: 'checklist',
+        num: 'numbered list'
+    }
+    return { convert: !!turn, search: aliases[search] ?? search }
+}
+
 interface Menu {
     from: number
     to: number
@@ -109,7 +129,7 @@ export const Editor = memo(function Editor({
             })
         } else setBar(undefined)
         const prefix = $from.parent.textBetween(0, $from.parentOffset, '\n')
-        const match = empty && !readOnly ? /(?:^|\s)\/([^/]*)$/.exec(prefix) : null
+        const match = empty && !readOnly ? /\/([^/]*)$/.exec(prefix) : null
         if (!match) {
             menuRef.current = undefined
             setMenu(undefined)
@@ -133,57 +153,15 @@ export const Editor = memo(function Editor({
     const apply = (editor: TiptapEditor, block: string) => {
         const current = menuRef.current
         if (!current) return
-        const chain = editor.chain().focus().deleteRange({ from: current.from, to: current.to })
-        switch (block) {
-            case 'template':
-                if (template) chain.insertContent(structuredClone(template.content ?? [])).run()
-                break
-            case 'heading1':
-            case 'heading2':
-            case 'heading3':
-            case 'heading4':
-                chain.setHeading({ level: Number(block.slice(-1)) as 1 | 2 | 3 | 4 }).run()
-                break
-            case 'toggle': {
-                chain
-                    .insertContent({
-                        type: 'toggle',
-                        content: [
-                            { type: 'toggleSummary' },
-                            { type: 'toggleContent', content: [{ type: 'paragraph' }] }
-                        ]
-                    })
+        if (block === 'template') {
+            if (template)
+                editor
+                    .chain()
+                    .focus()
+                    .deleteRange(current)
+                    .insertContent(structuredClone(template.content ?? []))
                     .run()
-                let summaryPosition: number | undefined
-                editor.state.doc.descendants((node, position) => {
-                    if (
-                        summaryPosition === undefined &&
-                        node.type.name === 'toggleSummary' &&
-                        position >= current.from - 1
-                    )
-                        summaryPosition = position + 1
-                })
-                if (summaryPosition !== undefined) editor.commands.setTextSelection(summaryPosition)
-                break
-            }
-            case 'bullet':
-                chain.toggleBulletList().run()
-                break
-            case 'ordered':
-                chain.toggleOrderedList().run()
-                break
-            case 'task':
-                chain.toggleTaskList().run()
-                break
-            case 'quote':
-                chain.toggleBlockquote().run()
-                break
-            case 'code':
-                chain.toggleCodeBlock().run()
-                break
-            default:
-                chain.setParagraph().run()
-        }
+        } else applyBlockFormat(editor, block, current, blockQuery(current.query).convert)
         menuRef.current = undefined
         setMenu(undefined)
     }
@@ -223,8 +201,10 @@ export const Editor = memo(function Editor({
                 if (event.isComposing || _view.composing) return false
                 const current = menuRef.current
                 if (!current || !editorRef.current) return false
-                const filtered = availableBlocks.filter((block) =>
-                    block.label.toLowerCase().includes(current.query.toLowerCase())
+                const filtered = availableBlocks.filter(
+                    (block) =>
+                        (!blockQuery(current.query).convert || block.id !== 'template') &&
+                        block.label.toLowerCase().includes(blockQuery(current.query).search)
                 )
                 if (event.key === 'Escape') {
                     setMenu(undefined)
@@ -327,8 +307,10 @@ export const Editor = memo(function Editor({
         else if (rect.bottom > bounds.bottom) viewport.scrollTop += rect.bottom - bounds.bottom
     }, [menu, active])
     if (!editor) return null
-    const filtered = availableBlocks.filter((block) =>
-        block.label.toLowerCase().includes(menu?.query.toLowerCase() ?? '')
+    const filtered = availableBlocks.filter(
+        (block) =>
+            (!blockQuery(menu?.query ?? '').convert || block.id !== 'template') &&
+            block.label.toLowerCase().includes(blockQuery(menu?.query ?? '').search)
     )
     return (
         <div className="journal-editor" ref={host}>
@@ -422,7 +404,7 @@ export const Editor = memo(function Editor({
                         className="ws-block-menu"
                         id={`${id}-blocks`}
                         role="listbox"
-                        aria-label="Formatting blocks"
+                        aria-label={blockQuery(menu.query).convert ? 'Turn into' : 'Add blocks'}
                         collisionBoundary={host.current?.closest('[role="region"]') ?? undefined}
                         collisionPadding={8}
                         sideOffset={8}
@@ -456,7 +438,11 @@ export const Editor = memo(function Editor({
                                         onClick={() => apply(editor, block.id)}
                                     >
                                         <block.icon size={16} aria-hidden="true" />
-                                        <span>{block.label}</span>
+                                        <span>
+                                            {blockQuery(menu.query).convert
+                                                ? `Turn into ${block.label.toLowerCase()}`
+                                                : block.label}
+                                        </span>
                                     </button>
                                 ))
                             ) : (

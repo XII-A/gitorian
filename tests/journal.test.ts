@@ -3,6 +3,7 @@ import { Store } from '../src/main/store'
 import { commandSchema, coveredEntries, inbox, weekOf } from '../src/shared/model'
 import { workspace } from './fixtures'
 import type { JournalNode } from '../src/shared/model'
+import { toNotion } from '../src/shared/notion-format'
 
 const reflection: JournalNode = {
     type: 'doc',
@@ -235,4 +236,91 @@ describe('local journal workflow through application commands', () => {
             await app.close()
         }
     })
+})
+
+it('reuses a weekly draft and republishes edits to the same Notion page', async () => {
+    const app = await workspace()
+    try {
+        const week = '2026-10-05'
+        await app.service.handle({ type: 'newDraft', week })
+        const draft = app.store.state.drafts[0]
+        await app.service.handle({ type: 'newDraft', week })
+        expect(app.store.state.drafts).toHaveLength(1)
+        await app.service.handle({ type: 'publish', draftId: draft.id })
+        const entryId = draft.publishedEntryId
+        await app.service.handle({ type: 'newDraft', week })
+        expect(app.store.state.drafts).toHaveLength(1)
+        await app.service.handle({ type: 'draft', draft: { ...draft, title: 'Revised week', body: reflection } })
+        await app.service.handle({ type: 'publish', draftId: draft.id })
+        expect(app.remote.pages).toHaveLength(1)
+        expect(draft.publishedEntryId).toBe(entryId)
+        expect(app.store.state.entries).toHaveLength(1)
+        expect(app.store.state.entries[0]).toMatchObject({ id: entryId, title: 'Revised week', body: reflection })
+        expect(toNotion((await app.notion.refreshEntry(entryId!)).body)).toEqual(toNotion(reflection))
+        await app.service.handle({ type: 'newDraft', week: '2026-10-12' })
+        expect(app.store.state.drafts.filter((item) => item.week === week)).toEqual([draft])
+        await app.store.flush()
+        const reopened = new Store(`${app.directory}/tracking.sqlite`)
+        try {
+            expect(reopened.state.drafts.find((item) => item.week === week)).toMatchObject({
+                id: draft.id,
+                publishedEntryId: entryId,
+                title: 'Revised week',
+                body: reflection
+            })
+        } finally {
+            reopened.close()
+        }
+    } finally {
+        await app.close()
+    }
+})
+
+it('verifies an interrupted republish without duplicating the page or its writing', async () => {
+    const app = await workspace()
+    try {
+        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        const draft = app.store.state.drafts[0]
+        await app.service.handle({ type: 'publish', draftId: draft.id })
+        await app.service.handle({ type: 'draft', draft: { ...draft, title: 'Updated title', body: reflection } })
+        app.remote.loseAppendResponse = true
+        await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('after commit')
+        const save = app.store.state.saves.at(-1)!
+        expect(save.status).toBe('unknown')
+        await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('uncertain save')
+        await app.service.handle({ type: 'reconcile', saveId: save.id })
+        expect(save.status).toBe('confirmed')
+        expect(app.remote.pages).toHaveLength(1)
+        expect(app.remote.pages[0].blocks).toHaveLength(reflection.content!.length)
+        expect(await app.notion.refreshEntry(draft.publishedEntryId!)).toMatchObject({
+            title: 'Updated title',
+            body: reflection
+        })
+    } finally {
+        await app.close()
+    }
+})
+
+it('keeps the weekly page linked when writing changes during a publish', async () => {
+    const app = await workspace()
+    try {
+        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        const draft = app.store.state.drafts[0]
+        const publish = app.notion.publish.bind(app.notion)
+        vi.spyOn(app.notion, 'publish').mockImplementationOnce(async (save, checkpoint) => {
+            await app.service.handle({
+                type: 'draft',
+                draft: { ...draft, title: 'Newer local writing', body: reflection }
+            })
+            return publish(save, checkpoint)
+        })
+        await app.service.handle({ type: 'publish', draftId: draft.id })
+        expect(draft.publishedEntryId).toBe(app.remote.pages[0].id)
+        expect(draft.body).toEqual(reflection)
+        await app.service.handle({ type: 'publish', draftId: draft.id })
+        expect(app.remote.pages).toHaveLength(1)
+        expect(app.store.state.entries[0]).toMatchObject({ title: 'Newer local writing', body: reflection })
+    } finally {
+        await app.close()
+    }
 })

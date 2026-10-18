@@ -54,7 +54,7 @@ export function WorkspaceDraft({
     const mounted = useRef(true)
     const notifiedSave = useRef('')
     const drafts = state.drafts.filter((item) => item.week === week)
-    const ready = !!draft && !draft.publishedEntryId && !busy
+    const ready = !!draft && !busy
     const storageKey = `weekly-j:recovery:${sample ? 'sample' : (state.restoreId ?? 'local')}:${week}`
     const snapshot = useCallback(() => {
         if (bodySnapshot.current && latest.current) {
@@ -76,7 +76,7 @@ export function WorkspaceDraft({
             const saved = await pending.current
             if (!saved) return false
         }
-        if (!dirty.current || !latest.current || latest.current.publishedEntryId) return true
+        if (!dirty.current || !latest.current) return true
         const writing = snapshot()!
         const request = (async () => {
             const result = await run({ type: 'draft', draft: writing })
@@ -109,13 +109,8 @@ export function WorkspaceDraft({
             try {
                 const raw = localStorage.getItem(storageKey)
                 const parsed = raw ? draftSchema.safeParse(JSON.parse(raw)) : undefined
-                if (
-                    parsed?.success &&
-                    parsed.data.id === item.id &&
-                    !item.publishedEntryId &&
-                    parsed.data.updatedAt > item.updatedAt
-                ) {
-                    recovered = parsed.data
+                if (parsed?.success && parsed.data.id === item.id && parsed.data.updatedAt > item.updatedAt) {
+                    recovered = { ...parsed.data, publishedEntryId: item.publishedEntryId }
                     dirty.current = true
                 }
             } catch {
@@ -137,18 +132,22 @@ export function WorkspaceDraft({
         [persist, storageKey, sample]
     )
     useEffect(() => {
-        const first = drafts.filter((item) => !item.publishedEntryId).at(-1)
+        const first = drafts.at(-1)
         if (!latest.current && first) {
             choose(first)
         }
         const confirmed = drafts.find((item) => item.id === latest.current?.id && item.publishedEntryId)
         if (confirmed && !latest.current?.publishedEntryId) {
-            latest.current = confirmed
-            bodySnapshot.current = undefined
-            dirty.current = false
-            setDraft(confirmed)
-            setWords(journalWordCount(confirmed.body))
-            setStatus(sample ? 'Sample published. Nothing was sent to Notion.' : 'Published to Notion')
+            if (dirty.current) {
+                latest.current = { ...latest.current!, publishedEntryId: confirmed.publishedEntryId }
+                setDraft(latest.current)
+            } else {
+                latest.current = confirmed
+                bodySnapshot.current = undefined
+                setDraft(confirmed)
+                setWords(journalWordCount(confirmed.body))
+                setStatus(sample ? 'Sample published. Nothing was sent to Notion.' : 'Published to Notion')
+            }
         }
     }, [drafts, choose, sample])
     useEffect(() => {
@@ -212,7 +211,7 @@ export function WorkspaceDraft({
         [edit]
     )
     useEffect(() => {
-        if (!citation || !latest.current || latest.current.publishedEntryId) return
+        if (!citation || !latest.current) return
         const content: JournalNode = {
             type: 'paragraph',
             content: [
@@ -232,9 +231,7 @@ export function WorkspaceDraft({
             return
         }
         const result = await run({ type: 'newDraft', week })
-        const created = result?.state.drafts
-            .filter((item) => item.week === week && !state.drafts.some((old) => old.id === item.id))
-            .at(-1)
+        const created = result?.state.drafts.filter((item) => item.week === week).at(-1)
         if (created) choose(created)
         else toast({ type: 'error', title: 'Could not create an entry', description: 'Try starting an entry again.' })
         setBusy(false)
@@ -321,7 +318,7 @@ export function WorkspaceDraft({
                 : { label: 'Review settings', onClick: onSettings }
         })
     }, [publishSave, toast, dismiss, verify, onSettings])
-    const needsNotion = !sample && (!notionConnected || !state.settings.destination) && !draft?.publishedEntryId
+    const needsNotion = !sample && (!notionConnected || !state.settings.destination)
     const entryTemplate = state.settings.template.content?.some(
         (node) => node.type !== 'paragraph' || plainText(node).trim()
     )
@@ -331,29 +328,23 @@ export function WorkspaceDraft({
         <section className="ws-writing" aria-label="Weekly journal">
             {publishTarget &&
                 createPortal(
-                    draft?.publishedEntryId ? (
-                        <Button size="sm" onClick={create} loading={busy}>
-                            Start another entry
-                        </Button>
-                    ) : (
-                        <Button
-                            size="sm"
-                            loading={busy}
-                            disabled={!draft || uncertain || needsNotion}
-                            title={
-                                !draft
-                                    ? 'Start an entry before publishing'
-                                    : uncertain
-                                      ? 'Verify the previous Notion save before publishing again'
-                                      : needsNotion
-                                        ? 'Connect Notion in settings to publish'
-                                        : undefined
-                            }
-                            onClick={publish}
-                        >
-                            {sample ? 'Publish sample' : 'Publish to Notion'}
-                        </Button>
-                    ),
+                    <Button
+                        size="sm"
+                        loading={busy}
+                        disabled={!draft || uncertain || needsNotion}
+                        title={
+                            !draft
+                                ? 'Start an entry before publishing'
+                                : uncertain
+                                  ? 'Verify the previous Notion save before publishing again'
+                                  : needsNotion
+                                    ? 'Connect Notion in settings to publish'
+                                    : undefined
+                        }
+                        onClick={publish}
+                    >
+                        {sample ? 'Publish sample' : 'Publish to Notion'}
+                    </Button>,
                     publishTarget
                 )}
             <ScrollArea className="ws-paper-scroll" label="Entry writing space" fade={20}>
@@ -365,7 +356,7 @@ export function WorkspaceDraft({
                                     aria-label="Entry title"
                                     value={draft.title}
                                     placeholder="Give your week a title"
-                                    readOnly={!!draft.publishedEntryId || busy}
+                                    readOnly={busy}
                                     rows={2}
                                     onChange={(event) => edit({ ...snapshot()!, title: event.target.value })}
                                 />
@@ -376,7 +367,7 @@ export function WorkspaceDraft({
                                 value={draft.body}
                                 template={entryTemplate}
                                 onEdit={editBody}
-                                readOnly={!!draft.publishedEntryId || busy}
+                                readOnly={busy}
                             />
                         </>
                     ) : (

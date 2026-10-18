@@ -124,6 +124,8 @@ export const stateSchema = z.object({
             createdAt: z.string(),
             week: z.string().optional(),
             entryId: z.string().optional(),
+            replacedBlockIds: z.array(z.string()).optional(),
+            updateExisting: z.boolean().optional(),
             error: z.string().optional()
         })
     ),

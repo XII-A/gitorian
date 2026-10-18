@@ -185,3 +185,35 @@ it('puts an uncertain publish in an actionable toast, outside the document', asy
     toast.action.onClick()
     expect(run).toHaveBeenCalledWith({ type: 'reconcile', saveId: 'save-1' })
 })
+
+it('reopens published weekly writing as editable with a publish action', async () => {
+    const state = sampleState('2026-10-05')
+    state.drafts[0].publishedEntryId = 'published-page'
+    const run = vi.fn(() => Promise.resolve(undefined))
+    await update(() =>
+        root.render(
+            createElement(WorkspaceDraft, {
+                state,
+                week: '2026-10-05',
+                sample: false,
+                notionConnected: true,
+                run,
+                publishTarget: container,
+                onReady: vi.fn(),
+                onSettings: vi.fn()
+            })
+        )
+    )
+    const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Entry title"]')
+    expect(title?.value).toBe(state.drafts[0].title)
+    expect(title?.readOnly).toBe(false)
+    expect(container.textContent).toContain('Publish to Notion')
+    await update(() => writer.change?.(body('Edited published week')))
+    await update(() => vi.advanceTimersByTime(1000))
+    expect(run).toHaveBeenCalledWith(
+        expect.objectContaining({
+            type: 'draft',
+            draft: expect.objectContaining({ body: body('Edited published week') })
+        })
+    )
+})

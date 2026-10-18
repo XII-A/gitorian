@@ -134,6 +134,7 @@ export function Workspace({
                     break
                 }
                 case 'newDraft':
+                    if (next.drafts.some((draft) => draft.week === command.week)) break
                     next.drafts.push({
                         id: `sample-draft-${crypto.randomUUID()}`,
                         week: command.week,
@@ -147,14 +148,17 @@ export function Workspace({
                     const draft = next.drafts.find((item) => item.id === command.draftId)
                     if (draft) {
                         draft.publishedEntryId = `sample-entry-${draft.id}`
-                        next.entries.push({
+                        const entry = {
                             id: draft.publishedEntryId,
                             title: draft.title,
                             body: draft.body,
                             date: draft.week,
                             url: 'https://notion.so/example',
                             refreshedAt: new Date().toISOString()
-                        })
+                        }
+                        const index = next.entries.findIndex((item) => item.id === entry.id)
+                        if (index < 0) next.entries.push(entry)
+                        else next.entries[index] = entry
                     }
                     break
                 }

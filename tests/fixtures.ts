@@ -87,6 +87,7 @@ export function transport() {
         failCreate: false,
         loseCreateResponse: false,
         failAppend: false,
+        loseAppendResponse: false,
         failDiff: false,
         diffStatus: 200,
         fetch: (input: string | URL | Request, init: RequestInit = {}): Promise<Response> =>
@@ -176,7 +177,10 @@ export function transport() {
                         url: 'https://www.notion.so/entry',
                         created_time: new Date().toISOString(),
                         properties: body?.properties as Record<string, unknown>,
-                        blocks: body?.children as NotionBlock[]
+                        blocks: ((body?.children ?? []) as NotionBlock[]).map((block) => ({
+                            ...block,
+                            id: randomUUID()
+                        }))
                     }
                     pages.push(page)
                     if (remote.loseCreateResponse) {
@@ -201,18 +205,38 @@ export function transport() {
                     )
                 const id = /\/(?:blocks|pages)\/([^/?]+)/.exec(url)?.[1]
                 const page = pages.find((item) => item.id === id)
+                if (method === 'DELETE') {
+                    const owner = pages.find((item) => item.blocks.some((block) => block.id === id))
+                    if (owner) {
+                        owner.blocks = owner.blocks.filter((block) => block.id !== id)
+                        return json({ id, archived: true })
+                    }
+                }
                 if (page && url.includes('/children')) {
                     if (method === 'PATCH') {
                         if (remote.failAppend) {
                             remote.failAppend = false
                             throw new Error('Append connection lost')
                         }
-                        page.blocks.push(...(body?.children as NotionBlock[]))
+                        page.blocks.push(
+                            ...((body?.children ?? []) as NotionBlock[]).map((block) => ({
+                                ...block,
+                                id: randomUUID()
+                            }))
+                        )
+                        if (remote.loseAppendResponse) {
+                            remote.loseAppendResponse = false
+                            throw new Error('Append response lost after commit')
+                        }
                         return list(page.blocks)
                     }
                     return list(page.blocks)
                 }
-                if (page) return json(page)
+                if (page) {
+                    if (method === 'PATCH')
+                        page.properties = { ...page.properties, ...(body?.properties as Record<string, unknown>) }
+                    return json(page)
+                }
                 throw new Error(`Unexpected fixture request: ${method} ${url}`)
             })
     }
