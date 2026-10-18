@@ -46,7 +46,8 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
     canCite,
     onInspect,
     hasActivity,
-    onEmptyAction
+    onEmptyAction,
+    refreshing = false
 }: {
     activities: Activity[]
     repositories: Repository[]
@@ -56,6 +57,7 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
     onInspect: (activity: Activity) => void
     hasActivity: boolean
     onEmptyAction: () => void
+    refreshing?: boolean
 }) {
     const groups = useMemo(() => {
         const days = new Map<string, Activity[]>()
@@ -104,7 +106,7 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
                             ? 'Choose another project or clear the activity filters.'
                             : 'Choose another week or refresh your repositories. You can write at any time.'}
                     </p>
-                    <Button variant="secondary" size="sm" onClick={onEmptyAction}>
+                    <Button variant="secondary" size="sm" onClick={onEmptyAction} loading={!hasActivity && refreshing}>
                         {hasActivity ? 'Clear activity filters' : 'Refresh activity'}
                     </Button>
                 </div>

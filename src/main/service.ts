@@ -288,12 +288,13 @@ export class JournalService {
             source?: 'git' | 'github' | 'notion'
             resume?: boolean
             afterCurrent?: boolean
+            since?: string
         } = {}
     ): Promise<void> {
         if (this.closing) return
         if (this.refreshing) {
             if (!options.resume && !options.afterCurrent) return this.refreshing
-            const key = `${options.repositoryId ?? '*'}:${options.source ?? '*'}:${!!options.resume}`
+            const key = `${options.repositoryId ?? '*'}:${options.source ?? '*'}:${!!options.resume}:${options.since ?? ''}`
             const queued = this.queuedRefreshes.get(key)
             if (queued) return queued
             const next = this.refreshing.then(
@@ -358,11 +359,31 @@ export class JournalService {
         repositoryId?: string
         source?: 'git' | 'github' | 'notion'
         resume?: boolean
+        since?: string
     }): Promise<void> {
         const state = this.store.state
         const repositories = state.repositories.filter(
             (item) => !item.removed && (!options.repositoryId || item.id === options.repositoryId)
         )
+        if (options.since && options.source !== 'notion') {
+            for (const repository of repositories) {
+                if (options.since >= repository.trackingStart) continue
+                repository.trackingStart = options.since
+                // Both sources must restart their scan, including unchanged Git refs.
+                for (const source of ['git', 'github']) {
+                    const status = this.status(`${source}:${repository.id}`)
+                    status.since = options.since
+                    status.page = 1
+                    status.refs = undefined
+                    status.offset = undefined
+                    status.excludedTips = undefined
+                    status.windowEnd = undefined
+                    status.lastSuccess = undefined
+                    status.configuration = undefined
+                }
+            }
+            this.store.persist()
+        }
         if (!options.repositoryId && !options.source) {
             state.lastRefreshAttempt = new Date().toISOString()
             this.store.persist()

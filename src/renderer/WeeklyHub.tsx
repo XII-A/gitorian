@@ -18,6 +18,7 @@ import './hub.css'
 import { offsetDay, rangeActivities, journalWeek } from './hub-model'
 import { Tooltip } from './components/arc/tooltip/tooltip'
 import { EntryHistory } from './EntryHistory'
+import { useActivityRefresh } from './use-activity-refresh'
 
 const dateValue = (value: string) => new Date(`${value}T12:00:00`)
 const dateKey = (date: Date) =>
@@ -43,7 +44,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
     const [project, setProject] = useState('all')
     const [tab, setTab] = useState<'all' | 'commit' | 'pr'>('all')
     const detailDialog = useRef<HubActivityDialogHandle>(null)
-    const [busy, setBusy] = useState(false)
+    const { refresh, refreshing: busy } = useActivityRefresh(run, start, end)
     const items = rangeActivities(state, start, end)
     const commits = items.filter((item) => item.kind === 'commit')
     const prs = items.filter((item) => item.kind !== 'commit')
@@ -104,6 +105,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
             <Button
                 variant="secondary"
                 size="sm"
+                loading={!items.length && (busy || activityUpdating(state))}
                 onClick={() =>
                     items.length
                         ? (() => {
@@ -123,14 +125,6 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
             </Button>
         </div>
     )
-    const refresh = async () => {
-        setBusy(true)
-        try {
-            await run({ type: 'refresh' })
-        } finally {
-            setBusy(false)
-        }
-    }
     const chart = (
         <ActivityChart activities={items} week={start} timezone={state.settings.timezone} className="hub-chart" />
     )

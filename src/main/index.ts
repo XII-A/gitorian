@@ -105,6 +105,7 @@ void app.whenReady().then(() => {
             throw new Error('Reference windows are read-only')
         switch (command.type) {
             case 'refresh':
+                if (command.since) return track(service.handle(command))
                 void track(service.refresh({ ...command, resume: true }))
                 return service.reply({ message: 'Activity refresh started. You can keep writing.' })
             case 'backfill': {
