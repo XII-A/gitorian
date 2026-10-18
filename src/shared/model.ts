@@ -282,6 +282,7 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('relocate'), id: z.string() }),
     z.object({
         type: z.literal('refresh'),
+        since: z.iso.date().optional(),
         repositoryId: z.string().optional(),
         source: z.enum(['git', 'github', 'notion']).optional()
     }),

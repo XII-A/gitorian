@@ -27,6 +27,7 @@ import { hasCachedDetails } from './activity-cache'
 import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
 import landscape from './assets/week-landscape.jpg'
 import './workspace.css'
+import { useActivityRefresh } from './use-activity-refresh'
 
 function BrowseHistoryIcon() {
     return <WorkspaceIcon name="branch" width="14" height="14" />
@@ -77,7 +78,6 @@ export function Workspace({
     const [selectedId, setSelectedId] = useState(initialActivity)
     const [detailBusy, setDetailBusy] = useState(false)
     const [detailError, setDetailError] = useState('')
-    const [refreshing, setRefreshing] = useState(false)
     const [focus, setFocus] = useState(false)
     const [historyOpen, setHistoryOpen] = useState(false)
     const historyButton = useRef<HTMLButtonElement>(null)
@@ -308,11 +308,7 @@ export function Workspace({
             else setNotice('The browser blocked the window. Allow pop-ups for this app and try again.')
         }
     }
-    const refresh = useCallback(async () => {
-        setRefreshing(true)
-        await run({ type: 'refresh' })
-        setRefreshing(false)
-    }, [run])
+    const { refresh, refreshing } = useActivityRefresh(run, week, offsetDay(week, 6))
     const emptyActivityAction = useCallback(() => {
         setProject('all')
         setBranch('all')
@@ -562,6 +558,7 @@ export function Workspace({
                             onInspect={inspect}
                             hasActivity={items.length > 0}
                             onEmptyAction={emptyActivityAction}
+                            refreshing={refreshing || activityUpdating(state)}
                         />
                     </ScrollArea>
                     {detached && (

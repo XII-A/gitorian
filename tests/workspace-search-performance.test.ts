@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { Workspace } from '../src/renderer/Workspace'
 import { sampleState } from '../src/renderer/workspace-sample'
+import { ToastStackProvider } from '../src/renderer/components/arc/toast-stack/toast-stack'
 
 const search = vi.hoisted(() => ({
     items: [] as { id: string; title: string }[],
@@ -39,7 +40,7 @@ it('builds full activity search metadata only while expanded and reuses it acros
     }
     const render = async (value = state) => {
         await act(async () => {
-            root.render(createElement(Workspace, { ...props, state: value }))
+            root.render(createElement(ToastStackProvider, null, createElement(Workspace, { ...props, state: value })))
             await Promise.resolve()
         })
     }
