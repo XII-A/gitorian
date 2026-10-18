@@ -77,7 +77,7 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                     }
                 }}
                 title="Previous entries"
-                description="Your weeks, ready to revisit."
+                description="Search published entries by title, date, or text."
             >
                 <div className="history-layout">
                     <section className="history-index" aria-label="Saved entries">
@@ -154,7 +154,7 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                                 <EmptyState
                                     icon={<BookOpen size={24} />}
                                     iconVariant="plain"
-                                    title={search ? 'No matching entries' : 'Your story starts here'}
+                                    title={search ? 'No matching entries' : 'No published entries yet'}
                                     description={
                                         search
                                             ? 'Try another word, title, or date.'

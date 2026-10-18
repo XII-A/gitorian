@@ -100,7 +100,7 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
                 ))
             ) : (
                 <div className="ws-activity-empty">
-                    <h3>{hasActivity ? 'No matching changes' : 'A quiet week so far.'}</h3>
+                    <h3>{hasActivity ? 'No matching changes' : 'No activity loaded for this week'}</h3>
                     <p>
                         {hasActivity
                             ? 'Choose another project or clear the activity filters.'

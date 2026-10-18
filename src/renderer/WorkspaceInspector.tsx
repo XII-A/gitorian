@@ -254,7 +254,7 @@ export function WorkspaceInspector({
                 <span role="status">
                     {citationStatus ||
                         (canCite
-                            ? 'Keep a little context in your entry.'
+                            ? 'Insert a reference to this activity in your entry.'
                             : reference
                               ? 'Citations go to your open draft.'
                               : 'Start a draft to cite this change.')}

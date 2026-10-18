@@ -355,7 +355,7 @@ export function WorkspaceDraft({
                                 <textarea
                                     aria-label="Entry title"
                                     value={draft.title}
-                                    placeholder="Give your week a title"
+                                    placeholder="Entry title"
                                     readOnly={busy}
                                     rows={2}
                                     onChange={(event) => edit({ ...snapshot()!, title: event.target.value })}
@@ -372,7 +372,7 @@ export function WorkspaceDraft({
                         </>
                     ) : (
                         <div className="ws-new-entry">
-                            <h1>A little room to reflect</h1>
+                            <h1>No entry for this week yet</h1>
                             <p>Write about what changed, what worked, and what you learned.</p>
                             <Button loading={busy} onClick={create}>
                                 Start this week’s entry
@@ -384,8 +384,8 @@ export function WorkspaceDraft({
             <footer className={`ws-writing-footer${needsNotion ? ' ws-needs-notion' : ''}`}>
                 <span>{draft ? `${words} words` : '0 words'}</span>
                 <span role="status">
-                    <WorkspaceIcon name="check" width="14" height="14" />
-                    {status || 'Ready when you are'}
+                    {status && <WorkspaceIcon name="check" width="14" height="14" />}
+                    {status}
                 </span>
                 {dirty.current && status.startsWith('Could not') && (
                     <Button className="ws-retry-saving" variant="ghost" size="sm" onClick={persist}>
