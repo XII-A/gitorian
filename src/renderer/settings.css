@@ -136,11 +136,8 @@
     border-radius: var(--radius-control);
     overflow: hidden;
 }
-.repository-import-ledger-viewport {
-    padding-inline: var(--space-4);
-}
 .repository-import-ledger-viewport > .settings-hint {
-    padding-block: var(--space-4);
+    padding: var(--space-4);
 }
 .repository-import-list ul {
     list-style: none;
@@ -149,7 +146,7 @@
 }
 .repository-import-row {
     justify-content: space-between;
-    padding: var(--space-2) 0;
+    padding: var(--space-2) var(--space-4);
     border-bottom: 1px solid var(--border-subtle);
 }
 .repository-import-row:last-child {
