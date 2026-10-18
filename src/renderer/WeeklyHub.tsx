@@ -94,7 +94,13 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
     const empty = (
         <div className="hub-empty">
             <GitCommitHorizontal size={26} aria-hidden="true" />
-            <h3>{items.length ? 'No matching activity' : 'Room for a fresh start.'}</h3>
+            <h3>
+                {items.length
+                    ? 'No matching activity'
+                    : state.repositories.some((repo) => !repo.removed)
+                      ? 'No activity loaded for this week'
+                      : 'No repositories connected'}
+            </h3>
             <p>
                 {items.length
                     ? 'Choose another activity filter to see your work.'
@@ -229,7 +235,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                 )}
                 <header className="hub-hero">
                     <p className="hub-period">{period}</p>
-                    <h1>What mattered this week?</h1>
+                    <h1>Weekly overview</h1>
                     <p className="hub-hero-description">
                         Review your activity, then capture progress, decisions, and anything you want to follow up on.
                     </p>
@@ -246,7 +252,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                     <div className="hub-thread-layout">
                         <section id="hub-activity" className="hub-timeline">
                             <div className="hub-section-heading">
-                                <h2>The days behind the work</h2>
+                                <h2>Activity this week</h2>
                             </div>
                             {filters}
                             {visible.length ? (
@@ -281,7 +287,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                         </section>
                         <aside>
                             <section className="hub-project-summary">
-                                <h2>Across your projects</h2>
+                                <h2>Activity by repository</h2>
                                 {repos.length ? (
                                     repos.map((repo) => (
                                         <div className="hub-project-line" key={repo.id}>
@@ -293,7 +299,11 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                                         </div>
                                     ))
                                 ) : (
-                                    <p>Projects will appear as you work.</p>
+                                    <p>
+                                        {state.repositories.some((repo) => !repo.removed)
+                                            ? 'No repository activity loaded for this week.'
+                                            : 'Connect a repository to load its activity.'}
+                                    </p>
                                 )}
                             </section>
                         </aside>
@@ -306,7 +316,6 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                             ? `Updated ${new Date(state.lastRefreshed).toLocaleTimeString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
                             : 'Your local journal'}
                     </span>
-                    <span>No rush. It’s your story.</span>
                 </footer>
             </div>
             <div className="hub-sr-only" role="status">

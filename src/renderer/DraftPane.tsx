@@ -129,7 +129,7 @@ export function DraftPane({
                 ) : (
                     <div className="empty">
                         <BookOpen size={36} />
-                        <h2>What did this week teach you?</h2>
+                        <h2>No entry for this week yet</h2>
                         <p>
                             Create an entry when you’re ready. Your writing stays on this machine until you save to
                             Notion.

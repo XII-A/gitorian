@@ -121,7 +121,7 @@ export function DetailsPane({ state, activity, entry, draft, reference, run, set
                 ) : (
                     <div className="empty">
                         <GitBranch size={36} />
-                        <h2>Make room for reflection.</h2>
+                        <h2>No activity selected</h2>
                         <p>Choose work on the left to inspect changes while you write.</p>
                     </div>
                 )}
