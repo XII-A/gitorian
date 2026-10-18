@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { basename, relative } from 'node:path'
 import { Effect } from 'effect'
 import { commits, indexCommits, commitDetails, inspectRepository, git, githubRemote } from './git'
 import { HttpError } from './http'
@@ -17,6 +18,7 @@ export class JournalService {
     private queuedRefreshes = new Map<string, Promise<void>>()
     private details = new Map<string, Promise<void>>()
     private importing = false
+    private repositoryScan?: { id: string; paths: string[]; unreadable: string[] }
     private importStopped = false
     private closing = false
 
@@ -68,18 +70,57 @@ export class JournalService {
         })
         if (persist) this.store.persist()
     }
-    async addRepositories(folder: string, onProgress?: (progress: RepositoryImportProgress) => void): Promise<Reply> {
+    async scanRepositories(folder: string, onProgress?: (progress: RepositoryImportProgress) => void): Promise<Reply> {
+        onProgress?.({ stage: 'discovering', scanned: 0, found: 0 })
+        const discovered = await discoverRepositories(folder, (counts) =>
+            onProgress?.({ stage: 'discovering', ...counts })
+        )
+        const id = randomUUID()
+        this.repositoryScan = { id, ...discovered }
+        return this.reply({
+            repositoryScan: {
+                id,
+                folder,
+                unreadable: discovered.unreadable,
+                repositories: discovered.paths.map((path) => {
+                    const tracked = this.store.state.repositories.find(
+                        (item) => repositoryPathKey(item.path) === repositoryPathKey(path)
+                    )
+                    return {
+                        path,
+                        name: basename(path),
+                        relativePath: relative(folder, path) || '.',
+                        status: tracked ? (tracked.removed || !tracked.available ? 'stopped' : 'tracked') : 'new'
+                    }
+                })
+            }
+        })
+    }
+    async importRepositories(
+        scanId: string,
+        paths: string[],
+        onProgress?: (progress: RepositoryImportProgress) => void
+    ): Promise<Reply> {
         if (this.importing) return this.reply({ message: 'A repository import is already running.' })
+        const scan = this.repositoryScan
+        if (!scan || scan.id !== scanId) throw new Error('This folder scan has expired. Choose the folder again.')
+        const requested = new Set(paths.map(repositoryPathKey))
+        if (
+            !requested.size ||
+            [...requested].some((path) => !scan.paths.some((item) => repositoryPathKey(item) === path))
+        )
+            throw new Error('Select repositories from the scanned folder.')
+        const discovered = {
+            paths: scan.paths.filter((path) => requested.has(repositoryPathKey(path))),
+            unreadable: scan.unreadable
+        }
+        this.repositoryScan = undefined
         this.importing = true
         this.importStopped = false
         const importId = randomUUID()
         this.store.state.repositoryImport = { id: importId, status: 'running', completed: 0, total: 0 }
         this.store.persist()
         try {
-            onProgress?.({ stage: 'discovering', scanned: 0, found: 0 })
-            const discovered = await discoverRepositories(folder, (counts) =>
-                onProgress?.({ stage: 'discovering', ...counts })
-            )
             let added = 0
             let existing = 0
             let restored = 0

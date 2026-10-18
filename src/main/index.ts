@@ -131,7 +131,8 @@ void app.whenReady().then(() => {
                 if (path) await service.addRepository(path)
                 break
             }
-            case 'addRepositories': {
+            case 'addRepositories':
+            case 'importRepositories': {
                 let lastStage = ''
                 let lastSent = 0
                 const progress = (update: RepositoryImportProgress) => {
@@ -143,15 +144,18 @@ void app.whenReady().then(() => {
                             event.sender.send('journal:repository-import', update)
                     }
                 }
-                progress({ stage: 'selecting' })
-                const path = await folder()
-                if (!path) return service.reply()
                 if (store.state.repositoryImport?.status === 'running')
                     return service.reply({ message: 'A repository import is already running.' })
-                store.state.repositoryImport = { status: 'running', completed: 0, total: 0 }
-                store.persist()
+                if (command.type === 'addRepositories') {
+                    progress({ stage: 'selecting' })
+                    const path = await folder()
+                    if (!path) return service.reply()
+                    return await track(service.scanRepositories(path, progress))
+                }
+                const importing = service.importRepositories(command.scanId, command.paths, progress)
+                if (service.reply().state.repositoryImport?.status !== 'running') return await importing
                 void track(
-                    service.addRepositories(path, progress).then(() => {
+                    importing.then(() => {
                         if (store.state.settings.refreshMinutes > 0) void track(service.refresh({ afterCurrent: true }))
                     })
                 ).catch((error: unknown) => {

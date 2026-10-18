@@ -20,6 +20,7 @@
         "package": "pnpm build && electron-builder",
         "package:dir": "pnpm build && electron-builder --dir",
         "smoke": "electron tools/desktop-smoke.mjs",
+        "smoke:repository-import": "electron tools/repository-import-smoke.mjs",
         "smoke:history-reader": "electron tools/history-reader-smoke.mjs",
         "smoke:history-motion": "electron tools/history-motion-smoke.mjs",
         "smoke:activity-filters": "electron tools/activity-filter-smoke.mjs",

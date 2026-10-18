@@ -36,8 +36,9 @@ app.on('browser-window-created', (_, window) => {
         checking = true
         try {
             const result = await window.webContents.executeJavaScript(`(async () => {
+                const scan=(await window.journal.invoke({type:'addRepositories'})).repositoryScan;
                 const started=performance.now();
-                const imported=await window.journal.invoke({type:'addRepositories'});
+                const imported=await window.journal.invoke({type:'importRepositories',scanId:scan.id,paths:scan.repositories.map(item=>item.path)});
                 const acknowledgmentMs=performance.now()-started;
                 if(imported.state.repositoryImport?.status!=='running') throw new Error('Import did not acknowledge before completion');
                 const baseline=await window.journal.invoke({type:'state'});

@@ -89,7 +89,14 @@ it('imports nested repositories once, skips dependency folders, and resumes stop
         expect(discovered.paths).toContain(await realpath(paths[0]))
         expect(discovered.paths).not.toContain(paths[2])
         const progress: RepositoryImportProgress[] = []
-        const first = await app.service.addRepositories(parent, (update) => progress.push(update))
+        const scan = (await app.service.scanRepositories(parent, (update) => progress.push(update))).repositoryScan!
+        expect(app.store.state.repositories).toHaveLength(1)
+        expect(app.store.state.repositoryImport).toBeUndefined()
+        const first = await app.service.importRepositories(
+            scan.id,
+            scan.repositories.map((item) => item.path),
+            (update) => progress.push(update)
+        )
         expect(progress[0]).toEqual({ stage: 'discovering', scanned: 0, found: 0 })
         const discovery = progress.filter((update) => update.stage === 'discovering')
         expect(discovery.at(-1)?.found).toBe(3)
@@ -107,7 +114,13 @@ it('imports nested repositories once, skips dependency folders, and resumes stop
         const tracked = app.store.state.repositories.find((repo) => repo.name === 'one')!
         const id = tracked.id
         tracked.removed = true
-        const again = await app.service.addRepositories(parent)
+        const rescan = (await app.service.scanRepositories(parent)).repositoryScan!
+        expect(rescan.repositories.find((item) => item.name === 'one')?.status).toBe('stopped')
+        expect(rescan.repositories.find((item) => item.name === 'two')?.status).toBe('tracked')
+        const again = await app.service.importRepositories(
+            rescan.id,
+            rescan.repositories.map((item) => item.path)
+        )
         expect(again.message).toContain('Added 0 repositories.')
         expect(again.message).toContain('Resumed tracking 1.')
         expect(again.state.repositories).toHaveLength(3)
@@ -118,6 +131,37 @@ it('imports nested repositories once, skips dependency folders, and resumes stop
         await app.close()
         const target = resolve(parent)
         if (target.startsWith(resolve(tmpdir()) + sep) && target.includes('weekly-j-discovery-'))
+            await rm(target, { recursive: true, force: true })
+    }
+})
+
+it('imports only checked repositories and rejects stale scans and paths outside the scan', async () => {
+    const app = await workspace()
+    const parent = await mkdtemp(join(tmpdir(), 'weekly-j-selection-'))
+    try {
+        for (const name of ['include', 'exclude']) {
+            const path = join(parent, name)
+            await mkdir(path)
+            await promisify(execFile)('git', ['init', '-b', 'main'], { cwd: path, windowsHide: true })
+        }
+        const abandoned = (await app.service.scanRepositories(parent)).repositoryScan!
+        const scan = (await app.service.scanRepositories(parent)).repositoryScan!
+        await expect(app.service.importRepositories(abandoned.id, [scan.repositories[0].path])).rejects.toThrow(
+            'expired'
+        )
+        await expect(app.service.importRepositories(scan.id, [app.directory])).rejects.toThrow('scanned folder')
+        await expect(app.service.importRepositories(scan.id, [])).rejects.toThrow('Select repositories')
+        expect(app.store.state.repositories).toHaveLength(1)
+        const selected = scan.repositories.find((item) => item.name === 'include')!.path
+        await app.service.importRepositories(scan.id, [selected, selected])
+        expect(app.store.state.repositories.map((item) => item.name)).toContain('include')
+        expect(app.store.state.repositories.map((item) => item.name)).not.toContain('exclude')
+        expect(app.store.state.repositoryImport?.total).toBe(1)
+        await expect(app.service.importRepositories(scan.id, [selected])).rejects.toThrow('expired')
+    } finally {
+        await app.close()
+        const target = resolve(parent)
+        if (target.startsWith(resolve(tmpdir()) + sep) && target.includes('weekly-j-selection-'))
             await rm(target, { recursive: true, force: true })
     }
 })
