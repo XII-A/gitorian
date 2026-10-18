@@ -277,6 +277,7 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('state') }),
     z.object({ type: z.literal('addRepository') }),
     z.object({ type: z.literal('addRepositories') }),
+    z.object({ type: z.literal('importRepositories'), scanId: z.string(), paths: z.array(z.string()).min(1) }),
     z.object({ type: z.literal('repository'), repository: repositorySchema }),
     z.object({ type: z.literal('relocate'), id: z.string() }),
     z.object({
@@ -330,6 +331,12 @@ export interface NotionIdentity {
     avatarUrl?: string
 }
 export interface Reply {
+    repositoryScan?: {
+        id: string
+        folder: string
+        repositories: { path: string; name: string; relativePath: string; status: 'new' | 'tracked' | 'stopped' }[]
+        unreadable: string[]
+    }
     notionIdentity?: NotionIdentity
     state: State
     diff?: string

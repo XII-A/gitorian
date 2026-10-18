@@ -1,5 +1,4 @@
-import { Disclosure } from './components/Disclosure'
-import { ImportResults } from './ImportResults'
+import { RepositoryImportReview } from './RepositoryImportReview'
 import { Alert } from './components/arc/alert/alert'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { plainText } from '../shared/notion-format'
@@ -78,6 +77,18 @@ export function Settings({
     const [confirmClose, setConfirmClose] = useState(false)
     const [repositorySearch, setRepositorySearch] = useState('')
     const [importProgress, setImportProgress] = useState<RepositoryImportProgress>()
+    const [importFlow, setImportFlow] = useState(false)
+    const [repositoryScan, setRepositoryScan] = useState<Reply['repositoryScan']>()
+    const scanGeneration = useRef(0)
+    const importButton = useRef<HTMLButtonElement>(null)
+    const cancelImportReview = () => {
+        scanGeneration.current++
+        setImportFlow(false)
+        setRepositoryScan(undefined)
+        setImportProgress(undefined)
+        setError('')
+        requestAnimationFrame(() => importButton.current?.focus())
+    }
     const keepEditing = useRef<HTMLButtonElement>(null)
     const previousFocus = useRef<Element | null>(null)
     const templateEditor = useRef<EditorHandle>(null)
@@ -89,7 +100,14 @@ export function Settings({
     )
     const activeImport = state.repositoryImport?.status === 'running' ? state.repositoryImport : undefined
     useEffect(() => window.journal.onRepositoryImportProgress?.(setImportProgress), [])
+    useEffect(() => {
+        if (!activeImport && !importFlow) setImportProgress(undefined)
+    }, [activeImport, importFlow])
     const requestClose = () => {
+        if (importFlow && busy !== 'importRepositories') {
+            cancelImportReview()
+            return
+        }
         if (busy) return
         if (hasUnsavedSettings(settings, repositories, state, token)) setConfirmClose(true)
         else close()
@@ -340,7 +358,7 @@ export function Settings({
             <DialogContent
                 className="settings"
                 backdrop="dim"
-                title="Workspace settings"
+                title={importFlow ? 'Import repositories' : 'Workspace settings'}
                 aria-describedby={undefined}
                 onOpenAutoFocus={() => {
                     previousFocus.current = document.activeElement
@@ -350,498 +368,573 @@ export function Settings({
                     if (previousFocus.current instanceof HTMLElement) previousFocus.current.focus()
                 }}
             >
-                <Tabs value={section} onValueChange={setSection} orientation="vertical" className="settings-tabs">
-                    <ScrollArea className="settings-navigation" fade={12} label="Settings navigation">
-                        <TabsList aria-label="Settings sections">
-                            {['repositories', 'connections', 'preferences', 'template', 'backup'].map((tab) => (
-                                <TabsTrigger key={tab} value={tab}>
-                                    {tab[0].toUpperCase() + tab.slice(1)}
-                                </TabsTrigger>
-                            ))}
-                        </TabsList>
-                    </ScrollArea>
-                    <ScrollArea
-                        className="settings-scroll"
-                        viewportClassName="settings-viewport"
-                        label="Settings content"
-                        fade={16}
-                    >
-                        <TabsContent value="repositories" className="settings-content">
-                            <div className="settings-section-heading">
-                                <h3>Repositories</h3>
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    className="settings-import-button"
-                                    contentLayout="stack"
-                                    disabled={!!busy || !!activeImport}
-                                    aria-busy={busy === 'repositories' || !!activeImport || undefined}
-                                    onClick={() =>
-                                        action('repositories', async () => {
-                                            setImportProgress({ stage: 'selecting' })
-                                            try {
-                                                const result = await invoke({ type: 'addRepositories' })
-                                                mergeRepositories(result.state.repositories)
-                                                setStatus('')
-                                            } finally {
-                                                setImportProgress(undefined)
-                                            }
-                                        })
-                                    }
-                                >
-                                    <ImportProgressLabel progress={importProgress} activeImport={activeImport} />
-                                </Button>
-                            </div>
-                            {state.repositoryImport?.status !== 'running' && state.repositoryImport?.message && (
-                                <Disclosure title="Last import results" className="settings-hint">
-                                    <ImportResults job={state.repositoryImport} />
-                                </Disclosure>
-                            )}
-                            {!repositories.length && (
-                                <p className="settings-hint">Choose the folder containing your Git repositories.</p>
-                            )}
-                            {!!repositories.length && (
-                                <SearchField
-                                    label="Search repositories"
-                                    hideLabel
-                                    placeholder="Repository name or folder path"
-                                    value={repositorySearch}
-                                    onValueChange={setRepositorySearch}
-                                />
-                            )}
-                            {!!repositories.length && !matchingRepositories.length && (
-                                <p className="settings-hint" role="status">
-                                    No matching repositories.
-                                </p>
-                            )}
-                            {!!matchingRepositories.length && (
-                                <div className="settings-repositories">
-                                    {matchingRepositories.map((repository) => (
-                                        <ExpandableCard
-                                            key={repository.id}
-                                            title={repository.name}
-                                            description={repository.path || 'Folder not located'}
-                                        >
-                                            {() => repositoryFields(repository)}
-                                        </ExpandableCard>
+                {importFlow ? (
+                    <RepositoryImportReview
+                        scan={repositoryScan}
+                        progress={importProgress}
+                        busy={busy === 'importRepositories'}
+                        error={error}
+                        cancel={cancelImportReview}
+                        confirm={(paths) =>
+                            action('importRepositories', async () => {
+                                if (!repositoryScan) return
+                                const result = await invoke({
+                                    type: 'importRepositories',
+                                    scanId: repositoryScan.id,
+                                    paths
+                                })
+                                mergeRepositories(result.state.repositories)
+                                cancelImportReview()
+                            })
+                        }
+                    />
+                ) : (
+                    <>
+                        <Tabs
+                            value={section}
+                            onValueChange={setSection}
+                            orientation="vertical"
+                            className="settings-tabs"
+                        >
+                            <ScrollArea className="settings-navigation" fade={12} label="Settings navigation">
+                                <TabsList aria-label="Settings sections">
+                                    {['repositories', 'connections', 'preferences', 'template', 'backup'].map((tab) => (
+                                        <TabsTrigger key={tab} value={tab}>
+                                            {tab[0].toUpperCase() + tab.slice(1)}
+                                        </TabsTrigger>
                                     ))}
-                                </div>
-                            )}
-                        </TabsContent>
-                        <TabsContent value="connections" className="settings-content">
-                            <section className="settings-section" aria-label="GitHub connection">
-                                <div className="settings-section-heading">
-                                    <h3>GitHub</h3>
-                                    {connections.github && githubFeedback?.kind !== 'success' ? (
-                                        <div ref={githubAccount} tabIndex={-1} className="settings-github-account">
-                                            <span className="settings-github-identity">
-                                                {settings.githubLogin && (
-                                                    <span className="settings-github-avatar" aria-hidden="true">
-                                                        {settings.githubLogin.slice(0, 1).toUpperCase()}
-                                                        <img
-                                                            src={`https://github.com/${encodeURIComponent(settings.githubLogin)}.png?size=64`}
-                                                            width={32}
-                                                            height={32}
-                                                            alt=""
-                                                            onError={(event) => {
-                                                                event.currentTarget.hidden = true
-                                                            }}
-                                                        />
-                                                    </span>
-                                                )}
-                                                <span>{settings.githubLogin || 'Connected'}</span>
-                                            </span>
-                                            <ConfirmMorph
-                                                label="Disconnect"
-                                                prompt={
-                                                    <span className="settings-disconnect-question">
-                                                        Disconnect GitHub?
-                                                    </span>
-                                                }
-                                                confirmLabel="Disconnect"
-                                                confirmMode="hold"
-                                                variant="secondary"
-                                                pendingLabel="Disconnecting"
-                                                doneLabel="Disconnected"
-                                                errorLabel="Could not disconnect"
-                                                tone="danger"
-                                                disabled={!!busy}
-                                                onConfirm={async () => {
-                                                    setBusy('disconnect-github')
-                                                    setError('')
+                                </TabsList>
+                            </ScrollArea>
+                            <ScrollArea
+                                className="settings-scroll"
+                                viewportClassName="settings-viewport"
+                                label="Settings content"
+                                fade={16}
+                            >
+                                <TabsContent value="repositories" className="settings-content">
+                                    <div className="settings-section-heading">
+                                        <h3>Repositories</h3>
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            className="settings-import-button"
+                                            ref={importButton}
+                                            contentLayout="stack"
+                                            disabled={!!busy || !!activeImport}
+                                            aria-busy={busy === 'repositories' || !!activeImport || undefined}
+                                            onClick={() =>
+                                                action('repositories', async () => {
+                                                    const generation = ++scanGeneration.current
+                                                    setRepositoryScan(undefined)
+                                                    setImportFlow(true)
+                                                    setImportProgress({ stage: 'selecting' })
                                                     try {
-                                                        await invoke({ type: 'disconnect', service: 'github' })
-                                                        setSettings((current) => ({ ...current, githubLogin: '' }))
-                                                        setStatus('GitHub disconnected.')
+                                                        const result = await invoke({ type: 'addRepositories' })
+                                                        if (generation !== scanGeneration.current) return
+                                                        if (result.repositoryScan)
+                                                            setRepositoryScan(result.repositoryScan)
+                                                        else cancelImportReview()
+                                                    } catch (failure) {
+                                                        if (generation === scanGeneration.current) throw failure
                                                     } finally {
-                                                        setBusy('')
-                                                    }
-                                                }}
-                                            />
-                                        </div>
-                                    ) : (
-                                        <span className="settings-connection-status">
-                                            {githubFeedback?.kind === 'success' ? 'Connected' : 'Not connected'}
-                                        </span>
-                                    )}
-                                </div>
-                                {(!connections.github || githubFeedback?.kind === 'success') && (
-                                    <>
-                                        <Input
-                                            label="OAuth client ID"
-                                            value={settings.githubClientId}
-                                            disabled={
-                                                !!device || busy === 'github' || githubFeedback?.kind === 'success'
-                                            }
-                                            onChange={(event) =>
-                                                setSettings({ ...settings, githubClientId: event.target.value })
-                                            }
-                                        />
-                                        <div className="settings-actions settings-github-setup">
-                                            <p className="settings-hint">
-                                                Enable device flow in your GitHub OAuth app.
-                                            </p>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                disabled={!!busy || !!device || githubFeedback?.kind === 'success'}
-                                                onClick={() =>
-                                                    action('oauth', async () => {
-                                                        await invoke({
-                                                            type: 'open',
-                                                            url: 'https://github.com/settings/applications/new'
-                                                        })
-                                                    })
-                                                }
-                                            >
-                                                Set up OAuth app
-                                            </Button>
-                                        </div>
-                                        <GitHubSignIn
-                                            device={device}
-                                            feedback={githubFeedback}
-                                            notice={githubNotice}
-                                            pending={busy === 'github'}
-                                            openingBrowser={busy === 'browser'}
-                                            disabled={!!busy && busy !== 'github' && busy !== 'browser'}
-                                            onStart={startSignIn}
-                                            onOpen={() =>
-                                                action('browser', async () => {
-                                                    if (!device) return
-                                                    const attempt = githubAttempt.current
-                                                    try {
-                                                        await invoke({ type: 'open', url: device.url })
-                                                        if (githubAttempt.current === attempt) setGithubNotice('')
-                                                    } catch {
-                                                        if (githubAttempt.current === attempt)
-                                                            setGithubNotice(
-                                                                'Your browser could not be opened. Visit github.com/login/device and enter this code.'
-                                                            )
+                                                        setImportProgress(undefined)
                                                     }
                                                 })
                                             }
-                                            onCancel={() => {
-                                                githubAttempt.current++
-                                                setDevice(undefined)
-                                                setGithubFeedback(undefined)
-                                                setGithubNotice('')
-                                                setStatus('')
-                                            }}
+                                        >
+                                            <ImportProgressLabel
+                                                progress={importProgress}
+                                                activeImport={activeImport}
+                                            />
+                                        </Button>
+                                    </div>
+                                    {!repositories.length && (
+                                        <p className="settings-hint">
+                                            Choose the folder containing your Git repositories.
+                                        </p>
+                                    )}
+                                    {!!repositories.length && (
+                                        <SearchField
+                                            label="Search repositories"
+                                            hideLabel
+                                            placeholder="Repository name or folder path"
+                                            value={repositorySearch}
+                                            onValueChange={setRepositorySearch}
                                         />
-                                    </>
-                                )}
-                            </section>
-                            <section className="settings-section" aria-label="Notion connection">
-                                <div className="settings-section-heading">
-                                    <h3>Notion</h3>
-                                    {connections.notion ? (
-                                        <div className="settings-github-account">
-                                            <span className="settings-github-identity">
-                                                <span className="settings-github-avatar" aria-hidden="true">
-                                                    {notionIdentity?.name.slice(0, 1).toUpperCase() || 'N'}
-                                                    {notionIdentity?.avatarUrl && (
-                                                        <img
-                                                            key={notionIdentity.avatarUrl}
-                                                            src={notionIdentity.avatarUrl}
-                                                            width={32}
-                                                            height={32}
-                                                            alt=""
-                                                            onError={(event) => {
-                                                                event.currentTarget.hidden = true
-                                                            }}
-                                                        />
-                                                    )}
-                                                </span>
-                                                <span>{notionIdentity?.name || 'Connected'}</span>
-                                            </span>
-                                            <ConfirmMorph
-                                                label="Disconnect"
-                                                prompt={
-                                                    <span className="settings-disconnect-question">
-                                                        Disconnect Notion?
+                                    )}
+                                    {!!repositories.length && !matchingRepositories.length && (
+                                        <p className="settings-hint" role="status">
+                                            No matching repositories.
+                                        </p>
+                                    )}
+                                    {!!matchingRepositories.length && (
+                                        <div className="settings-repositories">
+                                            {matchingRepositories.map((repository) => (
+                                                <ExpandableCard
+                                                    key={repository.id}
+                                                    title={repository.name}
+                                                    description={repository.path || 'Folder not located'}
+                                                >
+                                                    {() => repositoryFields(repository)}
+                                                </ExpandableCard>
+                                            ))}
+                                        </div>
+                                    )}
+                                </TabsContent>
+                                <TabsContent value="connections" className="settings-content">
+                                    <section className="settings-section" aria-label="GitHub connection">
+                                        <div className="settings-section-heading">
+                                            <h3>GitHub</h3>
+                                            {connections.github && githubFeedback?.kind !== 'success' ? (
+                                                <div
+                                                    ref={githubAccount}
+                                                    tabIndex={-1}
+                                                    className="settings-github-account"
+                                                >
+                                                    <span className="settings-github-identity">
+                                                        {settings.githubLogin && (
+                                                            <span className="settings-github-avatar" aria-hidden="true">
+                                                                {settings.githubLogin.slice(0, 1).toUpperCase()}
+                                                                <img
+                                                                    src={`https://github.com/${encodeURIComponent(settings.githubLogin)}.png?size=64`}
+                                                                    width={32}
+                                                                    height={32}
+                                                                    alt=""
+                                                                    onError={(event) => {
+                                                                        event.currentTarget.hidden = true
+                                                                    }}
+                                                                />
+                                                            </span>
+                                                        )}
+                                                        <span>{settings.githubLogin || 'Connected'}</span>
                                                     </span>
+                                                    <ConfirmMorph
+                                                        label="Disconnect"
+                                                        prompt={
+                                                            <span className="settings-disconnect-question">
+                                                                Disconnect GitHub?
+                                                            </span>
+                                                        }
+                                                        confirmLabel="Disconnect"
+                                                        confirmMode="hold"
+                                                        variant="secondary"
+                                                        pendingLabel="Disconnecting"
+                                                        doneLabel="Disconnected"
+                                                        errorLabel="Could not disconnect"
+                                                        tone="danger"
+                                                        disabled={!!busy}
+                                                        onConfirm={async () => {
+                                                            setBusy('disconnect-github')
+                                                            setError('')
+                                                            try {
+                                                                await invoke({ type: 'disconnect', service: 'github' })
+                                                                setSettings((current) => ({
+                                                                    ...current,
+                                                                    githubLogin: ''
+                                                                }))
+                                                                setStatus('GitHub disconnected.')
+                                                            } finally {
+                                                                setBusy('')
+                                                            }
+                                                        }}
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <span className="settings-connection-status">
+                                                    {githubFeedback?.kind === 'success' ? 'Connected' : 'Not connected'}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {(!connections.github || githubFeedback?.kind === 'success') && (
+                                            <>
+                                                <Input
+                                                    label="OAuth client ID"
+                                                    value={settings.githubClientId}
+                                                    disabled={
+                                                        !!device ||
+                                                        busy === 'github' ||
+                                                        githubFeedback?.kind === 'success'
+                                                    }
+                                                    onChange={(event) =>
+                                                        setSettings({ ...settings, githubClientId: event.target.value })
+                                                    }
+                                                />
+                                                <div className="settings-actions settings-github-setup">
+                                                    <p className="settings-hint">
+                                                        Enable device flow in your GitHub OAuth app.
+                                                    </p>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        disabled={
+                                                            !!busy || !!device || githubFeedback?.kind === 'success'
+                                                        }
+                                                        onClick={() =>
+                                                            action('oauth', async () => {
+                                                                await invoke({
+                                                                    type: 'open',
+                                                                    url: 'https://github.com/settings/applications/new'
+                                                                })
+                                                            })
+                                                        }
+                                                    >
+                                                        Set up OAuth app
+                                                    </Button>
+                                                </div>
+                                                <GitHubSignIn
+                                                    device={device}
+                                                    feedback={githubFeedback}
+                                                    notice={githubNotice}
+                                                    pending={busy === 'github'}
+                                                    openingBrowser={busy === 'browser'}
+                                                    disabled={!!busy && busy !== 'github' && busy !== 'browser'}
+                                                    onStart={startSignIn}
+                                                    onOpen={() =>
+                                                        action('browser', async () => {
+                                                            if (!device) return
+                                                            const attempt = githubAttempt.current
+                                                            try {
+                                                                await invoke({ type: 'open', url: device.url })
+                                                                if (githubAttempt.current === attempt)
+                                                                    setGithubNotice('')
+                                                            } catch {
+                                                                if (githubAttempt.current === attempt)
+                                                                    setGithubNotice(
+                                                                        'Your browser could not be opened. Visit github.com/login/device and enter this code.'
+                                                                    )
+                                                            }
+                                                        })
+                                                    }
+                                                    onCancel={() => {
+                                                        githubAttempt.current++
+                                                        setDevice(undefined)
+                                                        setGithubFeedback(undefined)
+                                                        setGithubNotice('')
+                                                        setStatus('')
+                                                    }}
+                                                />
+                                            </>
+                                        )}
+                                    </section>
+                                    <section className="settings-section" aria-label="Notion connection">
+                                        <div className="settings-section-heading">
+                                            <h3>Notion</h3>
+                                            {connections.notion ? (
+                                                <div className="settings-github-account">
+                                                    <span className="settings-github-identity">
+                                                        <span className="settings-github-avatar" aria-hidden="true">
+                                                            {notionIdentity?.name.slice(0, 1).toUpperCase() || 'N'}
+                                                            {notionIdentity?.avatarUrl && (
+                                                                <img
+                                                                    key={notionIdentity.avatarUrl}
+                                                                    src={notionIdentity.avatarUrl}
+                                                                    width={32}
+                                                                    height={32}
+                                                                    alt=""
+                                                                    onError={(event) => {
+                                                                        event.currentTarget.hidden = true
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </span>
+                                                        <span>{notionIdentity?.name || 'Connected'}</span>
+                                                    </span>
+                                                    <ConfirmMorph
+                                                        label="Disconnect"
+                                                        prompt={
+                                                            <span className="settings-disconnect-question">
+                                                                Disconnect Notion?
+                                                            </span>
+                                                        }
+                                                        confirmLabel="Disconnect"
+                                                        confirmMode="hold"
+                                                        variant="secondary"
+                                                        pendingLabel="Disconnecting"
+                                                        doneLabel="Disconnected"
+                                                        errorLabel="Could not disconnect"
+                                                        tone="danger"
+                                                        disabled={!!busy}
+                                                        onConfirm={async () => {
+                                                            setBusy('disconnect-notion')
+                                                            setError('')
+                                                            try {
+                                                                await invoke({ type: 'disconnect', service: 'notion' })
+                                                                setStatus('Notion disconnected.')
+                                                                setDestinationTest(undefined)
+                                                            } finally {
+                                                                setBusy('')
+                                                            }
+                                                        }}
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <span className="settings-connection-status">Not connected</span>
+                                            )}
+                                        </div>
+                                        {!connections.notion ? (
+                                            <>
+                                                <Input
+                                                    label="Integration token"
+                                                    type="password"
+                                                    autoComplete="off"
+                                                    value={token}
+                                                    onChange={(event) => setToken(event.target.value)}
+                                                />
+                                                <div className="settings-actions">
+                                                    <Button
+                                                        variant="secondary"
+                                                        size="sm"
+                                                        disabled={!token.trim() || !!busy}
+                                                        loading={busy === 'notion'}
+                                                        onClick={() =>
+                                                            action('notion', async () => {
+                                                                await invoke({
+                                                                    type: 'notionConnect',
+                                                                    token: token.trim()
+                                                                })
+                                                                setToken('')
+                                                                setStatus('Notion connected.')
+                                                            })
+                                                        }
+                                                    >
+                                                        Connect Notion
+                                                    </Button>
+                                                </div>
+                                            </>
+                                        ) : null}
+                                        {(connections.github || connections.notion) &&
+                                            !connections.protectedStorage && (
+                                                <p className="settings-hint">
+                                                    Credentials are kept for this session only.
+                                                </p>
+                                            )}
+                                        <div className="settings-field-grid">
+                                            <Select
+                                                label="Destination"
+                                                value={settings.destination?.kind ?? 'page'}
+                                                options={[
+                                                    { value: 'page', label: 'Parent page' },
+                                                    { value: 'database', label: 'Database data source' }
+                                                ]}
+                                                onValueChange={(kind) =>
+                                                    destination({ kind: kind as Destination['kind'] })
                                                 }
-                                                confirmLabel="Disconnect"
-                                                confirmMode="hold"
+                                            />
+                                            <Input
+                                                label={
+                                                    settings.destination?.kind === 'database'
+                                                        ? 'Data source ID'
+                                                        : 'Page ID'
+                                                }
+                                                value={settings.destination?.id ?? ''}
+                                                onChange={(event) => destination({ id: event.target.value.trim() })}
+                                            />
+                                        </div>
+                                        {settings.destination?.kind === 'database' && (
+                                            <div className="settings-field-grid">
+                                                <Input
+                                                    label="Title property"
+                                                    value={settings.destination.titleProperty}
+                                                    onChange={(event) =>
+                                                        destination({ titleProperty: event.target.value })
+                                                    }
+                                                />
+                                                <Input
+                                                    label="Date property (optional)"
+                                                    value={settings.destination.dateProperty}
+                                                    onChange={(event) =>
+                                                        destination({ dateProperty: event.target.value })
+                                                    }
+                                                />
+                                            </div>
+                                        )}
+                                        <div className="settings-actions">
+                                            <ConfirmMorph
+                                                key={destinationKey}
+                                                label="Test destination"
+                                                icon={<Plug size={16} strokeWidth={1.75} />}
+                                                confirmMode="immediate"
                                                 variant="secondary"
-                                                pendingLabel="Disconnecting"
-                                                doneLabel="Disconnected"
-                                                errorLabel="Could not disconnect"
-                                                tone="danger"
-                                                disabled={!!busy}
+                                                tone="neutral"
+                                                pendingLabel="Testing"
+                                                doneLabel="Reachable"
+                                                errorLabel="Unreachable"
+                                                state={
+                                                    destinationTest?.key === destinationKey
+                                                        ? destinationTest.state
+                                                        : 'idle'
+                                                }
+                                                onStateChange={(next) => {
+                                                    if (currentDestinationKey.current === destinationKey)
+                                                        setDestinationTest({ key: destinationKey, state: next })
+                                                }}
+                                                disabled={
+                                                    !connections.notion || !settings.destination?.id.trim() || !!busy
+                                                }
                                                 onConfirm={async () => {
-                                                    setBusy('disconnect-notion')
-                                                    setError('')
+                                                    setBusy('notion-test')
                                                     try {
-                                                        await invoke({ type: 'disconnect', service: 'notion' })
-                                                        setStatus('Notion disconnected.')
-                                                        setDestinationTest(undefined)
+                                                        await window.journal.invoke({
+                                                            type: 'notionTestDestination',
+                                                            destination: settings.destination!
+                                                        })
                                                     } finally {
                                                         setBusy('')
                                                     }
                                                 }}
                                             />
                                         </div>
-                                    ) : (
-                                        <span className="settings-connection-status">Not connected</span>
-                                    )}
-                                </div>
-                                {!connections.notion ? (
-                                    <>
-                                        <Input
-                                            label="Integration token"
-                                            type="password"
-                                            autoComplete="off"
-                                            value={token}
-                                            onChange={(event) => setToken(event.target.value)}
+                                    </section>
+                                </TabsContent>
+                                <TabsContent value="preferences" className="settings-content">
+                                    <section className="settings-section" aria-label="Time and refresh">
+                                        <h3>Time and refresh</h3>
+                                        <Combobox
+                                            label="Timezone"
+                                            options={zones}
+                                            value={settings.timezone}
+                                            onValueChange={(timezone) => setSettings({ ...settings, timezone })}
+                                            placeholder="Search timezones"
                                         />
+                                        <div className="settings-field-grid">
+                                            <Select
+                                                label="Week starts"
+                                                value={String(settings.weekStart)}
+                                                options={[
+                                                    'Sunday',
+                                                    'Monday',
+                                                    'Tuesday',
+                                                    'Wednesday',
+                                                    'Thursday',
+                                                    'Friday',
+                                                    'Saturday'
+                                                ].map((label, index) => ({ value: String(index), label }))}
+                                                onValueChange={(value) =>
+                                                    setSettings({ ...settings, weekStart: Number(value) })
+                                                }
+                                            />
+                                            <NumberField
+                                                label="Refresh interval"
+                                                min={0}
+                                                max={1440}
+                                                value={settings.refreshMinutes}
+                                                onValueChange={(refreshMinutes) =>
+                                                    setSettings({ ...settings, refreshMinutes })
+                                                }
+                                                suffix={(minutes) => (minutes === 1 ? ' minute' : ' minutes')}
+                                                description="Set to 0 to turn off background refresh."
+                                            />
+                                        </div>
+                                    </section>
+                                </TabsContent>
+                                <TabsContent value="template" className="settings-content">
+                                    <section className="settings-section" aria-label="Entry template">
+                                        <div className="settings-section-heading">
+                                            <h3>Entry template</h3>
+                                        </div>
+                                        <p className="settings-hint">
+                                            Used for new entries. Existing writing stays as it is.
+                                        </p>
+                                        <div className="settings-template">
+                                            <header className="settings-template-header">
+                                                <div className="settings-template-history">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        aria-label="Undo template edit"
+                                                        disabled={!templateHistory.canUndo}
+                                                        onClick={() => templateEditor.current?.undo()}
+                                                    >
+                                                        <ArrowCounterClockwiseIcon aria-hidden="true" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        aria-label="Redo template edit"
+                                                        disabled={!templateHistory.canRedo}
+                                                        onClick={() => templateEditor.current?.redo()}
+                                                    >
+                                                        <ArrowClockwiseIcon aria-hidden="true" />
+                                                    </Button>
+                                                </div>
+                                                <span>
+                                                    {templateWords} {templateWords === 1 ? 'word' : 'words'}
+                                                </span>
+                                            </header>
+                                            <div className="settings-template-body">
+                                                <Editor
+                                                    ref={templateEditor}
+                                                    onHistoryChange={setTemplateHistory}
+                                                    label="Entry template"
+                                                    value={settings.template}
+                                                    onChange={(template) =>
+                                                        setSettings((current) => ({ ...current, template }))
+                                                    }
+                                                />
+                                            </div>
+                                        </div>
+                                    </section>
+                                </TabsContent>
+                                <TabsContent value="backup" className="settings-content">
+                                    <section className="settings-section" aria-label="Journal backup">
+                                        <h3>Journal backup</h3>
+                                        <p className="settings-hint">
+                                            Includes writing and tracking. Excludes credentials and repository files.
+                                        </p>
                                         <div className="settings-actions">
                                             <Button
                                                 variant="secondary"
                                                 size="sm"
-                                                disabled={!token.trim() || !!busy}
-                                                loading={busy === 'notion'}
+                                                disabled={!!busy}
+                                                loading={busy === 'export'}
                                                 onClick={() =>
-                                                    action('notion', async () => {
-                                                        await invoke({ type: 'notionConnect', token: token.trim() })
-                                                        setToken('')
-                                                        setStatus('Notion connected.')
+                                                    action('export', async () => {
+                                                        await invoke({ type: 'export' })
                                                     })
                                                 }
                                             >
-                                                Connect Notion
-                                            </Button>
-                                        </div>
-                                    </>
-                                ) : null}
-                                {(connections.github || connections.notion) && !connections.protectedStorage && (
-                                    <p className="settings-hint">Credentials are kept for this session only.</p>
-                                )}
-                                <div className="settings-field-grid">
-                                    <Select
-                                        label="Destination"
-                                        value={settings.destination?.kind ?? 'page'}
-                                        options={[
-                                            { value: 'page', label: 'Parent page' },
-                                            { value: 'database', label: 'Database data source' }
-                                        ]}
-                                        onValueChange={(kind) => destination({ kind: kind as Destination['kind'] })}
-                                    />
-                                    <Input
-                                        label={settings.destination?.kind === 'database' ? 'Data source ID' : 'Page ID'}
-                                        value={settings.destination?.id ?? ''}
-                                        onChange={(event) => destination({ id: event.target.value.trim() })}
-                                    />
-                                </div>
-                                {settings.destination?.kind === 'database' && (
-                                    <div className="settings-field-grid">
-                                        <Input
-                                            label="Title property"
-                                            value={settings.destination.titleProperty}
-                                            onChange={(event) => destination({ titleProperty: event.target.value })}
-                                        />
-                                        <Input
-                                            label="Date property (optional)"
-                                            value={settings.destination.dateProperty}
-                                            onChange={(event) => destination({ dateProperty: event.target.value })}
-                                        />
-                                    </div>
-                                )}
-                                <div className="settings-actions">
-                                    <ConfirmMorph
-                                        key={destinationKey}
-                                        label="Test destination"
-                                        icon={<Plug size={16} strokeWidth={1.75} />}
-                                        confirmMode="immediate"
-                                        variant="secondary"
-                                        tone="neutral"
-                                        pendingLabel="Testing"
-                                        doneLabel="Reachable"
-                                        errorLabel="Unreachable"
-                                        state={destinationTest?.key === destinationKey ? destinationTest.state : 'idle'}
-                                        onStateChange={(next) => {
-                                            if (currentDestinationKey.current === destinationKey)
-                                                setDestinationTest({ key: destinationKey, state: next })
-                                        }}
-                                        disabled={!connections.notion || !settings.destination?.id.trim() || !!busy}
-                                        onConfirm={async () => {
-                                            setBusy('notion-test')
-                                            try {
-                                                await window.journal.invoke({
-                                                    type: 'notionTestDestination',
-                                                    destination: settings.destination!
-                                                })
-                                            } finally {
-                                                setBusy('')
-                                            }
-                                        }}
-                                    />
-                                </div>
-                            </section>
-                        </TabsContent>
-                        <TabsContent value="preferences" className="settings-content">
-                            <section className="settings-section" aria-label="Time and refresh">
-                                <h3>Time and refresh</h3>
-                                <Combobox
-                                    label="Timezone"
-                                    options={zones}
-                                    value={settings.timezone}
-                                    onValueChange={(timezone) => setSettings({ ...settings, timezone })}
-                                    placeholder="Search timezones"
-                                />
-                                <div className="settings-field-grid">
-                                    <Select
-                                        label="Week starts"
-                                        value={String(settings.weekStart)}
-                                        options={[
-                                            'Sunday',
-                                            'Monday',
-                                            'Tuesday',
-                                            'Wednesday',
-                                            'Thursday',
-                                            'Friday',
-                                            'Saturday'
-                                        ].map((label, index) => ({ value: String(index), label }))}
-                                        onValueChange={(value) =>
-                                            setSettings({ ...settings, weekStart: Number(value) })
-                                        }
-                                    />
-                                    <NumberField
-                                        label="Refresh interval"
-                                        min={0}
-                                        max={1440}
-                                        value={settings.refreshMinutes}
-                                        onValueChange={(refreshMinutes) => setSettings({ ...settings, refreshMinutes })}
-                                        suffix={(minutes) => (minutes === 1 ? ' minute' : ' minutes')}
-                                        description="Set to 0 to turn off background refresh."
-                                    />
-                                </div>
-                            </section>
-                        </TabsContent>
-                        <TabsContent value="template" className="settings-content">
-                            <section className="settings-section" aria-label="Entry template">
-                                <div className="settings-section-heading">
-                                    <h3>Entry template</h3>
-                                </div>
-                                <p className="settings-hint">Used for new entries. Existing writing stays as it is.</p>
-                                <div className="settings-template">
-                                    <header className="settings-template-header">
-                                        <div className="settings-template-history">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                aria-label="Undo template edit"
-                                                disabled={!templateHistory.canUndo}
-                                                onClick={() => templateEditor.current?.undo()}
-                                            >
-                                                <ArrowCounterClockwiseIcon aria-hidden="true" />
+                                                Export backup
                                             </Button>
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                aria-label="Redo template edit"
-                                                disabled={!templateHistory.canRedo}
-                                                onClick={() => templateEditor.current?.redo()}
-                                            >
-                                                <ArrowClockwiseIcon aria-hidden="true" />
-                                            </Button>
-                                        </div>
-                                        <span>
-                                            {templateWords} {templateWords === 1 ? 'word' : 'words'}
-                                        </span>
-                                    </header>
-                                    <div className="settings-template-body">
-                                        <Editor
-                                            ref={templateEditor}
-                                            onHistoryChange={setTemplateHistory}
-                                            label="Entry template"
-                                            value={settings.template}
-                                            onChange={(template) =>
-                                                setSettings((current) => ({ ...current, template }))
-                                            }
-                                        />
-                                    </div>
-                                </div>
-                            </section>
-                        </TabsContent>
-                        <TabsContent value="backup" className="settings-content">
-                            <section className="settings-section" aria-label="Journal backup">
-                                <h3>Journal backup</h3>
-                                <p className="settings-hint">
-                                    Includes writing and tracking. Excludes credentials and repository files.
-                                </p>
-                                <div className="settings-actions">
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        disabled={!!busy}
-                                        loading={busy === 'export'}
-                                        onClick={() =>
-                                            action('export', async () => {
-                                                await invoke({ type: 'export' })
-                                            })
-                                        }
-                                    >
-                                        Export backup
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        disabled={!!busy}
-                                        loading={busy === 'import'}
-                                        onClick={() =>
-                                            action('import', async () => {
-                                                const result = await invoke({ type: 'import' })
-                                                if (result.message === 'Backup imported.') {
-                                                    setSettings(result.state.settings)
-                                                    setRepositories(result.state.repositories)
-                                                    setStatus(result.message)
+                                                disabled={!!busy}
+                                                loading={busy === 'import'}
+                                                onClick={() =>
+                                                    action('import', async () => {
+                                                        const result = await invoke({ type: 'import' })
+                                                        if (result.message === 'Backup imported.') {
+                                                            setSettings(result.state.settings)
+                                                            setRepositories(result.state.repositories)
+                                                            setStatus(result.message)
+                                                        }
+                                                    })
                                                 }
-                                            })
-                                        }
-                                    >
-                                        Import backup
-                                    </Button>
-                                </div>
-                                <p className="settings-hint">Import replaces this device’s journal.</p>
-                            </section>
-                        </TabsContent>
-                    </ScrollArea>
-                </Tabs>
-                <footer className="settings-footer">
-                    <div className="settings-feedback">
-                        {error ? (
-                            <Alert tone="danger" title="Settings could not be updated">
-                                {error}
-                            </Alert>
-                        ) : (
-                            <p role="status">{status || 'Changes apply when saved.'}</p>
-                        )}
-                    </div>
-                    <Button disabled={!!busy || !!device} loading={busy === 'save'} onClick={save}>
-                        Save settings
-                    </Button>
-                </footer>
+                                            >
+                                                Import backup
+                                            </Button>
+                                        </div>
+                                        <p className="settings-hint">Import replaces this device’s journal.</p>
+                                    </section>
+                                </TabsContent>
+                            </ScrollArea>
+                        </Tabs>
+                        <footer className="settings-footer">
+                            <div className="settings-feedback">
+                                {error ? (
+                                    <Alert tone="danger" title="Settings could not be updated">
+                                        {error}
+                                    </Alert>
+                                ) : (
+                                    <p role="status">{status || 'Changes apply when saved.'}</p>
+                                )}
+                            </div>
+                            <Button disabled={!!busy || !!device} loading={busy === 'save'} onClick={save}>
+                                Save settings
+                            </Button>
+                        </footer>
+                    </>
+                )}
             </DialogContent>
             <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
                 <DialogContent

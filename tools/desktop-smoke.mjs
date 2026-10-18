@@ -68,14 +68,10 @@ app.on('browser-window-created', (_, window) => {
                 Array.from(document.querySelectorAll('.settings button')).find(button => button.textContent.includes('Add repositories from folder')).click()
                 await new Promise(resolve=>setTimeout(resolve,300))
                 const importWaitsForSelection=document.querySelector('.settings').textContent.includes('Waiting for folder selection')
-                const importButton=Array.from(document.querySelectorAll('.settings button')).find(button=>button.textContent.includes('Waiting for folder selection'))
-                const importPhase=Array.from(importButton.querySelectorAll('span')).find(span=>span.textContent.includes('Waiting for folder selection')&&span.children.length===0)
-                let importLabelVisible=!!importPhase
-                // Assert the loading style too: Chromium may pause CSS transitions in this hidden window.
-                if (importButton.querySelector('[class*="loadingLabel"]')) importLabelVisible=false
-                for (let parent=importPhase?.parentElement;parent&&parent!==importButton;parent=parent.parentElement)
-                    if (Number(getComputedStyle(parent).opacity)<0.9) importLabelVisible=false
-                if (!importLabelVisible) throw new Error('Repository import label is hidden behind the loading spinner')
+                const importLabelVisible=!!document.querySelector('.repository-import-wait') && getComputedStyle(document.querySelector('.repository-import-wait')).visibility==='visible'
+                for (let attempt=0;attempt<30&&!document.querySelector('.repository-import-row');attempt++) await new Promise(resolve=>setTimeout(resolve,100))
+                if ((await window.journal.invoke({type:'state'})).state.repositories.length) throw new Error('Scan imported repositories before confirmation')
+                Array.from(document.querySelectorAll('.repository-import-footer button')).find(button=>button.textContent==='Import 2 repositories').click()
                 for (let attempt=0;attempt<30;attempt++) {
                     await new Promise(resolve => setTimeout(resolve,100))
                     if ((await window.journal.invoke({type:'state'})).state.repositories.length===2) break
