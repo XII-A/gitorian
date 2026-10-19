@@ -1,3 +1,11 @@
+## Changes in v0.2.0
+
+- Hub writing now creates or resumes a draft and focuses the journal body. Starting an entry from the workspace also focuses the editor. (#19)
+- Imported repositories load activity even when an earlier scan is still running. (#19)
+- Hub scrolling uses the shared Arc scroll area. Calendar selection and month navigation retain their motion with shorter timing, immediate keyboard changes, and reliable dismissal/reopening. (#19)
+- Selected activity rows have clearer persistent cues, filled nodes and chevrons, and no doubled timeline ring. (#20)
+- Pull request description tables have rounded frames, muted headers, alternating rows, and improved spacing. (#21)
+
 ## Downloads and support
 
 This release candidate targets **Windows 10/11 x64**. Download the `windows-x64-setup.exe` installer and `SHA256SUMS` attached to this release. Git must be installed and available on `PATH` to import local repositories.
