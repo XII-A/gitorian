@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+
+const run = promisify(execFile)
 
 // Exercise the real main/preload bridge against disposable journal data.
 app.setPath('userData', mkdtempSync(join(tmpdir(), 'weekly-j-window-chrome-')))
@@ -45,6 +49,24 @@ app.on('browser-window-created', (_, window) => {
                     })
             }
             const barY = () => evaluate(`document.querySelector('.window-title-bar').getBoundingClientRect().y`)
+            /** @param {number} x @param {number} y */
+            const nativeHit = async (x, y) => {
+                const bounds = window.getContentBounds()
+                const point = screen.dipToScreenPoint({ x: Math.round(bounds.x + x), y: Math.round(bounds.y + y) })
+                const { stdout } = await run(
+                    'powershell.exe',
+                    [
+                        '-NoProfile',
+                        '-File',
+                        resolve('tools/windows-hit-test.ps1'),
+                        String(window.getNativeWindowHandle().readBigUInt64LE()),
+                        String(point.x),
+                        String(point.y)
+                    ],
+                    { windowsHide: true }
+                )
+                return Number(stdout.trim())
+            }
             const expectBar = async (visible, message) => {
                 for (let attempt = 0; attempt < 20; attempt++) {
                     const y = await barY()
@@ -131,13 +153,15 @@ app.on('browser-window-created', (_, window) => {
             await evaluate(`document.querySelector('[aria-label="Minimize window"]').focus()`)
             await pause(250)
             assert.equal(await barY(), 0, 'Keyboard focus did not reveal the controls')
+            assert.equal(await nativeHit(300, 30), 2, 'Visible title bar lost its native drag region')
             await evaluate(`document.activeElement.blur()`)
             await pause(250)
             assert.ok((await barY()) <= -43, 'Title bar stayed pinned after keyboard focus left')
             assert.equal(
                 await evaluate(`getComputedStyle(document.querySelector('.window-title-bar-drag')).webkitAppRegion`),
-                'drag'
+                'no-drag'
             )
+            assert.equal(await nativeHit(300, 22), 1, 'Hidden title bar retained its native drag region')
             await evaluate(`document.querySelector('[aria-label="Maximize window"]').click()`)
             await pause(300)
             assert.ok(window.isMaximized(), 'Maximize IPC failed')
@@ -198,9 +222,20 @@ app.on('browser-window-created', (_, window) => {
                     await move(window.getContentBounds().width - 24, 8, false)
                     await pause(250)
                     await expectBar(true, 'Breadcrumb exclusion disabled unrelated window controls')
+                    // Resize with the bar open, then return to navigation. The
+                    // DOM can report Hub while Windows still reports HTCAPTION.
+                    window.setContentSize(width + 20, 800)
+                    await pause(100)
+                    window.setContentSize(width, 800)
+                    await pause(100)
                     await move(crumb.x * zoom, crumb.y * zoom, false)
                     await pause(250)
                     await expectBar(false, 'Returning to breadcrumb kept window chrome open')
+                    assert.equal(
+                        await nativeHit(crumb.x * zoom, crumb.y * zoom),
+                        1,
+                        `Hidden title bar left a native drag region over Hub at ${width}px / ${zoom}x`
+                    )
                     assert.ok(
                         await evaluate(
                             `!!document.elementFromPoint(${crumb.x}, ${crumb.y})?.closest('[aria-label="Journal breadcrumb"]')`
