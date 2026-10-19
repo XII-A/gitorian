@@ -20,6 +20,7 @@ import { Tooltip } from './components/arc/tooltip/tooltip'
 import { EntryHistory } from './EntryHistory'
 import { useActivityRefresh } from './use-activity-refresh'
 import { useWeekHistory } from './use-week-history'
+import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 
 const dateValue = (value: string) => new Date(`${value}T12:00:00`)
 const dateKey = (date: Date) =>
@@ -161,173 +162,182 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
         </div>
     )
     return (
-        <main className="weekly-hub hub-thread">
-            <a className="hub-skip" href="#hub-content">
-                Skip to weekly overview
-            </a>
-            <div className="hub-atmosphere" aria-hidden="true">
-                <img src={landscape} alt="" />
-            </div>
-            <nav className="hub-topbar" aria-label="Date range and journal controls">
-                <div className="hub-date-controls">
-                    <DateRangePicker
-                        label="Week"
-                        weekStartsOn={state.settings.weekStart}
-                        value={{ start: dateValue(start), end: dateValue(end) }}
-                        fixedRangeDays={7}
-                        normalizeStart={(date) => dateValue(journalWeek(dateKey(date), state.settings.weekStart))}
-                        onChange={(range) => setStart(dateKey(range.start))}
-                        presets={[0, 1, 2, 3, 4].map((weeksAgo) => ({
-                            label:
-                                weeksAgo === 0 ? 'This week' : weeksAgo === 1 ? 'Last week' : `${weeksAgo} weeks ago`,
-                            range: () => ({
-                                start: dateValue(shiftWeek(currentWeek, -weeksAgo)),
-                                end: dateValue(offsetDay(shiftWeek(currentWeek, -weeksAgo), 6))
-                            })
-                        }))}
-                    />
+        <ScrollArea className="hub-scroll" label="Weekly overview" fade={0}>
+            <main className="weekly-hub hub-thread">
+                <a className="hub-skip" href="#hub-content">
+                    Skip to weekly overview
+                </a>
+                <div className="hub-atmosphere" aria-hidden="true">
+                    <img src={landscape} alt="" />
                 </div>
-                <div className="hub-utilities">
-                    <Tooltip content="Open journal" side="bottom">
-                        <Button variant="ghost" size="sm" onClick={() => onWrite(start)} aria-label="Open journal">
-                            <BookOpen size={17} aria-hidden="true" />
-                        </Button>
-                    </Tooltip>
-                    <EntryHistory state={state} onWrite={(week) => onWrite(week || currentWeek)} />
-                    <Tooltip content="Refresh activity" side="bottom">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            loading={busy || loadingWeek}
-                            onClick={() => void refresh()}
-                            aria-label="Refresh activity"
-                        >
-                            <RefreshCw size={16} aria-hidden="true" />
-                        </Button>
-                    </Tooltip>
-                    {sourceProblems(state).length > 0 && (
-                        <Tooltip content="Activity sources" side="bottom">
+                <nav className="hub-topbar" aria-label="Date range and journal controls">
+                    <div className="hub-date-controls">
+                        <DateRangePicker
+                            label="Week"
+                            weekStartsOn={state.settings.weekStart}
+                            value={{ start: dateValue(start), end: dateValue(end) }}
+                            fixedRangeDays={7}
+                            normalizeStart={(date) => dateValue(journalWeek(dateKey(date), state.settings.weekStart))}
+                            onChange={(range) => setStart(dateKey(range.start))}
+                            presets={[0, 1, 2, 3, 4].map((weeksAgo) => ({
+                                label:
+                                    weeksAgo === 0
+                                        ? 'This week'
+                                        : weeksAgo === 1
+                                          ? 'Last week'
+                                          : `${weeksAgo} weeks ago`,
+                                range: () => ({
+                                    start: dateValue(shiftWeek(currentWeek, -weeksAgo)),
+                                    end: dateValue(offsetDay(shiftWeek(currentWeek, -weeksAgo), 6))
+                                })
+                            }))}
+                        />
+                    </div>
+                    <div className="hub-utilities">
+                        <Tooltip content="Open journal" side="bottom">
+                            <Button variant="ghost" size="sm" onClick={() => onWrite(start)} aria-label="Open journal">
+                                <BookOpen size={17} aria-hidden="true" />
+                            </Button>
+                        </Tooltip>
+                        <EntryHistory state={state} onWrite={(week) => onWrite(week || currentWeek)} />
+                        <Tooltip content="Refresh activity" side="bottom">
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                data-source-status
-                                onClick={onSources}
-                                aria-label="Activity sources"
+                                loading={busy || loadingWeek}
+                                onClick={() => void refresh()}
+                                aria-label="Refresh activity"
                             >
-                                <StackIcon size={18} weight="bold" aria-hidden="true" />
+                                <RefreshCw size={16} aria-hidden="true" />
                             </Button>
                         </Tooltip>
+                        {sourceProblems(state).length > 0 && (
+                            <Tooltip content="Activity sources" side="bottom">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    data-source-status
+                                    onClick={onSources}
+                                    aria-label="Activity sources"
+                                >
+                                    <StackIcon size={18} weight="bold" aria-hidden="true" />
+                                </Button>
+                            </Tooltip>
+                        )}
+                        <Tooltip content="Open settings" side="bottom">
+                            <Button variant="ghost" size="sm" onClick={onSettings} aria-label="Open settings">
+                                <Settings2 size={17} aria-hidden="true" />
+                            </Button>
+                        </Tooltip>
+                    </div>
+                </nav>
+                <div className="hub-content" id="hub-content">
+                    {error && (
+                        <Alert tone="danger" title="Activity could not be refreshed">
+                            <p>{readableError(error)}</p>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                loading={busy || loadingWeek}
+                                onClick={() => void refresh()}
+                            >
+                                Refresh activity
+                            </Button>
+                        </Alert>
                     )}
-                    <Tooltip content="Open settings" side="bottom">
-                        <Button variant="ghost" size="sm" onClick={onSettings} aria-label="Open settings">
-                            <Settings2 size={17} aria-hidden="true" />
-                        </Button>
-                    </Tooltip>
-                </div>
-            </nav>
-            <div className="hub-content" id="hub-content">
-                {error && (
-                    <Alert tone="danger" title="Activity could not be refreshed">
-                        <p>{readableError(error)}</p>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            loading={busy || loadingWeek}
-                            onClick={() => void refresh()}
-                        >
-                            Refresh activity
-                        </Button>
-                    </Alert>
-                )}
-                <header className="hub-hero">
-                    <p className="hub-period">{period}</p>
-                    <h1>Weekly overview</h1>
-                    <p className="hub-hero-description">
-                        Review your activity, then capture progress, decisions, and anything you want to follow up on.
-                    </p>
-                    <div className="hub-hero-action">
-                        <Button onClick={() => onWrite(start)}>Write this week’s entry →</Button>
-                    </div>
-                </header>
+                    <header className="hub-hero">
+                        <p className="hub-period">{period}</p>
+                        <h1>Weekly overview</h1>
+                        <p className="hub-hero-description">
+                            Review your activity, then capture progress, decisions, and anything you want to follow up
+                            on.
+                        </p>
+                        <div className="hub-hero-action">
+                            <Button onClick={() => onWrite(start)}>Write this week’s entry →</Button>
+                        </div>
+                    </header>
 
-                <>
-                    <div className="hub-thread-summary">
-                        {stats}
-                        {chart}
-                    </div>
-                    <div className="hub-thread-layout">
-                        <section id="hub-activity" className="hub-timeline">
-                            <div className="hub-section-heading">
-                                <h2>Activity this week</h2>
-                            </div>
-                            {filters}
-                            {visible.length ? (
-                                <ActivityHover>
-                                    {[
-                                        ...new Set(
-                                            visible.map((item) =>
-                                                localDate(new Date(item.date), state.settings.timezone)
+                    <>
+                        <div className="hub-thread-summary">
+                            {stats}
+                            {chart}
+                        </div>
+                        <div className="hub-thread-layout">
+                            <section id="hub-activity" className="hub-timeline">
+                                <div className="hub-section-heading">
+                                    <h2>Activity this week</h2>
+                                </div>
+                                {filters}
+                                {visible.length ? (
+                                    <ActivityHover>
+                                        {[
+                                            ...new Set(
+                                                visible.map((item) =>
+                                                    localDate(new Date(item.date), state.settings.timezone)
+                                                )
                                             )
-                                        )
-                                    ].map((day) => (
-                                        <section className="hub-day" key={day}>
-                                            <div className="hub-day-date">
-                                                <strong>{formatDate(day, { weekday: 'long' })}</strong>
-                                                <span>{formatDate(day)}</span>
-                                            </div>
-                                            <div className="hub-day-work activity-row-list">
-                                                {visible
-                                                    .filter(
-                                                        (item) =>
-                                                            localDate(new Date(item.date), state.settings.timezone) ===
-                                                            day
-                                                    )
-                                                    .map(row)}
-                                            </div>
-                                        </section>
-                                    ))}
-                                </ActivityHover>
-                            ) : (
-                                empty
-                            )}
-                        </section>
-                        <aside>
-                            <section className="hub-project-summary">
-                                <h2>Activity by repository</h2>
-                                {repos.length ? (
-                                    repos.map((repo) => (
-                                        <div className="hub-project-line" key={repo.id}>
-                                            <GitBranch size={15} aria-hidden="true" />
-                                            <span>{repo.name}</span>
-                                            <strong>
-                                                {items.filter((item) => item.repositoryId === repo.id).length}
-                                            </strong>
-                                        </div>
-                                    ))
+                                        ].map((day) => (
+                                            <section className="hub-day" key={day}>
+                                                <div className="hub-day-date">
+                                                    <strong>{formatDate(day, { weekday: 'long' })}</strong>
+                                                    <span>{formatDate(day)}</span>
+                                                </div>
+                                                <div className="hub-day-work activity-row-list">
+                                                    {visible
+                                                        .filter(
+                                                            (item) =>
+                                                                localDate(
+                                                                    new Date(item.date),
+                                                                    state.settings.timezone
+                                                                ) === day
+                                                        )
+                                                        .map(row)}
+                                                </div>
+                                            </section>
+                                        ))}
+                                    </ActivityHover>
                                 ) : (
-                                    <p>
-                                        {state.repositories.some((repo) => !repo.removed)
-                                            ? 'No repository activity loaded for this week.'
-                                            : 'Connect a repository to load its activity.'}
-                                    </p>
+                                    empty
                                 )}
                             </section>
-                        </aside>
-                    </div>
-                </>
-                <footer className="hub-footer">
-                    <span>
-                        <Check size={13} aria-hidden="true" />
-                        {state.lastRefreshed
-                            ? `Updated ${new Date(state.lastRefreshed).toLocaleTimeString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
-                            : 'Your local journal'}
-                    </span>
-                </footer>
-            </div>
-            <div className="hub-sr-only" role="status">
-                {visible.length} activities from {period}
-            </div>
-            <HubActivityDialog ref={detailDialog} state={state} onActivity={onActivity} />
-        </main>
+                            <aside>
+                                <section className="hub-project-summary">
+                                    <h2>Activity by repository</h2>
+                                    {repos.length ? (
+                                        repos.map((repo) => (
+                                            <div className="hub-project-line" key={repo.id}>
+                                                <GitBranch size={15} aria-hidden="true" />
+                                                <span>{repo.name}</span>
+                                                <strong>
+                                                    {items.filter((item) => item.repositoryId === repo.id).length}
+                                                </strong>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <p>
+                                            {state.repositories.some((repo) => !repo.removed)
+                                                ? 'No repository activity loaded for this week.'
+                                                : 'Connect a repository to load its activity.'}
+                                        </p>
+                                    )}
+                                </section>
+                            </aside>
+                        </div>
+                    </>
+                    <footer className="hub-footer">
+                        <span>
+                            <Check size={13} aria-hidden="true" />
+                            {state.lastRefreshed
+                                ? `Updated ${new Date(state.lastRefreshed).toLocaleTimeString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                                : 'Your local journal'}
+                        </span>
+                    </footer>
+                </div>
+                <div className="hub-sr-only" role="status">
+                    {visible.length} activities from {period}
+                </div>
+                <HubActivityDialog ref={detailDialog} state={state} onActivity={onActivity} />
+            </main>
+        </ScrollArea>
     )
 }

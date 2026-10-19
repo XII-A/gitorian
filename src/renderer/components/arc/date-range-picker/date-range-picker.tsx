@@ -152,9 +152,8 @@ const physical = (visualDuration: number, bounce: number): Transition => {
 }
 const GROW = physical(0.48, 0.12),
     SHRINK = physical(0.38, 0),
-    STRETCH = physical(0.3, 0.04),
-    GLIDE = physical(0.3, 0.1),
-    SLIDE = physical(0.4, 0.06)
+    STRETCH = physical(motionTokens.duration.standard, 0),
+    GLIDE = physical(motionTokens.duration.standard, 0)
 const TRIGGER_RADIUS = 18,
     PANEL_RADIUS = 26,
     WIDE_CELL = 36,
@@ -162,11 +161,16 @@ const TRIGGER_RADIUS = 18,
     EDGE = 8
 
 const roll: Variants = {
-    enter: (direction: number) => ({ opacity: 0, y: `${direction * 0.45}em`, filter: `blur(${blur.subtle}px)` }),
-    center: { opacity: 1, y: '0em', filter: 'blur(0px)', transition: { duration: 0.26, ease: enterEase } },
+    enter: (direction: number) => ({ opacity: 0, y: `${direction * 0.25}em`, filter: `blur(${blur.subtle}px)` }),
+    center: {
+        opacity: 1,
+        y: '0em',
+        filter: 'blur(0px)',
+        transition: { duration: motionTokens.duration.standard, ease: enterEase }
+    },
     exit: (direction: number) => ({
         opacity: 0,
-        y: `${direction * -0.45}em`,
+        y: `${direction * -0.25}em`,
         filter: `blur(${blur.subtle}px)`,
         transition: { duration: 0.14, ease: standardEase }
     })
@@ -179,7 +183,12 @@ const fade: Variants = {
 /** Panel content arrives just behind the growing surface and leaves ahead of it. */
 const faceIn: Variants = {
     hidden: { opacity: 0, y: -4, filter: `blur(${blur.soft}px)` },
-    shown: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.26, ease: enterEase, delay: 0.07 } },
+    shown: {
+        opacity: 1,
+        y: 0,
+        filter: 'blur(0px)',
+        transition: { duration: motionTokens.duration.standard, ease: enterEase, delay: 0.07 }
+    },
     gone: { opacity: 0, y: -2, filter: `blur(${blur.soft}px)`, transition: { duration: 0.12, ease: standardEase } }
 }
 const faceFade: Variants = {
@@ -187,30 +196,6 @@ const faceFade: Variants = {
     shown: { opacity: 1, transition: { duration: 0.12 } },
     gone: { opacity: 0, transition: { duration: 0.08 } }
 }
-const slide: Variants = {
-    enter: (direction: number) => ({ opacity: 0, x: direction * 48, filter: `blur(${blur.soft}px)` }),
-    center: {
-        opacity: 1,
-        x: 0,
-        filter: 'blur(0px)',
-        transition: {
-            x: SLIDE,
-            opacity: { duration: 0.22, ease: enterEase },
-            filter: { duration: 0.24, ease: enterEase }
-        }
-    },
-    exit: (direction: number) => ({
-        opacity: 0,
-        x: direction * -36,
-        filter: `blur(${blur.soft}px)`,
-        transition: {
-            x: SLIDE,
-            opacity: { duration: 0.14, ease: standardEase },
-            filter: { duration: 0.14, ease: standardEase }
-        }
-    })
-}
-
 /** Words roll one by one: a later date rises from below, an earlier one drops from above; words that stay the same hold still. */
 function Rolling({ text, direction, reduced }: { text: string; direction: number; reduced: boolean }) {
     const words = text.split(/\s+/).filter(Boolean)
@@ -260,8 +245,7 @@ function Bar({ row, segment, reduced }: { row: number; segment: Segment; reduced
     const left = useMotionValue(segment?.left ?? 0),
         width = useMotionValue(segment?.width ?? 0),
         opacity = useMotionValue(segment ? 1 : 0)
-    const leftPct = useTransform(left, (value) => `${value}%`),
-        widthPct = useTransform(width, (value) => `${value}%`)
+    const transform = useTransform(() => `translateX(${left.get()}%) scaleX(${width.get() / 100})`)
     const wasEmpty = useRef(!segment)
     useLayoutEffect(() => {
         if (!segment) {
@@ -282,7 +266,14 @@ function Bar({ row, segment, reduced }: { row: number; segment: Segment; reduced
     return (
         <motion.span
             className={styles.bar}
-            style={{ left: leftPct, width: widthPct, opacity, top: `calc(${row} * var(--cell) + 3px)` }}
+            style={{
+                left: 0,
+                width: '100%',
+                transformOrigin: 'left',
+                transform,
+                opacity,
+                top: `calc(${row} * var(--cell) + 3px)`
+            }}
         />
     )
 }
@@ -292,14 +283,14 @@ function Thumb({ cell, reduced }: { cell: { row: number; col: number } | null; r
     const x = useMotionValue(cell?.col ?? 0),
         y = useMotionValue(cell?.row ?? 0),
         opacity = useMotionValue(cell ? 1 : 0),
-        scale = useMotionValue(cell ? 1 : 0.8)
+        scale = useMotionValue(cell ? 1 : 0.95)
     const transform = useTransform(() => `translate(${x.get() * 100}%, ${y.get() * 100}%) scale(${scale.get()})`)
     const hidden = useRef(!cell)
     useLayoutEffect(() => {
         if (!cell) {
             hidden.current = true
             animate(opacity, 0, { duration: reduced ? 0 : 0.12 })
-            animate(scale, 0.8, { duration: reduced ? 0 : 0.12 })
+            animate(scale, 0.95, { duration: reduced ? 0 : 0.12 })
             return
         }
         if (hidden.current || reduced) {
@@ -467,10 +458,34 @@ function Month({
     )
 }
 
-/** The visible months travel together; a leaving set turns inert so focus and queries only find the current one. */
-// popLayout needs the exiting month's DOM node so it can remove it from the layout during the slide.
-const Months = forwardRef<HTMLDivElement, { children: ReactNode; direction: number; reduced: boolean }>(function Months(
-    { children, direction, reduced },
+interface MonthNavigation {
+    direction: number
+    pointer: boolean
+    reduced: boolean
+}
+const monthSlide: Variants = {
+    enter: ({ direction, pointer, reduced }: MonthNavigation) => ({
+        opacity: pointer ? 0 : 1,
+        transform: pointer && !reduced ? `translateX(${direction * 24}px)` : 'translateX(0px)',
+        filter: pointer && !reduced ? `blur(${blur.subtle}px)` : 'blur(0px)'
+    }),
+    center: ({ pointer }: MonthNavigation) => ({
+        opacity: 1,
+        transform: 'translateX(0px)',
+        filter: 'blur(0px)',
+        transition: { duration: pointer ? motionTokens.duration.standard : 0, ease: enterEase }
+    }),
+    exit: ({ direction, pointer, reduced }: MonthNavigation) => ({
+        opacity: 0,
+        transform: pointer && !reduced ? `translateX(${direction * -24}px)` : 'translateX(0px)',
+        filter: pointer && !reduced ? `blur(${blur.subtle}px)` : 'blur(0px)',
+        transition: { duration: pointer ? motionTokens.duration.exit : 0, ease: enterEase }
+    })
+}
+
+// The departing calendar remains visual only; focus and selection belong to the current month.
+const Months = forwardRef<HTMLDivElement, { children: ReactNode; navigation: MonthNavigation }>(function Months(
+    { children, navigation },
     ref
 ) {
     const present = useIsPresent()
@@ -479,9 +494,10 @@ const Months = forwardRef<HTMLDivElement, { children: ReactNode; direction: numb
             ref={ref}
             className={styles.months}
             data-current={present || undefined}
+            aria-hidden={!present || undefined}
             inert={!present || undefined}
-            custom={direction}
-            variants={reduced ? fade : slide}
+            custom={navigation}
+            variants={monthSlide}
             initial="enter"
             animate="center"
             exit="exit"
@@ -508,7 +524,8 @@ export function DateRangePicker({
     fixedRangeDays,
     normalizeStart
 }: DateRangePickerProps) {
-    const reduced = useReducedFlag()
+    const [keyboardMotion, setKeyboardMotion] = useState(false)
+    const reduced = useReducedFlag() || keyboardMotion
     const today = useToday()
     const uid = useId()
     const [inner, setInner] = useState<DateRange | null>(defaultValue)
@@ -518,7 +535,7 @@ export function DateRangePicker({
     const [compact, setCompact] = useState(false)
     const [panelWidth, setPanelWidth] = useState(0)
     const [view, setView] = useState<Date>(() => monthStart(committed?.end ?? new Date(2000, 0, 1)))
-    const [direction, setDirection] = useState(1)
+    const [navigation, setNavigation] = useState({ direction: 1, pointer: false })
     const [draft, setDraft] = useState<DateRange | null>(committed)
     const [anchor, setAnchor] = useState<Date | null>(null)
     const [hover, setHover] = useState<Date | null>(null)
@@ -706,8 +723,9 @@ export function DateRangePicker({
         return single ? end : addMonths(end, -1)
     }
 
-    const openPanel = () => {
+    const openPanel = (pointer: boolean) => {
         if (!today) return
+        setKeyboardMotion(!pointer)
         const layout = measureLayout()
         setCompact(layout.single)
         setPanelWidth(layout.width)
@@ -715,7 +733,7 @@ export function DateRangePicker({
         setAnchor(null)
         setHover(null)
         setView(viewFor(committed, layout.single, today))
-        setDirection(0)
+        setNavigation({ direction: 0, pointer: false })
         setFocusKey(keyOf(committed?.start ?? today))
         pendingFocus.current = 'day'
         setOpen(true)
@@ -723,7 +741,7 @@ export function DateRangePicker({
 
     const close = useCallback((focus: boolean) => {
         if (focus) pendingFocus.current = 'trigger'
-        setDirection(0)
+        setNavigation({ direction: 0, pointer: false })
         setOpen(false)
         setAnchor(null)
         setHover(null)
@@ -777,10 +795,10 @@ export function DateRangePicker({
     }
 
     /* ---------- Month navigation and picking ---------- */
-    const goTo = (next: Date) => {
+    const goTo = (next: Date, pointer = true) => {
         const delta = monthDiff(next, view)
         if (!delta) return
-        setDirection(Math.sign(delta))
+        setNavigation({ direction: Math.sign(delta), pointer: pointer && !keyboardMotion })
         setView(next)
     }
 
@@ -846,8 +864,8 @@ export function DateRangePicker({
         pendingFocus.current = 'day'
         const first = view,
             last = addMonths(view, count - 1)
-        if (monthDiff(next, first) < 0) goTo(monthStart(next))
-        else if (monthDiff(next, last) > 0) goTo(addMonths(monthStart(next), -(count - 1)))
+        if (monthDiff(next, first) < 0) goTo(monthStart(next), false)
+        else if (monthDiff(next, last) > 0) goTo(addMonths(monthStart(next), -(count - 1)), false)
     }
 
     const onRailKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -874,6 +892,7 @@ export function DateRangePicker({
         gw = useMotionValue(0),
         gh = useMotionValue(0),
         go = useMotionValue(0)
+    const presetTransform = useTransform(() => `translate(${gx.get()}px, ${gy.get()}px)`)
     useLayoutEffect(() => {
         const rail = railRef.current
         const node = activePreset < 0 ? null : rail?.querySelector<HTMLElement>(`[data-preset="${activePreset}"]`)
@@ -890,8 +909,8 @@ export function DateRangePicker({
         } else {
             animate(gx, place[0], GLIDE)
             animate(gy, place[1], GLIDE)
-            animate(gw, place[2], GLIDE)
-            animate(gh, place[3], GLIDE)
+            gw.jump(place[2])
+            gh.jump(place[3])
         }
         animate(go, 1, { duration: reduced ? 0 : 0.16 })
         if (
@@ -934,6 +953,12 @@ export function DateRangePicker({
             style={{ width: rootWidth }}
             data-open={open || undefined}
             onKeyDown={onRootKey}
+            onKeyDownCapture={() => setKeyboardMotion(true)}
+            onPointerDownCapture={() => {
+                // Keep the closed trigger's label mounted through pointerdown/up.
+                // Switching its shared-layout branch here would cancel the native click.
+                if (open) setKeyboardMotion(false)
+            }}
             onBlur={onRootBlur}
         >
             {/* The trigger stays in place under the panel. Its icons fade, while the value itself flies to the panel footer and back. */}
@@ -947,7 +972,7 @@ export function DateRangePicker({
                 aria-label={`${label}: ${committedText}`}
                 disabled={!today}
                 inert={open || undefined}
-                onClick={openPanel}
+                onClick={(event) => openPanel(event.detail > 0)}
             >
                 <motion.span
                     className={styles.triggerIcon}
@@ -994,6 +1019,7 @@ export function DateRangePicker({
                             id={`${uid}-panel`}
                             className={styles.panel}
                             role="dialog"
+                            tabIndex={-1}
                             aria-label={label}
                             data-compact={compact || undefined}
                             style={
@@ -1021,7 +1047,7 @@ export function DateRangePicker({
                                 >
                                     <motion.span
                                         className={styles.railHighlight}
-                                        style={{ x: gx, y: gy, width: gw, height: gh, opacity: go }}
+                                        style={{ transform: presetTransform, width: gw, height: gh, opacity: go }}
                                         aria-hidden="true"
                                     />
                                     {presets.map((preset, index) => (
@@ -1049,7 +1075,7 @@ export function DateRangePicker({
                                         className={styles.navButton}
                                         data-side="prev"
                                         aria-label="Previous month"
-                                        onClick={() => goTo(addMonths(view, -1))}
+                                        onClick={(event) => goTo(addMonths(view, -1), event.detail > 0)}
                                         disabled={Boolean(minDate && monthDiff(view, minDate) <= 0)}
                                     >
                                         <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -1059,7 +1085,7 @@ export function DateRangePicker({
                                         className={styles.navButton}
                                         data-side="next"
                                         aria-label="Next month"
-                                        onClick={() => goTo(addMonths(view, 1))}
+                                        onClick={(event) => goTo(addMonths(view, 1), event.detail > 0)}
                                         disabled={Boolean(
                                             maxDate && monthDiff(addMonths(view, count - 1), maxDate) >= 0
                                         )}
@@ -1067,11 +1093,14 @@ export function DateRangePicker({
                                         <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
                                     </button>
                                     <div className={styles.viewport}>
-                                        <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+                                        <AnimatePresence
+                                            initial={false}
+                                            mode="popLayout"
+                                            custom={{ ...navigation, reduced }}
+                                        >
                                             <Months
                                                 key={`${keyOf(view)}-${count}`}
-                                                direction={direction}
-                                                reduced={reduced}
+                                                navigation={{ ...navigation, reduced }}
                                             >
                                                 {visible.map((month) => (
                                                     <Month

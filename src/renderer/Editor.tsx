@@ -84,6 +84,7 @@ export const Editor = memo(function Editor({
     onChange,
     onEdit,
     readOnly = false,
+    autoFocus = false,
     insertLink,
     ref,
     label,
@@ -94,6 +95,7 @@ export const Editor = memo(function Editor({
     onChange?: (body: JournalNode) => void
     onEdit?: (snapshot: EditorSnapshot) => void
     readOnly?: boolean
+    autoFocus?: boolean
     insertLink?: { url: string; title: string; nonce: number }
     ref?: Ref<EditorHandle>
     label?: string
@@ -238,6 +240,12 @@ export const Editor = memo(function Editor({
             onHistoryChange?.({ canUndo: updated.can().undo(), canRedo: updated.can().redo() }),
         onSelectionUpdate: ({ editor: updated }) => updateMenu(updated)
     })
+    const initiallyFocused = useRef(false)
+    useEffect(() => {
+        if (!autoFocus || !editor || readOnly || initiallyFocused.current) return
+        initiallyFocused.current = true
+        editor.commands.focus('end', { scrollIntoView: false })
+    }, [autoFocus, editor, readOnly])
     useImperativeHandle(
         ref,
         () => ({

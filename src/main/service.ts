@@ -313,7 +313,28 @@ export class JournalService {
         } = {}
     ): Promise<void> {
         if (this.closing) return
-        const key = `${options.repositoryId ?? '*'}:${options.source ?? '*'}:${!!options.resume}:${options.since ?? ''}:${!!options.missingOnly}:${this.store.state.settings.timezone}`
+        const state = this.store.state
+        // Import and settings changes can arrive while an earlier scan is running.
+        // Only coalesce callers whose requested source set and configuration match.
+        const sources = state.repositories
+            .filter(
+                (repository) => !repository.removed && (!options.repositoryId || repository.id === options.repositoryId)
+            )
+            .map((repository) => [
+                repository.id,
+                gitConfiguration(repository, state),
+                githubConfiguration(repository, state)
+            ])
+        const key = JSON.stringify([
+            options.repositoryId,
+            options.source,
+            !!options.resume,
+            options.since,
+            !!options.missingOnly,
+            state.settings.timezone,
+            state.restoreId,
+            sources
+        ])
         const existing = this.refreshes.get(key)
         if (existing) return existing
         const refresh = this.refreshSources(options).finally(() => {
