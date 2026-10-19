@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { DesktopBridge, RepositoryImportProgress } from '../shared/model'
 
 const bridge: DesktopBridge = {
@@ -6,6 +6,18 @@ const bridge: DesktopBridge = {
         ? {
               windowControls: {
                   action: (action) => ipcRenderer.invoke('journal:window', action),
+                  setHoverExclusion: (bounds) => {
+                      const zoom = webFrame.getZoomFactor()
+                      ipcRenderer.send(
+                          'journal:window-hover-exclusion',
+                          bounds && {
+                              x: bounds.x * zoom,
+                              y: bounds.y * zoom,
+                              width: bounds.width * zoom,
+                              height: bounds.height * zoom
+                          }
+                      )
+                  },
                   onHover: (listener) => {
                       const receive = (_event: Electron.IpcRendererEvent, hovered: boolean) => listener(hovered)
                       ipcRenderer.on('journal:window-hover', receive)

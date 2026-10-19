@@ -4,15 +4,21 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+
+const run = promisify(execFile)
 
 // Exercise the real main/preload bridge against disposable journal data.
 app.setPath('userData', mkdtempSync(join(tmpdir(), 'weekly-j-window-chrome-')))
+// Smoke windows stay behind the user's apps; keep their compositor ticking.
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 delete process.env.ELECTRON_RENDERER_URL
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
 setTimeout(() => {
     console.error('Window chrome smoke timed out')
     app.exit(1)
-}, 30000).unref()
+}, 60000).unref()
 let checking = false
 let cursor = { x: -100000, y: -100000 }
 app.on('browser-window-created', (_, window) => {
@@ -43,13 +49,50 @@ app.on('browser-window-created', (_, window) => {
                     })
             }
             const barY = () => evaluate(`document.querySelector('.window-title-bar').getBoundingClientRect().y`)
+            /** @param {number} x @param {number} y */
+            const nativeHit = async (x, y) => {
+                const bounds = window.getContentBounds()
+                const point = screen.dipToScreenPoint({ x: Math.round(bounds.x + x), y: Math.round(bounds.y + y) })
+                const { stdout } = await run(
+                    'powershell.exe',
+                    [
+                        '-NoProfile',
+                        '-File',
+                        resolve('tools/windows-hit-test.ps1'),
+                        String(window.getNativeWindowHandle().readBigUInt64LE()),
+                        String(point.x),
+                        String(point.y)
+                    ],
+                    { windowsHide: true }
+                )
+                return Number(stdout.trim())
+            }
+            const expectBar = async (visible, message) => {
+                for (let attempt = 0; attempt < 20; attempt++) {
+                    const y = await barY()
+                    if (visible ? y === 0 : y <= -43) return
+                    await pause(50)
+                }
+                assert.fail(
+                    `${message}: ${JSON.stringify(
+                        await evaluate(`({
+                    y: document.querySelector('.window-title-bar').getBoundingClientRect().y,
+                    revealed: document.querySelector('.window-chrome').dataset.revealed,
+                    width: innerWidth,
+                    hidden: document.hidden,
+                    transform: getComputedStyle(document.querySelector('.window-title-bar')).transform,
+                    animations: document.querySelector('.window-title-bar').getAnimations().map(a => ({time:a.currentTime,state:a.playState}))
+                })`)
+                    )}; cursor=${JSON.stringify(cursor)}; bounds=${JSON.stringify(window.getContentBounds())}`
+                )
+            }
             await move(300, 200)
             await pause(250)
             assert.ok((await barY()) <= -43, 'Title bar is not hidden at rest')
             for (const x of [20, 300, window.getContentBounds().width - 24]) {
                 await move(x, 8, false)
                 await pause(250)
-                assert.equal(await barY(), 0, `Native top-edge hover failed at x=${x}`)
+                await expectBar(true, `Native top-edge hover failed at x=${x}`)
                 await move(x, 30, false)
                 await pause(450)
                 assert.equal(await barY(), 0, 'Title bar disappeared over a native drag region')
@@ -110,13 +153,15 @@ app.on('browser-window-created', (_, window) => {
             await evaluate(`document.querySelector('[aria-label="Minimize window"]').focus()`)
             await pause(250)
             assert.equal(await barY(), 0, 'Keyboard focus did not reveal the controls')
+            assert.equal(await nativeHit(300, 30), 2, 'Visible title bar lost its native drag region')
             await evaluate(`document.activeElement.blur()`)
             await pause(250)
             assert.ok((await barY()) <= -43, 'Title bar stayed pinned after keyboard focus left')
             assert.equal(
                 await evaluate(`getComputedStyle(document.querySelector('.window-title-bar-drag')).webkitAppRegion`),
-                'drag'
+                'no-drag'
             )
+            assert.equal(await nativeHit(300, 22), 1, 'Hidden title bar retained its native drag region')
             await evaluate(`document.querySelector('[aria-label="Maximize window"]').click()`)
             await pause(300)
             assert.ok(window.isMaximized(), 'Maximize IPC failed')
@@ -145,6 +190,79 @@ app.on('browser-window-created', (_, window) => {
             await pause(100)
             assert.ok(popout.isDestroyed(), 'Close affected the wrong window')
             assert.equal(window.isDestroyed(), false)
+            await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+                features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }]
+            })
+            // Exercise the real workspace bounds/IPC path at both header layouts
+            // and at non-default page zoom. Top-edge approach over the breadcrumb
+            // must stay clear, while the rest of the title bar remains usable.
+            window.setMinimumSize(600, 640)
+            for (const width of [1560, 1000]) {
+                window.setContentSize(width, 800)
+                for (const zoom of [1, 1.25]) {
+                    window.webContents.setZoomFactor(zoom)
+                    await window.loadFile(resolve('out/renderer/index.html'), {
+                        search: '?workspace&data=sample&week=2026-10-12'
+                    })
+                    for (let attempt = 0; attempt < 50; attempt++) {
+                        if (await evaluate(`!!document.querySelector('[aria-label="Journal breadcrumb"] button')`))
+                            break
+                        await pause(100)
+                    }
+                    await pause(250)
+                    const crumb = await evaluate(`(() => {
+                        const r = document.querySelector('[aria-label="Journal breadcrumb"] button').getBoundingClientRect()
+                        return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+                    })()`)
+                    await move(300, 200, false)
+                    await pause(650)
+                    await move(crumb.x * zoom, 5, false)
+                    await pause(250)
+                    await expectBar(false, `Breadcrumb top-edge revealed chrome at ${width}px / ${zoom}x`)
+                    await move(window.getContentBounds().width - 24, 8, false)
+                    await pause(250)
+                    await expectBar(true, 'Breadcrumb exclusion disabled unrelated window controls')
+                    // Resize with the bar open, then return to navigation. The
+                    // DOM can report Hub while Windows still reports HTCAPTION.
+                    window.setContentSize(width + 20, 800)
+                    await pause(100)
+                    window.setContentSize(width, 800)
+                    await pause(100)
+                    await move(crumb.x * zoom, crumb.y * zoom, false)
+                    await pause(250)
+                    await expectBar(false, 'Returning to breadcrumb kept window chrome open')
+                    assert.equal(
+                        await nativeHit(crumb.x * zoom, crumb.y * zoom),
+                        1,
+                        `Hidden title bar left a native drag region over Hub at ${width}px / ${zoom}x`
+                    )
+                    assert.ok(
+                        await evaluate(
+                            `!!document.elementFromPoint(${crumb.x}, ${crumb.y})?.closest('[aria-label="Journal breadcrumb"]')`
+                        ),
+                        'Window chrome intercepts breadcrumb'
+                    )
+                    for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'])
+                        await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+                            type,
+                            x: crumb.x,
+                            y: crumb.y,
+                            button: type === 'mouseMoved' ? 'none' : 'left',
+                            clickCount: 1
+                        })
+                    await pause(250)
+                    assert.ok(
+                        await evaluate(`!document.querySelector('[aria-label="Journal breadcrumb"]')`),
+                        `Hub breadcrumb click failed at ${width}px / ${zoom}x`
+                    )
+                    await move(300, 200, false)
+                    await pause(650)
+                    await move(crumb.x * zoom, 5, false)
+                    await pause(250)
+                    await expectBar(true, 'Leaving workspace retained a stale breadcrumb exclusion')
+                    console.info(`Breadcrumb hover/click passed at ${width}px / ${zoom}x`)
+                }
+            }
             await evaluate(`window.journal.windowControls.action('minimize')`)
             assert.ok(window.isMinimized(), 'Minimize IPC failed')
             console.info(
