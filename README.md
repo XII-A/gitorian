@@ -6,7 +6,7 @@ A desktop journal for developers. Review your week’s Git commits, GitHub pull 
 
 Download installers from [GitHub Releases](https://github.com/XII-A/weekly-j/releases). There are no published releases yet; until an installer is available, use the development instructions below. GitHub’s automatically generated source archives are source code, not installers.
 
-The packaging configuration targets Windows (NSIS `.exe`), macOS (`.dmg`), and Linux (`.AppImage`). Availability and signing status depend on the assets attached to each release. This is an early app; back up your journal before trying an update.
+The release workflow builds **Windows 10/11 x64** NSIS installers and attaches `SHA256SUMS` to a draft release. Initial Windows installers are **unsigned**, which may cause browser or SmartScreen warnings. Verify the downloaded checksum before installing. macOS and Linux packaging remains available for development but is not included in the release workflow. This is an early app; back up your journal before trying an update.
 
 ## Getting started
 
@@ -49,7 +49,7 @@ Choose either a parent page or a database data source as the destination. Supply
 - Large diffs are limited (approximately 2 MB); individual GitHub detail lists above 3,000 records are rejected. Use the original repository or GitHub for complete evidence.
 - Notion conversion supports a subset of its content model; complex blocks may not round-trip exactly. Publishing can modify remote page content. Review uncertain publish results in Notion before retrying.
 - Backups are manual. There is no built-in synchronization of the local database across devices, and published entries are separate from unfinished local drafts.
-- There is no configured release workflow or automatic update mechanism. Installing a newer release is a manual step.
+- Tagged releases are built into drafts for installation verification before manual publication. There is no automatic update mechanism; installing a newer release is a manual step.
 
 ## Development
 
@@ -73,6 +73,34 @@ pnpm package      # Build an installer for the current platform into release/
 ```
 
 Build on the target operating system for the most predictable installer results. Packaging alone does not publish a GitHub Release. Review build output, signing, and installer behavior before uploading release assets.
+
+## Releasing and repository protection
+
+PRs and pushes to `main` run **CI checks** (typecheck, lint, formatting, tests, and production compilation) on Windows. The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, computes SHA-256, and uploads both to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
+
+After the release changes are merged into `main`, a maintainer creates a release candidate with:
+
+```sh
+git switch main
+git pull --ff-only
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Download the installer and `SHA256SUMS` from the draft and follow its verification checklist on a test account or machine. Confirm the hash with `Get-FileHash -Algorithm SHA256`, install, and test repository import, writing persistence, backup restore, and any integrations being claimed as tested. Record results in the release notes, then publish that same draft manually. Draft downloads require repository write access. Do not grant write access just to share an installer. A failed candidate should be fixed with a new version/tag rather than replacing a tested asset or moving a tag.
+
+If an infrastructure or billing problem prevented the workflow from running, fix it and use **Actions → Draft Windows release → Run workflow** on `main`, supplying the existing tag. This retries the original tagged source without moving the tag. Existing releases are still protected from replacement. Private-repository Actions are subject to your account's included minutes, billing status, and spending limits; workflow files cannot override an account billing block.
+
+The only release-write token is GitHub's short-lived workflow token in the upload job. PR/build jobs have read-only repository permissions, checkout credentials are not persisted, and third-party actions are pinned to commit SHAs. Temporary installer artifacts expire after one day; Release attachments remain until removed. Code signing certificates are not configured. Add Windows signing before wider distribution; macOS support should include Developer ID signing and notarization.
+
+Public visibility permits reading/forking and submitting PRs, not merging. Keep collaborator write access limited to trusted maintainers. On GitHub Free, branch/tag rules cannot be enforced while this repository is private. After making it public, run the checked-in protection setup from PowerShell using an authenticated owner account:
+
+```powershell
+./.github/configure-protection.ps1          # Preview
+./.github/configure-protection.ps1 -Apply   # Activate and verify
+```
+
+The setup requires PRs, successful **CI checks** from GitHub Actions, an up-to-date branch, and resolved review threads for `main`; it blocks force pushes and deletion, including for administrators. Additional approving reviews are set to zero so a solo maintainer can merge their own PRs. Separate tag rules restrict creation of `v*` tags to administrators and block changing/deleting them. External contributors' workflow runs require approval. The script updates its named rulesets on reruns and does not change repository visibility. It requires PowerShell and the `gh` CLI, plus a successful CI run before the required check can be used normally.
 
 The app uses Electron, React, TypeScript, SQLite, and electron-vite. `src/main` owns Git, integrations, and persistence; `src/preload` exposes the desktop bridge; `src/renderer` contains the UI; `src/shared` contains schemas and shared formatting. See [frontend conventions](docs/frontend.md) for UI development and desktop smoke checks. Smoke tools write diagnostics and screenshots under ignored `.ai-docs`; keep personal profiles and credentials out of fixtures and screenshots.
 

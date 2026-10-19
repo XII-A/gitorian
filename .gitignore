@@ -3,6 +3,7 @@
 /out/
 /dist/
 /release/
+/release-assets/
 /coverage/
 *.log
 .env*
