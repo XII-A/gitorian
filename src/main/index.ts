@@ -15,6 +15,7 @@ import { GitHub } from './github'
 import { Notion } from './notion'
 import { JournalService } from './service'
 import { inspectRepository } from './git'
+import { watchWindowTitleBar } from './window-title-bar'
 
 const directory = fileURLToPath(new URL('.', import.meta.url))
 let mainWindow: BrowserWindow
@@ -40,6 +41,7 @@ function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
         minHeight: 640,
         backgroundColor: '#151715',
         show: false,
+        frame: process.platform !== 'win32',
         webPreferences: {
             preload: join(directory, '../preload/index.cjs'),
             sandbox: true,
@@ -47,6 +49,16 @@ function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
             nodeIntegration: false
         }
     })
+    if (process.platform === 'win32') {
+        window.removeMenu()
+        watchWindowTitleBar(window)
+    }
+    const sendWindowState = () => {
+        if (!window.webContents.isDestroyed())
+            window.webContents.send('journal:window-state', { maximized: window.isMaximized() })
+    }
+    window.on('maximize', sendWindowState)
+    window.on('unmaximize', sendWindowState)
     const contentsId = window.webContents.id
     if (reference) referenceWindows.add(contentsId)
     window.on('closed', () => {
@@ -78,6 +90,24 @@ async function folder(): Promise<string | undefined> {
     return result.canceled ? undefined : result.filePaths[0]
 }
 void app.whenReady().then(() => {
+    ipcMain.handle('journal:window', (event, input: unknown) => {
+        const action = z.enum(['state', 'minimize', 'toggleMaximize', 'close']).parse(input)
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window || event.senderFrame !== window.webContents.mainFrame) throw new Error('Unknown desktop window')
+        switch (action) {
+            case 'minimize':
+                window.minimize()
+                break
+            case 'toggleMaximize':
+                if (window.isMaximized()) window.unmaximize()
+                else window.maximize()
+                break
+            case 'close':
+                window.close()
+                return
+        }
+        return { maximized: window.isMaximized() }
+    })
     store = new Store(join(app.getPath('userData'), 'weekly-j.sqlite'))
     store.enableBackgroundWrites()
     const vault = new Vault(app.getPath('userData'))

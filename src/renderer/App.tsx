@@ -15,10 +15,12 @@ import { BackgroundNotifications } from './BackgroundNotifications'
 import { ToastStack, ToastStackProvider } from './components/arc/toast-stack/toast-stack'
 import { reconcileReply } from './activity-cache'
 import { expandReply, stateCursor } from '../shared/state-updates'
+import { WindowTitleBar } from './WindowTitleBar'
 
 export function App() {
     return (
         <ToastStackProvider>
+            <WindowTitleBar />
             <JournalApp />
             <ToastStack className="journal-notifications" />
         </ToastStackProvider>

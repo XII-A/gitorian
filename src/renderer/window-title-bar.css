@@ -1,0 +1,56 @@
+/* Caption controls use square native-window geometry rather than in-app buttons. */
+.window-chrome {
+    position: fixed;
+    inset: 0 0 auto;
+    height: 0;
+    z-index: 10000;
+    pointer-events: auto;
+}
+.window-title-bar {
+    display: flex;
+    height: 44px;
+    background: var(--surface);
+    color: var(--foreground);
+    border-bottom: 1px solid var(--border);
+    transform: translateY(-100%);
+    transition: transform var(--duration-fast) var(--ease-standard);
+    pointer-events: none;
+    user-select: none;
+}
+.window-chrome[data-revealed='true'] .window-title-bar {
+    transform: translateY(0);
+    pointer-events: auto;
+}
+.window-title-bar-drag {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    padding-inline: 16px;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    -webkit-app-region: drag;
+}
+.window-title-bar button {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    -webkit-app-region: no-drag;
+}
+.window-title-bar button:hover {
+    background: var(--surface-muted);
+}
+.window-title-bar .window-title-bar-close:hover {
+    background: var(--danger);
+    color: var(--background);
+}
+@media (prefers-reduced-motion: reduce) {
+    .window-title-bar {
+        transition: none;
+    }
+}

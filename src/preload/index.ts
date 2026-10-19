@@ -2,6 +2,24 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { DesktopBridge, RepositoryImportProgress } from '../shared/model'
 
 const bridge: DesktopBridge = {
+    ...(process.platform === 'win32'
+        ? {
+              windowControls: {
+                  action: (action) => ipcRenderer.invoke('journal:window', action),
+                  onHover: (listener) => {
+                      const receive = (_event: Electron.IpcRendererEvent, hovered: boolean) => listener(hovered)
+                      ipcRenderer.on('journal:window-hover', receive)
+                      return () => ipcRenderer.removeListener('journal:window-hover', receive)
+                  },
+                  onState: (listener) => {
+                      const receive = (_event: Electron.IpcRendererEvent, state: { maximized: boolean }) =>
+                          listener(state)
+                      ipcRenderer.on('journal:window-state', receive)
+                      return () => ipcRenderer.removeListener('journal:window-state', receive)
+                  }
+              } satisfies DesktopBridge['windowControls']
+          }
+        : {}),
     invoke: (command) => ipcRenderer.invoke('journal:command', command),
     updates: (command, base) => ipcRenderer.invoke('journal:updates', { command, base }),
     onRepositoryImportProgress: (listener) => {

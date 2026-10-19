@@ -349,6 +349,13 @@ export interface Reply {
     detailError?: string
 }
 export interface DesktopBridge {
+    windowControls?: {
+        action: (
+            action: 'state' | 'minimize' | 'toggleMaximize' | 'close'
+        ) => Promise<{ maximized: boolean } | undefined>
+        onState: (listener: (state: { maximized: boolean }) => void) => () => void
+        onHover: (listener: (hovered: boolean) => void) => () => void
+    }
     invoke: (command: Command) => Promise<Reply>
     updates?: (command: Command, base?: StateCursor) => Promise<UpdateReply>
     onRepositoryImportProgress?: (listener: (progress: RepositoryImportProgress) => void) => () => void
