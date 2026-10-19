@@ -723,8 +723,9 @@ export function DateRangePicker({
         return single ? end : addMonths(end, -1)
     }
 
-    const openPanel = () => {
+    const openPanel = (pointer: boolean) => {
         if (!today) return
+        setKeyboardMotion(!pointer)
         const layout = measureLayout()
         setCompact(layout.single)
         setPanelWidth(layout.width)
@@ -953,7 +954,11 @@ export function DateRangePicker({
             data-open={open || undefined}
             onKeyDown={onRootKey}
             onKeyDownCapture={() => setKeyboardMotion(true)}
-            onPointerDownCapture={() => setKeyboardMotion(false)}
+            onPointerDownCapture={() => {
+                // Keep the closed trigger's label mounted through pointerdown/up.
+                // Switching its shared-layout branch here would cancel the native click.
+                if (open) setKeyboardMotion(false)
+            }}
             onBlur={onRootBlur}
         >
             {/* The trigger stays in place under the panel. Its icons fade, while the value itself flies to the panel footer and back. */}
@@ -967,7 +972,7 @@ export function DateRangePicker({
                 aria-label={`${label}: ${committedText}`}
                 disabled={!today}
                 inert={open || undefined}
-                onClick={openPanel}
+                onClick={(event) => openPanel(event.detail > 0)}
             >
                 <motion.span
                     className={styles.triggerIcon}

@@ -63,8 +63,22 @@ app.whenReady().then(async () => {
         if (!before.length || !during.length || !after.length) throw new Error('Missing visible range endpoints')
         if (Math.abs(during[0].y - before[0].y) < 0.5 || Math.abs(during[0].y - after[0].y) < 0.5)
             throw new Error(`Week highlight did not animate: ${JSON.stringify({ before, during, after })}`)
+        window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+        window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+        await pause(400)
+        const trigger = await evaluate(`(()=>{
+            const node=document.querySelector('[aria-label^="Week:"]');
+            const rect=node.getBoundingClientRect();
+            if(node.getAttribute('aria-expanded')!=='false') throw new Error('Escape did not close the picker');
+            return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)};
+        })()`)
+        window.webContents.sendInputEvent({ type: 'mouseDown', ...trigger, button: 'left', clickCount: 1 })
+        window.webContents.sendInputEvent({ type: 'mouseUp', ...trigger, button: 'left', clickCount: 1 })
+        await pause(650)
+        if (!(await evaluate(`document.querySelector('[aria-label^="Week:"]').getAttribute('aria-expanded')==='true'`)))
+            throw new Error('Mouse reopen failed after selecting a week and canceling with Escape')
         await evaluate(
-            `document.querySelector('[aria-label="Next month"]').dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1}))`
+            `(()=>{const button=document.querySelector('[aria-label="Next month"]');button.focus();button.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1}));})()`
         )
         await pause(50)
         const months = await evaluate(
@@ -78,7 +92,16 @@ app.whenReady().then(async () => {
         )
         if (!dismissedOnOutsideFocus) throw new Error('Moving focus outside did not dismiss the picker')
         console.info(
-            JSON.stringify({ before, during, after, months, insideClicks: true, outsideFocus: true, passed: true })
+            JSON.stringify({
+                before,
+                during,
+                after,
+                months,
+                insideClicks: true,
+                outsideFocus: true,
+                escapeReopen: true,
+                passed: true
+            })
         )
         app.exit(0)
     } catch (error) {

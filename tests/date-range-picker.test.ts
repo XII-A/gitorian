@@ -49,7 +49,11 @@ async function picker() {
             })
         )
     })
-    await update(() => host.querySelector<HTMLButtonElement>('button')!.click())
+    await update(() =>
+        host
+            .querySelector<HTMLButtonElement>('button')!
+            .dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+    )
     return { host, onChange }
 }
 
@@ -105,4 +109,21 @@ it('keeps the departing month visual only while the current month stays interact
     expect(host.querySelector('[data-current]')?.textContent).toContain('October')
     await update(() => new Promise((resolve) => setTimeout(resolve, 400)))
     expect(host.querySelectorAll('[role="grid"]')).toHaveLength(1)
+})
+
+it('keeps the mouse click target mounted when reopening after Escape cancels a changed week', async () => {
+    const { host, onChange } = await picker()
+    await update(() => host.querySelector<HTMLButtonElement>('[data-date="2026-10-14"]')!.click())
+    await update(() =>
+        document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    )
+    const trigger = host.querySelector<HTMLButtonElement>('[aria-haspopup="dialog"]')!
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(onChange).not.toHaveBeenCalled()
+    const label = trigger.querySelector<HTMLElement>('[class*="value_"]')!
+    await update(() => label.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' })))
+    expect(label.isConnected).toBe(true)
+    await update(() => trigger.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(host.querySelector('[data-edge]')?.getAttribute('data-date')).toBe('2026-10-05')
 })
