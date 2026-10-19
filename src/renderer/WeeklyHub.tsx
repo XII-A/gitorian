@@ -1,7 +1,7 @@
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
-import { activityUpdating, actionableSources } from './background-work'
+import { sourceProblems } from './background-work'
 import { useRef, useState } from 'react'
 import { BookOpen, Check, GitBranch, GitCommitHorizontal, RefreshCw, Settings2 } from 'lucide-react'
 import { localDate, shiftWeek, weekOf } from '../shared/model'
@@ -19,6 +19,7 @@ import { offsetDay, rangeActivities, journalWeek } from './hub-model'
 import { Tooltip } from './components/arc/tooltip/tooltip'
 import { EntryHistory } from './EntryHistory'
 import { useActivityRefresh } from './use-activity-refresh'
+import { useWeekHistory } from './use-week-history'
 
 const dateValue = (value: string) => new Date(`${value}T12:00:00`)
 const dateKey = (date: Date) =>
@@ -45,6 +46,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
     const [tab, setTab] = useState<'all' | 'commit' | 'pr'>('all')
     const detailDialog = useRef<HubActivityDialogHandle>(null)
     const { refresh, refreshing: busy } = useActivityRefresh(run, start, end)
+    const loadingWeek = useWeekHistory(state, run, start)
     const items = rangeActivities(state, start, end)
     const commits = items.filter((item) => item.kind === 'commit')
     const prs = items.filter((item) => item.kind !== 'commit')
@@ -97,21 +99,25 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
             <h3>
                 {items.length
                     ? 'No matching activity'
-                    : state.repositories.some((repo) => !repo.removed)
-                      ? 'No activity loaded for this week'
-                      : 'No repositories connected'}
+                    : loadingWeek
+                      ? 'Loading activity for this week'
+                      : state.repositories.some((repo) => !repo.removed)
+                        ? 'No activity loaded for this week'
+                        : 'No repositories connected'}
             </h3>
             <p>
                 {items.length
                     ? 'Choose another activity filter to see your work.'
-                    : state.repositories.some((repo) => !repo.removed)
-                      ? 'No activity in this date range. Refresh your repositories or choose another range.'
-                      : 'Connect a repository to gather your commits and pull requests here.'}
+                    : loadingWeek
+                      ? 'Activity will appear here as your repositories finish loading.'
+                      : state.repositories.some((repo) => !repo.removed)
+                        ? 'No activity in this date range. Refresh your repositories or choose another range.'
+                        : 'Connect a repository to gather your commits and pull requests here.'}
             </p>
             <Button
                 variant="secondary"
                 size="sm"
-                loading={!items.length && (busy || activityUpdating(state))}
+                loading={!items.length && (busy || loadingWeek)}
                 onClick={() =>
                     items.length
                         ? (() => {
@@ -192,14 +198,14 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                         <Button
                             variant="ghost"
                             size="sm"
-                            loading={busy || activityUpdating(state)}
+                            loading={busy || loadingWeek}
                             onClick={() => void refresh()}
                             aria-label="Refresh activity"
                         >
                             <RefreshCw size={16} aria-hidden="true" />
                         </Button>
                     </Tooltip>
-                    {actionableSources(state).length > 0 && (
+                    {sourceProblems(state).length > 0 && (
                         <Tooltip content="Activity sources" side="bottom">
                             <Button
                                 variant="ghost"
@@ -226,7 +232,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                         <Button
                             variant="secondary"
                             size="sm"
-                            loading={busy || activityUpdating(state)}
+                            loading={busy || loadingWeek}
                             onClick={() => void refresh()}
                         >
                             Refresh activity

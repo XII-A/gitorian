@@ -286,7 +286,9 @@ export class GitHub {
                 const eligible = batch.filter(
                     (item) => item.kind === 'pr' || item.date.slice(0, 10) >= repository.trackingStart
                 )
-                if (scan.batch) await scan.batch(eligible)
+                // Keep all events from hydrated PRs in the local cache. Otherwise an
+                // unchanged version would hide older reviews/commits when history expands.
+                if (scan.batch) await scan.batch(batch)
                 else activities.push(...eligible)
                 if (scan.versions) scan.versions[String(summary.number)] = version
                 scan.checkpoint?.(page, false)

@@ -100,11 +100,19 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
                 ))
             ) : (
                 <div className="ws-activity-empty">
-                    <h3>{hasActivity ? 'No matching changes' : 'No activity loaded for this week'}</h3>
+                    <h3>
+                        {hasActivity
+                            ? 'No matching changes'
+                            : refreshing
+                              ? 'Loading activity for this week'
+                              : 'No activity loaded for this week'}
+                    </h3>
                     <p>
                         {hasActivity
                             ? 'Choose another project or clear the activity filters.'
-                            : 'Choose another week or refresh your repositories. You can write at any time.'}
+                            : refreshing
+                              ? 'Activity will appear here as your repositories finish loading. You can write at any time.'
+                              : 'Choose another week or refresh your repositories. You can write at any time.'}
                     </p>
                     <Button variant="secondary" size="sm" onClick={onEmptyAction} loading={!hasActivity && refreshing}>
                         {hasActivity ? 'Clear activity filters' : 'Refresh activity'}

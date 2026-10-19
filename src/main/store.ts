@@ -6,6 +6,7 @@ import { shareSnapshot } from '../shared/snapshot'
 import { recordCollections } from '../shared/state-updates'
 import { writeStore, type StoreWrite } from './store-writes'
 import { StoreWriter } from './store-writer-client'
+import type { GitHistory } from './git'
 
 export class Store {
     private readonly db: DatabaseSync
@@ -21,6 +22,8 @@ export class Store {
     private writeEpoch = 0
     private lastWrite: Promise<void> = Promise.resolve()
     private closing = false
+    private histories = new Map<string, GitHistory>()
+    private changedHistories = new Set<string>()
     constructor(private readonly path: string) {
         this.db = new DatabaseSync(path)
         try {
@@ -28,6 +31,7 @@ export class Store {
                 'PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)'
             )
             this.db.exec('CREATE TABLE IF NOT EXISTS patches (id TEXT PRIMARY KEY, content TEXT NOT NULL)')
+            this.db.exec('CREATE TABLE IF NOT EXISTS git_history (id TEXT PRIMARY KEY, json TEXT NOT NULL)')
             this.db.exec('CREATE TABLE IF NOT EXISTS state_parts (key TEXT PRIMARY KEY, json TEXT NOT NULL)')
             this.db.exec(
                 'CREATE TABLE IF NOT EXISTS state_records (collection TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(collection,id))'
@@ -99,6 +103,7 @@ export class Store {
             this.writeError = undefined
             this.writeEpoch++
             this.lastWrite = Promise.resolve()
+            for (const id of this.histories.keys()) this.changedHistories.add(id)
         }
         this.state.snapshotVersion = (this.state.snapshotVersion ?? 0) + 1
         const patches = new Map<string, string>([
@@ -118,6 +123,7 @@ export class Store {
             initialize: this.storageVersion !== 3 || reset,
             reset
         }
+        batch.gitHistory = [...this.changedHistories].map((id) => [id, JSON.stringify(this.histories.get(id))])
         for (const [key, value] of parts) {
             if ((recordCollections as readonly string[]).includes(key)) continue
             if (!this.persistedSnapshot || value !== this.persistedSnapshot[key as keyof State])
@@ -153,7 +159,23 @@ export class Store {
         this.partKeys = keys
         this.persistedSnapshot = metadata
         this.storageVersion = 3
+        this.changedHistories.clear()
         return metadata
+    }
+
+    gitHistory(id: string): GitHistory | undefined {
+        const cached = this.histories.get(id)
+        if (cached) return cached
+        const row = this.db.prepare('SELECT json FROM git_history WHERE id=?').get(id)
+        if (!row) return undefined
+        const history = JSON.parse(String(row.json)) as GitHistory
+        this.histories.set(id, history)
+        return history
+    }
+
+    cacheGitHistory(id: string, history: GitHistory): void {
+        this.histories.set(id, history)
+        this.changedHistories.add(id)
     }
 
     enableBackgroundWrites(file = new URL('./store-writer.js', import.meta.url)): void {

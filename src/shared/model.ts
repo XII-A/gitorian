@@ -157,6 +157,7 @@ export const stateSchema = z.object({
                 error: z.string().optional(),
                 retryAt: z.string().optional(),
                 since: z.string().optional(),
+                historySince: z.string().optional(),
                 windowEnd: z.string().optional(),
                 page: z.number().optional(),
                 versions: z.record(z.string(), z.string()).optional(),
@@ -275,6 +276,7 @@ export function inbox(state: State, week: string): Activity[] {
 }
 export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('state') }),
+    z.object({ type: z.literal('loadWeek'), since: z.iso.date() }),
     z.object({ type: z.literal('addRepository') }),
     z.object({ type: z.literal('addRepositories') }),
     z.object({ type: z.literal('importRepositories'), scanId: z.string(), paths: z.array(z.string()).min(1) }),

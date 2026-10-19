@@ -30,6 +30,7 @@ it('keeps main-thread timers responsive during a locked commit and flushes write
         db.exec('BEGIN IMMEDIATE')
         let flushed = false
         store.state.drafts[0].title = 'First pending save'
+        store.cacheGitHistory('fixture', { configuration: 'fixture', refs: {}, items: [store.state.activities[0]] })
         store.persist()
         store.state.drafts[0].title = 'Latest pending save'
         store.persist()
@@ -45,6 +46,7 @@ it('keeps main-thread timers responsive during a locked commit and flushes write
         await closing
         store = new Store(path)
         expect(store.state.drafts[0].title).toBe('Latest pending save')
+        expect(store.gitHistory('fixture')?.items[0].id).toBe(store.state.activities[0].id)
     } finally {
         if (db.isTransaction) db.exec('ROLLBACK')
         await store.shutdown()

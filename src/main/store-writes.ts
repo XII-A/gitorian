@@ -9,12 +9,19 @@ export interface StoreWrite {
     removePatches: string[]
     initialize: boolean
     reset?: boolean
+    gitHistory?: [string, string][]
 }
 
 export function writeStore(db: DatabaseSync, batch: StoreWrite): void {
     db.exec('BEGIN IMMEDIATE')
     try {
         if (batch.reset) db.exec('DELETE FROM state_parts; DELETE FROM state_records; DELETE FROM patches;')
+        if (batch.gitHistory?.length) {
+            const history = db.prepare(
+                'INSERT INTO git_history VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET json=excluded.json'
+            )
+            for (const row of batch.gitHistory) history.run(...row)
+        }
         const patch = db.prepare(
             'INSERT INTO patches VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET content=excluded.content'
         )

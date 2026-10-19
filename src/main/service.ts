@@ -12,10 +12,11 @@ import type { Notion } from './notion'
 import { forEachConcurrent } from './work-queue'
 import { filesFromDiff } from './diff-files'
 import { isCombinedDiff } from '../shared/diff-format'
+import { gitConfiguration, githubConfiguration } from '../shared/activity-history'
 
 export class JournalService {
-    private refreshing?: Promise<void>
-    private queuedRefreshes = new Map<string, Promise<void>>()
+    private refreshes = new Map<string, Promise<void>>()
+    private acquiring = new Map<string, Promise<void>>()
     private details = new Map<string, Promise<void>>()
     private importing = false
     private repositoryScan?: { id: string; paths: string[]; unreadable: string[] }
@@ -223,23 +224,32 @@ export class JournalService {
         return activity
     }
     private mergeActivity(incoming: Activity): void {
+        this.mergeActivities([incoming])
+    }
+    private mergeActivities(items: Activity[]): void {
         const state = this.store.state
-        const current = state.activities.find((item) => item.id === incoming.id)
-        if (!current) state.activities.push(incoming)
-        else
-            Object.assign(current, incoming, {
-                disposition: current.disposition,
-                deferUntil: current.deferUntil,
-                reason: current.reason,
-                explicit: current.explicit,
-                revision: incoming.revision ?? current.revision,
-                fingerprint: incoming.fingerprint ?? current.fingerprint,
-                deletedBranches: current.deletedBranches,
-                branches: [...new Set([...current.branches, ...incoming.branches])],
-                files: incoming.filesLoaded ? incoming.files : current.files,
-                filesLoaded:
-                    current.filesLoaded && (!incoming.sourceVersion || incoming.sourceVersion === current.sourceVersion)
-            })
+        const activities = new Map(state.activities.map((item) => [item.id, item]))
+        for (const incoming of items) {
+            const current = activities.get(incoming.id)
+            if (!current) {
+                state.activities.push(incoming)
+                activities.set(incoming.id, incoming)
+            } else
+                Object.assign(current, incoming, {
+                    disposition: current.disposition,
+                    deferUntil: current.deferUntil,
+                    reason: current.reason,
+                    explicit: current.explicit,
+                    revision: incoming.revision ?? current.revision,
+                    fingerprint: incoming.fingerprint ?? current.fingerprint,
+                    deletedBranches: current.deletedBranches,
+                    branches: [...new Set([...current.branches, ...incoming.branches])],
+                    files: incoming.filesLoaded ? incoming.files : current.files,
+                    filesLoaded:
+                        current.filesLoaded &&
+                        (!incoming.sourceVersion || incoming.sourceVersion === current.sourceVersion)
+                })
+        }
     }
     private async capture(activity: Activity, retainDiff = true, persist = true): Promise<string> {
         const state = this.store.state
@@ -282,56 +292,39 @@ export class JournalService {
         state.acquisition ??= {}
         return (state.acquisition[key] ??= { status: 'idle' })
     }
+    private async serializeSource(key: string, work: () => Promise<void>): Promise<void> {
+        const previous = this.acquiring.get(key)
+        const pending = previous ? previous.then(work, work) : work()
+        this.acquiring.set(key, pending)
+        try {
+            await pending
+        } finally {
+            if (this.acquiring.get(key) === pending) this.acquiring.delete(key)
+        }
+    }
     async refresh(
         options: {
             repositoryId?: string
             source?: 'git' | 'github' | 'notion'
             resume?: boolean
-            afterCurrent?: boolean
             since?: string
+            missingOnly?: boolean
         } = {}
     ): Promise<void> {
         if (this.closing) return
-        if (this.refreshing) {
-            if (!options.resume && !options.afterCurrent) return this.refreshing
-            const key = `${options.repositoryId ?? '*'}:${options.source ?? '*'}:${!!options.resume}:${options.since ?? ''}`
-            const queued = this.queuedRefreshes.get(key)
-            if (queued) return queued
-            const next = this.refreshing.then(
-                () => {
-                    this.queuedRefreshes.delete(key)
-                    return this.refresh(options)
-                },
-                (error: unknown) => {
-                    this.queuedRefreshes.delete(key)
-                    throw error
-                }
-            )
-            this.queuedRefreshes.set(key, next)
-            return next
-        }
-        this.refreshing = this.refreshSources(options).finally(() => {
-            this.refreshing = undefined
+        const key = `${options.repositoryId ?? '*'}:${options.source ?? '*'}:${!!options.resume}:${options.since ?? ''}:${!!options.missingOnly}`
+        const existing = this.refreshes.get(key)
+        if (existing) return existing
+        const refresh = this.refreshSources(options).finally(() => {
+            this.refreshes.delete(key)
         })
-        return this.refreshing
+        this.refreshes.set(key, refresh)
+        return refresh
     }
     async backfill(repositoryId: string, since: string): Promise<void> {
-        if (this.refreshing) await this.refreshing
         const repository = this.repository(repositoryId)
         if (since > repository.trackingStart) throw new Error('Choose a date before the current history start.')
-        repository.trackingStart = since
-        for (const source of ['git', 'github']) {
-            const status = this.status(`${source}:${repositoryId}`)
-            status.since = since
-            status.page = 1
-            status.refs = undefined
-            status.offset = undefined
-            status.excludedTips = undefined
-            status.windowEnd = undefined
-            status.lastSuccess = undefined
-        }
-        this.store.persist()
-        await this.refresh({ repositoryId, resume: true })
+        await this.refresh({ repositoryId, since, resume: true })
     }
     private async source(key: string, work: () => Promise<void>, resume = false): Promise<void> {
         const status = this.status(key)
@@ -360,6 +353,7 @@ export class JournalService {
         source?: 'git' | 'github' | 'notion'
         resume?: boolean
         since?: string
+        missingOnly?: boolean
     }): Promise<void> {
         const state = this.store.state
         const repositories = state.repositories.filter(
@@ -369,231 +363,265 @@ export class JournalService {
             for (const repository of repositories) {
                 if (options.since >= repository.trackingStart) continue
                 repository.trackingStart = options.since
-                // Both sources must restart their scan, including unchanged Git refs.
-                for (const source of ['git', 'github']) {
-                    const status = this.status(`${source}:${repository.id}`)
-                    status.since = options.since
-                    status.page = 1
-                    status.refs = undefined
-                    status.offset = undefined
-                    status.excludedTips = undefined
-                    status.windowEnd = undefined
-                    status.lastSuccess = undefined
-                    status.configuration = undefined
+            }
+            this.store.persist()
+        }
+        if (options.missingOnly && options.since) {
+            for (const repository of repositories) {
+                const history = this.store.gitHistory(repository.id)
+                if (!history || history.configuration !== gitConfiguration(repository, state)) continue
+                this.mergeActivities(history.items.filter((activity) => activity.date.slice(0, 10) >= options.since!))
+                if (!history.nextOffset) {
+                    const status = this.status(`git:${repository.id}`)
+                    status.historySince = repository.trackingStart
+                    status.configuration = history.configuration
                 }
             }
             this.store.persist()
         }
-        if (!options.repositoryId && !options.source) {
+        if (!options.missingOnly && !options.repositoryId && !options.source) {
             state.lastRefreshAttempt = new Date().toISOString()
             this.store.persist()
         }
-        // Notion refresh proceeds independently of a potentially long GitHub backlog.
+        let acquired = false
+        const acquire = async (key: string, work: () => Promise<void>) => {
+            const perform = async () => {
+                if (this.closing || state !== this.store.state) return
+                const status = this.status(key)
+                const [source, id] = key.split(':')
+                const repository = this.repository(id)
+                const configuration =
+                    source === 'git' ? gitConfiguration(repository, state) : githubConfiguration(repository, state)
+                if (
+                    options.missingOnly &&
+                    options.since &&
+                    status.historySince &&
+                    status.historySince <= options.since &&
+                    status.configuration === configuration
+                )
+                    return
+                do {
+                    acquired = true
+                    await this.source(key, work, options.resume)
+                    // Requested history continues immediately in bounded batches.
+                } while (
+                    options.since &&
+                    status.windowEnd &&
+                    status.status === 'idle' &&
+                    !this.closing &&
+                    state === this.store.state
+                )
+            }
+            // Serialize only the same repository/provider. A slow remote source must
+            // never hold local history or another provider behind a global refresh.
+            await this.serializeSource(key, perform)
+        }
+        // Local Git, GitHub and Notion have independent worker admission.
         const notion =
-            !options.repositoryId && (!options.source || options.source === 'notion') && this.connections().notion
-                ? this.source('notion', async () => {
-                      const ids = new Set([
-                          ...state.saves.filter((save) => save.status === 'confirmed').map((save) => save.entryId),
-                          ...state.drafts.map((draft) => draft.publishedEntryId)
-                      ])
-                      for (const id of ids) {
-                          if (!id) continue
-                          const entry = await this.notion.refreshEntry(id)
-                          const index = state.entries.findIndex((item) => item.id === entry.id)
-                          if (index < 0) state.entries.push(entry)
-                          else state.entries[index] = entry
-                      }
-                      for (const save of state.saves.filter((item) => item.status === 'unknown'))
-                          await this.reconcile(save.id)
-                  })
+            !options.missingOnly &&
+            !options.repositoryId &&
+            (!options.source || options.source === 'notion') &&
+            this.connections().notion
+                ? this.serializeSource('notion', () =>
+                      this.source('notion', async () => {
+                          if (this.closing || state !== this.store.state) return
+                          const ids = new Set([
+                              ...state.saves.filter((save) => save.status === 'confirmed').map((save) => save.entryId),
+                              ...state.drafts.map((draft) => draft.publishedEntryId)
+                          ])
+                          for (const id of ids) {
+                              if (!id) continue
+                              const entry = await this.notion.refreshEntry(id)
+                              const index = state.entries.findIndex((item) => item.id === entry.id)
+                              if (index < 0) state.entries.push(entry)
+                              else state.entries[index] = entry
+                          }
+                          for (const save of state.saves.filter((item) => item.status === 'unknown'))
+                              await this.reconcile(save.id)
+                      })
+                  )
                 : Promise.resolve()
         await Promise.all([
             notion,
             forEachConcurrent(repositories, 2, async (repository) => {
                 if (state !== this.store.state) return
                 if (!options.source || options.source === 'git')
-                    await this.source(
-                        `git:${repository.id}`,
-                        async () => {
-                            const status = this.status(`git:${repository.id}`)
-                            const configuration = JSON.stringify([
-                                repository.path,
-                                repository.remote,
-                                repository.emails,
-                                repository.trackingStart
-                            ])
-                            if (status.configuration !== configuration) {
-                                status.refs = undefined
-                                status.offset = undefined
-                                status.excludedTips = undefined
-                            }
-                            try {
-                                if (!repository.remotes)
-                                    repository.remotes = (await inspectRepository(repository.path)).remotes
-                                const indexed = await indexCommits(
-                                    repository,
-                                    status.refs ?? {},
-                                    repository.trackingStart,
-                                    status.offset,
-                                    status.excludedTips,
-                                    state.activities.filter(
-                                        (activity) =>
-                                            activity.repositoryId === repository.id && activity.kind === 'commit'
+                    await acquire(`git:${repository.id}`, async () => {
+                        const status = this.status(`git:${repository.id}`)
+                        const trackingStart = repository.trackingStart
+                        const configuration = gitConfiguration(repository, state)
+                        const stored = this.store.gitHistory(repository.id)
+                        const history = stored?.configuration === configuration ? stored : undefined
+                        if (!history) status.historySince = undefined
+                        try {
+                            if (!repository.remotes)
+                                repository.remotes = (await inspectRepository(repository.path)).remotes
+                            const indexed = await indexCommits(
+                                repository,
+                                history?.refs ?? {},
+                                trackingStart,
+                                history?.nextOffset,
+                                history?.excludedTips,
+                                history?.items ?? []
+                            )
+                            this.checkStopped(status)
+                            if (state !== this.store.state) throw new Error('Local data was restored while refreshing.')
+                            const names = Object.keys(indexed.refs)
+                            this.store.cacheGitHistory(repository.id, {
+                                configuration,
+                                refs: indexed.refs,
+                                nextOffset: indexed.nextOffset,
+                                excludedTips: indexed.excludedTips,
+                                items: (indexed.history ?? indexed.items).filter((activity) =>
+                                    repository.emails.some(
+                                        (email) => email.toLowerCase() === activity.author.toLowerCase()
                                     )
                                 )
-                                this.checkStopped(status)
-                                if (state !== this.store.state)
-                                    throw new Error('Local data was restored while refreshing.')
-                                const names = Object.keys(indexed.refs)
-                                repository.branches = names
-                                repository.available = true
-                                for (const activity of state.activities.filter(
-                                    (item) => item.repositoryId === repository.id
-                                ))
-                                    activity.deletedBranches = activity.branches.filter(
-                                        (branch) => !names.includes(branch)
+                            })
+                            repository.branches = names
+                            repository.available = true
+                            for (const activity of state.activities.filter(
+                                (item) => item.repositoryId === repository.id
+                            ))
+                                activity.deletedBranches = activity.branches.filter((branch) => !names.includes(branch))
+                            this.mergeActivities(
+                                indexed.items.filter((activity) =>
+                                    repository.emails.some(
+                                        (email) => email.toLowerCase() === activity.author.toLowerCase()
                                     )
-                                for (const activity of indexed.items)
-                                    if (
-                                        repository.emails.some(
-                                            (email) => email.toLowerCase() === activity.author.toLowerCase()
-                                        )
-                                    )
-                                        this.mergeActivity(activity)
-                                status.refs = indexed.refs
-                                status.offset = indexed.nextOffset
-                                status.excludedTips = indexed.excludedTips
-                                status.windowEnd = indexed.nextOffset
-                                    ? (status.windowEnd ?? new Date().toISOString())
-                                    : undefined
-                                status.configuration = configuration
-                                status.since = repository.trackingStart
-                            } catch (error) {
-                                if (!this.isStopped(status)) repository.available = false
-                                throw error
-                            }
-                        },
-                        options.resume
-                    )
+                                )
+                            )
+                            status.refs = indexed.refs
+                            status.offset = indexed.nextOffset
+                            status.excludedTips = indexed.excludedTips
+                            status.windowEnd = indexed.nextOffset
+                                ? (status.windowEnd ?? new Date().toISOString())
+                                : undefined
+                            status.configuration = configuration
+                            status.since = trackingStart
+                            if (!indexed.nextOffset) status.historySince = trackingStart
+                        } catch (error) {
+                            if (!this.isStopped(status)) repository.available = false
+                            throw error
+                        }
+                    })
+            }),
+            forEachConcurrent(repositories, 2, async (repository) => {
+                if (state !== this.store.state) return
                 if (
                     (!options.source || options.source === 'github') &&
                     this.connections().github &&
                     githubRemote(repository.remote)
                 )
-                    await this.source(
-                        `github:${repository.id}`,
-                        async () => {
-                            const status = this.status(`github:${repository.id}`)
-                            const configuration = JSON.stringify([
-                                repository.remote,
-                                repository.emails,
-                                repository.trackingStart,
-                                state.settings.githubLogin
-                            ])
-                            if (status.configuration !== configuration) {
-                                status.since = repository.trackingStart
-                                status.page = 1
-                                status.versions = {}
-                                status.windowEnd = undefined
-                                status.lastSuccess = undefined
-                            }
-                            status.configuration = configuration
-                            status.versions ??= {}
-                            if (!status.windowEnd) status.page = 1
-                            status.windowEnd ??= new Date().toISOString()
-                            if (!status.since)
-                                status.since = status.lastSuccess
-                                    ? new Date(
-                                          Math.max(
-                                              Date.parse(repository.trackingStart),
-                                              Date.parse(status.lastSuccess) - 2 * 86400000
-                                          )
-                                      )
-                                          .toISOString()
-                                          .slice(0, 10)
-                                    : repository.trackingStart
-                            const tracked = state.activities
-                                .filter((item) => item.repositoryId === repository.id && item.kind === 'pr')
-                                .map((item) => item.id)
-                            await this.github.activities(repository, state.settings.githubLogin, tracked, {
-                                since: status.since,
-                                page: status.page,
-                                versions: status.versions,
-                                background: true,
-                                checkpoint: (page, complete) => {
-                                    this.checkStopped(status)
-                                    status.page = page
-                                    if (complete) {
-                                        status.since = new Date(
-                                            Math.max(
-                                                Date.parse(repository.trackingStart),
-                                                Date.parse(status.windowEnd!) - 2 * 86400000
-                                            )
+                    await acquire(`github:${repository.id}`, async () => {
+                        const status = this.status(`github:${repository.id}`)
+                        const trackingStart = repository.trackingStart
+                        const configuration = githubConfiguration(repository, state)
+                        if (status.configuration !== configuration) {
+                            status.since = trackingStart
+                            status.page = 1
+                            status.versions = {}
+                            status.windowEnd = undefined
+                            status.lastSuccess = undefined
+                            status.historySince = undefined
+                        }
+                        if (
+                            (!status.historySince || trackingStart < status.historySince) &&
+                            status.since &&
+                            status.since > trackingStart
+                        ) {
+                            status.since = trackingStart
+                            status.page = 1
+                            status.windowEnd = undefined
+                        }
+                        status.configuration = configuration
+                        status.versions ??= {}
+                        if (!status.windowEnd) status.page = 1
+                        status.windowEnd ??= new Date().toISOString()
+                        if (!status.since)
+                            status.since = status.lastSuccess
+                                ? new Date(
+                                      Math.max(Date.parse(trackingStart), Date.parse(status.lastSuccess) - 2 * 86400000)
+                                  )
+                                      .toISOString()
+                                      .slice(0, 10)
+                                : trackingStart
+                        const tracked = state.activities
+                            .filter((item) => item.repositoryId === repository.id && item.kind === 'pr')
+                            .map((item) => item.id)
+                        await this.github.activities(repository, state.settings.githubLogin, tracked, {
+                            since: status.since,
+                            page: status.page,
+                            versions: status.versions,
+                            background: true,
+                            checkpoint: (page, complete) => {
+                                this.checkStopped(status)
+                                status.page = page
+                                if (complete) {
+                                    status.historySince = trackingStart
+                                    status.since = new Date(
+                                        Math.max(
+                                            Date.parse(trackingStart),
+                                            Date.parse(status.windowEnd!) - 2 * 86400000
                                         )
-                                            .toISOString()
-                                            .slice(0, 10)
-                                        status.windowEnd = undefined
-                                    }
-                                    this.store.persist()
-                                },
-                                batch: async (activities) => {
-                                    if (state !== this.store.state)
-                                        throw new Error('Local data was restored while refreshing.')
-                                    this.checkStopped(status)
-                                    for (const incoming of activities) {
-                                        const previous = state.activities.find((item) => item.id === incoming.id)
-                                        const previousDate = previous?.date
-                                        const previousFingerprint = previous?.fingerprint
-                                        const previousRevision = state.revisions.find(
-                                            (item) => item.id === previous?.revision
-                                        )
-                                        this.mergeActivity(incoming)
-                                        if (incoming.kind !== 'pr') continue
-                                        const current = this.activity(incoming.id)
-                                        const needsComparison =
-                                            !!previousRevision || current.date.slice(0, 10) < repository.trackingStart
-                                        current.fingerprint = undefined
-                                        current.revision = undefined
-                                        if (needsComparison) {
-                                            try {
-                                                await this.capture(
-                                                    current,
-                                                    state.diffs[current.id] !== undefined,
-                                                    false
-                                                )
-                                                const revision = state.revisions.find(
-                                                    (item) => item.id === current.revision
-                                                )
-                                                const changed = previousFingerprint
-                                                    ? previousFingerprint !== current.fingerprint
-                                                    : previousRevision &&
-                                                      revision &&
-                                                      (previousRevision.head !== revision.head ||
-                                                          previousRevision.base !== revision.base)
-                                                if (changed) current.date = new Date().toISOString()
-                                                else if (previousDate && previousDate > current.date)
-                                                    current.date = previousDate
-                                            } catch (error) {
-                                                if (previousRevision && previousRevision.head !== current.head)
-                                                    current.date = new Date().toISOString()
-                                                this.store.persist()
-                                                throw error
-                                            }
-                                        } else if (previousDate && previousDate > current.date)
-                                            current.date = previousDate
-                                    }
+                                    )
+                                        .toISOString()
+                                        .slice(0, 10)
+                                    status.windowEnd = undefined
                                 }
-                            })
-                        },
-                        options.resume
-                    )
+                                this.store.persist()
+                            },
+                            batch: async (activities) => {
+                                if (state !== this.store.state)
+                                    throw new Error('Local data was restored while refreshing.')
+                                this.checkStopped(status)
+                                for (const incoming of activities) {
+                                    const previous = state.activities.find((item) => item.id === incoming.id)
+                                    const previousDate = previous?.date
+                                    const previousFingerprint = previous?.fingerprint
+                                    const previousRevision = state.revisions.find(
+                                        (item) => item.id === previous?.revision
+                                    )
+                                    this.mergeActivity(incoming)
+                                    if (incoming.kind !== 'pr') continue
+                                    const current = this.activity(incoming.id)
+                                    const needsComparison =
+                                        !!previousRevision || current.date.slice(0, 10) < repository.trackingStart
+                                    current.fingerprint = undefined
+                                    current.revision = undefined
+                                    if (needsComparison) {
+                                        try {
+                                            await this.capture(current, state.diffs[current.id] !== undefined, false)
+                                            const revision = state.revisions.find(
+                                                (item) => item.id === current.revision
+                                            )
+                                            const changed = previousFingerprint
+                                                ? previousFingerprint !== current.fingerprint
+                                                : previousRevision &&
+                                                  revision &&
+                                                  (previousRevision.head !== revision.head ||
+                                                      previousRevision.base !== revision.base)
+                                            if (changed) current.date = new Date().toISOString()
+                                            else if (previousDate && previousDate > current.date)
+                                                current.date = previousDate
+                                        } catch (error) {
+                                            if (previousRevision && previousRevision.head !== current.head)
+                                                current.date = new Date().toISOString()
+                                            this.store.persist()
+                                            throw error
+                                        }
+                                    } else if (previousDate && previousDate > current.date) current.date = previousDate
+                                }
+                            }
+                        })
+                    })
             })
         ])
         const errors = Object.entries(state.acquisition ?? {})
             .filter(([, status]) => status.status !== 'cancelled' && status.error)
             .map(([key, status]) => `${key}: ${status.error}`)
         state.refreshError = errors.length ? errors.join('\n') : undefined
-        if (!errors.length && !Object.values(state.acquisition ?? {}).some((status) => status.windowEnd))
+        if (acquired && !errors.length && !Object.values(state.acquisition ?? {}).some((status) => status.windowEnd))
             state.lastRefreshed = new Date().toISOString()
         this.store.persist()
     }
@@ -727,6 +755,9 @@ export class JournalService {
                 Object.assign(repository, incoming, { path: repository.path, available: repository.available })
                 break
             }
+            case 'loadWeek':
+                await this.refresh({ since: command.since, missingOnly: true })
+                return this.reply()
             case 'refresh':
                 await this.refresh({ ...command, resume: true })
                 return this.reply()

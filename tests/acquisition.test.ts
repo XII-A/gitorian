@@ -336,12 +336,12 @@ it('queues and coalesces an explicit source retry behind active acquisition', as
     try {
         app.remote.github = true
         const active = app.service.refresh({ source: 'git' })
-        const retry = app.service.refresh({ repositoryId: app.repository.id, source: 'github', resume: true })
-        const duplicate = app.service.refresh({ repositoryId: app.repository.id, source: 'github', resume: true })
+        const retry = app.service.refresh({ repositoryId: app.repository.id, source: 'git', resume: true })
+        const duplicate = app.service.refresh({ repositoryId: app.repository.id, source: 'git', resume: true })
         expect(app.remote.requests).toHaveLength(0)
         release()
         await Promise.all([active, retry, duplicate])
-        expect(app.remote.requests.filter((request) => request.url.includes('/pulls?'))).toHaveLength(1)
+        expect(indexing).toHaveBeenCalledTimes(2)
     } finally {
         release()
         indexing.mockRestore()

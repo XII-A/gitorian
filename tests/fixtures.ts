@@ -52,6 +52,7 @@ export async function workspace() {
         store,
         remote,
         service,
+        github,
         notion,
         repository,
         close: async () => {
