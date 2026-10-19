@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes } from 'react'
-import { ArrowRight, Folder, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest } from 'lucide-react'
+import { ChevronRight, Folder, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest } from 'lucide-react'
 import type { Activity } from '../shared/model'
 import { Badge } from './components/arc/badge/badge'
 import './activity-row.css'
@@ -60,7 +60,7 @@ export function ActivityRow({ activity, repositoryName, connected, className, ..
                 </Badge>
                 {reference && <span className="activity-row-reference">{reference}</span>}
             </span>
-            <ArrowRight size={14} strokeWidth={1.75} className="activity-row-arrow" aria-hidden="true" />
+            <ChevronRight size={14} strokeWidth={1.75} className="activity-row-chevron" aria-hidden="true" />
         </button>
     )
 }

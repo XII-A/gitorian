@@ -17,6 +17,9 @@ export function ActivityHover({ children }: { children: ReactNode }) {
         const viewport = root.current.closest('[role="region"]')?.getBoundingClientRect()
         const paths = { neutral: '', merged: '' }
         for (const row of root.current.querySelectorAll<HTMLButtonElement>('.activity-row')) {
+            // Selected rows own their strong border. Painting the moving stroke over
+            // that border doubles its antialiased edge at fractional coordinates.
+            if (row.getAttribute('aria-pressed') === 'true') continue
             const node = row.querySelector<HTMLElement>('.activity-row-node')
             if (!node) continue
             const rect = row.getBoundingClientRect()
@@ -78,7 +81,7 @@ export function ActivityHover({ children }: { children: ReactNode }) {
                 subtree: true,
                 characterData: true,
                 attributes: true,
-                attributeFilter: ['data-kind', 'data-connected']
+                attributeFilter: ['data-kind', 'data-connected', 'aria-pressed']
             })
         const viewport = root.current?.closest('[role="region"]')
         viewport?.addEventListener('scroll', schedule, { passive: true })
