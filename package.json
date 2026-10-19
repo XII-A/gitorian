@@ -43,7 +43,9 @@
             "src/renderer/components/arc/LICENSE"
         ],
         "win": {
-            "target": "nsis"
+            "target": "nsis",
+            "artifactName": "weekly-j-${version}-windows-${arch}-setup.${ext}",
+            "signAndEditExecutable": false
         },
         "mac": {
             "target": "dmg"

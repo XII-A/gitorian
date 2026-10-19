@@ -1,0 +1,97 @@
+name: Draft Windows release
+
+on:
+    push:
+        tags: ['v*']
+
+permissions:
+    contents: read
+
+concurrency:
+    group: release-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    build:
+        name: Windows x64 installer
+        runs-on: windows-2022
+        timeout-minutes: 30
+        env:
+            CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        steps:
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+              with:
+                  fetch-depth: 0
+                  persist-credentials: false
+            - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+            - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+              with:
+                  node-version: '24'
+                  cache: pnpm
+            - name: Validate version and main ancestry
+              shell: pwsh
+              run: |
+                  $ErrorActionPreference = 'Stop'
+                  $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+                  if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+$' -or $env:GITHUB_REF_NAME -ne "v$version") {
+                      throw 'The tag must be vMAJOR.MINOR.PATCH and match package.json.'
+                  }
+                  git merge-base --is-ancestor HEAD origin/main
+                  if ($LASTEXITCODE -ne 0) { throw 'Release commits must belong to main.' }
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm check
+            - run: pnpm build
+            - name: Package unsigned Windows x64 installer
+              run: pnpm exec electron-builder --win nsis --x64 --publish never
+            - name: Prepare installer and SHA-256 checksum
+              shell: pwsh
+              run: |
+                  $ErrorActionPreference = 'Stop'
+                  $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+                  $name = "weekly-j-$version-windows-x64-setup.exe"
+                  $source = Join-Path release $name
+                  if (-not (Test-Path -LiteralPath $source)) { throw "Installer missing: $name" }
+                  New-Item -ItemType Directory -Path release-assets | Out-Null
+                  Copy-Item -LiteralPath $source -Destination release-assets
+                  $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+                  [IO.File]::WriteAllText((Join-Path $PWD 'release-assets/SHA256SUMS'), "$hash  $name`n")
+            - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+              with:
+                  name: windows-x64-release
+                  path: release-assets/
+                  if-no-files-found: error
+                  retention-days: 1
+
+    draft:
+        name: Upload draft release
+        needs: build
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        permissions:
+            contents: write
+        steps:
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+              with:
+                  persist-credentials: false
+            - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+              with:
+                  name: windows-x64-release
+                  path: release-assets
+            - name: Verify downloads and create draft (never publish or overwrite)
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  GH_REPO: ${{ github.repository }}
+                  RELEASE_TAG: ${{ github.ref_name }}
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  (cd release-assets && sha256sum --check SHA256SUMS)
+                  # A failed network request must not be mistaken for an absent release.
+                  gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[].tag_name' > existing-tags.txt
+                  if grep -Fxq -- "$RELEASE_TAG" existing-tags.txt; then
+                    echo 'This tag already has a release. Review it manually; assets will not be replaced.' >&2
+                    exit 1
+                  fi
+                  gh release create "$RELEASE_TAG" release-assets/* \
+                    --verify-tag --draft --title "weekly-j $RELEASE_TAG" \
+                    --notes-file .github/release-notes.md
