@@ -4,11 +4,19 @@ import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import { realpath } from 'node:fs/promises'
 import type { Activity, Repository } from '../shared/model'
+import { localDate } from '../shared/model'
 import { WorkQueue } from './work-queue'
 
 const execute = promisify(execFile)
 const MAX_DIFF = 2_000_000
 const processes = new WorkQueue(3)
+export interface GitHistory {
+    configuration: string
+    refs: Record<string, string>
+    items: Activity[]
+    nextOffset?: number
+    excludedTips?: string[]
+}
 export async function git(path: string, args: string[], background = false, maxBuffer = 16_000_000): Promise<string> {
     const result = await processes.run(
         () =>
@@ -181,8 +189,15 @@ export async function indexCommits(
     since: string,
     offset = 0,
     excludedTips: string[] = [],
-    known: Activity[] = []
-): Promise<{ refs: Record<string, string>; items: Activity[]; nextOffset?: number; excludedTips?: string[] }> {
+    known: Activity[] = [],
+    timezone = 'UTC'
+): Promise<{
+    refs: Record<string, string>
+    items: Activity[]
+    history?: Activity[]
+    nextOffset?: number
+    excludedTips?: string[]
+}> {
     const output = await git(
         repository.path,
         ['for-each-ref', '--format=%(refname:short)%00%(objectname)', 'refs/heads', 'refs/remotes'],
@@ -197,7 +212,12 @@ export async function indexCommits(
     )
     if (!Object.keys(refs).length) return { refs, items: [] }
     const same = JSON.stringify(refs) === JSON.stringify(previous)
-    if (same && !offset) return { refs, items: [] }
+    if (same && !offset)
+        return {
+            refs,
+            items: known.filter((activity) => localDate(new Date(activity.date), timezone) >= since),
+            history: known
+        }
     if (!same) {
         excludedTips = offset ? excludedTips : [...new Set(Object.values(previous))]
         offset = 0
@@ -218,9 +238,7 @@ export async function indexCommits(
     }
     const items = [
         ...new Map(
-            [...known, ...captured]
-                .filter((activity) => activity.date.slice(0, 10) >= since)
-                .map((activity) => [activity.id, { ...activity, branches: [...activity.branches] }])
+            [...known, ...captured].map((activity) => [activity.id, { ...activity, branches: [...activity.branches] }])
         ).values()
     ]
     for (const [branch, tip] of Object.entries(refs)) {
@@ -233,7 +251,13 @@ export async function indexCommits(
         for (const item of items)
             if (membership.has(item.sha!) && !item.branches.includes(branch)) item.branches.push(branch)
     }
-    return { refs, items, nextOffset: captured.length === 2000 ? offset + 2000 : undefined, excludedTips }
+    return {
+        refs,
+        items: items.filter((activity) => localDate(new Date(activity.date), timezone) >= since),
+        history: items,
+        nextOffset: captured.length === 2000 ? offset + 2000 : undefined,
+        excludedTips
+    }
 }
 // Hash the complete net patch, including whitespace, modes, and binary payloads.
 // Strip only object IDs and hunk positions: these change across equivalent rewrites.

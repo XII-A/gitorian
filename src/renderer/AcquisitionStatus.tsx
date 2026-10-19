@@ -3,7 +3,7 @@ import type { Command, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
-import { actionableSources, readableError } from './background-work'
+import { sourceProblems, readableError } from './background-work'
 
 export function AcquisitionStatus({
     state,
@@ -20,14 +20,16 @@ export function AcquisitionStatus({
 }) {
     const [, tick] = useState(0)
     const waitingForProvider =
-        open &&
-        actionableSources(state).some(([, status]) => !!status.retryAt && Date.parse(status.retryAt) > Date.now())
+        open && sourceProblems(state).some(([, status]) => !!status.retryAt && Date.parse(status.retryAt) > Date.now())
     useEffect(() => {
         if (!waitingForProvider) return
         const timer = setInterval(() => tick((value) => value + 1), 1000)
         return () => clearInterval(timer)
     }, [waitingForProvider])
-    const sources = actionableSources(state).sort((a, b) => Number(!!b[1].error) - Number(!!a[1].error))
+    const sources = sourceProblems(state)
+    useEffect(() => {
+        if (open && !sources.length) onOpenChange(false)
+    }, [open, sources.length, onOpenChange])
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
@@ -47,10 +49,7 @@ export function AcquisitionStatus({
                         {sources.map(([key, status]) => {
                             const [source, repositoryId] = key.split(':')
                             const repository = state.repositories.find((item) => item.id === repositoryId)
-                            const paused = status.status === 'cancelled'
                             const waiting = !!status.retryAt && Date.parse(status.retryAt) > Date.now()
-                            const active =
-                                status.status === 'running' || (status.status === 'idle' && !!status.windowEnd)
                             const reconnect =
                                 /401|403|unauthorized|credentials|permission|not found|404|available/i.test(
                                     status.error ?? ''
@@ -63,51 +62,27 @@ export function AcquisitionStatus({
                                             : `${repository?.name ?? 'Repository'} / ${source === 'github' ? 'GitHub' : 'Local Git'}`}
                                     </strong>
                                     <p>
-                                        {paused
-                                            ? 'Paused by you. Completed work is kept.'
-                                            : waiting
-                                              ? `Provider rate limit. Retry available at ${new Date(status.retryAt!).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
-                                              : active
-                                                ? status.status === 'running'
-                                                    ? 'Refreshing...'
-                                                    : 'Queued'
-                                                : readableError(status.error ?? '')}
+                                        {waiting
+                                            ? `Provider rate limit. Retry available at ${new Date(status.retryAt!).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
+                                            : readableError(status.error ?? '')}
                                     </p>
                                     <div className="source-actions">
-                                        {active && source !== 'notion' ? (
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() =>
-                                                    run({
-                                                        type: 'stopWork',
-                                                        source: source === 'git' ? 'git' : 'github',
-                                                        repositoryId
-                                                    })
-                                                }
-                                            >
-                                                Pause
-                                            </Button>
-                                        ) : (
-                                            !active && (
-                                                <Button
-                                                    variant="secondary"
-                                                    size="sm"
-                                                    disabled={waiting}
-                                                    onClick={() =>
-                                                        reconnect && !paused
-                                                            ? onSettings()
-                                                            : run({
-                                                                  type: 'refresh',
-                                                                  source: source as 'git' | 'github' | 'notion',
-                                                                  repositoryId
-                                                              })
-                                                    }
-                                                >
-                                                    {paused ? 'Resume' : reconnect ? 'Open settings' : 'Retry'}
-                                                </Button>
-                                            )
-                                        )}
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            disabled={waiting}
+                                            onClick={() =>
+                                                reconnect
+                                                    ? onSettings()
+                                                    : run({
+                                                          type: 'refresh',
+                                                          source: source as 'git' | 'github' | 'notion',
+                                                          repositoryId
+                                                      })
+                                            }
+                                        >
+                                            {reconnect ? 'Open settings' : 'Retry'}
+                                        </Button>
                                     </div>
                                 </div>
                             )

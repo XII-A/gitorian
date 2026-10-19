@@ -5,7 +5,7 @@ import * as gitModule from '../src/main/git'
 import { Store } from '../src/main/store'
 import { join } from 'node:path'
 
-it('manual refresh extends history and rereads unchanged Git refs and GitHub history', async () => {
+it('manual refresh extends history using durable Git bodies and unchanged PR versions', async () => {
     const app = await workspace()
     const index = vi.spyOn(gitModule, 'indexCommits')
     try {
@@ -13,15 +13,19 @@ it('manual refresh extends history and rereads unchanged Git refs and GitHub his
         app.repository.trackingStart = '2099-01-01'
         await app.service.refresh()
         expect(app.store.state.activities).toEqual([])
+        const refs = app.store.state.acquisition?.[`git:${app.repository.id}`].refs
+        expect(app.store.gitHistory(app.repository.id)?.items).toHaveLength(1)
         const reply = await app.service.handle(commandSchema.parse({ type: 'refresh', since: '2020-01-01' }))
         expect(reply.state.repositories[0].trackingStart).toBe('2020-01-01')
         expect(reply.state.activities.some((item) => item.kind === 'commit')).toBe(true)
         expect(reply.state.activities.some((item) => item.kind === 'pr')).toBe(true)
-        expect(index.mock.calls.at(-1)?.[1]).toEqual({})
+        expect(index.mock.calls.at(-1)?.[1]).toEqual(refs)
+        expect(index.mock.calls.at(-1)?.[5]).toHaveLength(1)
         expect(reply.state.acquisition?.[`git:${app.repository.id}`].since).toBe('2020-01-01')
         const reopened = new Store(join(app.directory, 'tracking.sqlite'))
         try {
             expect(reopened.state.repositories[0].trackingStart).toBe('2020-01-01')
+            expect(reopened.gitHistory(app.repository.id)?.items).toHaveLength(1)
         } finally {
             reopened.close()
         }

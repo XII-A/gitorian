@@ -77,10 +77,17 @@ app.on('browser-window-created', (_, window) => {
             )
             await window.webContents.executeJavaScript(`document.querySelector('[aria-label="Journal body"]').focus()`)
             await window.webContents.insertText('Writing remains available.')
-            await pause(600)
-            result.typingSaved = await window.webContents.executeJavaScript(
-                `(async()=>JSON.stringify((await window.journal.invoke({type:'state'})).state.drafts[0].body).includes('Writing remains available.'))()`
-            )
+            // Autosave debounces for one second. Observe the saved draft rather
+            // than checking before that timer has had a chance to run.
+            const typingStarted = Date.now()
+            for (let attempt = 0; attempt < 30; attempt++) {
+                await pause(100)
+                result.typingSaved = await window.webContents.executeJavaScript(
+                    `(async()=>JSON.stringify((await window.journal.invoke({type:'state'})).state.drafts[0].body).includes('Writing remains available.'))()`
+                )
+                if (result.typingSaved) break
+            }
+            result.typingSaveMs = Date.now() - typingStarted
             for (let attempt = 0; attempt < 200; attempt++) {
                 if (
                     await window.webContents.executeJavaScript(

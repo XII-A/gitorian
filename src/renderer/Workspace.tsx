@@ -1,7 +1,7 @@
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
-import { activityUpdating, actionableSources } from './background-work'
+import { sourceProblems } from './background-work'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { localDate, shiftWeek, weekOf, stateSchema } from '../shared/model'
@@ -28,6 +28,7 @@ import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
 import landscape from './assets/week-landscape.jpg'
 import './workspace.css'
 import { useActivityRefresh } from './use-activity-refresh'
+import { useWeekHistory } from './use-week-history'
 import { useWindowHoverExclusion } from './use-window-hover-exclusion'
 
 function BrowseHistoryIcon() {
@@ -311,7 +312,8 @@ export function Workspace({
             else setNotice('The browser blocked the window. Allow pop-ups for this app and try again.')
         }
     }
-    const { refresh, refreshing } = useActivityRefresh(run, week, offsetDay(week, 6))
+    const { refresh, refreshing } = useActivityRefresh(run, week, offsetDay(week, 6), state.settings.timezone)
+    const loadingWeek = useWeekHistory(state, run, week, sample)
     const emptyActivityAction = useCallback(() => {
         setProject('all')
         setBranch('all')
@@ -384,7 +386,7 @@ export function Workspace({
                     />
                 </div>
                 <div className="ws-utilities">
-                    {actionableSources(state).length > 0 && (
+                    {sourceProblems(state).length > 0 && (
                         <Button
                             variant="ghost"
                             size="sm"
@@ -400,7 +402,7 @@ export function Workspace({
                         variant="ghost"
                         size="sm"
                         onClick={refresh}
-                        loading={refreshing || activityUpdating(state)}
+                        loading={refreshing || loadingWeek}
                         aria-label="Refresh activity"
                         title="Refresh activity"
                     >
@@ -563,7 +565,7 @@ export function Workspace({
                             onInspect={inspect}
                             hasActivity={items.length > 0}
                             onEmptyAction={emptyActivityAction}
-                            refreshing={refreshing || activityUpdating(state)}
+                            refreshing={refreshing || loadingWeek}
                         />
                     </ScrollArea>
                     {detached && (

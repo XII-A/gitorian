@@ -134,6 +134,9 @@ void app.whenReady().then(() => {
         if (referenceWindows.has(event.sender.id) && !['state', 'details', 'open'].includes(command.type))
             throw new Error('Reference windows are read-only')
         switch (command.type) {
+            case 'loadWeek':
+                void track(service.refresh({ since: command.since, missingOnly: true }))
+                return service.reply()
             case 'refresh':
                 if (command.since) return track(service.handle(command))
                 void track(service.refresh({ ...command, resume: true }))
@@ -187,7 +190,7 @@ void app.whenReady().then(() => {
                 if (service.reply().state.repositoryImport?.status !== 'running') return await importing
                 void track(
                     importing.then(() => {
-                        if (store.state.settings.refreshMinutes > 0) void track(service.refresh({ afterCurrent: true }))
+                        if (store.state.settings.refreshMinutes > 0) void track(service.refresh())
                     })
                 ).catch((error: unknown) => {
                     store.state.repositoryImport = {
