@@ -282,16 +282,28 @@
 }
 .hub-detail-table-scroll {
     overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    background: var(--surface);
 }
 .hub-detail-markdown table {
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     width: 100%;
     font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
 }
 .hub-detail-markdown :is(th, td) {
     border-bottom: 1px solid var(--border);
-    padding: var(--space-3);
+    padding: var(--space-3) var(--space-4);
     text-align: left;
+    vertical-align: top;
+}
+.hub-detail-markdown tbody tr:last-child td {
+    border-bottom: 0;
+}
+.hub-detail-markdown tbody tr:nth-child(even) {
+    background: color-mix(in oklab, var(--surface-muted) 40%, var(--surface));
 }
 .hub-detail-markdown th {
     background: var(--surface-muted);
