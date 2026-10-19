@@ -98,6 +98,20 @@
     font-weight: 400;
 }
 
+/* Words roll in their own slots; a leaving word pops out of flow so the next one never waits for space. */
+.rolling {
+    display: inline-flex;
+    gap: 0.28em;
+    white-space: nowrap;
+}
+.word {
+    position: relative;
+    display: inline-block;
+}
+.wordInner {
+    display: inline-block;
+}
+
 /* Panel */
 .panel {
     position: absolute;
@@ -193,10 +207,11 @@
     cursor: default;
 }
 
-/* A stable calendar window keeps navigation immediate, including rapid keyboard moves. */
+/* Months slide horizontally inside a clipped window that keeps a little room for the blur. */
 .viewport {
     position: relative;
     overflow: clip;
+    overflow-clip-margin: 2px;
 }
 .months {
     display: flex;
@@ -283,6 +298,7 @@
     font: inherit;
     font-variant-numeric: tabular-nums;
     -webkit-tap-highlight-color: transparent;
+    transition: color var(--duration-fast) var(--ease-standard);
 }
 .day > span {
     position: relative;
@@ -301,6 +317,7 @@
 .day[data-edge] {
     color: var(--accent-foreground);
     font-weight: 500;
+    transition-delay: 0ms;
 }
 .day[data-today]::after {
     content: '';

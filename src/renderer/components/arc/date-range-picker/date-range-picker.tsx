@@ -17,7 +17,15 @@ import type {
     FocusEvent as ReactFocusEvent,
     ReactNode
 } from 'react'
-import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, useIsPresent } from 'motion/react'
+import {
+    AnimatePresence,
+    animate,
+    motion,
+    useIsPresent,
+    useMotionValue,
+    useReducedMotion,
+    useTransform
+} from 'motion/react'
 import type { Transition, Variants } from 'motion/react'
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { motionTokens } from '../lib/motion-tokens'
@@ -38,8 +46,8 @@ export interface DateRangePreset {
 
 /**
  * A range picker whose trigger grows into the panel it opens. The panel shows two months beside a preset rail, or one
- * month with a scrolling preset row when space is tight. Month arrows slide the outgoing and incoming calendars together;
- * range changes and keyboard navigation settle immediately so dates and selected endpoints stay in sync. On Apply the
+ * month with a scrolling preset row when space is tight. The range highlight stretches across each week as you hover
+ * or move with the keyboard, the ends glide between days, months slide in the direction you travel, and on Apply the
  * formatted label flies back into the trigger as the surface shrinks around it.
  * Use it for reports, filters, and bookings where a start and end date are chosen together.
  */
@@ -143,17 +151,44 @@ const physical = (visualDuration: number, bounce: number): Transition => {
     return { type: 'spring', stiffness: root * root, damping: 2 * (1 - bounce) * root, mass: 1 }
 }
 const GROW = physical(0.48, 0.12),
-    SHRINK = physical(0.38, 0)
+    SHRINK = physical(0.38, 0),
+    STRETCH = physical(motionTokens.duration.standard, 0),
+    GLIDE = physical(motionTokens.duration.standard, 0)
 const TRIGGER_RADIUS = 18,
     PANEL_RADIUS = 26,
     WIDE_CELL = 36,
     WIDE_MIN = 712,
     EDGE = 8
 
+const roll: Variants = {
+    enter: (direction: number) => ({ opacity: 0, y: `${direction * 0.25}em`, filter: `blur(${blur.subtle}px)` }),
+    center: {
+        opacity: 1,
+        y: '0em',
+        filter: 'blur(0px)',
+        transition: { duration: motionTokens.duration.standard, ease: enterEase }
+    },
+    exit: (direction: number) => ({
+        opacity: 0,
+        y: `${direction * -0.25}em`,
+        filter: `blur(${blur.subtle}px)`,
+        transition: { duration: 0.14, ease: standardEase }
+    })
+}
+const fade: Variants = {
+    enter: { opacity: 0 },
+    center: { opacity: 1, y: '0em', filter: 'blur(0px)', transition: { duration: 0.12 } },
+    exit: { opacity: 0, transition: { duration: 0.08 } }
+}
 /** Panel content arrives just behind the growing surface and leaves ahead of it. */
 const faceIn: Variants = {
     hidden: { opacity: 0, y: -4, filter: `blur(${blur.soft}px)` },
-    shown: { opacity: 1, y: 0, filter: 'blur(0px)', transition: { duration: 0.26, ease: enterEase, delay: 0.07 } },
+    shown: {
+        opacity: 1,
+        y: 0,
+        filter: 'blur(0px)',
+        transition: { duration: motionTokens.duration.standard, ease: enterEase, delay: 0.07 }
+    },
     gone: { opacity: 0, y: -2, filter: `blur(${blur.soft}px)`, transition: { duration: 0.12, ease: standardEase } }
 }
 const faceFade: Variants = {
@@ -161,26 +196,115 @@ const faceFade: Variants = {
     shown: { opacity: 1, transition: { duration: 0.12 } },
     gone: { opacity: 0, transition: { duration: 0.08 } }
 }
+/** Words roll one by one: a later date rises from below, an earlier one drops from above; words that stay the same hold still. */
+function Rolling({ text, direction, reduced }: { text: string; direction: number; reduced: boolean }) {
+    const words = text.split(/\s+/).filter(Boolean)
+    return (
+        <span className={styles.rolling} aria-hidden="true">
+            {words.map((word, index) => (
+                <span key={index} className={styles.word}>
+                    <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+                        <motion.span
+                            key={word}
+                            className={styles.wordInner}
+                            custom={direction}
+                            variants={reduced ? fade : roll}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                        >
+                            {word}
+                        </motion.span>
+                    </AnimatePresence>
+                </span>
+            ))}
+        </span>
+    )
+}
+
+/** Remembers which way a range moved, so labels roll in time's direction. */
+function useDirection(range: DateRange | null) {
+    const time = range ? range.start.getTime() * 2 + range.end.getTime() : null
+    const [previous, setPrevious] = useState(time)
+    const [direction, setDirection] = useState(1)
+    if (time !== previous) {
+        setPrevious(time)
+        setDirection(time === null || previous === null || time >= previous ? 1 : -1)
+    }
+    return direction
+}
+
 type Segment = { left: number; width: number } | null
 const cellIn = (date: Date, first: Date) => {
     const index = dayDiff(date, first)
     return { row: Math.floor(index / 7), col: index % 7 }
 }
 
-/** Selection is immediate: the range and its readable day labels must always agree. */
-function Bar({ row, segment }: { row: number; segment: Segment }) {
-    if (!segment) return null
+/** One week's slice of the highlight. It grows out of the edge the range arrives from, so hovering reads as stretching. */
+function Bar({ row, segment, reduced }: { row: number; segment: Segment; reduced: boolean }) {
+    const left = useMotionValue(segment?.left ?? 0),
+        width = useMotionValue(segment?.width ?? 0),
+        opacity = useMotionValue(segment ? 1 : 0)
+    const transform = useTransform(() => `translateX(${left.get()}%) scaleX(${width.get() / 100})`)
+    const wasEmpty = useRef(!segment)
+    useLayoutEffect(() => {
+        if (!segment) {
+            wasEmpty.current = true
+            animate(opacity, 0, { duration: reduced ? 0 : 0.14 })
+            return
+        }
+        if (wasEmpty.current || reduced) {
+            left.jump(segment.left)
+            width.jump(segment.width)
+        } else {
+            animate(left, segment.left, STRETCH)
+            animate(width, segment.width, STRETCH)
+        }
+        wasEmpty.current = false
+        animate(opacity, 1, { duration: reduced ? 0 : 0.16 })
+    }, [left, opacity, reduced, segment, width])
     return (
-        <span
+        <motion.span
             className={styles.bar}
-            style={{ left: `${segment.left}%`, width: `${segment.width}%`, top: `calc(${row} * var(--cell) + 3px)` }}
+            style={{
+                left: 0,
+                width: '100%',
+                transformOrigin: 'left',
+                transform,
+                opacity,
+                top: `calc(${row} * var(--cell) + 3px)`
+            }}
         />
     )
 }
 
-function Thumb({ cell }: { cell: { row: number; col: number } | null }) {
-    if (!cell) return null
-    return <span className={styles.thumb} style={{ transform: `translate(${cell.col * 100}%, ${cell.row * 100}%)` }} />
+/** A solid end of the range. It glides from day to day and only fades when the end leaves this month. */
+function Thumb({ cell, reduced }: { cell: { row: number; col: number } | null; reduced: boolean }) {
+    const x = useMotionValue(cell?.col ?? 0),
+        y = useMotionValue(cell?.row ?? 0),
+        opacity = useMotionValue(cell ? 1 : 0),
+        scale = useMotionValue(cell ? 1 : 0.95)
+    const transform = useTransform(() => `translate(${x.get() * 100}%, ${y.get() * 100}%) scale(${scale.get()})`)
+    const hidden = useRef(!cell)
+    useLayoutEffect(() => {
+        if (!cell) {
+            hidden.current = true
+            animate(opacity, 0, { duration: reduced ? 0 : 0.12 })
+            animate(scale, 0.95, { duration: reduced ? 0 : 0.12 })
+            return
+        }
+        if (hidden.current || reduced) {
+            x.jump(cell.col)
+            y.jump(cell.row)
+        } else {
+            animate(x, cell.col, GLIDE)
+            animate(y, cell.row, GLIDE)
+        }
+        hidden.current = false
+        animate(opacity, 1, { duration: reduced ? 0 : 0.16 })
+        animate(scale, 1, reduced ? { duration: 0 } : GLIDE)
+    }, [cell, opacity, reduced, scale, x, y])
+    return <motion.span className={styles.thumb} style={{ transform, opacity }} />
 }
 
 interface MonthProps {
@@ -191,6 +315,7 @@ interface MonthProps {
     minDate?: Date
     maxDate?: Date
     weekStartsOn: number
+    reduced: boolean
     formatters: {
         title: Intl.DateTimeFormat
         day: Intl.DateTimeFormat
@@ -212,6 +337,7 @@ function Month({
     minDate,
     maxDate,
     weekStartsOn,
+    reduced,
     formatters,
     onPick,
     onHover,
@@ -282,10 +408,10 @@ function Month({
                 <div className={styles.weeks}>
                     <span className={styles.layer} aria-hidden="true">
                         {segments.map((segment, row) => (
-                            <Bar key={row} row={row} segment={segment} />
+                            <Bar key={row} row={row} segment={segment} reduced={reduced} />
                         ))}
-                        <Thumb cell={startCell} />
-                        <Thumb cell={endCell} />
+                        <Thumb cell={startCell} reduced={reduced} />
+                        <Thumb cell={endCell} reduced={reduced} />
                     </span>
                     {rows.map((row, index) => (
                         <div key={index} role="row" className={styles.week}>
@@ -398,7 +524,8 @@ export function DateRangePicker({
     fixedRangeDays,
     normalizeStart
 }: DateRangePickerProps) {
-    const reduced = useReducedFlag()
+    const [keyboardMotion, setKeyboardMotion] = useState(false)
+    const reduced = useReducedFlag() || keyboardMotion
     const today = useToday()
     const uid = useId()
     const [inner, setInner] = useState<DateRange | null>(defaultValue)
@@ -408,11 +535,11 @@ export function DateRangePicker({
     const [compact, setCompact] = useState(false)
     const [panelWidth, setPanelWidth] = useState(0)
     const [view, setView] = useState<Date>(() => monthStart(committed?.end ?? new Date(2000, 0, 1)))
+    const [navigation, setNavigation] = useState({ direction: 1, pointer: false })
     const [draft, setDraft] = useState<DateRange | null>(committed)
     const [anchor, setAnchor] = useState<Date | null>(null)
     const [hover, setHover] = useState<Date | null>(null)
     const [focusKey, setFocusKey] = useState('')
-    const [navigation, setNavigation] = useState({ direction: 1, pointer: false })
 
     const formatters = useMemo(
         () => ({
@@ -439,6 +566,8 @@ export function DateRangePicker({
     const shown = anchor ? ordered(anchor, hover ?? anchor) : draft
     const activePreset = today && !anchor ? presets.findIndex((preset) => sameRange(preset.range(today), draft)) : -1
     const days = shown ? dayDiff(shown.end, shown.start) + 1 : 0
+    const committedDirection = useDirection(committed)
+    const shownDirection = useDirection(shown)
 
     const rootRef = useRef<HTMLDivElement>(null)
     const triggerRef = useRef<HTMLButtonElement>(null)
@@ -603,6 +732,7 @@ export function DateRangePicker({
         setAnchor(null)
         setHover(null)
         setView(viewFor(committed, layout.single, today))
+        setNavigation({ direction: 0, pointer: false })
         setFocusKey(keyOf(committed?.start ?? today))
         pendingFocus.current = 'day'
         setOpen(true)
@@ -610,6 +740,7 @@ export function DateRangePicker({
 
     const close = useCallback((focus: boolean) => {
         if (focus) pendingFocus.current = 'trigger'
+        setNavigation({ direction: 0, pointer: false })
         setOpen(false)
         setAnchor(null)
         setHover(null)
@@ -663,10 +794,10 @@ export function DateRangePicker({
     }
 
     /* ---------- Month navigation and picking ---------- */
-    const goTo = (next: Date, pointer = false) => {
+    const goTo = (next: Date, pointer = true) => {
         const delta = monthDiff(next, view)
         if (!delta) return
-        setNavigation({ direction: Math.sign(delta), pointer })
+        setNavigation({ direction: Math.sign(delta), pointer: pointer && !keyboardMotion })
         setView(next)
     }
 
@@ -732,8 +863,8 @@ export function DateRangePicker({
         pendingFocus.current = 'day'
         const first = view,
             last = addMonths(view, count - 1)
-        if (monthDiff(next, first) < 0) goTo(monthStart(next))
-        else if (monthDiff(next, last) > 0) goTo(addMonths(monthStart(next), -(count - 1)))
+        if (monthDiff(next, first) < 0) goTo(monthStart(next), false)
+        else if (monthDiff(next, last) > 0) goTo(addMonths(monthStart(next), -(count - 1)), false)
     }
 
     const onRailKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -754,25 +885,33 @@ export function DateRangePicker({
         return keyOf(visible[0])
     }, [focusKey, shown, visible])
 
-    /* ---------- Preset highlight stays in sync with the selected dates ---------- */
+    /* ---------- Preset highlight glides between presets ---------- */
     const gx = useMotionValue(0),
         gy = useMotionValue(0),
         gw = useMotionValue(0),
         gh = useMotionValue(0),
         go = useMotionValue(0)
+    const presetTransform = useTransform(() => `translate(${gx.get()}px, ${gy.get()}px)`)
     useLayoutEffect(() => {
         const rail = railRef.current
         const node = activePreset < 0 ? null : rail?.querySelector<HTMLElement>(`[data-preset="${activePreset}"]`)
         if (!rail || !node) {
-            go.jump(0)
+            animate(go, 0, { duration: reduced ? 0 : 0.14 })
             return
         }
         const place = [node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight] as const
-        gx.jump(place[0])
-        gy.jump(place[1])
-        gw.jump(place[2])
-        gh.jump(place[3])
-        go.jump(1)
+        if (go.get() < 0.05 || reduced) {
+            gx.jump(place[0])
+            gy.jump(place[1])
+            gw.jump(place[2])
+            gh.jump(place[3])
+        } else {
+            animate(gx, place[0], GLIDE)
+            animate(gy, place[1], GLIDE)
+            gw.jump(place[2])
+            gh.jump(place[3])
+        }
+        animate(go, 1, { duration: reduced ? 0 : 0.16 })
         if (
             compact &&
             (node.offsetLeft < rail.scrollLeft ||
@@ -813,6 +952,8 @@ export function DateRangePicker({
             style={{ width: rootWidth }}
             data-open={open || undefined}
             onKeyDown={onRootKey}
+            onKeyDownCapture={() => setKeyboardMotion(true)}
+            onPointerDownCapture={() => setKeyboardMotion(false)}
             onBlur={onRootBlur}
         >
             {/* The trigger stays in place under the panel. Its icons fade, while the value itself flies to the panel footer and back. */}
@@ -845,7 +986,7 @@ export function DateRangePicker({
                         animate={open ? { opacity: 0 } : { opacity: 1 }}
                         transition={quietTransition}
                     >
-                        {committedText}
+                        <Rolling text={committedText} direction={committedDirection} reduced={reduced} />
                     </motion.span>
                 ) : (
                     <motion.span
@@ -856,7 +997,7 @@ export function DateRangePicker({
                         data-empty={!committed || undefined}
                         transition={SHRINK}
                     >
-                        {committedText}
+                        <Rolling text={committedText} direction={committedDirection} reduced={reduced} />
                     </motion.span>
                 )}
                 <motion.span className={styles.chevron} initial={false} animate={quiet} transition={quietTransition}>
@@ -900,7 +1041,7 @@ export function DateRangePicker({
                                 >
                                     <motion.span
                                         className={styles.railHighlight}
-                                        style={{ x: gx, y: gy, width: gw, height: gh, opacity: go }}
+                                        style={{ transform: presetTransform, width: gw, height: gh, opacity: go }}
                                         aria-hidden="true"
                                     />
                                     {presets.map((preset, index) => (
@@ -965,6 +1106,7 @@ export function DateRangePicker({
                                                         minDate={minDate}
                                                         maxDate={maxDate}
                                                         weekStartsOn={weekStartsOn}
+                                                        reduced={reduced}
                                                         formatters={formatters}
                                                         idBase={uid}
                                                         onPick={pick}
@@ -993,7 +1135,7 @@ export function DateRangePicker({
                                         animate={layoutId ? undefined : 'shown'}
                                         exit={layoutId ? undefined : 'gone'}
                                     >
-                                        {shownText}
+                                        <Rolling text={shownText} direction={shownDirection} reduced={reduced} />
                                     </motion.span>
                                     <motion.span
                                         className={styles.summaryCount}
@@ -1003,9 +1145,11 @@ export function DateRangePicker({
                                         exit="gone"
                                     >
                                         {countText && (
-                                            <span>
-                                                {anchor && sameDay(anchor, hover) ? 'Pick an end date' : countText}
-                                            </span>
+                                            <Rolling
+                                                text={anchor && sameDay(anchor, hover) ? 'Pick an end date' : countText}
+                                                direction={shownDirection}
+                                                reduced={reduced}
+                                            />
                                         )}
                                     </motion.span>
                                 </div>
