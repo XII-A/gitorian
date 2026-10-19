@@ -93,7 +93,7 @@ describe('writing workspace document compatibility', () => {
     })
     it('retains email, phone and internal links supported by the Arc editor', () => {
         const html =
-            '<p><a href="mailto:molham@example.com">Email</a> <a href="tel:+905551234567">Phone</a> <a href="#next-week">Next week</a></p>'
+            '<p><a href="mailto:alex@example.com">Email</a> <a href="tel:+12025550123">Phone</a> <a href="#next-week">Next week</a></p>'
         const body = journalFromHTML(sanitizeHtml(html))
         expect(journalFromHTML(sanitizeHtml(journalHTML(body)))).toEqual(body)
     })

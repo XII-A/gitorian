@@ -17,7 +17,7 @@ describe('activity row pull request references', () => {
             }
             const container = document.createElement('div')
             container.innerHTML = renderToStaticMarkup(
-                createElement(ActivityRow, { activity, repositoryName: 'gitea-slick-erp' })
+                createElement(ActivityRow, { activity, repositoryName: 'example-project' })
             )
             expect(container.querySelector('.activity-row-reference')?.textContent).toBe('#602')
             expect(container.querySelector('.activity-row-title')?.textContent).toBe(activity.title)
