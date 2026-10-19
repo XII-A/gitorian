@@ -19,6 +19,7 @@ interface Props {
     state: State
     week: string
     sample: boolean
+    initialWrite?: boolean
     notionConnected: boolean
     run: (command: Command) => Promise<Reply | undefined>
     citation?: Citation
@@ -31,6 +32,7 @@ export function WorkspaceDraft({
     state,
     week,
     sample,
+    initialWrite = false,
     notionConnected,
     run,
     citation,
@@ -42,6 +44,8 @@ export function WorkspaceDraft({
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState(false)
     const [words, setWords] = useState(0)
+    const [focusWriting, setFocusWriting] = useState(initialWrite)
+    const writingStarted = useRef(false)
     const editor = useRef<EditorHandle>(null)
     const bodySnapshot = useRef<EditorSnapshot | undefined>(undefined)
     const wordTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -224,18 +228,26 @@ export function WorkspaceDraft({
         }
         editor.current?.insertBlock(content)
     }, [citation])
-    const create = async () => {
+    const create = useCallback(async () => {
         setBusy(true)
         if (!(await persist())) {
             setBusy(false)
             return
         }
         const result = await run({ type: 'newDraft', week })
+        if (!mounted.current) return
         const created = result?.state.drafts.filter((item) => item.week === week).at(-1)
-        if (created) choose(created)
-        else toast({ type: 'error', title: 'Could not create an entry', description: 'Try starting an entry again.' })
+        if (created) {
+            setFocusWriting(true)
+            choose(created)
+        } else toast({ type: 'error', title: 'Could not create an entry', description: 'Try starting an entry again.' })
         setBusy(false)
-    }
+    }, [persist, run, week, choose, toast])
+    useEffect(() => {
+        if (!initialWrite || writingStarted.current) return
+        writingStarted.current = true
+        if (!latest.current && drafts.length === 0) void create()
+    }, [initialWrite, drafts.length, create])
     const publish = async () => {
         setBusy(true)
         clearTimeout(timer.current)
@@ -368,6 +380,7 @@ export function WorkspaceDraft({
                                 template={entryTemplate}
                                 onEdit={editBody}
                                 readOnly={busy}
+                                autoFocus={focusWriting}
                             />
                         </>
                     ) : (
