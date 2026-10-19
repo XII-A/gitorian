@@ -358,6 +358,7 @@ export interface DesktopBridge {
         ) => Promise<{ maximized: boolean } | undefined>
         onState: (listener: (state: { maximized: boolean }) => void) => () => void
         onHover: (listener: (hovered: boolean) => void) => () => void
+        setHoverExclusion: (bounds: { x: number; y: number; width: number; height: number } | null) => void
     }
     invoke: (command: Command) => Promise<Reply>
     updates?: (command: Command, base?: StateCursor) => Promise<UpdateReply>

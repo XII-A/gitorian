@@ -29,6 +29,7 @@ import landscape from './assets/week-landscape.jpg'
 import './workspace.css'
 import { useActivityRefresh } from './use-activity-refresh'
 import { useWeekHistory } from './use-week-history'
+import { useWindowHoverExclusion } from './use-window-hover-exclusion'
 
 function BrowseHistoryIcon() {
     return <WorkspaceIcon name="branch" width="14" height="14" />
@@ -61,6 +62,8 @@ export function Workspace({
     onSettings
 }: Props) {
     const [week, setWeek] = useState(initialWeek)
+    const breadcrumb = useRef<HTMLDivElement>(null)
+    useWindowHoverExclusion(breadcrumb)
     const [sample, setSample] = useState(false)
     const [example, setExample] = useState<State>()
     const examples = useRef(new Map<string, State>())
@@ -357,10 +360,12 @@ export function Workspace({
             </div>
             <header className="ws-topbar" aria-label="Date range and journal controls">
                 <div className="ws-heading">
-                    <Breadcrumb
-                        ariaLabel="Journal breadcrumb"
-                        items={[{ label: 'Hub', onClick: () => onBack(week) }, { label: 'Weekly entry' }]}
-                    />
+                    <div ref={breadcrumb}>
+                        <Breadcrumb
+                            ariaLabel="Journal breadcrumb"
+                            items={[{ label: 'Hub', onClick: () => onBack(week) }, { label: 'Weekly entry' }]}
+                        />
+                    </div>
                 </div>
                 <div className="ws-date">
                     <DateRangePicker
