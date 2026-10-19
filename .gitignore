@@ -6,3 +6,10 @@
 /coverage/
 *.log
 .env*
+/social-screenshots/
+*.secret
+*.sqlite
+*.sqlite-*
+*.pem
+*.key
+weekly-j-backup*.json
