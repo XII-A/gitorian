@@ -37,7 +37,7 @@ Do not redefine these tokens for an entire page. A filter chip may locally set `
 
 ## Activity lists
 
-The hub, workspace, and related activity use `ActivityRow`: connected timeline nodes, a title, repository and branch metadata, an Arc status badge, and a short SHA or pull request number. Connect nodes only within each visible group. Rows have a borderless rounded hover/selection background. Preserve native button behavior, workspace selection, and citation dragging. The installed Arc `Badge` has a local `animateChanges={false}` option for static records, keeping long lists free of per-row motion and resize observers; changing status controls retain the default animation.
+The hub, workspace, and related activity use `ActivityRow`: connected timeline nodes, a title, repository and branch metadata, an Arc status badge, and a short SHA or pull request number. Connect nodes only within each visible group. Rows have a borderless rounded hover background; selected rows add an inset hairline, filled timeline nodes and chevrons, and stronger status chips. Preserve native button behavior, workspace selection, and citation dragging. The installed Arc `Badge` has a local `animateChanges={false}` option for static records, keeping long lists free of per-row motion and resize observers; changing status controls retain the default animation.
 
 Pull references display only the trailing number from real `repository-id:pr:number` IDs or sample `sample/pr/number` IDs. Bound the trailing column so the title and metadata retain priority. Each row draws its own incoming connector; hover and selection use the stronger border token so row backgrounds cannot hide the timeline.
 
@@ -63,7 +63,7 @@ Keep word count, save status, and the Notion action in one footer row, with the 
 
 Keep sample state separate from real commands. The workspace header has no sample-data switch. Retain `workspace-sample.ts` and the explicit `?workspace=true&data=sample&week=2026-10-05` preview URL for design iteration and smoke tests; normal workspace navigation uses real data. Sample publishing is simulated. Detached reference windows remain read-only and send citations to the editable main workspace through the existing channel. They have no note form; citation results appear in the inspector footer.
 
-Use Arc `ScrollArea` for constrained activity, writing, diff, details, related-item, and popup lists. Name each viewport for keyboard users. Native text controls and the whole document retain native scrolling.
+Use Arc `ScrollArea` for constrained activity, writing, diff, details, related-item, and popup lists. Name each viewport for keyboard users. The hub uses a named full-height Arc ScrollArea. Native text controls and document scrolling outside constrained views retain native scrolling.
 
 Search uses Arc `ExpandingSearch` to navigate weekly activity, including across the active list filters. Selecting a result opens its Details tab. Its local `expandedWidth="container"` option fills the header's available width and follows pane resizing.
 
