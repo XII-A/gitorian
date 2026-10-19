@@ -46,6 +46,7 @@ interface Props {
     error: string
     initialWeek: string
     initialActivity?: string
+    initialWrite?: boolean
     onBack: (week: string) => void
     onSources: () => void
     onSettings: () => void
@@ -57,11 +58,16 @@ export function Workspace({
     error,
     initialWeek,
     initialActivity,
+    initialWrite = false,
     onBack,
     onSources,
     onSettings
 }: Props) {
     const [week, setWeek] = useState(initialWeek)
+    const writingWeek = useRef(initialWrite ? initialWeek : undefined)
+    useEffect(() => {
+        if (week !== initialWeek) writingWeek.current = undefined
+    }, [week, initialWeek])
     const breadcrumb = useRef<HTMLDivElement>(null)
     useWindowHoverExclusion(breadcrumb)
     const [sample, setSample] = useState(false)
@@ -605,6 +611,7 @@ export function Workspace({
                         key={`${sample ? 'sample' : 'real'}:${week}`}
                         state={state}
                         week={week}
+                        initialWrite={week === writingWeek.current}
                         sample={sample}
                         notionConnected={notionConnected}
                         run={run}

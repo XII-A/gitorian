@@ -36,6 +36,7 @@ function JournalApp() {
     const [commandsOpen, setCommandsOpen] = useState(false)
     const [workspaceWeek, setWorkspaceWeek] = useState('')
     const [workspaceActivity, setWorkspaceActivity] = useState<string>()
+    const [workspaceWriting, setWorkspaceWriting] = useState(false)
     const [reference, setReference] = useState<{ kind: string; id: string }>()
     const [sourcesOpen, setSourcesOpen] = useState(false)
     const polling = useRef(false)
@@ -130,9 +131,10 @@ function JournalApp() {
         window.addEventListener('keydown', keyboard)
         return () => window.removeEventListener('keydown', keyboard)
     }, [screen, settingsOpen, commandsOpen, reference])
-    const openWorkspace = (date?: string) => {
+    const openWorkspace = (date?: string, writing = false) => {
         setWorkspaceWeek(date ?? (reply ? weekOf(new Date(), reply.state.settings) : ''))
         setWorkspaceActivity(undefined)
+        setWorkspaceWriting(writing)
         setScreen('workspace')
         window.scrollTo(0, 0)
     }
@@ -185,6 +187,7 @@ function JournalApp() {
                     error={error}
                     initialWeek={workspaceWeek || weekOf(new Date(), reply.state.settings)}
                     initialActivity={workspaceActivity}
+                    initialWrite={workspaceWriting}
                     onBack={backToHub}
                     onSources={() => setSourcesOpen(true)}
                     onSettings={() => setSettingsOpen(true)}
@@ -197,7 +200,7 @@ function JournalApp() {
                     error={error}
                     onSources={() => setSourcesOpen(true)}
                     onSettings={() => setSettingsOpen(true)}
-                    onWrite={openWorkspace}
+                    onWrite={(date) => openWorkspace(date, true)}
                     onActivity={openActivity}
                 />
             ) : (

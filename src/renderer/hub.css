@@ -1,10 +1,13 @@
+.hub-scroll {
+    height: 100dvh;
+}
 .weekly-hub {
     --font-geist: 'Geist Variable';
     position: relative;
     isolation: isolate;
     width: 100%;
     max-width: 100%;
-    min-height: 100vh;
+    min-height: 100%;
     overflow-x: clip;
     padding-bottom: var(--space-10);
     color: var(--foreground);

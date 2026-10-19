@@ -317,7 +317,7 @@
 .day[data-edge] {
     color: var(--accent-foreground);
     font-weight: 500;
-    transition-delay: 40ms;
+    transition-delay: 0ms;
 }
 .day[data-today]::after {
     content: '';

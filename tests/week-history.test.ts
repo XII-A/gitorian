@@ -6,6 +6,43 @@ import { Store } from '../src/main/store'
 import { join } from 'node:path'
 import { rangeActivities } from '../src/renderer/hub-model'
 
+it('loads newly imported repositories when an earlier request for the same week is still running', async () => {
+    const app = await workspace()
+    const imported = await workspace()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+        release = resolve
+    })
+    const original = gitModule.indexCommits
+    const index = vi.spyOn(gitModule, 'indexCommits').mockImplementationOnce(async (...args) => {
+        await gate
+        return original(...args)
+    })
+    let first: Promise<unknown> | undefined
+    let second: Promise<unknown> | undefined
+    try {
+        await imported.git('commit', '--allow-empty', '--date=2026-10-06T12:00:00Z', '-m', 'Imported project work')
+        first = app.service.handle({ type: 'loadWeek', since: '2026-10-05' })
+        await vi.waitFor(() => expect(index).toHaveBeenCalledTimes(1))
+        const scan = (await app.service.scanRepositories(imported.directory)).repositoryScan!
+        await app.service.importRepositories(
+            scan.id,
+            scan.repositories.map((repository) => repository.path)
+        )
+        second = app.service.handle({ type: 'loadWeek', since: '2026-10-05' })
+        release()
+        await Promise.all([first, second])
+        expect(
+            rangeActivities(app.store.state, '2026-10-05', '2026-10-11').map((activity) => activity.title)
+        ).toContain('Imported project work')
+    } finally {
+        release()
+        await Promise.all([first, second])
+        index.mockRestore()
+        await Promise.all([app.close(), imported.close()])
+    }
+})
+
 it('loads all five local sources while GitHub is blocked', async () => {
     const app = await workspace()
     let release!: () => void
