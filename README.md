@@ -44,7 +44,7 @@ Choose either a parent page or a database data source as the destination. Supply
 
 ## Known limitations
 
-- This is version 0.2.0. Cross-platform packaging is configured, but that is not a claim that all platforms have been validated or that installers are signed/notarized.
+- This is version 0.1.2. Cross-platform packaging is configured, but that is not a claim that all platforms have been validated or that installers are signed/notarized.
 - Imports depend on accessible local repositories, matching author emails, the configured history range, and available refs. Remote activity needs network access and sufficient GitHub permissions; API limits can delay collection.
 - Large diffs are limited (approximately 2 MB); individual GitHub detail lists above 3,000 records are rejected. Use the original repository or GitHub for complete evidence.
 - Notion conversion supports a subset of its content model; complex blocks may not round-trip exactly. Publishing can modify remote page content. Review uncertain publish results in Notion before retrying.
@@ -83,8 +83,8 @@ After the release changes are merged into `main`, a maintainer creates a release
 ```sh
 git switch main
 git pull --ff-only
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 Download the installer and `SHA256SUMS` from the draft and follow its verification checklist on a test account or machine. Confirm the hash with `Get-FileHash -Algorithm SHA256`, install, and test repository import, writing persistence, backup restore, and any integrations being claimed as tested. Record results in the release notes, then publish that same draft manually. Draft downloads require repository write access. Do not grant write access just to share an installer. A failed candidate should be fixed with a new version/tag rather than replacing a tested asset or moving a tag.
