@@ -23,8 +23,8 @@ export interface DateRangePreset {
 
 /**
  * A range picker whose trigger grows into the panel it opens. The panel shows two months beside a preset rail, or one
- * month with a scrolling preset row when space is tight. Range changes and month navigation settle immediately so
- * the dates, selected endpoints, and keyboard focus stay in sync. On Apply the
+ * month with a scrolling preset row when space is tight. Month arrows give a short directional transition;
+ * range changes and keyboard navigation settle immediately so dates and selected endpoints stay in sync. On Apply the
  * formatted label flies back into the trigger as the surface shrinks around it.
  * Use it for reports, filters, and bookings where a start and end date are chosen together.
  */
@@ -348,6 +348,31 @@ export function DateRangePicker({
     const [anchor, setAnchor] = useState<Date | null>(null)
     const [hover, setHover] = useState<Date | null>(null)
     const [focusKey, setFocusKey] = useState('')
+    const calendarRef = useRef<HTMLDivElement>(null)
+    const calendarAnimation = useRef<Animation | null>(null)
+    const navigationDirection = useRef(0)
+
+    useLayoutEffect(() => {
+        const calendar = calendarRef.current
+        const direction = navigationDirection.current
+        navigationDirection.current = 0
+        const previous = calendarAnimation.current
+        // Sample the visible pose before canceling so rapid reversals do not jump.
+        const pose = previous?.playState === 'running' && calendar ? getComputedStyle(calendar) : null
+        const transform = pose?.transform ?? `translateX(${direction * 12}px)`
+        const opacity = pose?.opacity ?? '0.7'
+        previous?.cancel()
+        calendarAnimation.current = null
+        if (!calendar || !direction || !calendar.animate) return
+        calendarAnimation.current = calendar.animate(
+            [
+                { transform: reduced ? 'none' : transform, opacity },
+                { transform: 'none', opacity: 1 }
+            ],
+            { duration: motionTokens.duration.fast * 1000, easing: `cubic-bezier(${enterEase.join(',')})` }
+        )
+    }, [view, reduced])
+    useEffect(() => () => calendarAnimation.current?.cancel(), [])
 
     const formatters = useMemo(
         () => ({
@@ -598,9 +623,10 @@ export function DateRangePicker({
     }
 
     /* ---------- Month navigation and picking ---------- */
-    const goTo = (next: Date) => {
+    const goTo = (next: Date, pointer = false) => {
         const delta = monthDiff(next, view)
         if (!delta) return
+        navigationDirection.current = pointer ? Math.sign(delta) : 0
         setView(next)
     }
 
@@ -862,7 +888,7 @@ export function DateRangePicker({
                                         className={styles.navButton}
                                         data-side="prev"
                                         aria-label="Previous month"
-                                        onClick={() => goTo(addMonths(view, -1))}
+                                        onClick={(event) => goTo(addMonths(view, -1), event.detail > 0)}
                                         disabled={Boolean(minDate && monthDiff(view, minDate) <= 0)}
                                     >
                                         <ChevronLeft size={16} strokeWidth={1.75} aria-hidden="true" />
@@ -872,7 +898,7 @@ export function DateRangePicker({
                                         className={styles.navButton}
                                         data-side="next"
                                         aria-label="Next month"
-                                        onClick={() => goTo(addMonths(view, 1))}
+                                        onClick={(event) => goTo(addMonths(view, 1), event.detail > 0)}
                                         disabled={Boolean(
                                             maxDate && monthDiff(addMonths(view, count - 1), maxDate) >= 0
                                         )}
@@ -880,7 +906,7 @@ export function DateRangePicker({
                                         <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
                                     </button>
                                     <div className={styles.viewport}>
-                                        <div className={styles.months} data-current>
+                                        <div ref={calendarRef} className={styles.months} data-current>
                                             {visible.map((month) => (
                                                 <Month
                                                     key={keyOf(month)}

@@ -89,3 +89,30 @@ it('shows exactly the selected week and matching endpoints immediately after suc
     )
     expect(onChange).toHaveBeenCalledWith({ start: new Date(2026, 9, 5), end: new Date(2026, 9, 11) })
 })
+
+it('animates pointer month navigation as one calendar and cancels it for keyboard navigation', async () => {
+    const { host } = await picker()
+    const calendar = host.querySelector<HTMLElement>('[data-current]')!
+    const cancel = vi.fn()
+    const animate = vi.fn(() => ({ cancel, playState: 'running' }))
+    Object.defineProperty(calendar, 'animate', { value: animate })
+    const next = host.querySelector<HTMLButtonElement>('[aria-label="Next month"]')!
+    const previous = host.querySelector<HTMLButtonElement>('[aria-label="Previous month"]')!
+    await update(() => next.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
+    expect(animate).toHaveBeenCalledTimes(1)
+    expect(animate.mock.calls[0]).toEqual([
+        [
+            { transform: 'translateX(12px)', opacity: '0.7' },
+            { transform: 'none', opacity: 1 }
+        ],
+        { duration: 160, easing: 'cubic-bezier(0.16,1,0.3,1)' }
+    ])
+    await update(() => previous.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(animate).toHaveBeenCalledTimes(2)
+    expect(host.querySelectorAll('[data-current]')).toHaveLength(1)
+    // Keyboard-generated clicks have no pointer detail and must settle immediately.
+    await update(() => next.click())
+    expect(cancel).toHaveBeenCalledTimes(2)
+    expect(animate).toHaveBeenCalledTimes(2)
+})
