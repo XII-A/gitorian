@@ -1,4 +1,4 @@
-## Changes in v0.2.0
+## Changes in v0.1.2
 
 - Hub writing now creates or resumes a draft and focuses the journal body. Starting an entry from the workspace also focuses the editor. (#19)
 - Imported repositories load activity even when an earlier scan is still running. (#19)
