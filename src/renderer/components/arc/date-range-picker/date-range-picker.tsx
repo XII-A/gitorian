@@ -1,8 +1,23 @@
 'use client'
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent, CSSProperties, FocusEvent as ReactFocusEvent } from 'react'
-import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
+import {
+    forwardRef,
+    useCallback,
+    useEffect,
+    useId,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+    useSyncExternalStore
+} from 'react'
+import type {
+    KeyboardEvent as ReactKeyboardEvent,
+    CSSProperties,
+    FocusEvent as ReactFocusEvent,
+    ReactNode
+} from 'react'
+import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, useIsPresent } from 'motion/react'
 import type { Transition, Variants } from 'motion/react'
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { motionTokens } from '../lib/motion-tokens'
@@ -23,7 +38,7 @@ export interface DateRangePreset {
 
 /**
  * A range picker whose trigger grows into the panel it opens. The panel shows two months beside a preset rail, or one
- * month with a scrolling preset row when space is tight. Month arrows give a short directional transition;
+ * month with a scrolling preset row when space is tight. Month arrows slide the outgoing and incoming calendars together;
  * range changes and keyboard navigation settle immediately so dates and selected endpoints stay in sync. On Apply the
  * formatted label flies back into the trigger as the surface shrinks around it.
  * Use it for reports, filters, and bookings where a start and end date are chosen together.
@@ -317,6 +332,55 @@ function Month({
     )
 }
 
+interface MonthNavigation {
+    direction: number
+    pointer: boolean
+    reduced: boolean
+}
+const monthSlide: Variants = {
+    enter: ({ direction, pointer, reduced }: MonthNavigation) => ({
+        opacity: pointer ? 0 : 1,
+        transform: pointer && !reduced ? `translateX(${direction * 24}px)` : 'translateX(0px)',
+        filter: pointer && !reduced ? `blur(${blur.subtle}px)` : 'blur(0px)'
+    }),
+    center: ({ pointer }: MonthNavigation) => ({
+        opacity: 1,
+        transform: 'translateX(0px)',
+        filter: 'blur(0px)',
+        transition: { duration: pointer ? motionTokens.duration.standard : 0, ease: enterEase }
+    }),
+    exit: ({ direction, pointer, reduced }: MonthNavigation) => ({
+        opacity: 0,
+        transform: pointer && !reduced ? `translateX(${direction * -24}px)` : 'translateX(0px)',
+        filter: pointer && !reduced ? `blur(${blur.subtle}px)` : 'blur(0px)',
+        transition: { duration: pointer ? motionTokens.duration.exit : 0, ease: enterEase }
+    })
+}
+
+// The departing calendar remains visual only; focus and selection belong to the current month.
+const Months = forwardRef<HTMLDivElement, { children: ReactNode; navigation: MonthNavigation }>(function Months(
+    { children, navigation },
+    ref
+) {
+    const present = useIsPresent()
+    return (
+        <motion.div
+            ref={ref}
+            className={styles.months}
+            data-current={present || undefined}
+            aria-hidden={!present || undefined}
+            inert={!present || undefined}
+            custom={navigation}
+            variants={monthSlide}
+            initial="enter"
+            animate="center"
+            exit="exit"
+        >
+            {children}
+        </motion.div>
+    )
+})
+
 export function DateRangePicker({
     value,
     defaultValue = null,
@@ -348,31 +412,7 @@ export function DateRangePicker({
     const [anchor, setAnchor] = useState<Date | null>(null)
     const [hover, setHover] = useState<Date | null>(null)
     const [focusKey, setFocusKey] = useState('')
-    const calendarRef = useRef<HTMLDivElement>(null)
-    const calendarAnimation = useRef<Animation | null>(null)
-    const navigationDirection = useRef(0)
-
-    useLayoutEffect(() => {
-        const calendar = calendarRef.current
-        const direction = navigationDirection.current
-        navigationDirection.current = 0
-        const previous = calendarAnimation.current
-        // Sample the visible pose before canceling so rapid reversals do not jump.
-        const pose = previous?.playState === 'running' && calendar ? getComputedStyle(calendar) : null
-        const transform = pose?.transform ?? `translateX(${direction * 12}px)`
-        const opacity = pose?.opacity ?? '0.7'
-        previous?.cancel()
-        calendarAnimation.current = null
-        if (!calendar || !direction || !calendar.animate) return
-        calendarAnimation.current = calendar.animate(
-            [
-                { transform: reduced ? 'none' : transform, opacity },
-                { transform: 'none', opacity: 1 }
-            ],
-            { duration: motionTokens.duration.fast * 1000, easing: `cubic-bezier(${enterEase.join(',')})` }
-        )
-    }, [view, reduced])
-    useEffect(() => () => calendarAnimation.current?.cancel(), [])
+    const [navigation, setNavigation] = useState({ direction: 1, pointer: false })
 
     const formatters = useMemo(
         () => ({
@@ -626,7 +666,7 @@ export function DateRangePicker({
     const goTo = (next: Date, pointer = false) => {
         const delta = monthDiff(next, view)
         if (!delta) return
-        navigationDirection.current = pointer ? Math.sign(delta) : 0
+        setNavigation({ direction: Math.sign(delta), pointer })
         setView(next)
     }
 
@@ -906,28 +946,37 @@ export function DateRangePicker({
                                         <ChevronRight size={16} strokeWidth={1.75} aria-hidden="true" />
                                     </button>
                                     <div className={styles.viewport}>
-                                        <div ref={calendarRef} className={styles.months} data-current>
-                                            {visible.map((month) => (
-                                                <Month
-                                                    key={keyOf(month)}
-                                                    month={month}
-                                                    range={shown}
-                                                    tabbable={tabbable}
-                                                    today={today}
-                                                    minDate={minDate}
-                                                    maxDate={maxDate}
-                                                    weekStartsOn={weekStartsOn}
-                                                    formatters={formatters}
-                                                    idBase={uid}
-                                                    onPick={pick}
-                                                    onHover={(date) => {
-                                                        if (anchor) setHover(date)
-                                                    }}
-                                                    onKey={onDayKey}
-                                                    onFocusDay={(date) => setFocusKey(keyOf(date))}
-                                                />
-                                            ))}
-                                        </div>
+                                        <AnimatePresence
+                                            initial={false}
+                                            mode="popLayout"
+                                            custom={{ ...navigation, reduced }}
+                                        >
+                                            <Months
+                                                key={`${keyOf(view)}-${count}`}
+                                                navigation={{ ...navigation, reduced }}
+                                            >
+                                                {visible.map((month) => (
+                                                    <Month
+                                                        key={keyOf(month)}
+                                                        month={month}
+                                                        range={shown}
+                                                        tabbable={tabbable}
+                                                        today={today}
+                                                        minDate={minDate}
+                                                        maxDate={maxDate}
+                                                        weekStartsOn={weekStartsOn}
+                                                        formatters={formatters}
+                                                        idBase={uid}
+                                                        onPick={pick}
+                                                        onHover={(date) => {
+                                                            if (anchor) setHover(date)
+                                                        }}
+                                                        onKey={onDayKey}
+                                                        onFocusDay={(date) => setFocusKey(keyOf(date))}
+                                                    />
+                                                ))}
+                                            </Months>
+                                        </AnimatePresence>
                                     </div>
                                 </div>
                             </motion.div>
