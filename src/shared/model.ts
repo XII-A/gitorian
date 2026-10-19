@@ -158,6 +158,7 @@ export const stateSchema = z.object({
                 retryAt: z.string().optional(),
                 since: z.string().optional(),
                 historySince: z.string().optional(),
+                historyTimezone: z.string().optional(),
                 windowEnd: z.string().optional(),
                 page: z.number().optional(),
                 versions: z.record(z.string(), z.string()).optional(),

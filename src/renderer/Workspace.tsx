@@ -309,7 +309,7 @@ export function Workspace({
             else setNotice('The browser blocked the window. Allow pop-ups for this app and try again.')
         }
     }
-    const { refresh, refreshing } = useActivityRefresh(run, week, offsetDay(week, 6))
+    const { refresh, refreshing } = useActivityRefresh(run, week, offsetDay(week, 6), state.settings.timezone)
     const loadingWeek = useWeekHistory(state, run, week, sample)
     const emptyActivityAction = useCallback(() => {
         setProject('all')

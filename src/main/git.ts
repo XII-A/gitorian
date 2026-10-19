@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import { realpath } from 'node:fs/promises'
 import type { Activity, Repository } from '../shared/model'
+import { localDate } from '../shared/model'
 import { WorkQueue } from './work-queue'
 
 const execute = promisify(execFile)
@@ -188,7 +189,8 @@ export async function indexCommits(
     since: string,
     offset = 0,
     excludedTips: string[] = [],
-    known: Activity[] = []
+    known: Activity[] = [],
+    timezone = 'UTC'
 ): Promise<{
     refs: Record<string, string>
     items: Activity[]
@@ -211,7 +213,11 @@ export async function indexCommits(
     if (!Object.keys(refs).length) return { refs, items: [] }
     const same = JSON.stringify(refs) === JSON.stringify(previous)
     if (same && !offset)
-        return { refs, items: known.filter((activity) => activity.date.slice(0, 10) >= since), history: known }
+        return {
+            refs,
+            items: known.filter((activity) => localDate(new Date(activity.date), timezone) >= since),
+            history: known
+        }
     if (!same) {
         excludedTips = offset ? excludedTips : [...new Set(Object.values(previous))]
         offset = 0
@@ -247,7 +253,7 @@ export async function indexCommits(
     }
     return {
         refs,
-        items: items.filter((activity) => activity.date.slice(0, 10) >= since),
+        items: items.filter((activity) => localDate(new Date(activity.date), timezone) >= since),
         history: items,
         nextOffset: captured.length === 2000 ? offset + 2000 : undefined,
         excludedTips

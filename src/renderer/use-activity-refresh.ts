@@ -5,13 +5,18 @@ import { rangeActivities } from './hub-model'
 import { useToastStack } from './components/arc/toast-stack/toast-stack'
 
 interface RefreshRequest {
-    selection: { start: string; end: string }
+    selection: { start: string; end: string; timezone?: string }
 }
 
 /** Completion feedback belongs to this click, never to background state updates. */
-export function useActivityRefresh(run: (command: Command) => Promise<Reply | undefined>, start: string, end: string) {
+export function useActivityRefresh(
+    run: (command: Command) => Promise<Reply | undefined>,
+    start: string,
+    end: string,
+    timezone?: string
+) {
     const { toast } = useToastStack()
-    const selection = useMemo(() => ({ start, end }), [start, end])
+    const selection = useMemo(() => ({ start, end, timezone }), [start, end, timezone])
     const [request, setRequest] = useState<RefreshRequest>()
     const pending = useRef<RefreshRequest | undefined>(undefined)
     const currentSelection = useRef(selection)

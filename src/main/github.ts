@@ -1,4 +1,5 @@
 import type { Activity, Repository } from '../shared/model'
+import { localDate } from '../shared/model'
 import type { Http } from './http'
 import { fingerprint, githubRemote } from './git'
 import { HttpError } from './http'
@@ -23,6 +24,7 @@ interface Pull {
     head: { ref: string; sha: string }
 }
 export interface ActivityScan {
+    timezone?: string
     since?: string
     page?: number
     versions?: Record<string, string>
@@ -162,7 +164,7 @@ export class GitHub {
                 scan.background
             )
             for (const summary of pulls) {
-                if ((summary.updated_at ?? summary.created_at).slice(0, 10) < since) {
+                if (localDate(new Date(summary.updated_at ?? summary.created_at), scan.timezone ?? 'UTC') < since) {
                     complete = true
                     break
                 }
@@ -284,7 +286,9 @@ export class GitHub {
                         url: review.html_url
                     })
                 const eligible = batch.filter(
-                    (item) => item.kind === 'pr' || item.date.slice(0, 10) >= repository.trackingStart
+                    (item) =>
+                        item.kind === 'pr' ||
+                        localDate(new Date(item.date), scan.timezone ?? 'UTC') >= repository.trackingStart
                 )
                 // Keep all events from hydrated PRs in the local cache. Otherwise an
                 // unchanged version would hide older reviews/commits when history expands.

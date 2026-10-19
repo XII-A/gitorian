@@ -12,7 +12,10 @@ function missingSources(state: State, since: string) {
             const configuration =
                 source === 'git' ? gitConfiguration(repository, state) : githubConfiguration(repository, state)
             const missing =
-                !status?.historySince || status.historySince > since || status.configuration !== configuration
+                !status?.historySince ||
+                status.historySince > since ||
+                status.historyTimezone !== state.settings.timezone ||
+                status.configuration !== configuration
             return missing ? [status] : []
         })
     })
@@ -33,9 +36,10 @@ export function useWeekHistory(
             .map((repository) => [repository.id, repository.path, repository.remote, repository.emails])
     )
     const login = state.settings.githubLogin
+    const timezone = state.settings.timezone
     useEffect(() => {
         if (!disabled && missingSources(latest.current, since).length) void run({ type: 'loadWeek', since })
-    }, [run, since, repositories, login, disabled])
+    }, [run, since, repositories, login, timezone, disabled])
     return (
         !disabled &&
         missingSources(state, since).some(

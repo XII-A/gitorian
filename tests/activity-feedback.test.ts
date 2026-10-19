@@ -72,6 +72,7 @@ it('loads missing weeks silently, keeps cached weeks immediate and does not relo
         state.acquisition[`git:${repository.id}`] = {
             status: 'idle',
             historySince: '2026-10-05',
+            historyTimezone: state.settings.timezone,
             configuration: gitConfiguration(repository, state)
         }
     function Harness({ value, since }: { value: State; since: string }) {

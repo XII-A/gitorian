@@ -7,6 +7,7 @@ import { workspace, transport } from './fixtures'
 import { Store } from '../src/main/store'
 import { join } from 'node:path'
 import * as gitModule from '../src/main/git'
+import { JournalService } from '../src/main/service'
 
 const repository: Repository = {
     id: 'repo',
@@ -50,6 +51,50 @@ it('stops before enriching old unrelated PR history', async () => {
     const github = new GitHub(new Http(fetcher), () => 'test', vi.fn())
     expect(await github.activities(repository, 'me', [])).toEqual([])
     expect(fetcher).toHaveBeenCalledTimes(1)
+})
+
+it('keeps PR summaries updated on the selected journal date across a UTC boundary', async () => {
+    const remote = transport()
+    const http = new Http(async (input, init) => {
+        const response = await remote.fetch(input, init)
+        const url = input instanceof Request ? input.url : String(input)
+        if (!url.includes('/pulls?')) return response
+        const pulls = (await response.json()) as { updated_at: string }[]
+        pulls[0].updated_at = '2026-10-04T22:00:00Z'
+        return new Response(JSON.stringify(pulls))
+    })
+    const github = new GitHub(http, () => 'test', vi.fn())
+    const items = await github.activities(repository, 'me', [], { since: '2026-10-05', timezone: 'Europe/Istanbul' })
+    expect(items.some((item) => item.kind === 'pr')).toBe(true)
+})
+
+it('reconsiders completed GitHub coverage when the journal timezone changes', async () => {
+    const app = await workspace()
+    try {
+        app.repository.trackingStart = '2026-10-05'
+        app.store.state.settings.timezone = 'UTC'
+        const http = new Http(async (input, init) => {
+            const response = await app.remote.fetch(input, init)
+            const url = input instanceof Request ? input.url : String(input)
+            if (!url.includes('/pulls?')) return response
+            const pulls = (await response.json()) as { updated_at: string }[]
+            pulls[0].updated_at = '2026-10-04T22:00:00Z'
+            return new Response(JSON.stringify(pulls))
+        })
+        const service = new JournalService(app.store, new GitHub(http, () => 'test', vi.fn()), app.notion, () => ({
+            github: true,
+            notion: false,
+            protectedStorage: false
+        }))
+        await service.handle({ type: 'loadWeek', since: '2026-10-05' })
+        expect(app.store.state.activities.some((activity) => activity.kind === 'pr')).toBe(false)
+        app.store.state.settings.timezone = 'Europe/Istanbul'
+        await service.handle({ type: 'loadWeek', since: '2026-10-05' })
+        expect(app.store.state.activities.some((activity) => activity.kind === 'pr')).toBe(true)
+        expect(app.store.state.acquisition?.[`github:${app.repository.id}`].historyTimezone).toBe('Europe/Istanbul')
+    } finally {
+        await app.close()
+    }
 })
 
 it('recognizes secondary throttling even with primary quota remaining', async () => {

@@ -4,6 +4,7 @@ import * as gitModule from '../src/main/git'
 import { JournalService } from '../src/main/service'
 import { Store } from '../src/main/store'
 import { join } from 'node:path'
+import { rangeActivities } from '../src/renderer/hub-model'
 
 it('loads all five local sources while GitHub is blocked', async () => {
     const app = await workspace()
@@ -166,6 +167,90 @@ it('can acquire an earlier local week while a previous remote refresh is still w
         release()
         await Promise.all([first, earlier])
         github.mockRestore()
+        await app.close()
+    }
+})
+
+it.each([
+    ['Europe/Istanbul', '2026-10-04T22:00:00Z', '2026-10-05', '2026-10-11', 1],
+    ['America/Los_Angeles', '2026-10-05T00:30:00Z', '2026-10-05', '2026-10-11', 0],
+    ['Europe/Berlin', '2026-10-25T23:30:00Z', '2026-10-26', '2026-11-01', 1],
+    ['America/New_York', '2026-11-02T04:30:00Z', '2026-11-02', '2026-11-08', 0]
+] as const)('uses journal dates for cold and cached history in %s', async (timezone, date, since, end, count) => {
+    const app = await workspace()
+    try {
+        app.store.state.settings.timezone = timezone
+        await app.git('commit', '--allow-empty', `--date=${date}`, '-m', 'Week boundary')
+        await app.service.refresh({ source: 'git', since })
+        const visible = () =>
+            rangeActivities(app.store.state, since, end).filter((activity) => activity.title === 'Week boundary')
+        expect(visible()).toHaveLength(count)
+        app.store.state.activities = []
+        await app.service.handle({ type: 'loadWeek', since })
+        expect(visible()).toHaveLength(count)
+    } finally {
+        await app.close()
+    }
+})
+
+it('gives all five repositories a first batch before continuing the first two large histories', async () => {
+    const app = await workspace()
+    const index = vi.spyOn(gitModule, 'indexCommits')
+    const order: { id: string; offset: number }[] = []
+    try {
+        app.repository.remotes = []
+        for (let i = 1; i < 5; i++) app.store.state.repositories.push({ ...app.repository, id: `repo-${i}` })
+        const large = new Set(app.store.state.repositories.slice(0, 2).map((repository) => repository.id))
+        index.mockImplementation(async (repository, _previous, _since, offset = 0) => {
+            order.push({ id: repository.id, offset })
+            await Promise.resolve()
+            return {
+                refs: { main: 'a'.repeat(40) },
+                items: [],
+                history: [],
+                nextOffset: large.has(repository.id) && !offset ? 2000 : undefined
+            }
+        })
+        await app.service.handle({ type: 'refresh', source: 'git', since: '2020-01-01' })
+        expect(new Set(order.slice(0, 5).map((batch) => batch.id)).size).toBe(5)
+        expect(order.slice(0, 5).every((batch) => batch.offset === 0)).toBe(true)
+        expect(order.filter((batch) => batch.offset === 2000)).toHaveLength(2)
+    } finally {
+        index.mockRestore()
+        await app.close()
+    }
+})
+
+it('does not coalesce a timezone change into an in-flight scan using the previous timezone', async () => {
+    const app = await workspace()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+        release = resolve
+    })
+    const original = gitModule.indexCommits
+    const index = vi.spyOn(gitModule, 'indexCommits').mockImplementationOnce(async (...args) => {
+        await gate
+        return original(...args)
+    })
+    let first: Promise<unknown> | undefined
+    let second: Promise<unknown> | undefined
+    try {
+        app.store.state.settings.timezone = 'UTC'
+        await app.git('commit', '--allow-empty', '--date=2026-10-04T22:00:00Z', '-m', 'In-flight timezone boundary')
+        first = app.service.handle({ type: 'loadWeek', since: '2026-10-05' })
+        await vi.waitFor(() => expect(index).toHaveBeenCalledTimes(1))
+        app.store.state.settings.timezone = 'Europe/Istanbul'
+        second = app.service.handle({ type: 'loadWeek', since: '2026-10-05' })
+        release()
+        await Promise.all([first, second])
+        expect(rangeActivities(app.store.state, '2026-10-05', '2026-10-11').map((activity) => activity.title)).toEqual([
+            'In-flight timezone boundary'
+        ])
+        expect(app.store.state.acquisition?.[`git:${app.repository.id}`].historyTimezone).toBe('Europe/Istanbul')
+    } finally {
+        release()
+        await Promise.all([first, second])
+        index.mockRestore()
         await app.close()
     }
 })

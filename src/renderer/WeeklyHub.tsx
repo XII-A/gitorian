@@ -45,7 +45,7 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
     const [project, setProject] = useState('all')
     const [tab, setTab] = useState<'all' | 'commit' | 'pr'>('all')
     const detailDialog = useRef<HubActivityDialogHandle>(null)
-    const { refresh, refreshing: busy } = useActivityRefresh(run, start, end)
+    const { refresh, refreshing: busy } = useActivityRefresh(run, start, end, state.settings.timezone)
     const loadingWeek = useWeekHistory(state, run, start)
     const items = rangeActivities(state, start, end)
     const commits = items.filter((item) => item.kind === 'commit')

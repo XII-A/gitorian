@@ -21,15 +21,23 @@ const reply = (value = state()): Reply => ({
     state: value,
     connections: { github: true, notion: false, protectedStorage: false }
 })
-function Harness({ run, start }: { run: (command: Command) => Promise<Reply | undefined>; start: string }) {
-    controls = useActivityRefresh(run, start, start === '2026-10-05' ? '2026-10-11' : '2026-10-18')
+function Harness({
+    run,
+    start,
+    timezone
+}: {
+    run: (command: Command) => Promise<Reply | undefined>
+    start: string
+    timezone: string
+}) {
+    controls = useActivityRefresh(run, start, start === '2026-10-05' ? '2026-10-11' : '2026-10-18', timezone)
     return null
 }
-async function render(run: (command: Command) => Promise<Reply | undefined>, start = '2026-10-05') {
+async function render(run: (command: Command) => Promise<Reply | undefined>, start = '2026-10-05', timezone = 'UTC') {
     await act(async () => {
         await Promise.resolve()
         await Promise.resolve()
-        root.render(createElement(Harness, { run, start }))
+        root.render(createElement(Harness, { run, start, timezone }))
     })
 }
 beforeEach(() => {
@@ -189,6 +197,29 @@ it('does not revive an abandoned refresh or its toast when navigating back', asy
     })
     await render(run, '2026-10-12')
     await render(run)
+    expect(controls.refreshing).toBe(false)
+    await act(async () => {
+        finish(reply())
+        await pending
+    })
+    expect(toast).not.toHaveBeenCalled()
+})
+
+it('releases loading and suppresses old empty feedback after the timezone changes', async () => {
+    let finish!: (value: Reply) => void
+    const run = vi.fn(
+        () =>
+            new Promise<Reply>((resolve) => {
+                finish = resolve
+            })
+    )
+    await render(run)
+    let pending!: Promise<void>
+    await act(async () => {
+        pending = controls.refresh()
+        await Promise.resolve()
+    })
+    await render(run, '2026-10-05', 'Europe/Istanbul')
     expect(controls.refreshing).toBe(false)
     await act(async () => {
         finish(reply())
