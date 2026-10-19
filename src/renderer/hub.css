@@ -192,6 +192,9 @@
 .hub-filters > button > span {
     font-variant-numeric: tabular-nums;
 }
+.hub-filters > .project-filter {
+    margin-inline-start: auto;
+}
 .hub-project-summary {
     padding: var(--space-6);
     border: 1px solid var(--border);
