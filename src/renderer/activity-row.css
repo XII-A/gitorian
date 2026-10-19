@@ -120,6 +120,8 @@
     --badge-background: transparent;
 }
 .activity-row-status {
+    --badge-hover-border: var(--badge-border, var(--border));
+    --badge-hover-background: var(--badge-background, var(--surface));
     transition: none;
 }
 .activity-row[data-kind='opened'] .activity-row-status {
