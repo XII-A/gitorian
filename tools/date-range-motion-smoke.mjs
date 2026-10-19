@@ -20,9 +20,29 @@ app.whenReady().then(async () => {
     const evaluate = (source) => window.webContents.executeJavaScript(source)
     try {
         await window.loadFile(resolve('out/renderer/index.html'))
+        window.webContents.debugger.attach('1.3')
+        await window.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
         await pause(300)
         await evaluate(`document.querySelector('[aria-label^="Week:"]').click()`)
         await pause(700)
+        const blankAreas = await evaluate(`(()=>{
+            const panel=document.querySelector('[role="dialog"]');
+            const rect=panel.getBoundingClientRect();
+            return [{x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+4)},
+                {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.bottom-4)}];
+        })()`)
+        for (const blank of blankAreas) {
+            await evaluate(`document.querySelector('[data-current] [data-date]').focus()`)
+            window.webContents.sendInputEvent({ type: 'mouseDown', ...blank, button: 'left', clickCount: 1 })
+            window.webContents.sendInputEvent({ type: 'mouseUp', ...blank, button: 'left', clickCount: 1 })
+            await pause(100)
+            const inside = await evaluate(`(()=>{
+                const panel=document.querySelector('[role="dialog"]');
+                return document.querySelector('[aria-label^="Week:"]').getAttribute('aria-expanded')==='true'
+                    && panel.contains(document.activeElement);
+            })()`)
+            if (!inside) throw new Error('Blank picker content dismissed the picker or moved focus outside')
+        }
         const read = () =>
             evaluate(`(()=>{
             const current=document.querySelector('[data-current]');
@@ -51,7 +71,15 @@ app.whenReady().then(async () => {
             `({current:document.querySelectorAll('[data-current]').length,departing:document.querySelectorAll('[inert][aria-hidden="true"]').length})`
         )
         if (months.current !== 1 || months.departing < 1) throw new Error('Month transition is missing')
-        console.info(JSON.stringify({ before, during, after, months, passed: true }))
+        await pause(350)
+        await evaluate(`document.querySelector('[aria-label="Open settings"]').focus()`)
+        const dismissedOnOutsideFocus = await evaluate(
+            `document.querySelector('[aria-label^="Week:"]').getAttribute('aria-expanded')==='false'`
+        )
+        if (!dismissedOnOutsideFocus) throw new Error('Moving focus outside did not dismiss the picker')
+        console.info(
+            JSON.stringify({ before, during, after, months, insideClicks: true, outsideFocus: true, passed: true })
+        )
         app.exit(0)
     } catch (error) {
         console.error(error)

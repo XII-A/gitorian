@@ -1014,6 +1014,7 @@ export function DateRangePicker({
                             id={`${uid}-panel`}
                             className={styles.panel}
                             role="dialog"
+                            tabIndex={-1}
                             aria-label={label}
                             data-compact={compact || undefined}
                             style={
