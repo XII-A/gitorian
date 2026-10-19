@@ -1,17 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Command, Reply } from '../shared/model'
 import { actionableSources } from './background-work'
 import { rangeActivities } from './hub-model'
 import { useToastStack } from './components/arc/toast-stack/toast-stack'
 
+interface RefreshRequest {
+    selection: { start: string; end: string }
+}
+
 /** Completion feedback belongs to this click, never to background state updates. */
 export function useActivityRefresh(run: (command: Command) => Promise<Reply | undefined>, start: string, end: string) {
     const { toast } = useToastStack()
-    const [refreshing, setRefreshing] = useState(false)
-    const pending = useRef(false)
-    const range = `${start}:${end}`
-    const currentRange = useRef(range)
-    currentRange.current = range
+    const selection = useMemo(() => ({ start, end }), [start, end])
+    const [request, setRequest] = useState<RefreshRequest>()
+    const pending = useRef<RefreshRequest | undefined>(undefined)
+    const currentSelection = useRef(selection)
+    currentSelection.current = selection
     const mounted = useRef(true)
     useEffect(() => {
         mounted.current = true
@@ -20,15 +24,16 @@ export function useActivityRefresh(run: (command: Command) => Promise<Reply | un
         }
     }, [])
     const refresh = useCallback(async () => {
-        if (pending.current) return
-        pending.current = true
-        setRefreshing(true)
+        if (pending.current?.selection === selection) return
+        const next = { selection }
+        pending.current = next
+        setRequest(next)
         try {
             const reply = await run({ type: 'refresh', since: start })
             if (
                 reply &&
                 mounted.current &&
-                currentRange.current === range &&
+                currentSelection.current === selection &&
                 !actionableSources(reply.state).some(([key]) => key !== 'notion') &&
                 !rangeActivities(reply.state, start, end).length
             )
@@ -39,9 +44,9 @@ export function useActivityRefresh(run: (command: Command) => Promise<Reply | un
                     description: `No activity was found for ${start} to ${end}. Try another week.`
                 })
         } finally {
-            pending.current = false
-            setRefreshing(false)
+            if (pending.current === next) pending.current = undefined
+            if (mounted.current) setRequest((current) => (current === next ? undefined : current))
         }
-    }, [run, start, end, range, toast])
-    return { refresh, refreshing }
+    }, [run, start, end, selection, toast])
+    return { refresh, refreshing: request?.selection === selection }
 }

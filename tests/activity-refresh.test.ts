@@ -125,8 +125,72 @@ it('does not show an empty-result toast for a week the user has left', async () 
         pending = controls.refresh()
     })
     await render(run, '2026-10-12')
+    expect(controls.refreshing).toBe(false)
     await act(async () => {
         await Promise.resolve()
+        finish(reply())
+        await pending
+    })
+    expect(toast).not.toHaveBeenCalled()
+})
+
+it('allows a refresh in the new week and does not let the old request clear its loading state', async () => {
+    const finishes: ((value: Reply) => void)[] = []
+    const run = vi.fn(
+        () =>
+            new Promise<Reply>((resolve) => {
+                finishes.push(resolve)
+            })
+    )
+    await render(run)
+    let first!: Promise<void>
+    await act(async () => {
+        first = controls.refresh()
+        await Promise.resolve()
+    })
+    await render(run, '2026-10-12')
+    expect(controls.refreshing).toBe(false)
+    let second!: Promise<void>
+    await act(async () => {
+        second = controls.refresh()
+        await Promise.resolve()
+    })
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(controls.refreshing).toBe(true)
+    await act(async () => {
+        finishes[0](reply())
+        await first
+    })
+    expect(controls.refreshing).toBe(true)
+    expect(toast).not.toHaveBeenCalled()
+    await act(async () => {
+        finishes[1](reply())
+        await second
+    })
+    expect(controls.refreshing).toBe(false)
+    expect(toast).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ description: expect.stringContaining('2026-10-12 to 2026-10-18') })
+    )
+})
+
+it('does not revive an abandoned refresh or its toast when navigating back', async () => {
+    let finish!: (value: Reply) => void
+    const run = vi.fn(
+        () =>
+            new Promise<Reply>((resolve) => {
+                finish = resolve
+            })
+    )
+    await render(run)
+    let pending!: Promise<void>
+    await act(async () => {
+        pending = controls.refresh()
+        await Promise.resolve()
+    })
+    await render(run, '2026-10-12')
+    await render(run)
+    expect(controls.refreshing).toBe(false)
+    await act(async () => {
         finish(reply())
         await pending
     })
