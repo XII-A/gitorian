@@ -13,6 +13,73 @@ function open(content = '<p>First thought</p>') {
     return editor
 }
 
+function type(writing: Editor, text: string) {
+    for (const character of text) {
+        const { from, to } = writing.state.selection
+        const handled = writing.view.someProp('handleTextInput', (handler) =>
+            handler(writing.view, from, to, character, () => writing.state.tr.insertText(character, from, to))
+        )
+        if (!handled) writing.view.dispatch(writing.state.tr.insertText(character, from, to))
+    }
+}
+
+it('converts typed double hyphens into an em dash and retains it after reload', () => {
+    const writing = open('<p>Thought</p>')
+    writing.commands.setTextSelection(8)
+    type(writing, ' -- next')
+    expect(writing.getText()).toBe('Thought — next')
+    const saved = writing.getJSON()
+    writing.commands.setContent(saved)
+    expect(writing.getJSON()).toEqual(saved)
+})
+
+it('reverses dash conversion with Backspace and supports undo and redo', () => {
+    const writing = open('<p>Thought -</p>')
+    writing.commands.setTextSelection(10)
+    type(writing, '-')
+    expect(writing.getText()).toBe('Thought —')
+    writing.commands.keyboardShortcut('Backspace')
+    expect(writing.getText()).toBe('Thought --')
+    writing.commands.undo()
+    writing.commands.redo()
+    expect(writing.getText()).toBe('Thought --')
+})
+
+it('supports undo and redo of dash conversion', () => {
+    const writing = open('<p>Thought -</p>')
+    writing.commands.setTextSelection(10)
+    type(writing, '-')
+    expect(writing.getText()).toBe('Thought —')
+    writing.commands.undo()
+    expect(writing.getText()).toBe('Thought --')
+    writing.commands.redo()
+    expect(writing.getText()).toBe('Thought —')
+})
+
+it.each(['<p><code>-</code></p>', '<pre><code>-</code></pre>'])(
+    'keeps typed double hyphens literal in code: %s',
+    (content) => {
+        const writing = open(content)
+        writing.commands.setTextSelection(2)
+        type(writing, '-')
+        expect(writing.state.doc.firstChild?.textContent).toBe('--')
+    }
+)
+
+it('preserves the three-hyphen divider shortcut after converting the second hyphen', () => {
+    const writing = open('<p></p>')
+    type(writing, '---')
+    expect(writing.state.doc.firstChild?.type.name).toBe('horizontalRule')
+})
+
+it('leaves pasted and loaded double hyphens literal', () => {
+    const writing = open('<p>--</p>')
+    expect(writing.getText()).toBe('--')
+    writing.commands.setTextSelection(3)
+    writing.commands.insertContent(' --')
+    expect(writing.getText()).toBe('-- --')
+})
+
 it('keeps Enter as a separate paragraph and Shift+Enter as a hard break after reload', () => {
     const writing = open()
     writing.commands.setTextSelection(14)

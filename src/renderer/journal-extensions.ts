@@ -1,4 +1,4 @@
-import { Extension, Node } from '@tiptap/react'
+import { Extension, InputRule, Node, textInputRule } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import type { JournalNode } from '../shared/model'
 import StarterKit from '@tiptap/starter-kit'
@@ -212,6 +212,23 @@ const EditorTabFallback = Extension.create({
     }
 })
 
+const DashTypography = Extension.create({
+    name: 'dashTypography',
+    addInputRules() {
+        return [
+            textInputRule({ find: /--$/, replace: '—' }),
+            // The second hyphen already became an em dash. Preserve the existing
+            // three-hyphen divider shortcut when the third hyphen is typed.
+            new InputRule({
+                find: /^—-$/,
+                handler: ({ range, chain }) => {
+                    chain().deleteRange(range).setHorizontalRule().run()
+                }
+            })
+        ]
+    }
+})
+
 export const journalExtensions = () => [
     StarterKit.configure({ heading: { levels: [1, 2, 3, 4] }, link: { openOnClick: false } }),
     TaskList,
@@ -220,5 +237,6 @@ export const journalExtensions = () => [
     ToggleSummary,
     ToggleContent,
     ToggleIndentation,
-    EditorTabFallback
+    EditorTabFallback,
+    DashTypography
 ]
