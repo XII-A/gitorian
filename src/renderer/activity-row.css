@@ -168,6 +168,8 @@
     --activity-line-color: var(--border-strong);
     --activity-node-border: var(--border-strong);
     background: var(--surface-muted);
+    /* An inset hairline defines adjacent surfaces without moving row geometry. */
+    box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 .activity-row[aria-pressed='true'] .activity-row-status {
     --badge-background: color-mix(in oklab, var(--foreground) 12%, var(--surface-muted));
@@ -182,6 +184,9 @@
 }
 .activity-row[aria-pressed='true'] .activity-row-node {
     border-color: var(--foreground);
+}
+.activity-row[aria-pressed='true'] .activity-row-chevron {
+    background: color-mix(in oklab, var(--foreground) 88%, var(--surface-muted));
 }
 @media (hover: hover) and (pointer: fine) {
     .activity-row:hover {
