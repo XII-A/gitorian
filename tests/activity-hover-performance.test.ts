@@ -91,3 +91,51 @@ it('reads connector styles only for visible rows, skips unchanged renders, and r
         host.remove()
     }
 })
+
+it('never overlays the selected ring and updates the moving path when selection changes', async () => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement
+    ) {
+        if (this.classList.contains('activity-row-node')) return new DOMRect(10, 10, 26, 26)
+        return new DOMRect(0, 0, 200, 70)
+    })
+    try {
+        act(() => {
+            root.render(
+                createElement(
+                    ActivityHover,
+                    null,
+                    createElement(
+                        'div',
+                        { className: 'activity-row-list' },
+                        createElement(
+                            'button',
+                            { className: 'activity-row', 'aria-pressed': true },
+                            createElement('span', { className: 'activity-row-node' })
+                        )
+                    )
+                )
+            )
+        })
+        const path = () => host.querySelector('.activity-hover-timeline path')!.getAttribute('d')
+        expect(path()).toBe('')
+        const select = async (selected: boolean) => {
+            await act(async () => {
+                host.querySelector('button')!.setAttribute('aria-pressed', String(selected))
+                await new Promise((resolve) => setTimeout(resolve, 60))
+            })
+        }
+        await select(false)
+        expect(path()).toContain('a12.5,12.5')
+        await select(true)
+        expect(path()).toBe('')
+    } finally {
+        act(() => root.unmount())
+        bounds.mockRestore()
+        host.remove()
+    }
+})
