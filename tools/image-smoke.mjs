@@ -141,6 +141,146 @@ app.on('browser-window-created', (_, window) => {
                     `Array.from(document.querySelectorAll('[role="option"]')).find(b=>b.textContent==='Image').click()`
                 )
             }
+            if (process.env.IMAGE_SMOKE_REGRESSIONS) {
+                const failures = []
+                const check = (condition, message) => {
+                    console.info(JSON.stringify({ check: message, passed: condition }))
+                    if (!condition) failures.push(message)
+                }
+                await chooseImage()
+                await wait(`document.querySelector('.journal-image-preview img')?.naturalWidth===1200`)
+                check(
+                    await js(`!document.querySelector('textarea[aria-label="Image caption"]')`),
+                    'caption stays hidden after import'
+                )
+                await js(`document.querySelector('.journal-image-preview').click()`)
+                await wait(`!!document.querySelector('.journal-lightbox-stage img')?.naturalWidth`)
+                check(
+                    await js(
+                        `(()=>{const rect=document.querySelector('.journal-lightbox-controls').getBoundingClientRect();window.__imageControlsBottom=rect.bottom;return innerHeight-rect.bottom<=32})()`
+                    ),
+                    'lightbox controls stay at the viewport bottom'
+                )
+                await js(`document.querySelector('.journal-lightbox [aria-label="Fit image"]').focus()`)
+                await wait(`!!document.querySelector('[role="tooltip"]')`)
+                check(
+                    await js(
+                        `(()=>{const tip=document.querySelector('[role="tooltip"]');const bubble=tip.parentElement;const layer=bubble.closest('[data-radix-popper-content-wrapper]');return +getComputedStyle(layer??bubble).zIndex>+getComputedStyle(document.querySelector('.journal-lightbox')).zIndex})()`
+                    ),
+                    'lightbox tooltip paints above image'
+                )
+                writeFileSync(join(directory, 'tooltip-layering.png'), await screenshot())
+                window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+                await wait(`!document.querySelector('[role="tooltip"]')`)
+                await js(`document.querySelector('[aria-label="Close image viewer"]')?.click()`)
+                await wait(`!document.querySelector('.journal-lightbox')`)
+                check(
+                    await js(`!document.querySelector('textarea[aria-label="Image caption"]')`),
+                    'caption stays hidden after preview'
+                )
+                const svgBytes = process.env.IMAGE_SMOKE_SVG
+                    ? readFileSync(process.env.IMAGE_SMOKE_SVG)
+                    : Buffer.from(
+                          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 254.5 225"><path fill="#2DBCAF" d="M0 0H254.5V225H0Z"/></svg>'
+                      )
+                await js(
+                    `(()=>{const t=new DataTransfer();t.items.add(new File([Uint8Array.from(atob(${JSON.stringify(svgBytes.toString('base64'))}),c=>c.charCodeAt(0))],'logo.svg',{type:'image/svg+xml'}));const host=document.querySelector('.tiptap');const rect=host.getBoundingClientRect();host.dispatchEvent(new DragEvent('drop',{dataTransfer:t,clientX:rect.left+20,clientY:rect.bottom+8,bubbles:true,cancelable:true}));})()`
+                )
+                await wait(`document.querySelectorAll('.journal-image-preview img').length===2`)
+                await js(`document.querySelectorAll('.journal-image-preview img').forEach(i=>i.loading='eager')`)
+                await wait(`Array.from(document.querySelectorAll('.journal-image-preview img')).every(i=>i.complete)`)
+                const dimensions = await js(
+                    `Array.from(document.querySelectorAll('.journal-image-preview img')).map(i=>({naturalWidth:i.naturalWidth,width:i.getBoundingClientRect().width,height:i.getBoundingClientRect().height}))`
+                )
+                console.info(JSON.stringify({ dimensions }))
+                check(
+                    dimensions.every((i) => i.width > 20 && i.height > 20),
+                    'viewBox-only SVG remains visible after drop'
+                )
+                writeFileSync(join(directory, 'svg-visible.png'), await screenshot())
+                await js(`document.querySelectorAll('.journal-image-preview')[1].click()`)
+                await wait(`document.querySelector('.journal-lightbox-stage img')?.naturalWidth===170`)
+                check(
+                    await js(
+                        `Math.abs(document.querySelector('.journal-lightbox-controls').getBoundingClientRect().bottom-window.__imageControlsBottom)<1`
+                    ),
+                    'switching to a shorter image keeps controls in place'
+                )
+                await js(`document.querySelector('[aria-label="Close image viewer"]').click()`)
+                await wait(`!document.querySelector('.journal-lightbox')`)
+
+                await js(`document.querySelector('.journal-image-tools [aria-label="Edit caption"]').click()`)
+                check(
+                    await js(
+                        `(()=>{const input=document.querySelector('textarea[aria-label="Image caption"]');return !!input && getComputedStyle(input).borderBottomWidth==='0px'})()`
+                    ),
+                    'caption opens explicitly without a bottom border'
+                )
+                await js(
+                    `(()=>{const input=document.querySelector('textarea[aria-label="Image caption"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'A saved caption');input.dispatchEvent(new Event('input',{bubbles:true}));input.blur()})()`
+                )
+                check(
+                    await js(
+                        `document.querySelector('textarea[aria-label="Image caption"]')?.value==='A saved caption'`
+                    ),
+                    'saved caption stays directly editable after blur'
+                )
+                await js(
+                    `window.__captionField=document.querySelector('textarea[aria-label="Image caption"]');window.__captionField.focus();window.__captionField.setSelectionRange(2,2)`
+                )
+                await cdp('Input.insertText', { text: 'new ' })
+                check(
+                    await js(
+                        `document.querySelector('textarea[aria-label="Image caption"]')===window.__captionField && window.__captionField.value==='A new saved caption' && window.__captionField.selectionStart===6`
+                    ),
+                    'typing at an existing caption position preserves the field and caret'
+                )
+                for (const character of 'and ') await cdp('Input.insertText', { text: character })
+                check(
+                    await js(
+                        `window.__captionField.value==='A new and saved caption' && window.__captionField.selectionStart===10`
+                    ),
+                    'continued typing stays in the middle of the caption'
+                )
+                await js(
+                    `(()=>{const input=window.__captionField;Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'');input.dispatchEvent(new Event('input',{bubbles:true}));})()`
+                )
+                check(
+                    await js(
+                        `document.activeElement===window.__captionField && !!document.querySelector('textarea[aria-label="Image caption"]')`
+                    ),
+                    'clearing a caption keeps it editable until blur'
+                )
+                await js(`window.__captionField.blur()`)
+                check(
+                    await js(`!document.querySelector('textarea[aria-label="Image caption"]')`),
+                    'empty caption hides after blur'
+                )
+                await js(`document.querySelector('.tiptap').focus()`)
+                window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: ['control'] })
+                window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: ['control'] })
+                await cdp('Input.insertText', { text: '/ image' })
+                await wait(`Array.from(document.querySelectorAll('[role="option"]')).some(b=>b.textContent==='Image')`)
+                imageChoice = []
+                const previousPicks = imagePickCount
+                await js(
+                    `Array.from(document.querySelectorAll('[role="option"]')).find(b=>b.textContent==='Image').click()`
+                )
+                await wait(`!document.querySelector('.journal-image-pending')`)
+                check(imagePickCount === previousPicks + 1, 'slash command uses the native picker')
+                check(await js(`!document.querySelector('input[type="file"]')`), 'Chromium file picker path is removed')
+                check(
+                    await js(
+                        `document.activeElement===document.querySelector('.tiptap') && getComputedStyle(document.body).pointerEvents!=='none'`
+                    ),
+                    'cancelled native picker returns writing focus and pointer access'
+                )
+                writeFileSync(join(directory, 'regressions.png'), await screenshot())
+                if (failures.length) throw new Error(failures.join('; '))
+                console.info(JSON.stringify({ regressionsPassed: true, directory }))
+                app.exit(0)
+                return
+            }
             // Exercise the real slash command, preload bridge and native picker import handler.
             await chooseImage()
             await wait(`!!document.querySelector('.journal-image-skeleton')`)
