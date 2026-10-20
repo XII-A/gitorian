@@ -30,8 +30,7 @@
         "smoke:week-history": "electron tools/week-history-smoke.mjs",
         "smoke:dev-reload": "node tools/dev-reload-smoke.mjs",
         "smoke:writing": "node tools/workspace-writing-dev-profile.mjs --assert",
-        "smoke:images": "electron tools/image-smoke.mjs",
-        "smoke:cursor": "electron tools/cursor-smoke.mjs"
+        "smoke:images": "electron tools/image-smoke.mjs"
     },
     "build": {
         "appId": "io.github.xiia.weeklyj",
