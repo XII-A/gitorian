@@ -70,14 +70,8 @@
     margin-block: var(--space-4);
 }
 .journal-image-skeleton {
-    min-height: 160px;
-    aspect-ratio: 16 / 9;
+    height: var(--space-16);
     border-radius: var(--radius-control);
-    background: var(--surface-muted);
-}
-.journal-image-skeleton > * {
-    height: 100%;
-    min-height: 160px;
 }
 .journal-image-cancel {
     position: absolute;

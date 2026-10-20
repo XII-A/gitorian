@@ -95,7 +95,7 @@ export const ImageImportPositions = Extension.create({
                                                     null,
                                                     createElement(Skeleton, {
                                                         className: 'journal-image-skeleton',
-                                                        lines: 1,
+                                                        shape: 'block',
                                                         label: 'Importing image'
                                                     }),
                                                     createElement(

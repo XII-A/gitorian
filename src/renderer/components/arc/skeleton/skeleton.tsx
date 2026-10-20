@@ -13,6 +13,8 @@ import { motionTokens } from '../lib/motion-tokens'
 import styles from './skeleton.module.css'
 
 export interface SkeletonProps {
+    /** A solid placeholder for media, or the default text lines. */
+    shape?: 'text' | 'block'
     label?: string
     lines?: number
     avatar?: boolean
@@ -83,6 +85,7 @@ function HeightFrame({
 
 export function Skeleton({
     label = 'Loading content',
+    shape = 'text',
     lines = 3,
     avatar = false,
     className,
@@ -94,21 +97,25 @@ export function Skeleton({
     // Each block pulses a beat after the one above it, so the wait reads as one calm wave.
     const placeholder = (extra?: string) => (
         <div
-            className={[styles.root, extra].filter(Boolean).join(' ')}
+            className={[shape === 'block' ? styles.block : styles.root, extra].filter(Boolean).join(' ')}
             role="status"
             aria-label={label}
             aria-busy="true"
         >
-            {avatar && <span className={styles.avatar} aria-hidden="true" />}
-            <span className={styles.lines} aria-hidden="true">
-                {Array.from({ length: count }, (_, index) => (
-                    <span
-                        className={styles.line}
-                        style={{ '--index': index + (avatar ? 1 : 0) } as CSSProperties}
-                        key={index}
-                    />
-                ))}
-            </span>
+            {shape === 'text' && (
+                <>
+                    {avatar && <span className={styles.avatar} aria-hidden="true" />}
+                    <span className={styles.lines} aria-hidden="true">
+                        {Array.from({ length: count }, (_, index) => (
+                            <span
+                                className={styles.line}
+                                style={{ '--index': index + (avatar ? 1 : 0) } as CSSProperties}
+                                key={index}
+                            />
+                        ))}
+                    </span>
+                </>
+            )}
         </div>
     )
     if (children === undefined) return placeholder(className)

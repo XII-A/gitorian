@@ -146,9 +146,17 @@ app.on('browser-window-created', (_, window) => {
             await wait(`!!document.querySelector('.journal-image-skeleton')`)
             await pause(150)
             assert(
-                await js(`document.querySelector('.journal-image-skeleton').getBoundingClientRect().height>=160`),
-                'Loading skeleton has no reserved image space'
+                await js(
+                    `(()=>{const box=document.querySelector('.journal-image-skeleton');const rect=box.getBoundingClientRect();return rect.height>=60&&rect.height<=80&&box.childElementCount===0&&getComputedStyle(box).animationName!=='none'})()`
+                ),
+                'Loading skeleton must be a compact pulsing block without text lines'
             )
+            await cdp('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+            assert(
+                await js(`getComputedStyle(document.querySelector('.journal-image-skeleton')).animationName==='none'`),
+                'Loading block ignores reduced motion'
+            )
+            await cdp('Emulation.setEmulatedMedia', { features: [] })
             writeFileSync(join(directory, 'loading.png'), await screenshot())
             await wait(
                 `document.querySelectorAll('.journal-image-preview img').length===1 && document.querySelector('.journal-image-preview img').naturalWidth===1200`
