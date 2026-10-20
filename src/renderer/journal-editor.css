@@ -82,13 +82,30 @@
 .journal-editor .tiptap pre code {
     padding: 0;
 }
-.journal-editor .tiptap ul {
-    list-style: disc;
+.journal-editor .tiptap :is(ul, ol):not([data-type='taskList']) {
+    /* Rotate through three marker styles at every depth. The li below passes
+       resolved values to the next list without circular custom properties. */
+    --bullet-marker: var(--nested-bullet-marker, disc);
+    --bullet-marker-next: var(--nested-bullet-marker-next, circle);
+    --bullet-marker-last: var(--nested-bullet-marker-last, square);
+    --ordered-marker: var(--nested-ordered-marker, decimal);
+    --ordered-marker-next: var(--nested-ordered-marker-next, lower-alpha);
+    --ordered-marker-last: var(--nested-ordered-marker-last, lower-roman);
     padding-left: var(--space-6);
 }
+.journal-editor .tiptap :is(ul, ol):not([data-type='taskList']) > li {
+    --nested-bullet-marker: var(--bullet-marker-next);
+    --nested-bullet-marker-next: var(--bullet-marker-last);
+    --nested-bullet-marker-last: var(--bullet-marker);
+    --nested-ordered-marker: var(--ordered-marker-next);
+    --nested-ordered-marker-next: var(--ordered-marker-last);
+    --nested-ordered-marker-last: var(--ordered-marker);
+}
+.journal-editor .tiptap ul {
+    list-style-type: var(--bullet-marker);
+}
 .journal-editor .tiptap ol {
-    list-style: decimal;
-    padding-left: var(--space-6);
+    list-style-type: var(--ordered-marker);
 }
 .journal-editor .tiptap blockquote {
     border-left: 2px solid var(--border-strong);
