@@ -12,7 +12,10 @@ import { ImageLightbox, type LightboxImage } from './ImageLightbox'
 export function JournalImageView({ node, editor, updateAttributes, deleteNode, selected, getPos }: NodeViewProps) {
     const editable = useEditorState({ editor, selector: ({ editor: current }) => current.isEditable })
     const [failed, setFailed] = useState(false)
+    const [width, setWidth] = useState<number>()
     const [captionOpen, setCaptionOpen] = useState(false)
+    // Node-view attributes arrive after the input event; local state preserves the native caret.
+    const [captionValue, setCaptionValue] = useState(String(node.attrs.alt ?? ''))
     const [compact, setCompact] = useState(true)
     const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number }>()
     const frame = useRef<HTMLDivElement>(null)
@@ -22,8 +25,10 @@ export function JournalImageView({ node, editor, updateAttributes, deleteNode, s
     const alt = String(node.attrs.alt ?? '')
     const assetId = String(node.attrs.assetId)
     const url = imageURL(assetId)
+    useEffect(() => setCaptionValue(alt), [alt])
     useEffect(() => {
         setFailed(false)
+        setWidth(undefined)
     }, [url])
     useLayoutEffect(() => {
         const element = frame.current
@@ -48,7 +53,7 @@ export function JournalImageView({ node, editor, updateAttributes, deleteNode, s
         const observer = new ResizeObserver(measure)
         observer.observe(element)
         return () => observer.disconnect()
-    }, [alt, captionOpen, selected])
+    }, [captionValue, captionOpen])
     useEffect(() => {
         if (captionOpen) caption.current?.focus()
     }, [captionOpen])
@@ -79,7 +84,17 @@ export function JournalImageView({ node, editor, updateAttributes, deleteNode, s
     const items = [
         { id: 'preview', label: 'Enlarge image', icon: <Expand />, onSelect: open },
         ...(editable
-            ? [{ id: 'caption', label: 'Edit caption', icon: <Captions />, onSelect: () => setCaptionOpen(true) }]
+            ? [
+                  {
+                      id: 'caption',
+                      label: 'Edit caption',
+                      icon: <Captions />,
+                      onSelect: () => {
+                          setCaptionOpen(true)
+                          caption.current?.focus()
+                      }
+                  }
+              ]
             : []),
         { id: 'download', label: 'Download image', icon: <Download />, onSelect: () => download(assetId) },
         ...(editable
@@ -99,7 +114,15 @@ export function JournalImageView({ node, editor, updateAttributes, deleteNode, s
                     {failed ? (
                         <span>Image unavailable. Restore it from a backup.</span>
                     ) : (
-                        <img src={url} alt={alt} loading="lazy" draggable={false} onError={() => setFailed(true)} />
+                        <img
+                            src={url}
+                            alt={alt}
+                            width={width}
+                            onLoad={(event) => setWidth(event.currentTarget.naturalWidth)}
+                            loading="lazy"
+                            draggable={false}
+                            onError={() => setFailed(true)}
+                        />
                     )}
                 </button>
                 <div className="journal-image-tools" data-compact={compact || undefined}>
@@ -123,16 +146,20 @@ export function JournalImageView({ node, editor, updateAttributes, deleteNode, s
                         />
                     )}
                 </div>
-                {editable && (alt || captionOpen || selected) ? (
+                {editable && (captionValue || captionOpen) ? (
                     <textarea
                         ref={caption}
                         className="journal-image-caption"
                         aria-label="Image caption"
                         placeholder="Add a caption"
                         rows={1}
-                        value={alt}
+                        value={captionValue}
                         maxLength={2000}
-                        onChange={(event) => updateAttributes({ alt: event.target.value })}
+                        onChange={(event) => {
+                            setCaptionValue(event.target.value)
+                            updateAttributes({ alt: event.target.value })
+                        }}
+                        onFocus={() => setCaptionOpen(true)}
                         onBlur={() => setCaptionOpen(false)}
                         onKeyDown={(event) => {
                             if (event.key === 'Escape') {

@@ -53,7 +53,6 @@
     border: 0;
     border-radius: var(--radius-key);
     background: transparent;
-    border-bottom: 1px solid transparent;
     resize: none;
     overflow: hidden;
     color: var(--text-secondary);
@@ -64,9 +63,6 @@
 }
 .journal-image-caption::placeholder {
     color: var(--text-secondary);
-}
-.journal-editor .tiptap .journal-image-caption:focus {
-    border-bottom-color: var(--accent-strong);
 }
 .journal-image-pending {
     position: relative;
@@ -99,20 +95,21 @@
     pointer-events: none;
     z-index: 10;
 }
+/* Keep the viewer above dialogs (50) and below shared floating tooltips (90). */
 .journal-lightbox-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 100;
+    z-index: 80;
     background: var(--image-lightbox-backdrop);
 }
 .journal-lightbox {
     position: fixed;
     inset: 0;
-    z-index: 101;
-    display: flex;
-    flex-direction: column;
+    z-index: 81;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: center;
+    justify-items: center;
     padding: var(--space-6);
     gap: var(--space-4);
     outline: none;
@@ -120,8 +117,8 @@
 .journal-lightbox-stage {
     overflow: auto;
     max-width: 100%;
-    max-height: calc(100dvh - 120px);
-    flex-shrink: 1;
+    min-height: 0;
+    max-height: 100%;
     border-radius: var(--radius-key);
 }
 .journal-lightbox-stage img {
@@ -150,9 +147,6 @@
 @media (max-width: 480px) {
     .journal-lightbox {
         padding: var(--space-3);
-    }
-    .journal-lightbox-stage {
-        max-height: calc(100dvh - 180px);
     }
 }
 @media (prefers-reduced-motion: reduce) {
