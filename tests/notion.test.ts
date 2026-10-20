@@ -103,7 +103,7 @@ it('preserves existing entries and coverage on restore and restart', async () =>
         } finally {
             reopened.close()
         }
-        app.store.restore(backup)
+        await app.store.restore(backup)
         expect(app.store.state.entries).toEqual([published, unrelated])
         expect(app.store.state.coverage).toEqual(coverage)
     } finally {

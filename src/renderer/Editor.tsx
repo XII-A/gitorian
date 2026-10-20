@@ -1,13 +1,27 @@
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
-import { memo, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+    memo,
+    useEffect,
+    useEffectEvent,
+    useId,
+    useImperativeHandle,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState
+} from 'react'
 import type { Ref } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor as TiptapEditor } from '@tiptap/react'
+import { TextSelection } from '@tiptap/pm/state'
 import { journalExtensions } from './journal-extensions'
 import { applyBlockFormat } from './block-format'
 import './journal-editor.css'
 import type { JournalNode } from '../shared/model'
 import { editorSnapshot, type EditorSnapshot } from './editor-snapshot'
+import { attachImageDrop } from './image-drop'
+import { useToastStack } from './components/arc/toast-stack/toast-stack'
+import { ImageImports, imageImportKey, type ImageImportJob } from './journal-images'
 import {
     Bold,
     Italic,
@@ -25,7 +39,8 @@ import {
     ListChecks,
     Quote,
     FileCode,
-    BookTemplate
+    BookTemplate,
+    ImagePlus
 } from 'lucide-react'
 import { Button } from './components/arc/button/button'
 import { Input } from './components/arc/input/input'
@@ -89,7 +104,10 @@ export const Editor = memo(function Editor({
     ref,
     label,
     onHistoryChange,
-    template
+    template,
+    restoreId,
+    allowImageImport = true,
+    onImagesReadyChange
 }: {
     value: JournalNode
     onChange?: (body: JournalNode) => void
@@ -101,10 +119,26 @@ export const Editor = memo(function Editor({
     label?: string
     template?: JournalNode
     onHistoryChange?: (history: { canUndo: boolean; canRedo: boolean }) => void
+    restoreId?: string
+    allowImageImport?: boolean
+    onImagesReadyChange?: (ready: boolean) => void
 }) {
+    const imports = useRef<ImageImports | undefined>(undefined)
+    const picker = useRef<HTMLInputElement>(null)
+    const [imageJobs, setImageJobs] = useState<ImageImportJob[]>([])
+    const [dropGuide, setDropGuide] = useState<number>()
+    const { toast } = useToastStack()
+    const reportImageError = useEffectEvent((message: string) =>
+        toast({ type: 'error', title: 'Could not import image', description: message, duration: Infinity })
+    )
+    const canImportImages = allowImageImport && !readOnly
     const availableBlocks = useMemo(
-        () => (template ? [...blocks, { id: 'template', label: 'Use entry template', icon: BookTemplate }] : blocks),
-        [template]
+        () => [
+            ...blocks,
+            ...(canImportImages ? [{ id: 'image', label: 'Image', icon: ImagePlus }] : []),
+            ...(template ? [{ id: 'template', label: 'Use entry template', icon: BookTemplate }] : [])
+        ],
+        [template, canImportImages]
     )
     const menuViewport = useRef<HTMLDivElement>(null)
     const menuElement = useRef<HTMLDivElement>(null)
@@ -122,7 +156,7 @@ export const Editor = memo(function Editor({
     const id = useId()
     const updateMenu = (editor: TiptapEditor) => {
         const { $from, empty, from } = editor.state.selection
-        if (!empty && !readOnly) {
+        if (!empty && !readOnly && editor.state.selection instanceof TextSelection) {
             const rect = host.current?.getBoundingClientRect()
             const coords = editor.view.coordsAtPos(from)
             setBar({
@@ -155,7 +189,10 @@ export const Editor = memo(function Editor({
     const apply = (editor: TiptapEditor, block: string) => {
         const current = menuRef.current
         if (!current) return
-        if (block === 'template') {
+        if (block === 'image') {
+            editor.commands.deleteRange(current)
+            picker.current?.click()
+        } else if (block === 'template') {
             if (template)
                 editor
                     .chain()
@@ -181,6 +218,12 @@ export const Editor = memo(function Editor({
             },
             handlePaste: (_view, event) => {
                 const clipboard = event.clipboardData
+                const files = Array.from(clipboard?.files ?? [])
+                if (files.length && canImportImages && imports.current) {
+                    event.preventDefault()
+                    imports.current.add(files)
+                    return true
+                }
                 const text = clipboard?.getData('text/plain') ?? ''
                 if (
                     clipboard?.getData('text/html') ||
@@ -205,7 +248,7 @@ export const Editor = memo(function Editor({
                 if (!current || !editorRef.current) return false
                 const filtered = availableBlocks.filter(
                     (block) =>
-                        (!blockQuery(current.query).convert || block.id !== 'template') &&
+                        (!blockQuery(current.query).convert || !['template', 'image'].includes(block.id)) &&
                         block.label.toLowerCase().includes(blockQuery(current.query).search)
                 )
                 if (event.key === 'Escape') {
@@ -236,10 +279,51 @@ export const Editor = memo(function Editor({
             }
             updateMenu(updated)
         },
-        onTransaction: ({ editor: updated }) =>
-            onHistoryChange?.({ canUndo: updated.can().undo(), canRedo: updated.can().redo() }),
+        onTransaction: ({ editor: updated }) => {
+            imports.current?.sync()
+            onHistoryChange?.({ canUndo: updated.can().undo(), canRedo: updated.can().redo() })
+        },
         onSelectionUpdate: ({ editor: updated }) => updateMenu(updated)
     })
+    useEffect(() => {
+        if (!editor || !canImportImages) return
+        const manager = new ImageImports(
+            editor,
+            async (bytes) => {
+                if (!window.journal.images) throw new Error('Reopen the app to enable image import.')
+                try {
+                    return await window.journal.images.import(bytes, restoreId)
+                } catch {
+                    throw new Error(
+                        'Could not import this image. Use a still PNG, JPEG, WebP, or self-contained SVG under 5 MB and 40 million pixels, then retry.'
+                    )
+                }
+            },
+            setImageJobs,
+            (message) => reportImageError(message)
+        )
+        imports.current = manager
+        const element = host.current
+        const detach = element
+            ? attachImageDrop(
+                  editor.view,
+                  element.closest<HTMLElement>('[data-journal-drop-zone]') ?? element,
+                  element,
+                  (files, position) => manager.add(files, position),
+                  setDropGuide
+              )
+            : undefined
+        return () => {
+            detach?.()
+            imports.current = undefined
+            manager.dispose()
+            if (!editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(imageImportKey, { cancel: true }))
+        }
+    }, [editor, canImportImages, restoreId])
+    useEffect(() => {
+        onImagesReadyChange?.(imageJobs.length === 0)
+    }, [imageJobs.length, onImagesReadyChange])
+    useEffect(() => () => onImagesReadyChange?.(true), [onImagesReadyChange])
     const initiallyFocused = useRef(false)
     useEffect(() => {
         if (!autoFocus || !editor || readOnly || initiallyFocused.current) return
@@ -250,6 +334,10 @@ export const Editor = memo(function Editor({
         ref,
         () => ({
             undo: () => {
+                if (editor && imageImportKey.getState(editor.state)?.find().length) {
+                    editor.view.dispatch(editor.state.tr.setMeta(imageImportKey, { cancel: true }))
+                    return
+                }
                 editor?.commands.undo()
             },
             redo: () => {
@@ -317,11 +405,29 @@ export const Editor = memo(function Editor({
     if (!editor) return null
     const filtered = availableBlocks.filter(
         (block) =>
-            (!blockQuery(menu?.query ?? '').convert || block.id !== 'template') &&
+            (!blockQuery(menu?.query ?? '').convert || !['template', 'image'].includes(block.id)) &&
             block.label.toLowerCase().includes(blockQuery(menu?.query ?? '').search)
     )
     return (
         <div className="journal-editor" ref={host}>
+            {canImportImages && (
+                <input
+                    ref={picker}
+                    type="file"
+                    hidden
+                    multiple
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg"
+                    aria-label="Choose journal images"
+                    onChange={(event) => {
+                        const files = Array.from(event.target.files ?? [])
+                        if (files.length) imports.current?.add(files)
+                        event.target.value = ''
+                    }}
+                />
+            )}
+            {dropGuide !== undefined && (
+                <div className="journal-image-drop-guide" style={{ top: dropGuide }} aria-hidden="true" />
+            )}
             <EditorContent editor={editor} />
             {bar && !readOnly && (
                 <div

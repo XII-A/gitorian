@@ -1,10 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import { ReplyUpdates } from '../shared/state-updates'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, writeFile, stat } from 'node:fs/promises'
 import { Effect } from 'effect'
 import { commandSchema } from '../shared/model'
 import type { RepositoryImportProgress } from '../shared/model'
@@ -16,11 +16,17 @@ import { Notion } from './notion'
 import { JournalService } from './service'
 import { inspectRepository } from './git'
 import { watchWindowTitleBar } from './window-title-bar'
+import { imageLimits, imageIdPattern, imageExtension } from '../shared/images'
+
+protocol.registerSchemesAsPrivileged([
+    { scheme: 'journal-image', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+])
 
 const directory = fileURLToPath(new URL('.', import.meta.url))
 let mainWindow: BrowserWindow
 let store: Store
 let service: JournalService
+let restoring = false
 const referenceWindows = new Set<number>()
 const work = new Set<Promise<unknown>>()
 function track<T>(promise: Promise<T>): Promise<T> {
@@ -110,6 +116,54 @@ void app.whenReady().then(() => {
     })
     store = new Store(join(app.getPath('userData'), 'weekly-j.sqlite'))
     store.enableBackgroundWrites()
+    ipcMain.handle('journal:image-save', async (event, input: unknown) => {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window || event.senderFrame !== window.webContents.mainFrame) throw new Error('Unknown journal window')
+        const id = z.string().regex(imageIdPattern).parse(input)
+        const image = store.image(id)
+        if (!image) throw new Error('This image is unavailable. Restore it from a backup.')
+        const result = await dialog.showSaveDialog(window, {
+            defaultPath: `journal-image.${imageExtension(image.mime)}`,
+            filters: [{ name: 'Image', extensions: [imageExtension(image.mime)] }]
+        })
+        if (result.filePath) await writeFile(result.filePath, image.bytes)
+    })
+    protocol.handle('journal-image', (request) => {
+        const url = new URL(request.url)
+        const id = url.pathname.slice(1)
+        if (request.method !== 'GET' || url.host !== 'local' || url.search || url.hash || !imageIdPattern.test(id))
+            return new Response(null, { status: 404 })
+        const image = store.image(id)
+        return image
+            ? new Response(new Uint8Array(image.bytes), {
+                  headers: {
+                      'Content-Type': image.mime,
+                      'X-Content-Type-Options': 'nosniff',
+                      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+                      'Cache-Control': 'no-store'
+                  }
+              })
+            : new Response(null, { status: 404 })
+    })
+    ipcMain.handle('journal:image-import', (event, input: unknown) => {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (
+            !window ||
+            event.senderFrame !== window.webContents.mainFrame ||
+            referenceWindows.has(event.sender.id) ||
+            closing ||
+            restoring
+        )
+            throw new Error('Choose an editable journal window.')
+        const request = z
+            .object({
+                bytes: z.instanceof(Uint8Array).refine((bytes) => bytes.byteLength <= imageLimits.bytes),
+                restoreId: z.string().optional()
+            })
+            .parse(input)
+        if (request.restoreId !== store.state.restoreId) throw new Error('The journal changed. Insert the image again.')
+        return track(store.importImage(request.bytes, request.restoreId))
+    })
     const vault = new Vault(app.getPath('userData'))
     store.state.transportPauses ??= {}
     const http = new Http(fetch, { pauses: store.state.transportPauses, changed: () => store.persist() })
@@ -120,7 +174,7 @@ void app.whenReady().then(() => {
             vault.set('github', token)
         }
     )
-    const notion = new Notion(http, () => vault.get('notion'))
+    const notion = new Notion(http, () => vault.get('notion'), store)
     service = new JournalService(store, github, notion, () => ({
         github: !!vault.get('github'),
         notion: !!vault.get('notion'),
@@ -130,7 +184,7 @@ void app.whenReady().then(() => {
     const commandHandler = async (event: IpcMainInvokeEvent, input: unknown) => {
         const command = commandSchema.parse(input)
         const trusted = BrowserWindow.fromWebContents(event.sender)
-        if (!trusted) throw new Error('Unknown desktop window')
+        if (!trusted || event.senderFrame !== trusted.webContents.mainFrame) throw new Error('Unknown desktop window')
         if (referenceWindows.has(event.sender.id) && !['state', 'details', 'open'].includes(command.type))
             throw new Error('Reference windows are read-only')
         switch (command.type) {
@@ -257,30 +311,44 @@ void app.whenReady().then(() => {
                     defaultPath: 'weekly-j-backup.json',
                     filters: [{ name: 'Tracking backup', extensions: ['json'] }]
                 })
-                if (result.filePath) await writeFile(result.filePath, store.export(), 'utf8')
+                if (result.filePath) {
+                    await store.flush()
+                    await writeFile(result.filePath, store.export(), 'utf8')
+                }
                 break
             }
             case 'import': {
-                const result = await dialog.showOpenDialog(mainWindow, {
-                    properties: ['openFile'],
-                    filters: [{ name: 'Tracking backup', extensions: ['json'] }]
-                })
-                if (!result.canceled) {
-                    const confirmation = await dialog.showMessageBox(mainWindow, {
-                        type: 'warning',
-                        buttons: ['Cancel', 'Replace local tracking'],
-                        defaultId: 0,
-                        cancelId: 0,
-                        message: 'Replace local tracking and drafts with this backup?',
-                        detail: 'Export your current data first if you need to keep it.'
+                const priorWork = [...work]
+                restoring = true
+                const resume = service.prepareToClose()
+                try {
+                    await Promise.allSettled(priorWork)
+                    const result = await dialog.showOpenDialog(mainWindow, {
+                        properties: ['openFile'],
+                        filters: [{ name: 'Tracking backup', extensions: ['json'] }]
                     })
-                    if (confirmation.response === 1) {
-                        store.restore(await readFile(result.filePaths[0], 'utf8'))
-                        await store.flush()
-                        vault.set('github', '')
-                        vault.set('notion', '')
-                        return service.reply({ message: 'Backup imported.' })
+                    if (!result.canceled) {
+                        const confirmation = await dialog.showMessageBox(mainWindow, {
+                            type: 'warning',
+                            buttons: ['Cancel', 'Replace local tracking'],
+                            defaultId: 0,
+                            cancelId: 0,
+                            message: 'Replace local tracking and drafts with this backup?',
+                            detail: 'Export your current data first if you need to keep it.'
+                        })
+                        if (confirmation.response === 1) {
+                            if ((await stat(result.filePaths[0])).size > imageLimits.backup)
+                                throw new Error('The backup exceeds the 512 MiB limit.')
+                            await store.restore(await readFile(result.filePaths[0], 'utf8'))
+                            await store.flush()
+                            vault.set('github', '')
+                            vault.set('notion', '')
+                            return service.reply({ message: 'Backup imported.' })
+                        }
                     }
+                } finally {
+                    restoring = false
+                    resume()
                 }
                 break
             }
@@ -301,7 +369,7 @@ void app.whenReady().then(() => {
         return service.reply()
     }
     const durableCommand: typeof commandHandler = async (event, input) => {
-        if (closing) throw new Error('Journal is closing; retry after reopening the app')
+        if (closing || restoring) throw new Error('Journal is busy; retry after it finishes saving or restoring')
         return track(
             (async () => {
                 const reply = await commandHandler(event, input)
@@ -321,7 +389,7 @@ void app.whenReady().then(() => {
         return updates.pack(await durableCommand(event, request.command), request.base)
     })
     const refreshIfActive = () => {
-        if (closing) return
+        if (closing || restoring) return
         const minutes = store.state.settings.refreshMinutes
         const elapsed =
             Date.now() - new Date(store.state.lastRefreshAttempt ?? store.state.lastRefreshed ?? 0).getTime()

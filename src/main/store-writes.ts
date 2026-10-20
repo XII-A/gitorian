@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
+import type { JournalImage } from '../shared/images'
 
 export interface StoreWrite {
     parts: [string, string][]
@@ -10,12 +11,19 @@ export interface StoreWrite {
     initialize: boolean
     reset?: boolean
     gitHistory?: [string, string][]
+    images?: JournalImage[]
+    replaceImages?: boolean
 }
 
 export function writeStore(db: DatabaseSync, batch: StoreWrite): void {
     db.exec('BEGIN IMMEDIATE')
     try {
         if (batch.reset) db.exec('DELETE FROM state_parts; DELETE FROM state_records; DELETE FROM patches;')
+        if (batch.replaceImages) db.exec('DELETE FROM images; DELETE FROM git_history;')
+        if (batch.images?.length) {
+            const image = db.prepare('INSERT OR IGNORE INTO images (id,mime,width,height,bytes) VALUES(?,?,?,?,?)')
+            for (const value of batch.images) image.run(value.id, value.mime, value.width, value.height, value.bytes)
+        }
         if (batch.gitHistory?.length) {
             const history = db.prepare(
                 'INSERT INTO git_history VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET json=excluded.json'

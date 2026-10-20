@@ -608,7 +608,7 @@ export function Workspace({
                     }}
                 >
                     <WorkspaceDraft
-                        key={`${sample ? 'sample' : 'real'}:${week}`}
+                        key={`${state.restoreId ?? 'local'}:${sample ? 'sample' : 'real'}:${week}`}
                         state={state}
                         week={week}
                         initialWrite={week === writingWeek.current}
