@@ -102,6 +102,7 @@
     z-index: 81;
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
     justify-items: center;
     padding: var(--space-6);
@@ -110,20 +111,43 @@
 }
 .journal-lightbox-stage {
     overflow: auto;
-    max-width: 100%;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
     min-height: 0;
-    max-height: 100%;
-    border-radius: var(--radius-key);
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    touch-action: none;
+}
+.journal-lightbox-stage::-webkit-scrollbar {
+    display: none;
+}
+.journal-lightbox-canvas {
+    display: grid;
+    place-items: center;
+    width: max-content;
+    min-width: 100%;
+    min-height: 100%;
+}
+.journal-lightbox-image {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: zoom-in;
 }
 .journal-lightbox-stage img {
     display: block;
     max-width: none;
+    width: 100%;
+    height: 100%;
+    border-radius: var(--radius-key);
     user-select: none;
 }
-.journal-lightbox-stage[data-zoomed] {
+.journal-lightbox-stage[data-zoomed] .journal-lightbox-image {
     cursor: grab;
 }
-.journal-lightbox-stage[data-zoomed]:active {
+.journal-lightbox-stage[data-zoomed] .journal-lightbox-image:active {
     cursor: grabbing;
 }
 .journal-lightbox-controls {

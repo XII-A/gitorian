@@ -141,6 +141,147 @@ app.on('browser-window-created', (_, window) => {
                     `Array.from(document.querySelectorAll('[role="option"]')).find(b=>b.textContent==='Image').click()`
                 )
             }
+            if (process.env.IMAGE_SMOKE_LIGHTBOX) {
+                const source = process.env.IMAGE_SMOKE_LIGHTBOX
+                if (source !== '1') imageChoice = [source]
+                else {
+                    const tall = join(directory, 'tall.png')
+                    await sharp({ create: { width: 2400, height: 9000, channels: 3, background: '#d8efff' } })
+                        .png()
+                        .toFile(tall)
+                    imageChoice = [tall]
+                }
+                await chooseImage()
+                await wait(`!!document.querySelector('.journal-image-preview img')?.naturalWidth`)
+                await js(`document.querySelector('.journal-image-preview').click()`)
+                await wait(`!!document.querySelector('.journal-lightbox-stage img')?.naturalWidth`)
+                await pause(200)
+                const measure = () =>
+                    js(
+                        `(()=>{const stage=document.querySelector('.journal-lightbox-stage');const img=stage.querySelector('img');const a=stage.getBoundingClientRect(),b=img.getBoundingClientRect();return {zoom:document.querySelector('[aria-label="Image zoom"]').querySelectorAll('button')[1].getAttribute('aria-label'),natural:[img.naturalWidth,img.naturalHeight],image:[b.width,b.height],stage:[a.width,a.height],fits:b.left>=a.left-1&&b.top>=a.top-1&&b.right<=a.right+1&&b.bottom<=a.bottom+1,scrollbarsHidden:getComputedStyle(stage).scrollbarWidth==='none',controlsBottom:document.querySelector('.journal-lightbox-controls').getBoundingClientRect().bottom,scroll:[stage.scrollLeft,stage.scrollTop]}})()`
+                    )
+                const initial = await measure()
+                console.info(JSON.stringify({ initial }))
+                writeFileSync(join(directory, 'tall-fit.png'), await screenshot())
+                assert(initial.fits, 'Tall image must open entirely within its stage')
+                assert(initial.scrollbarsHidden, 'Lightbox scrollbars must be hidden')
+                assert(initial.zoom.endsWith('%'), 'Automatic fitting must display its percentage')
+                const step = async (direction, count = 1) => {
+                    await js(
+                        `(async()=>{for(let i=0;i<${count};i++){document.querySelector('[aria-label="Zoom ${direction}"]').click();await new Promise(done=>setTimeout(done,30))}})()`
+                    )
+                    return measure()
+                }
+                const firstStep = await step('in')
+                assert(Math.abs(firstStep.image[1] / initial.image[1] - 1.25) < 0.01, 'Zoom in must scale by 1.25')
+                assert(firstStep.zoom.endsWith('%'), 'Manual zoom must display a percentage')
+                const reverseStep = await step('out')
+                assert(Math.abs(reverseStep.image[1] - initial.image[1]) < 1, 'Zoom out must reverse zoom in')
+                const minimum = await step('out', 20)
+                assert(
+                    Math.abs(minimum.image[1] / initial.image[1] - 0.25) < 0.01,
+                    'Minimum zoom must be one quarter of fit'
+                )
+                assert(
+                    await js(
+                        `document.querySelector('[aria-label="Zoom out"]').getAttribute('aria-disabled')==='true'`
+                    ),
+                    'Zoom out must disable at the minimum'
+                )
+                const maximum = await step('in', 50)
+                assert(
+                    Math.abs(maximum.image[1] / maximum.natural[1] - 2) < 0.01,
+                    'Maximum zoom must remain 200% of intrinsic size'
+                )
+                assert(
+                    await js(`document.querySelector('[aria-label="Zoom in"]').getAttribute('aria-disabled')==='true'`),
+                    'Zoom in must disable at 200%'
+                )
+                const beforeStep = await measure()
+                await js(`document.querySelector('[aria-label="Zoom out"]').click()`)
+                await pause(50)
+                const afterStep = await measure()
+                assert(
+                    Math.abs(
+                        (Number(beforeStep.scroll[1]) + beforeStep.stage[1] / 2) / beforeStep.image[1] -
+                            (Number(afterStep.scroll[1]) + afterStep.stage[1] / 2) / afterStep.image[1]
+                    ) < 0.01,
+                    'Button zoom must preserve the viewed center'
+                )
+                await js(`document.querySelector('[aria-label="Fit image"]').click()`)
+                await pause(50)
+
+                await js(`document.querySelector('.journal-lightbox-stage img').click()`)
+                await pause(100)
+                const zoomed = await measure()
+                assert(
+                    Math.abs(zoomed.image[1] / initial.image[1] - 2) < 0.01,
+                    'Clicking the fitted image must double its fitted size'
+                )
+                assert(Math.abs(zoomed.controlsBottom - initial.controlsBottom) < 1, 'Zoom must not move the controls')
+                const point = await js(
+                    `(()=>{const r=document.querySelector('.journal-lightbox-stage').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`
+                )
+                await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point })
+                await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 })
+                await cdp('Input.dispatchMouseEvent', {
+                    type: 'mouseMoved',
+                    x: point.x - 80,
+                    y: point.y - 120,
+                    button: 'left',
+                    buttons: 1
+                })
+                await cdp('Input.dispatchMouseEvent', {
+                    type: 'mouseReleased',
+                    x: point.x - 80,
+                    y: point.y - 120,
+                    button: 'left',
+                    clickCount: 1
+                })
+                const panned = await measure()
+                assert(panned.scroll[1] > zoomed.scroll[1], 'Dragging must pan the zoomed image')
+                assert(panned.image[1] === zoomed.image[1], 'Releasing a pan must not toggle zoom')
+                await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 })
+                await cdp('Input.dispatchMouseEvent', {
+                    type: 'mouseReleased',
+                    ...point,
+                    button: 'left',
+                    clickCount: 1
+                })
+                await pause(100)
+                assert((await measure()).fits, 'Clicking a zoomed image must return to fit')
+                await js(`document.querySelector('.journal-lightbox-image').focus()`)
+                await cdp('Input.dispatchKeyEvent', {
+                    type: 'keyDown',
+                    text: '\r',
+                    key: 'Enter',
+                    code: 'Enter',
+                    windowsVirtualKeyCode: 13
+                })
+                await cdp('Input.dispatchKeyEvent', {
+                    type: 'keyUp',
+                    key: 'Enter',
+                    code: 'Enter',
+                    windowsVirtualKeyCode: 13
+                })
+                await pause(100)
+                await screenshot()
+                assert((await measure()).image[1] > initial.image[1], 'Image zoom must work from the keyboard')
+
+                await js(`document.querySelector('[aria-label="Fit image"]').click()`)
+                await pause(100)
+                assert((await measure()).fits, 'Fit must restore the complete image')
+                for (const width of [320, 390, 768, 1024, 1440]) {
+                    await viewport(width)
+                    await screenshot()
+                    const resized = await measure()
+                    console.info(JSON.stringify({ width, resized }))
+                    assert(resized.fits, `Tall image clipped at ${width}px`)
+                }
+                console.info(JSON.stringify({ lightboxPassed: true, directory }))
+                app.exit(0)
+                return
+            }
             if (process.env.IMAGE_SMOKE_REGRESSIONS) {
                 const failures = []
                 const check = (condition, message) => {
