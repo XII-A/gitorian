@@ -55,6 +55,12 @@ const png = await sharp(
     .png()
     .toBuffer()
 const base64 = png.toString('base64')
+const pickerFile = join(directory, 'system.png')
+writeFileSync(pickerFile, png)
+let imageChoice = [pickerFile]
+let imagePickCount = 0
+let smokeWindow
+
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
 const assert = (value, message) => {
     if (!value) throw new Error(message)
@@ -77,7 +83,18 @@ dialog.showSaveDialog = (_window, options) =>
         canceled: false,
         filePath: options?.defaultPath?.startsWith('journal-image.') ? join(directory, options.defaultPath) : backup
     })
-dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [backup] })
+dialog.showOpenDialog = async (_owner, options) => {
+    if (options?.title !== 'Choose journal images') return { canceled: false, filePaths: [backup] }
+    imagePickCount++
+    assert(
+        await smokeWindow.webContents.executeJavaScript(
+            `!document.querySelector('[aria-label="Add blocks"]') && document.activeElement!==document.querySelector('.tiptap')`
+        ),
+        'Editor must leave typing and close the slash menu before the native picker'
+    )
+    await pause(2000)
+    return { canceled: imageChoice.length === 0, filePaths: imageChoice }
+}
 dialog.showMessageBox = () => Promise.resolve({ response: 1, checkboxChecked: false })
 setTimeout(() => {
     console.error('Image smoke timed out')
@@ -88,6 +105,7 @@ app.on('browser-window-created', (_, window) => {
     window.webContents.setBackgroundThrottling(false)
     if (checking) return
     checking = true
+    smokeWindow = window
     window.setContentSize(1560, 1000)
     window.webContents.debugger.attach('1.3')
     void window.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
@@ -111,14 +129,20 @@ app.on('browser-window-created', (_, window) => {
         try {
             await wait(`!!document.querySelector('[aria-label="Open journal"]')`)
             await js(`document.querySelector('[aria-label="Open journal"]').click()`)
-            await wait(`!!document.querySelector('input[aria-label="Choose journal images"]')`)
+            await wait(`!!document.querySelector('.tiptap[contenteditable="true"]')`)
             await js(
                 `window.__smokeFile=()=>new File([Uint8Array.from(atob(${JSON.stringify(base64)}),c=>c.charCodeAt(0))],'system.png',{type:'image/png'});true`
             )
-            // The real picker change event enters the same import flow as a native selection.
-            await js(
-                `(()=>{const input=document.querySelector('input[type=file]');const transfer=new DataTransfer();transfer.items.add(window.__smokeFile());input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()`
-            )
+            const chooseImage = async () => {
+                await js(`document.querySelector('.tiptap').focus()`)
+                await cdp('Input.insertText', { text: '/ image' })
+                await wait(`Array.from(document.querySelectorAll('[role="option"]')).some(b=>b.textContent==='Image')`)
+                await js(
+                    `Array.from(document.querySelectorAll('[role="option"]')).find(b=>b.textContent==='Image').click()`
+                )
+            }
+            // Exercise the real slash command, preload bridge and native picker import handler.
+            await chooseImage()
             await wait(`!!document.querySelector('.journal-image-skeleton')`)
             await pause(150)
             assert(
@@ -184,7 +208,7 @@ app.on('browser-window-created', (_, window) => {
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
             await wait(`!document.querySelector('[role="menu"]')`)
             await js(
-                `(()=>{const input=document.querySelector('input[type=file]');const transfer=new DataTransfer();transfer.items.add(new File(['invalid'],'bad.svg',{type:'image/svg+xml'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()`
+                `(()=>{const transfer=new DataTransfer();transfer.items.add(new File(['invalid'],'bad.svg',{type:'image/svg+xml'}));document.querySelector('.tiptap').dispatchEvent(new ClipboardEvent('paste',{clipboardData:transfer,bubbles:true,cancelable:true}));})()`
             )
             await wait(
                 `document.body.textContent.includes('Could not import image') && !document.querySelector('.journal-image-pending')`

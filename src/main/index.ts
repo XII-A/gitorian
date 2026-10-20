@@ -145,6 +145,40 @@ void app.whenReady().then(() => {
               })
             : new Response(null, { status: 404 })
     })
+    ipcMain.handle('journal:image-choose', (event, input: unknown) =>
+        track(
+            (async () => {
+                const window = BrowserWindow.fromWebContents(event.sender)
+                if (
+                    !window ||
+                    event.senderFrame !== window.webContents.mainFrame ||
+                    referenceWindows.has(event.sender.id) ||
+                    closing ||
+                    restoring
+                )
+                    throw new Error('Choose an editable journal window.')
+                const request = z.object({ restoreId: z.string().optional() }).parse(input)
+                if (request.restoreId !== store.state.restoreId)
+                    throw new Error('The journal changed. Insert the image again.')
+                const result = await dialog.showOpenDialog(window, {
+                    title: 'Choose journal images',
+                    properties: ['openFile', 'multiSelections'],
+                    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }]
+                })
+                if (result.canceled) return []
+                if (result.filePaths.length > imageLimits.batch) throw new Error('Choose up to 10 images at a time.')
+                const ids: string[] = []
+                for (const path of result.filePaths) {
+                    if (closing || restoring || window.isDestroyed())
+                        throw new Error('The journal changed. Insert the image again.')
+                    if ((await stat(path)).size > imageLimits.bytes)
+                        throw new Error('Choose an image smaller than 5 MB.')
+                    ids.push(await store.importImage(await readFile(path), request.restoreId))
+                }
+                return ids
+            })()
+        )
+    )
     ipcMain.handle('journal:image-import', (event, input: unknown) => {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (

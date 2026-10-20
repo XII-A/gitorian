@@ -149,9 +149,9 @@ it('releases the template save gate when its editor unmounts during an import', 
             await Promise.resolve()
         })
         await act(async () => {
-            const input = host.querySelector('input[type=file]')!
-            Object.defineProperty(input, 'files', { value: [file()] })
-            input.dispatchEvent(new Event('change', { bubbles: true }))
+            const event = new Event('paste', { bubbles: true, cancelable: true })
+            Object.defineProperty(event, 'clipboardData', { value: { files: [file()], getData: () => '' } })
+            host.querySelector('.tiptap')!.dispatchEvent(event)
             await pause()
         })
         expect(ready).toHaveBeenLastCalledWith(false)
@@ -227,4 +227,50 @@ it('guides and accepts a file in the writing-space gap even when Tiptap has no p
         host.remove()
         vi.unstubAllGlobals()
     }
+})
+
+it('maps native picker results and inserts the selected batch in order without reading bytes in the renderer', async () => {
+    const write = vi.fn(() => Promise.resolve('a'.repeat(64)))
+    const app = setup(write)
+    let finish!: (ids: string[]) => void
+    app.manager.choose(
+        () =>
+            new Promise((resolve) => {
+                finish = resolve
+            })
+    )
+    await pause()
+    app.editor.commands.insertContentAt(1, 'New ')
+    finish(['b'.repeat(64), 'c'.repeat(64)])
+    await pause()
+    expect(imageIds(app.editor.getJSON())).toEqual(['b'.repeat(64), 'c'.repeat(64)])
+    expect(app.editor.getText()).toContain('New ')
+    expect(write).not.toHaveBeenCalled()
+    expect(app.changes.at(-1)).toBe(0)
+})
+
+it('clears a cancelled native picker without adding content or reporting an error', async () => {
+    const app = setup(() => Promise.resolve('a'.repeat(64)))
+    const original = app.editor.getJSON()
+    app.manager.choose(() => Promise.resolve([]))
+    await pause()
+    expect(app.editor.getJSON()).toEqual(original)
+    expect(app.failed).not.toHaveBeenCalled()
+    expect(app.changes.at(-1)).toBe(0)
+})
+
+it('ignores a native picker result after the editor session is disposed', async () => {
+    const app = setup(() => Promise.resolve('a'.repeat(64)))
+    let finish!: (ids: string[]) => void
+    app.manager.choose(
+        () =>
+            new Promise((resolve) => {
+                finish = resolve
+            })
+    )
+    await pause()
+    app.manager.dispose()
+    finish(['a'.repeat(64)])
+    await pause()
+    expect(imageIds(app.editor.getJSON())).toEqual([])
 })

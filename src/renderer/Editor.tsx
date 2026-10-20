@@ -11,6 +11,7 @@ import {
     useState
 } from 'react'
 import type { Ref } from 'react'
+import { flushSync } from 'react-dom'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor as TiptapEditor } from '@tiptap/react'
 import { TextSelection } from '@tiptap/pm/state'
@@ -47,6 +48,9 @@ import { Input } from './components/arc/input/input'
 import { Popover, PopoverAnchor, PopoverTrigger, PopoverContent } from './components/arc/popover/popover'
 import { markdownToHtml } from './components/arc/rich-text-editor/rich-text-editor'
 
+const imageImportFailure =
+    'Use a still PNG, JPEG, WebP, or self-contained SVG under 5 MB and 40 million pixels, then try again.'
+
 const blocks = [
     { id: 'paragraph', label: 'Text', icon: Type },
     { id: 'heading1', label: 'Heading 1', icon: Heading1 },
@@ -62,7 +66,7 @@ const blocks = [
 ]
 function blockQuery(query: string) {
     const turn = /^turn(?:\s*into)?\s*/i.exec(query)
-    const search = (turn ? query.slice(turn[0].length) : query).toLowerCase()
+    const search = (turn ? query.slice(turn[0].length) : query).trim().toLowerCase()
     const aliases: Record<string, string> = {
         h1: 'heading 1',
         h2: 'heading 2',
@@ -124,7 +128,6 @@ export const Editor = memo(function Editor({
     onImagesReadyChange?: (ready: boolean) => void
 }) {
     const imports = useRef<ImageImports | undefined>(undefined)
-    const picker = useRef<HTMLInputElement>(null)
     const [imageJobs, setImageJobs] = useState<ImageImportJob[]>([])
     const [dropGuide, setDropGuide] = useState<number>()
     const { toast } = useToastStack()
@@ -190,8 +193,23 @@ export const Editor = memo(function Editor({
         const current = menuRef.current
         if (!current) return
         if (block === 'image') {
-            editor.commands.deleteRange(current)
-            picker.current?.click()
+            flushSync(() => {
+                editor.commands.deleteRange(current)
+                menuRef.current = undefined
+                setMenu(undefined)
+            })
+            const manager = imports.current
+            editor.view.dom.blur()
+            manager?.choose(async () => {
+                try {
+                    if (!window.journal.images) throw new Error('Reopen the app to enable image import.')
+                    return await window.journal.images.choose(restoreId)
+                } catch {
+                    throw new Error(imageImportFailure)
+                } finally {
+                    if (!editor.isDestroyed && imports.current === manager) editor.view.focus()
+                }
+            })
         } else if (block === 'template') {
             if (template)
                 editor
@@ -294,9 +312,7 @@ export const Editor = memo(function Editor({
                 try {
                     return await window.journal.images.import(bytes, restoreId)
                 } catch {
-                    throw new Error(
-                        'Could not import this image. Use a still PNG, JPEG, WebP, or self-contained SVG under 5 MB and 40 million pixels, then retry.'
-                    )
+                    throw new Error(imageImportFailure)
                 }
             },
             setImageJobs,
@@ -410,21 +426,6 @@ export const Editor = memo(function Editor({
     )
     return (
         <div className="journal-editor" ref={host}>
-            {canImportImages && (
-                <input
-                    ref={picker}
-                    type="file"
-                    hidden
-                    multiple
-                    accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg"
-                    aria-label="Choose journal images"
-                    onChange={(event) => {
-                        const files = Array.from(event.target.files ?? [])
-                        if (files.length) imports.current?.add(files)
-                        event.target.value = ''
-                    }}
-                />
-            )}
             {dropGuide !== undefined && (
                 <div className="journal-image-drop-guide" style={{ top: dropGuide }} aria-hidden="true" />
             )}

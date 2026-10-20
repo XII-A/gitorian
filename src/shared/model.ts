@@ -356,6 +356,7 @@ export interface Reply {
 }
 export interface DesktopBridge {
     images?: {
+        choose: (restoreId?: string) => Promise<string[]>
         import: (bytes: Uint8Array, restoreId?: string) => Promise<string>
         save: (id: string) => Promise<void>
     }

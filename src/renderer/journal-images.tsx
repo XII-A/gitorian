@@ -141,7 +141,7 @@ export const ImageImportPositions = Extension.create({
 
 export interface ImageImportJob {
     id: string
-    file: File
+    source: { file: File } | { choose: () => Promise<string[]> }
 }
 /** All entry points share mapped positions; bytes never enter the document or recovery cache. */
 export class ImageImports {
@@ -162,12 +162,21 @@ export class ImageImports {
         this.changed([...this.jobs])
     }
     add(files: File[], position = this.editor.state.selection.from) {
-        if (!this.editor.isEditable || this.disposed) return
-        const jobs = files.map((file) => ({ id: `image-${++this.sequence}`, file }))
         if (files.length > imageLimits.batch) {
             this.failed?.('Choose up to 10 images at a time, then try dropping them again.')
             return
         }
+        this.enqueue(
+            files.map((file) => ({ file })),
+            position
+        )
+    }
+    choose(picker: () => Promise<string[]>) {
+        this.enqueue([{ choose: picker }], this.editor.state.selection.from)
+    }
+    private enqueue(sources: ImageImportJob['source'][], position: number) {
+        if (!this.editor.isEditable || this.disposed) return
+        const jobs = sources.map((source) => ({ id: `image-${++this.sequence}`, source }))
         this.jobs.push(...jobs)
         this.editor.view.dispatch(
             this.editor.state.tr.setMeta(imageImportKey, { add: jobs.map(({ id }) => ({ id, pos: position })) })
@@ -190,31 +199,35 @@ export class ImageImports {
             return
         }
         try {
-            if (!job.file.size || job.file.size > imageLimits.bytes)
-                throw new Error('Choose an image smaller than 5 MB.')
-            const bytes = new Uint8Array(await job.file.arrayBuffer())
-            if (
-                this.disposed ||
-                this.editor.isDestroyed ||
-                !this.editor.isEditable ||
-                this.position(job.id) === undefined
-            ) {
-                this.remove(job.id)
-                return
+            let assetIds: string[]
+            if ('choose' in job.source) assetIds = await job.source.choose()
+            else {
+                const file = job.source.file
+                if (!file.size || file.size > imageLimits.bytes) throw new Error('Choose an image smaller than 5 MB.')
+                const bytes = new Uint8Array(await file.arrayBuffer())
+                if (
+                    this.disposed ||
+                    this.editor.isDestroyed ||
+                    !this.editor.isEditable ||
+                    this.position(job.id) === undefined
+                ) {
+                    this.remove(job.id)
+                    return
+                }
+                assetIds = [await this.write(bytes)]
             }
-            const assetId = await this.write(bytes)
             if (this.disposed || this.editor.isDestroyed || !this.editor.isEditable) {
                 this.remove(job.id)
                 return
             }
             const position = this.position(job.id)
-            if (position !== undefined) {
+            if (position !== undefined && assetIds.length) {
                 this.editor.view.dispatch(closeHistory(this.editor.state.tr))
                 this.editor
                     .chain()
                     .insertContentAt(
                         position,
-                        { type: 'image', attrs: { assetId, alt: '' } },
+                        assetIds.map((assetId) => ({ type: 'image', attrs: { assetId, alt: '' } })),
                         { updateSelection: false }
                     )
                     .run()
