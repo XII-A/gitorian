@@ -18,6 +18,20 @@ import { inspectRepository } from './git'
 import { watchWindowTitleBar } from './window-title-bar'
 import { imageLimits, imageIdPattern, imageExtension } from '../shared/images'
 
+// Chromium 152 hides the thread's native cursor, including inside file dialogs.
+// Remove after Electron includes chromium/chromium@a2be9eeac1d506dae63b2994cd605d83bb7622ea.
+if (process.platform === 'win32') {
+    const disabledFeatures = new Set(
+        app.commandLine
+            .getSwitchValue('disable-features')
+            .split(',')
+            .map((feature) => feature.trim())
+            .filter(Boolean)
+    )
+    disabledFeatures.add('HideCursorWhileTyping')
+    app.commandLine.appendSwitch('disable-features', [...disabledFeatures].join(','))
+}
+
 protocol.registerSchemesAsPrivileged([
     { scheme: 'journal-image', privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ])
