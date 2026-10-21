@@ -8,7 +8,7 @@ const directory = process.env.WEEKLY_J_VERIFY_STATE
 const output = process.env.WEEKLY_J_VERIFY_OUTPUT
 if (!directory || !output) throw new Error('Use pnpm verify connections for managed isolation and cleanup')
 app.setPath('userData', join(directory, 'profile'))
-nativeTheme.themeSource = 'light'
+nativeTheme.themeSource = 'dark'
 mkdirSync(output, { recursive: true })
 const record = (event) =>
     appendFileSync(join(output, 'actions.jsonl'), JSON.stringify({ time: new Date().toISOString(), ...event }) + '\n')
@@ -91,7 +91,7 @@ app.on('browser-window-created', (_, window) => {
         }
         const click = async (text, scope = 'document') => {
             await js(
-                `Array.from(${scope}.querySelectorAll('button')).find(b=>b.getAttribute('aria-label')===${JSON.stringify(text)} || b.textContent.trim()===${JSON.stringify(text)}).click()`
+                `Array.from(${scope}.querySelectorAll('button')).find(b=>!b.closest('[inert]') && (b.getAttribute('aria-label')===${JSON.stringify(text)} || b.textContent.trim()===${JSON.stringify(text)})).click()`
             )
         }
         const captures = []
@@ -104,7 +104,7 @@ app.on('browser-window-created', (_, window) => {
             writeFileSync(join(output, `${name}-detail.png`), (await window.webContents.capturePage(rectangle)).toPNG())
             record({
                 geometry: await js(
-                    `Object.fromEntries(['.settings-github-controls','.github-signin-track','.github-signin-surface','.github-signin-content'].map(s=>{const n=document.querySelector(s),r=n.getBoundingClientRect();return [s,{width:r.width,right:r.right,maxWidth:getComputedStyle(n).maxWidth}]}))`
+                    `Object.fromEntries(['.settings-github-controls','.github-signin-track','.github-signin-surface','.github-signin-surface > [role=group]'].map(s=>{const n=document.querySelector(s),r=n.getBoundingClientRect();return [s,{width:r.width,right:r.right,maxWidth:getComputedStyle(n).maxWidth}]}))`
                 )
             })
             captures.push({ name, service, image: join(output, `${name}-detail.png`) })
@@ -139,23 +139,28 @@ app.on('browser-window-created', (_, window) => {
             )
             window.webContents.debugger.attach('1.3')
             await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
-                features: [{ name: 'prefers-color-scheme', value: 'light' }]
+                features: [{ name: 'prefers-color-scheme', value: 'dark' }]
             })
             await openConnections()
             await assert(
                 `!document.querySelector('.settings').textContent.includes('OAuth client ID') && !document.querySelector('.settings').textContent.includes('Set up OAuth app')`
             )
+            await assert(
+                `(() => {const g=document.querySelector('[aria-label="Connect GitHub"]').getBoundingClientRect();const n=document.querySelector('[aria-label="Notion connection"] .settings-section-heading button').getBoundingClientRect();return Math.abs(g.height-n.height)<1 && Math.abs(g.width-n.width)<1})()`
+            )
             await js(`window.__fixtureGitHubSurface = document.querySelector('.github-signin-surface'); true`)
-            await shot('01-idle')
+            await shot('01-idle', 1000)
             await click('Connect GitHub')
             await wait(`document.querySelector('.github-signin-surface')?.dataset.phase==='starting'`)
             await shot('github-starting', 250)
-            await wait(`!!document.querySelector('.github-signin-error')`)
+            await wait(
+                `!!document.querySelector('.github-signin-surface [data-face="error"]:not([role="group"]):not([inert])')`
+            )
             await shot('02-offline-retry')
-            await click('Try sign-in again')
+            await click('Retry')
             await wait(`document.querySelector('.github-signin-code')?.textContent==='ABCD-EFGH'`)
             await assert(
-                `document.querySelector('.github-signin-surface').textContent.includes('Your browser could not be opened')`
+                `document.querySelector('.github-signin-surface [role="alert"]')?.textContent.includes('Your browser could not be opened')`
             )
             window.show()
             window.focus()
@@ -185,12 +190,12 @@ app.on('browser-window-created', (_, window) => {
             await click('Connect GitHub')
             await wait(`document.querySelector('.github-signin-surface')?.textContent.includes('Code expired')`)
             await shot('04-expired')
-            await click('Try sign-in again')
+            await click('Retry')
             await wait(
-                `document.querySelector('.github-signin-error')?.textContent.includes('Authorization was declined')`
+                `document.querySelector('.github-signin-surface')?.textContent.includes('Authorization declined')`
             )
             await shot('github-declined')
-            await click('Try sign-in again')
+            await click('Retry')
             await wait(`!!document.querySelector('.github-signin-code')`)
             await shot('github-code-ready')
             nativeTheme.themeSource = 'dark'
@@ -209,9 +214,9 @@ app.on('browser-window-created', (_, window) => {
             await assert(
                 `Math.abs(innerWidth - 390) <= 1 && document.documentElement.scrollWidth <= innerWidth && document.querySelector('.github-signin-surface').getBoundingClientRect().right <= innerWidth`
             )
-            nativeTheme.themeSource = 'light'
+            nativeTheme.themeSource = 'dark'
             await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
-                features: [{ name: 'prefers-color-scheme', value: 'light' }]
+                features: [{ name: 'prefers-color-scheme', value: 'dark' }]
             })
             window.setContentSize(1280, 900)
             authorize = true
@@ -262,7 +267,7 @@ app.on('browser-window-created', (_, window) => {
             await shot('notion-03-connecting', 250, 'notion')
             await wait(`${notionScope}.querySelector('[data-state="error"]') !== null`)
             await assert(
-                `${notionScope}.textContent.includes('Check your integration token') && !document.querySelector('.settings-feedback').textContent.includes('Fixture invalid token')`
+                `!${notionScope}.textContent.includes('Check your integration token') && !document.querySelector('.settings-feedback').textContent.includes('Fixture invalid token')`
             )
             await shot('notion-04-failed', 350, 'notion')
             notionAllowed = true

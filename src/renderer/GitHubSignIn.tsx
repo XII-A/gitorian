@@ -1,11 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { Check, ExternalLink, CircleAlert, LoaderCircle } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ExternalLink, CircleAlert } from 'lucide-react'
 import type { Reply } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { CopyButton } from './components/arc/copy-button/copy-button'
-import { ConfirmMorph } from './components/arc/confirm-morph/confirm-morph'
-import { motionTokens } from './components/arc/lib/motion-tokens'
+import { ConfirmMorph, type ConfirmMorphState } from './components/arc/confirm-morph/confirm-morph'
 
 export type GitHubSignInFeedback =
     | { kind: 'error' | 'expired'; message: string }
@@ -13,16 +11,14 @@ export type GitHubSignInFeedback =
 
 export function githubSignInFailure(failure: unknown): GitHubSignInFeedback {
     const message = failure instanceof Error ? failure.message : String(failure)
-    if (/expired/i.test(message))
-        return { kind: 'expired', message: 'This code has expired. Start again to get a new code.' }
+    if (/expired/i.test(message)) return { kind: 'expired', message: 'Code expired' }
     if (/sign-in is unavailable|incorrect_client_credentials|device_flow_disabled/i.test(message))
         return {
             kind: 'error',
-            message: 'GitHub sign-in is unavailable. Check for a weekly-j update or contact the maintainer.'
+            message: 'Sign-in unavailable'
         }
-    if (/declined|access_denied/i.test(message))
-        return { kind: 'error', message: 'Authorization was declined. Start again when you are ready.' }
-    return { kind: 'error', message: 'GitHub sign-in could not be completed. Check your connection and try again.' }
+    if (/declined|access_denied/i.test(message)) return { kind: 'error', message: 'Authorization declined' }
+    return { kind: 'error', message: 'Could not connect' }
 }
 
 export function GitHubSignIn({
@@ -54,210 +50,123 @@ export function GitHubSignIn({
 }) {
     const phase = device ? 'device' : feedback ? feedback.kind : connected ? 'connected' : pending ? 'starting' : 'idle'
     const expanded = phase === 'device' || phase === 'error' || phase === 'expired'
-    const reduce = useReducedMotion()
-    const track = useRef<HTMLDivElement>(null)
-    const account = useRef<HTMLDivElement>(null)
-    const restingWidth = useRef(86)
-    const content = useRef<HTMLDivElement>(null)
-    const startButton = useRef<HTMLButtonElement>(null)
-    const retryButton = useRef<HTMLButtonElement>(null)
+    const control = useRef<HTMLDivElement>(null)
     const previousPhase = useRef(phase)
-    const [room, setRoom] = useState<number>()
-    const [size, setSize] = useState<{ width: number; height: number }>()
-
-    useLayoutEffect(() => {
-        const node = track.current
-        if (!node) return
-        const measure = () =>
-            setRoom(
-                node.clientWidth -
-                    (account.current
-                        ? account.current.offsetWidth + (parseFloat(getComputedStyle(node).columnGap) || 0)
-                        : 0)
-            )
-        measure()
-        const observer = new ResizeObserver(measure)
-        observer.observe(node)
-        if (account.current) observer.observe(account.current)
-        return () => observer.disconnect()
-    }, [identity])
-    useLayoutEffect(() => {
-        const node = content.current
-        if (!node) return
-        const measure = () => {
-            const width = node.offsetWidth
-            const height = node.offsetHeight
-            if (phase === 'idle') restingWidth.current = width
-            setSize((old) => (old?.width === width && old.height === height ? old : { width, height }))
-        }
-        measure()
-        const observer = new ResizeObserver(measure)
-        observer.observe(node)
-        return () => observer.disconnect()
-    }, [phase, room])
+    const [disconnectState, setDisconnectState] = useState<ConfirmMorphState>('idle')
+    const state: ConfirmMorphState =
+        phase === 'connected'
+            ? disconnectState
+            : phase === 'device'
+              ? 'confirming'
+              : phase === 'starting' || phase === 'authorizing'
+                ? 'pending'
+                : phase === 'success'
+                  ? 'done'
+                  : phase === 'error' || phase === 'expired'
+                    ? 'error'
+                    : 'idle'
+    const cancel = () => {
+        setDisconnectState('idle')
+        onCancel()
+    }
     useEffect(() => {
-        if (phase === 'device')
-            content.current?.querySelector<HTMLButtonElement>('[data-copy-state]')?.focus({ preventScroll: true })
-        else if (phase === 'error' || phase === 'expired') retryButton.current?.focus({ preventScroll: true })
-        else if (previousPhase.current !== 'idle' && phase === 'idle')
-            startButton.current?.focus({ preventScroll: true })
-        else if (previousPhase.current !== 'connected' && phase === 'connected')
-            content.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true })
+        const changed = phase !== previousPhase.current
         previousPhase.current = phase
+        // ConfirmMorph mounts the arriving face after AnimatePresence resolves its child list.
+        const frame = setTimeout(() => {
+            const selector =
+                phase === 'device'
+                    ? '[data-face="confirming"]:not([role="group"]):not([inert]) [data-copy-state]'
+                    : phase === 'error' || phase === 'expired'
+                      ? '[data-face="error"]:not([role="group"]):not([inert]) [data-autofocus]'
+                      : changed && (phase === 'idle' || phase === 'connected')
+                        ? '[data-face="idle"]:not([role="group"]):not([inert]) button'
+                        : undefined
+            if (selector) control.current?.querySelector<HTMLButtonElement>(selector)?.focus({ preventScroll: true })
+        }, 0)
+        return () => clearTimeout(frame)
     }, [phase])
 
     return (
-        <div ref={track} className="github-signin-track">
-            {identity && (
-                <div ref={account} className="settings-github-account">
-                    {identity}
-                </div>
-            )}
-            <motion.div
-                className="github-signin-surface"
-                data-expanded={expanded}
-                data-phase={phase}
-                initial={false}
-                animate={{
-                    width: phase === 'connected' ? 'auto' : size ? size.width + 2 : 'auto',
-                    height: phase === 'connected' ? 'auto' : size ? size.height + 2 : 'auto'
-                }}
-                transition={reduce ? { duration: 0 } : motionTokens.spring.smooth}
-                onKeyDown={(event) => {
-                    if (event.key === 'Escape' && expanded) {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        onCancel()
-                    }
-                }}
-            >
-                <div
-                    ref={content}
-                    className="github-signin-content"
-                    style={{ maxWidth: room === undefined ? undefined : Math.max(0, room - 2) }}
-                >
-                    <AnimatePresence initial={false} mode="popLayout">
-                        <motion.div
-                            key={phase}
-                            className="github-signin-face"
-                            initial={reduce ? false : { opacity: 0, filter: 'blur(4px)', transform: 'translateY(3px)' }}
-                            animate={{ opacity: 1, filter: 'blur(0px)', transform: 'translateY(0px)' }}
-                            exit={
-                                reduce ? undefined : { opacity: 0, filter: 'blur(4px)', transform: 'translateY(-2px)' }
-                            }
-                            transition={{
-                                duration: reduce ? 0 : motionTokens.duration.fast,
-                                ease: motionTokens.ease.standard
-                            }}
-                        >
-                            {phase === 'device' && device ? (
-                                <div className="github-signin-details">
-                                    <div className="github-signin-code-row">
-                                        <span className="github-signin-code-group">
-                                            <code className="github-signin-code">{device.code}</code>
-                                            <CopyButton
-                                                value={device.code}
-                                                label="Copy code"
-                                                iconOnly
-                                                variant="plain"
-                                                className="github-signin-copy"
-                                            />
-                                        </span>
-                                        <Button variant="ghost" onClick={onCancel}>
-                                            Cancel sign-in
-                                        </Button>
-                                        <Button loading={openingBrowser} disabled={disabled} onClick={onOpen}>
-                                            <ExternalLink size={16} strokeWidth={1.5} aria-hidden="true" /> Open GitHub
-                                        </Button>
-                                    </div>
-                                    <span className="settings-sr-only">
-                                        Enter this code on GitHub to authorize weekly-j.
-                                    </span>
-                                    {notice && (
-                                        <p className="settings-hint" role="alert">
-                                            {notice}
-                                        </p>
-                                    )}
-                                </div>
-                            ) : phase === 'starting' || phase === 'authorizing' ? (
-                                <div
-                                    className="github-signin-compact"
-                                    style={{ width: restingWidth.current }}
-                                    role="status"
-                                >
-                                    <LoaderCircle
-                                        size={18}
-                                        strokeWidth={1.5}
-                                        aria-hidden="true"
-                                        className="github-signin-spinner"
+        <div className="github-signin-track">
+            {identity && <div className="settings-github-account">{identity}</div>}
+            <div className="github-signin-surface" data-expanded={expanded} data-phase={phase}>
+                <ConfirmMorph
+                    ref={control}
+                    label={phase === 'connected' ? 'Disconnect' : 'Connect'}
+                    actionLabel={phase === 'connected' ? 'Disconnect GitHub' : 'Connect GitHub'}
+                    prompt={<span className="settings-disconnect-question">Disconnect GitHub?</span>}
+                    confirmLabel="Disconnect"
+                    confirmMode={phase === 'connected' ? 'hold' : 'immediate'}
+                    variant="secondary"
+                    state={state}
+                    onStateChange={phase === 'connected' ? setDisconnectState : undefined}
+                    confirmTimeout={0}
+                    resultTimeout={0}
+                    cancelOnOutsidePress={phase === 'connected'}
+                    pendingLabel={phase === 'connected' ? 'Disconnecting' : 'Connecting'}
+                    doneLabel={phase === 'connected' ? 'Disconnected' : 'Connected'}
+                    errorLabel={feedback && 'message' in feedback ? feedback.message : 'Could not disconnect'}
+                    errorCancelLabel="Cancel"
+                    disabled={disabled || openingBrowser}
+                    onActivate={phase === 'connected' ? undefined : () => void onStart()}
+                    onConfirm={onDisconnect}
+                    onCancel={cancel}
+                    confirmContent={
+                        device ? (
+                            <div className="github-signin-code-row">
+                                <span className="github-signin-code-group">
+                                    <code className="github-signin-code">{device.code}</code>
+                                    <CopyButton
+                                        value={device.code}
+                                        label="Copy code"
+                                        iconOnly
+                                        variant="plain"
+                                        className="github-signin-copy"
                                     />
-                                    <span className="settings-sr-only">
-                                        {phase === 'starting' ? 'Starting GitHub sign-in' : 'Connecting GitHub'}
-                                    </span>
-                                </div>
-                            ) : feedback?.kind === 'success' ? (
-                                <div
-                                    className="github-signin-compact"
-                                    style={{ width: restingWidth.current }}
-                                    role="status"
-                                >
-                                    <Check size={20} strokeWidth={1.5} aria-hidden="true" />
-                                    <span className="settings-sr-only">Connected as {feedback.login}</span>
-                                </div>
-                            ) : feedback && (feedback.kind === 'error' || feedback.kind === 'expired') ? (
-                                <div className="github-signin-details">
-                                    <div role="alert" className="github-signin-error">
-                                        <p className="github-signin-result">
-                                            <CircleAlert size={18} strokeWidth={1.5} aria-hidden="true" />
-                                            <span>
-                                                {feedback.kind === 'expired' ? 'Code expired' : 'Could not connect'}
-                                            </span>
-                                        </p>
-                                        <p className="settings-hint">{feedback.message}</p>
-                                    </div>
-                                    <div className="settings-actions">
-                                        <Button
-                                            ref={retryButton}
-                                            variant="secondary"
-                                            disabled={disabled}
-                                            onClick={onStart}
-                                        >
-                                            Try sign-in again
-                                        </Button>
-                                        <Button variant="ghost" onClick={onCancel}>
-                                            Cancel sign-in
-                                        </Button>
-                                    </div>
-                                </div>
-                            ) : connected ? (
-                                <ConfirmMorph
-                                    label="Disconnect"
-                                    prompt={<span className="settings-disconnect-question">Disconnect GitHub?</span>}
-                                    confirmLabel="Disconnect"
-                                    confirmMode="hold"
-                                    variant="secondary"
-                                    pendingLabel="Disconnecting"
-                                    doneLabel="Disconnected"
-                                    errorLabel="Could not disconnect"
-                                    tone="danger"
-                                    disabled={disabled}
-                                    onConfirm={onDisconnect}
-                                />
-                            ) : (
-                                <Button
-                                    ref={startButton}
-                                    aria-label="Connect GitHub"
-                                    variant="ghost"
-                                    disabled={disabled || openingBrowser}
-                                    onClick={onStart}
-                                >
-                                    Connect
+                                </span>
+                                <Button size="sm" className="github-device-action" variant="ghost" onClick={cancel}>
+                                    Cancel<span className="github-device-label"> sign-in</span>
                                 </Button>
-                            )}
-                        </motion.div>
-                    </AnimatePresence>
-                </div>
-            </motion.div>
+                                <Button
+                                    size="sm"
+                                    className="github-device-action"
+                                    loading={openingBrowser}
+                                    disabled={disabled}
+                                    onClick={onOpen}
+                                    aria-label="Open GitHub"
+                                    title={
+                                        notice
+                                            ? 'Browser unavailable. Visit github.com/login/device to enter the code.'
+                                            : undefined
+                                    }
+                                >
+                                    {notice ? (
+                                        <CircleAlert size={16} strokeWidth={1.5} aria-hidden="true" />
+                                    ) : (
+                                        <ExternalLink size={16} strokeWidth={1.5} aria-hidden="true" />
+                                    )}{' '}
+                                    <span className="github-device-label">Open GitHub</span>
+                                </Button>
+                                {notice && (
+                                    <span role="alert" className="settings-sr-only">
+                                        {notice}
+                                    </span>
+                                )}
+                            </div>
+                        ) : undefined
+                    }
+                />
+                <span className="settings-sr-only" role="status">
+                    {phase === 'success' && feedback && 'login' in feedback
+                        ? `Connected as ${feedback.login}`
+                        : phase === 'authorizing' || phase === 'starting'
+                          ? 'Connecting GitHub'
+                          : feedback && 'message' in feedback
+                            ? feedback.message
+                            : ''}
+                </span>
+            </div>
         </div>
     )
 }

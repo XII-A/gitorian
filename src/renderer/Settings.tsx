@@ -575,11 +575,6 @@ export function Settings({
                                                 />
                                             </div>
                                         </div>
-                                        {!connections.github && !device && !githubFeedback && (
-                                            <p className="settings-hint">
-                                                Import pull requests and reviews from your GitHub account.
-                                            </p>
-                                        )}
                                     </section>
                                     <section className="settings-section" aria-label="Notion connection">
                                         <div className="settings-section-heading">
@@ -642,6 +637,8 @@ export function Settings({
                                                     pendingLabel="Connecting"
                                                     doneLabel="Connected"
                                                     errorLabel="Could not connect"
+                                                    errorCancelLabel="Cancel"
+                                                    onCancel={() => setNotionConnectState('idle')}
                                                     disabled={!token.trim() || !!busy}
                                                     onConfirm={async () => {
                                                         setBusy('notion')
@@ -672,11 +669,6 @@ export function Settings({
                                                             setNotionConnectState('idle')
                                                     }}
                                                 />
-                                                {notionConnectState === 'error' && (
-                                                    <p className="settings-hint" role="alert">
-                                                        Check your integration token and connection, then try again.
-                                                    </p>
-                                                )}
                                             </>
                                         ) : null}
                                         {(connections.github || connections.notion) &&
