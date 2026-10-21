@@ -40,14 +40,28 @@ function richText(nodes: JournalNode[] = []): RichText[] {
 function block(type: string, data: Record<string, unknown>): NotionBlock {
     return { object: 'block', type, [type]: data }
 }
-export function toNotion(document: JournalNode): NotionBlock[] {
+export function toNotion(document: JournalNode, uploads?: Record<string, string>): NotionBlock[] {
     return (document.content ?? []).flatMap((node) => {
+        if (node.type === 'image') {
+            const id = node.attrs?.assetId
+            if (typeof id !== 'string' || typeof (node.attrs?.alt ?? '') !== 'string')
+                throw new Error('Invalid journal image')
+            if (uploads && !uploads[id]) throw new Error('A journal image has not been uploaded')
+            return [
+                block('image', {
+                    ...(uploads
+                        ? { type: 'file_upload', file_upload: { id: uploads[id] } }
+                        : { type: 'asset', asset: { id } }),
+                    caption: richText(node.attrs?.alt ? [{ type: 'text', text: node.attrs.alt as string }] : [])
+                })
+            ]
+        }
         if (node.type === 'toggle') {
             const [summary, contents] = node.content ?? []
             return [
                 block('toggle', {
                     rich_text: richText(summary?.content),
-                    children: toNotion({ type: 'doc', content: contents?.content ?? [] })
+                    children: toNotion({ type: 'doc', content: contents?.content ?? [] }, uploads)
                 })
             ]
         }
@@ -64,16 +78,17 @@ export function toNotion(document: JournalNode): NotionBlock[] {
                 return block(type, {
                     rich_text: richText(first?.content),
                     ...(type === 'to_do' ? { checked: !!item.attrs?.checked } : {}),
-                    ...(rest.length ? { children: toNotion({ type: 'doc', content: rest }) } : {})
+                    ...(rest.length ? { children: toNotion({ type: 'doc', content: rest }, uploads) } : {})
                 })
             })
         }
         if (node.type === 'blockquote') {
             const [first, ...rest] = node.content ?? []
+            const children = first?.type === 'image' ? node.content! : rest
             return [
                 block('quote', {
-                    rich_text: richText(first?.content),
-                    ...(rest.length ? { children: toNotion({ type: 'doc', content: rest }) } : {})
+                    rich_text: richText(first?.type === 'image' ? [] : first?.content),
+                    ...(children.length ? { children: toNotion({ type: 'doc', content: children }, uploads) } : {})
                 })
             ]
         }
@@ -118,7 +133,16 @@ export function fromNotion(blocks: NotionBlock[]): JournalNode {
             )
         )
             continue
-        if (['bulleted_list_item', 'numbered_list_item', 'to_do'].includes(item.type)) {
+        if (item.type === 'image' && typeof item.managedAssetId === 'string') {
+            const image = item.image as { caption?: RichText[] }
+            content.push({
+                type: 'image',
+                attrs: {
+                    assetId: item.managedAssetId,
+                    alt: plainText({ type: 'paragraph', content: fromRichText(image.caption) })
+                }
+            })
+        } else if (['bulleted_list_item', 'numbered_list_item', 'to_do'].includes(item.type)) {
             const type =
                 item.type === 'to_do' ? 'taskList' : item.type === 'numbered_list_item' ? 'orderedList' : 'bulletList'
             let list = content.at(-1)

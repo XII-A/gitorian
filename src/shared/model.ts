@@ -126,7 +126,10 @@ export const stateSchema = z.object({
             entryId: z.string().optional(),
             replacedBlockIds: z.array(z.string()).optional(),
             updateExisting: z.boolean().optional(),
-            error: z.string().optional()
+            error: z.string().optional(),
+            imageUploads: z
+                .record(z.string(), z.object({ id: z.string(), expiresAt: z.string().nullable() }))
+                .optional()
         })
     ),
     settings: z.object({
@@ -352,6 +355,11 @@ export interface Reply {
     detailError?: string
 }
 export interface DesktopBridge {
+    images?: {
+        choose: (restoreId?: string) => Promise<string[]>
+        import: (bytes: Uint8Array, restoreId?: string) => Promise<string>
+        save: (id: string) => Promise<void>
+    }
     windowControls?: {
         action: (
             action: 'state' | 'minimize' | 'toggleMaximize' | 'close'

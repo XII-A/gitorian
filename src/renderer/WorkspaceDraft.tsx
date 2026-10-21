@@ -43,6 +43,7 @@ export function WorkspaceDraft({
     const [draft, setDraft] = useState<Draft>()
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState(false)
+    const [imagesReady, setImagesReady] = useState(true)
     const [words, setWords] = useState(0)
     const [focusWriting, setFocusWriting] = useState(initialWrite)
     const writingStarted = useRef(false)
@@ -249,6 +250,7 @@ export function WorkspaceDraft({
         if (!latest.current && drafts.length === 0) void create()
     }, [initialWrite, drafts.length, create])
     const publish = async () => {
+        if (!imagesReady) return
         setBusy(true)
         clearTimeout(timer.current)
         clearTimeout(checkpoint.current)
@@ -337,21 +339,23 @@ export function WorkspaceDraft({
         ? state.settings.template
         : undefined
     return (
-        <section className="ws-writing" aria-label="Weekly journal">
+        <section data-journal-drop-zone className="ws-writing" aria-label="Weekly journal">
             {publishTarget &&
                 createPortal(
                     <Button
                         size="sm"
                         loading={busy}
-                        disabled={!draft || uncertain || needsNotion}
+                        disabled={!draft || uncertain || needsNotion || !imagesReady}
                         title={
-                            !draft
-                                ? 'Start an entry before publishing'
-                                : uncertain
-                                  ? 'Verify the previous Notion save before publishing again'
-                                  : needsNotion
-                                    ? 'Connect Notion in settings to publish'
-                                    : undefined
+                            !imagesReady
+                                ? 'Finish or dismiss image imports before publishing'
+                                : !draft
+                                  ? 'Start an entry before publishing'
+                                  : uncertain
+                                    ? 'Verify the previous Notion save before publishing again'
+                                    : needsNotion
+                                      ? 'Connect Notion in settings to publish'
+                                      : undefined
                         }
                         onClick={publish}
                     >
@@ -375,6 +379,9 @@ export function WorkspaceDraft({
                             </h1>
                             <Editor
                                 key={draft.id}
+                                restoreId={state.restoreId}
+                                allowImageImport={!sample}
+                                onImagesReadyChange={setImagesReady}
                                 ref={editor}
                                 value={draft.body}
                                 template={entryTemplate}

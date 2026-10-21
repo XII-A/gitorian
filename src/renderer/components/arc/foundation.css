@@ -1,4 +1,5 @@
 :root {
+    --image-lightbox-backdrop: oklch(10% 0 0 / 0.86);
     color-scheme: light;
     --neutral-0: oklch(100% 0 0);
     --neutral-1: oklch(99% 0 0);
