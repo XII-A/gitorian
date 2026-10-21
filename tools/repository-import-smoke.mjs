@@ -1,5 +1,5 @@
 import { app, dialog } from 'electron'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { resolve, join, sep } from 'node:path'
@@ -11,7 +11,8 @@ import { syncBuiltinESMExports } from 'node:module'
 
 // Uses the real Electron renderer, IPC, repository discovery and Git inspection.
 // The native picker is automated against an isolated fixture folder.
-const directory = mkdtempSync(join(tmpdir(), 'weekly-j-import-'))
+const managed = process.env.WEEKLY_J_VERIFY_STATE
+const directory = managed ? resolve(managed) : mkdtempSync(join(tmpdir(), 'weekly-j-import-'))
 app.setPath('userData', join(directory, 'profile'))
 const folder = join(directory, 'Projects')
 const names = ['api-server', 'archived-tools', 'design-system', 'playground', 'team/website', 'tools/website']
@@ -22,8 +23,10 @@ for (const name of names) {
 }
 // Real directories make discovery long enough to capture its transient state.
 for (let i = 0; i < 300; i++) mkdirSync(join(folder, 'scan-fixture', String(i)), { recursive: true })
-const output = resolve('.ai-docs/screenshots/repository-import')
+const output = resolve(process.env.WEEKLY_J_VERIFY_OUTPUT || '.ai-docs/screenshots/repository-import')
 mkdirSync(output, { recursive: true })
+const record = (event) =>
+    appendFileSync(join(output, 'actions.jsonl'), JSON.stringify({ time: new Date().toISOString(), ...event }) + '\n')
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
 // Slow real filesystem/Git work in this isolated capture process so transient
 // screens can finish painting. No repository results or UI state are mocked.
@@ -56,13 +59,15 @@ app.on('browser-window-created', (_, window) => {
     window.webContents.once('did-finish-load', async () => {
         if (checking) return
         checking = true
-        const js = (expression) =>
-            window.webContents.executeJavaScript(expression).catch(
+        const js = (expression) => {
+            record({ action: expression })
+            return window.webContents.executeJavaScript(expression).catch(
                 /** @param {unknown} error */ (error) => {
                     console.error('Failed expression:', expression)
                     throw error
                 }
             )
+        }
         const wait = async (expression) => {
             for (let i = 0; i < 150; i++) {
                 if (await js(expression)) return
@@ -83,9 +88,27 @@ app.on('browser-window-created', (_, window) => {
                 await pause(100)
             }
             writeFileSync(join(output, `${String(name)}.png`), (await window.webContents.capturePage()).toPNG())
+            record({ screenshot: `${String(name)}.png`, text: await js('document.body.innerText') })
         }
         try {
             await pause(400)
+            await wait(`!!document.querySelector('[aria-label="Open settings"]')`)
+            const doctor = {
+                url: window.webContents.getURL(),
+                profile: app.getPath('userData'),
+                version: app.getVersion(),
+                electron: process.versions.electron,
+                state: await js(`window.journal.invoke({type:'state'})`)
+            }
+            if (
+                doctor.profile !== join(directory, 'profile') ||
+                !doctor.url.startsWith(pathToFileURL(resolve('out/renderer/index.html')).href) ||
+                doctor.state.state.repositories.length !== 0 ||
+                doctor.state.connections.github ||
+                doctor.state.connections.notion
+            )
+                throw new Error('Doctor rejected the build, isolated profile, or initial state')
+            writeFileSync(join(output, 'doctor.json'), JSON.stringify(doctor, null, 2))
             for (const name of names.slice(0, 2)) {
                 dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [join(folder, name)] })
                 await js(`window.journal.invoke({type:'addRepository'})`)
@@ -194,6 +217,10 @@ app.on('browser-window-created', (_, window) => {
             })()`,
                 'Import must add only selected repositories and resume stopped tracking'
             )
+            writeFileSync(
+                join(output, 'imported-state.json'),
+                JSON.stringify(await js(`window.journal.invoke({type:'state'})`), null, 2)
+            )
             // A single-repository folder also receives the review step.
             dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [join(folder, 'playground')] })
             await click('Add repositories from folder')
@@ -255,15 +282,18 @@ app.on('browser-window-created', (_, window) => {
                     screenshots: output
                 })
             )
+            writeFileSync(join(output, 'journey.json'), JSON.stringify({ passed: true, feature: 'repository-import' }))
             app.exit(0)
         } catch (error) {
             console.error(error)
+            writeFileSync(join(output, 'journey.json'), JSON.stringify({ passed: false, error: String(error) }))
             await shot('failure')
             app.exit(1)
         }
     })
 })
 app.on('will-quit', () => {
+    if (managed) return // The runner cleans up after Electron releases all profile locks.
     const target = resolve(directory)
     if (!target.startsWith(resolve(tmpdir()) + sep) || !target.includes('weekly-j-import-')) return
     try {
