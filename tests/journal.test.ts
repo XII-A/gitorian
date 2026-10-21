@@ -191,7 +191,7 @@ describe('local journal workflow through application commands', () => {
             const backup = app.store.export()
             expect(backup).not.toContain('test-token')
             expect(backup).not.toContain('+initial')
-            app.store.restore(backup)
+            await app.store.restore(backup)
             expect(app.store.state.drafts).toHaveLength(1)
             expect(app.store.state.entries).toEqual([published, unrelated])
             expect(app.store.state.coverage).toEqual(coverage)
@@ -218,8 +218,8 @@ describe('local journal workflow through application commands', () => {
             await app.service.handle({ type: 'draft', draft: { ...draft, body: reflection } })
             const activities = structuredClone(app.store.state.activities)
             const feature = { id: 'old-group', name: 'Old group', archived: false, members: [activities[0].id] }
-            const backup = { ...JSON.parse(app.store.export()), features: [feature] }
-            app.store.restore(JSON.stringify(backup))
+            const backup = { ...JSON.parse(app.store.export()).state, features: [feature] }
+            await app.store.restore(JSON.stringify(backup))
             expect(app.store.state).not.toHaveProperty('features')
             expect(app.store.state.activities).toEqual(activities)
             expect(app.store.state.drafts[0].body).toEqual(reflection)

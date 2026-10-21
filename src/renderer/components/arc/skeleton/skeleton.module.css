@@ -7,12 +7,18 @@
 }
 /* A calm, finite pulse: each block dims a beat after the one above it, then rests after about 20 seconds. */
 .avatar,
-.line {
+.line,
+.block {
     display: block;
     flex: 0 0 auto;
     border-radius: var(--radius-control);
     background: color-mix(in oklab, var(--border-strong) 38%, var(--surface));
     animation: skeleton-pulse 1.8s var(--ease-in-out) calc(var(--index, 0) * 90ms) 11 both;
+}
+/* Media skeletons pulse as one surface; the caller reserves their size. */
+.block {
+    width: 100%;
+    min-height: var(--control-height-md);
 }
 .avatar {
     width: var(--control-height-md);
@@ -51,7 +57,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
     .avatar,
-    .line {
+    .line,
+    .block {
         animation: none;
     }
 }

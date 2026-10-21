@@ -12,6 +12,7 @@ import type { Notion } from './notion'
 import { forEachConcurrent, WorkQueue } from './work-queue'
 import { filesFromDiff } from './diff-files'
 import { isCombinedDiff } from '../shared/diff-format'
+import { imageIds } from '../shared/images'
 import { gitConfiguration, githubConfiguration } from '../shared/activity-history'
 
 export class JournalService {
@@ -894,6 +895,8 @@ export class JournalService {
                 })
                 break
             case 'draft': {
+                for (const id of imageIds(command.draft.body))
+                    if (!this.store.hasImage(id)) throw new Error('A draft image is missing. Restore it from a backup.')
                 const draft = state.drafts.find((item) => item.id === command.draft.id)
                 if (!draft) throw new Error('Draft is unavailable')
                 draft.body = command.draft.body
@@ -928,6 +931,9 @@ export class JournalService {
                 if (command.disposition === 'inbox') this.activity(command.activityId).explicit = true
                 break
             case 'settings': {
+                for (const id of imageIds(command.settings.template))
+                    if (!this.store.hasImage(id))
+                        throw new Error('A template image is missing. Restore it from a backup.')
                 new Intl.DateTimeFormat('en-US', { timeZone: command.settings.timezone })
                 const order = command.settings.layout.order
                 if (order.length !== 3 || new Set(order).size !== 3)

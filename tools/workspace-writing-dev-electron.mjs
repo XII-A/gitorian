@@ -42,6 +42,14 @@ const fixtureBytes = Buffer.byteLength(JSON.stringify(fixture))
 const db = new DatabaseSync(join(directory, 'weekly-j.sqlite'))
 db.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)')
 db.prepare('INSERT INTO state VALUES(1,?)').run(JSON.stringify(fixture))
+if (Number(process.env.WRITING_IMAGES_COUNT ?? 0) > 0) {
+    db.exec(
+        'CREATE TABLE images (id TEXT PRIMARY KEY, mime TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, bytes BLOB NOT NULL)'
+    )
+    const insert = db.prepare('INSERT INTO images VALUES(?,?,?,?,?)')
+    for (const image of JSON.parse(readFileSync('.ai-docs/workspace-writing-images.json', 'utf8')))
+        insert.run(image.id, image.mime, image.width, image.height, Buffer.from(image.bytes, 'base64'))
+}
 db.close()
 const churn = process.env.WRITING_CHURN !== '0'
 const activityChurn = process.env.WRITING_ACTIVITY_CHURN !== '0'

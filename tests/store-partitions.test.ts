@@ -7,7 +7,7 @@ import { Store } from '../src/main/store'
 import { sampleState } from '../src/renderer/workspace-sample'
 import { stateSchema } from '../src/shared/model'
 
-it('migrates the legacy row atomically, writes only changed draft sections, and reopens without losing content', () => {
+it('migrates the legacy row atomically, writes only changed draft sections, and reopens without losing content', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'weekly-j-partitions-'))
     const path = join(directory, 'journal.sqlite')
     const original = sampleState('2026-10-12')
@@ -49,7 +49,7 @@ it('migrates the legacy row atomically, writes only changed draft sections, and 
         expect(store.snapshot()).toBe(unpersisted)
         store.persist()
         const expected = store.snapshot()
-        const backup = stateSchema.parse(JSON.parse(store.export()))
+        const backup = stateSchema.parse(JSON.parse(store.export()).state)
         expect(backup.drafts).toEqual(expected.drafts)
         store.close()
         store = new Store(path)
@@ -62,7 +62,7 @@ it('migrates the legacy row atomically, writes only changed draft sections, and 
         store.close()
         store = new Store(path)
         expect(store.state.refreshError).toBeUndefined()
-        store.restore(JSON.stringify(backup))
+        await store.restore(JSON.stringify(backup))
         expect(store.state.drafts).toEqual(backup.drafts)
         expect(store.state.restoreId).toBeTruthy()
     } finally {
