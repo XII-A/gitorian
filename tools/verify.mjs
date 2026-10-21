@@ -11,9 +11,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
-if (!['doctor', 'repository-import', 'github-signin'].includes(mode) || process.argv.length !== 3) {
+if (!['doctor', 'repository-import', 'connections'].includes(mode) || process.argv.length !== 3) {
     console.error(
-        'Usage: pnpm verify doctor | pnpm verify repository-import | pnpm verify github-signin (run pnpm build first)'
+        'Usage: pnpm verify doctor | pnpm verify repository-import | pnpm verify connections (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -107,7 +107,7 @@ if (mode === 'doctor') {
         if (!journey.passed) throw new Error('The journey did not report success')
         const db = new DatabaseSync(join(scratch, 'profile', 'weekly-j.sqlite'), { readOnly: true })
         try {
-            if (mode === 'github-signin') {
+            if (mode === 'connections') {
                 const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
                 const settings = JSON.parse(String(row?.json))
                 writeFileSync(join(output, 'persisted-settings.json'), JSON.stringify(settings, null, 2))
@@ -146,7 +146,7 @@ if (mode === 'doctor') {
         }
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
         report.evidenceRetained = (
-            mode === 'github-signin'
+            mode === 'connections'
                 ? [
                       'doctor.json',
                       'actions.jsonl',
@@ -154,7 +154,11 @@ if (mode === 'doctor') {
                       '05-narrow-dark-code.png',
                       '08-disconnected.png',
                       'http-requests.json',
-                      'persisted-settings.json'
+                      'persisted-settings.json',
+                      'notion-04-failed.png',
+                      'notion-07-connected.png',
+                      'notion-09-disconnected.png',
+                      'captures.json'
                   ]
                 : [
                       'doctor.json',

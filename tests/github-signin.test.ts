@@ -108,7 +108,7 @@ it('replaces the sign-in action with a selectable code and copies the exact code
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
     try {
         await update(() => {
-            button('Sign in with GitHub').click()
+            button('Connect GitHub').click()
         })
         expect(document.querySelector('.settings')?.textContent).not.toContain('OAuth client ID')
         expect(document.querySelector('.settings')?.textContent).not.toContain('Set up OAuth app')
@@ -117,6 +117,9 @@ it('replaces the sign-in action with a selectable code and copies the exact code
         expect(surface.getAttribute('data-expanded')).toBe('true')
         expect(surface.querySelector('code')?.textContent).toBe('ABCD-EFGH')
         expect(surface.querySelectorAll('button')).toHaveLength(3)
+        expect(surface.closest('.settings-section-heading')).not.toBeNull()
+        expect(surface.querySelector('[data-copy-state]')?.getAttribute('aria-label')).toBe('Copy code')
+        expect(surface.querySelector('[data-copy-state]')?.textContent).not.toContain('Copy code')
         expect(document.querySelector('.settings-device')).toBeNull()
         await update(() => {
             button('Copy code').click()
@@ -135,7 +138,7 @@ it('reports clipboard failure in place and still permits manual use of the code'
     vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('Clipboard unavailable'))
     try {
         await update(() => {
-            button('Sign in with GitHub').click()
+            button('Connect GitHub').click()
         })
         await update(() => {
             button('Copy code').click()
@@ -162,14 +165,14 @@ it('cancels polling, returns focus to sign-in, and ignores a late poll response'
     )
     try {
         await update(() => {
-            button('Sign in with GitHub').click()
+            button('Connect GitHub').click()
         })
         await update(() => vi.advanceTimersByTimeAsync(5000))
         expect(app.poll).toHaveBeenCalledTimes(1)
         await update(() => {
             button('Cancel sign-in').click()
         })
-        expect(document.activeElement).toBe(button('Sign in with GitHub'))
+        expect(document.activeElement).toBe(button('Connect GitHub'))
         await update(() => {
             resolvePoll({ ...app.reply(), devicePending: { interval: 5 } })
         })
@@ -186,7 +189,7 @@ it('shows an expired-code retry in the same surface and obtains a fresh code', a
     app.poll.mockRejectedValueOnce(new Error('GitHub sign-in expired; start again'))
     try {
         await update(() => {
-            button('Sign in with GitHub').click()
+            button('Connect GitHub').click()
         })
         const surface = document.querySelector('.github-signin-surface')
         await update(() => vi.advanceTimersByTimeAsync(5000))
@@ -211,13 +214,15 @@ it('confirms authorization before revealing the connected account controls', asy
     })
     try {
         await update(() => {
-            button('Sign in with GitHub').click()
+            button('Connect GitHub').click()
         })
         await update(() => vi.advanceTimersByTimeAsync(5000))
+        expect(document.querySelector('.github-signin-surface')?.getAttribute('data-phase')).toBe('authorizing')
+        await update(() => vi.advanceTimersByTimeAsync(450))
         expect(document.querySelector('.github-signin-surface')?.textContent).toContain('Connected as journal-author')
         expect(document.querySelector('.settings-github-account')).toBeNull()
         await update(() => vi.advanceTimersByTimeAsync(900))
-        expect(document.querySelector('.github-signin-surface')).toBeNull()
+        expect(document.querySelector('.github-signin-surface')?.getAttribute('data-phase')).toBe('connected')
         expect(document.querySelector('.settings-github-account')?.textContent).toContain('journal-author')
     } finally {
         await app.cleanup()
@@ -229,7 +234,7 @@ it('keeps actionable setup errors beside sign-in and hides raw request diagnosti
     app.start.mockRejectedValueOnce(new Error('HTTP 401 internal request payload'))
     try {
         await update(() => {
-            button('Sign in with GitHub').click()
+            button('Connect GitHub').click()
         })
         expect(document.querySelector('.github-signin-error')?.textContent).toContain('Check your connection')
         expect(document.querySelector('.settings')?.textContent).not.toContain('internal request payload')

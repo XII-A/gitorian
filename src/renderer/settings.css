@@ -243,6 +243,9 @@
     clip-path: inset(50%);
     white-space: nowrap;
 }
+.settings-section-heading {
+    min-width: 0;
+}
 .settings-section-heading,
 .settings-actions {
     display: flex;
@@ -270,8 +273,7 @@
     align-items: start;
     gap: var(--space-4);
 }
-.settings-hint,
-.settings-connection-status {
+.settings-hint {
     color: var(--text-secondary);
     font-size: var(--text-xs);
     line-height: var(--leading-body);
@@ -305,50 +307,107 @@
     min-height: 300px;
     padding: var(--space-6);
 }
-.github-signin-track {
+.settings-github-heading {
+    align-items: flex-start;
+    flex-wrap: nowrap;
+}
+.settings-github-heading > h3 {
+    padding-block: var(--space-3);
+}
+.settings-github-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-3);
     min-width: 0;
-    width: 100%;
+    flex: 1;
+}
+.github-signin-track {
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
 }
 .github-signin-surface {
     max-width: 100%;
     overflow: hidden;
-    border: 1px solid transparent;
-    border-radius: var(--radius-pill);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    background: var(--surface-muted);
 }
 .github-signin-surface[data-expanded='false'] {
+    border-radius: var(--radius-pill);
     --radius-control: var(--radius-pill);
 }
-.github-signin-surface[data-expanded='true'] {
-    border-color: var(--border);
-    border-radius: var(--radius-surface);
-    background: var(--surface-muted);
+.github-signin-surface[data-phase='connected'] {
+    overflow: visible;
+    border-color: transparent;
+    background: transparent;
 }
 .github-signin-content {
     position: relative;
-    max-width: 100%;
+    width: max-content;
+}
+.github-signin-face {
+    min-width: 0;
 }
 .github-signin-details {
     display: grid;
-    gap: var(--space-4);
-    min-width: 0;
-    padding: var(--space-4);
+    gap: var(--space-3);
+    padding: var(--space-2);
+}
+.github-signin-details > .settings-hint,
+.github-signin-error {
+    padding: var(--space-2);
 }
 .github-signin-code-row {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     flex-wrap: wrap;
-    gap: var(--space-3) var(--space-4);
+    gap: var(--space-2);
+}
+.github-signin-code-group {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-inline-end: auto;
+    padding-inline-start: var(--space-2);
 }
 .github-signin-code {
     user-select: text;
     font-family: var(--font-mono, monospace);
-    font-size: var(--text-2xl);
+    font-size: var(--text-sm);
     line-height: var(--leading-tight);
     font-variant-numeric: tabular-nums;
     color: var(--foreground);
+    white-space: nowrap;
 }
 .github-signin-copy {
     min-height: var(--control-height-md);
+    min-width: var(--control-height-md);
+}
+.github-signin-compact {
+    display: grid;
+    place-items: center;
+    flex: none;
+    height: var(--control-height-md);
+    color: var(--foreground);
+}
+.github-signin-spinner {
+    animation: github-signin-spin 0.8s linear infinite;
+}
+@keyframes github-signin-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .github-signin-spinner {
+        animation: none;
+    }
 }
 .github-signin-result {
     display: flex;
@@ -465,4 +524,13 @@
     position: absolute;
     inset: 0;
     border-radius: inherit;
+}
+
+@media (max-width: 600px) {
+    .settings-github-heading:has([data-expanded='true']) {
+        flex-wrap: wrap;
+    }
+    .settings-github-heading:has([data-expanded='true']) .settings-github-controls {
+        flex-basis: 100%;
+    }
 }
