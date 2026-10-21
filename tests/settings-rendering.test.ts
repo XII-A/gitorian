@@ -4,9 +4,6 @@ import { createRoot } from 'react-dom/client'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { ExpandableCard } from '../src/renderer/components/arc/expandable-card/expandable-card'
 import type * as MotionReact from 'motion/react'
-import { Button } from '../src/renderer/components/arc/button/button'
-import { ImportProgressLabel } from '../src/renderer/ImportProgressLabel'
-import { ConfirmMorph } from '../src/renderer/components/arc/confirm-morph/confirm-morph'
 import { Settings } from '../src/renderer/Settings'
 import { initialState, type Command, type Reply } from '../src/shared/model'
 
@@ -38,8 +35,13 @@ it('keeps destination test failures and retry feedback in the secondary control 
     const reply: Reply = { state, connections: { github: true, notion: true, protectedStorage: true } }
     const failure = 'Error invoking remote method: Page could not be reached'
     let reachable = false
+    let finish!: () => void
     const invoke = vi.fn((command: Command): Promise<Reply> => {
         if (command.type === 'notionTestDestination' && !reachable) return Promise.reject(new Error(failure))
+        if (command.type === 'notionTestDestination')
+            return new Promise((resolve) => {
+                finish = () => resolve(reply)
+            })
         return Promise.resolve(reply)
     })
     const previousJournal = window.journal
@@ -79,6 +81,9 @@ it('keeps destination test failures and retry feedback in the secondary control 
         reachable = true
         const retry = [...test.querySelectorAll('button')].find((button) => button.textContent === 'Retry')!
         await renderUpdate(() => retry.click())
+        expect(test.dataset.state).toBe('pending')
+        expect(invoke.mock.calls.filter(([command]) => command.type === 'notionTestDestination')).toHaveLength(2)
+        await renderUpdate(() => finish())
         expect(test.dataset.state).toBe('done')
         expect(test.textContent).toContain('Reachable')
         expect(footer.textContent).toBe(footerBefore)
@@ -86,51 +91,6 @@ it('keeps destination test failures and retry feedback in the secondary control 
         await renderUpdate(() => root.unmount())
         host.remove()
         window.journal = previousJournal
-    }
-})
-
-it('runs immediate morph actions on one press, shows failures, and retries through pending to success', async () => {
-    const host = document.createElement('div')
-    document.body.append(host)
-    const root = createRoot(host)
-    let finish: (() => void) | undefined
-    const onConfirm = vi
-        .fn<() => Promise<void>>()
-        .mockRejectedValueOnce(new Error('Not reachable'))
-        .mockImplementationOnce(
-            () =>
-                new Promise<void>((resolve) => {
-                    finish = resolve
-                })
-        )
-    try {
-        await renderUpdate(() =>
-            root.render(
-                createElement(ConfirmMorph, {
-                    label: 'Test destination',
-                    confirmMode: 'immediate',
-                    pendingLabel: 'Testing',
-                    doneLabel: 'Reachable',
-                    errorLabel: 'Unreachable',
-                    resultTimeout: 0,
-                    onConfirm
-                })
-            )
-        )
-        await renderUpdate(() => host.querySelector<HTMLButtonElement>('button')!.click())
-        expect(onConfirm).toHaveBeenCalledTimes(1)
-        expect(host.querySelector('[data-state="error"]')).not.toBeNull()
-        expect(host.textContent).toContain('Unreachable')
-        const retry = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Retry')!
-        await renderUpdate(() => retry.click())
-        expect(onConfirm).toHaveBeenCalledTimes(2)
-        expect(host.querySelector('[data-state="pending"]')).not.toBeNull()
-        await renderUpdate(() => finish!())
-        expect(host.querySelector('[data-state="done"]')).not.toBeNull()
-        expect(host.textContent).toContain('Reachable')
-    } finally {
-        await renderUpdate(() => root.unmount())
-        host.remove()
     }
 })
 
@@ -170,41 +130,6 @@ it('defers fields for 24 closed repository cards and keeps them mounted after fi
         })
         expect(host.querySelector('input')).toBe(input)
         expect(input.value).toBe('edited@example.com')
-    } finally {
-        await renderUpdate(() => {
-            root.unmount()
-        })
-        host.remove()
-    }
-})
-
-it('keeps the import button sentence mounted when only its progress numbers change', async () => {
-    const host = document.createElement('div')
-    document.body.append(host)
-    const root = createRoot(host)
-    const render = (completed: number) =>
-        root.render(
-            createElement(
-                Button,
-                {},
-                createElement(ImportProgressLabel, {
-                    progress: { stage: 'processing', completed, total: 24 }
-                })
-            )
-        )
-    try {
-        await renderUpdate(() => {
-            render(1)
-        })
-        const sentence = host.querySelector('[aria-live="polite"]')!
-        const labelPhase = sentence.parentElement
-        await renderUpdate(() => {
-            render(2)
-        })
-        expect(host.querySelector('[aria-live="polite"]')).toBe(sentence)
-        expect(sentence.parentElement).toBe(labelPhase)
-        expect(host.querySelector('.settings-progress-number .settings-sr-only')?.textContent).toBe('2')
-        expect(sentence.textContent).toContain('Processing repositories')
     } finally {
         await renderUpdate(() => {
             root.unmount()

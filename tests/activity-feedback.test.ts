@@ -29,8 +29,8 @@ it('renders the real empty-result toast after the refresh button completes', asy
             })
     )
     function Harness() {
-        const { refresh } = useActivityRefresh(run, '2026-10-05', '2026-10-11')
-        return createElement('button', { onClick: refresh }, 'Refresh activity')
+        const { refresh, refreshing } = useActivityRefresh(run, '2026-10-05', '2026-10-11')
+        return createElement('button', { onClick: refresh, 'aria-busy': refreshing }, 'Refresh activity')
     }
     try {
         await act(async () => {
@@ -38,11 +38,18 @@ it('renders the real empty-result toast after the refresh button completes', asy
             root.render(createElement(ToastStackProvider, null, createElement(Harness), createElement(ToastStack)))
         })
         expect(host.textContent).not.toContain('No activity found')
+        expect(host.querySelector('button')?.getAttribute('aria-busy')).toBe('false')
+        await act(async () => {
+            host.querySelector('button')!.click()
+            await Promise.resolve()
+        })
+        expect(host.querySelector('button')?.getAttribute('aria-busy')).toBe('true')
         await act(async () => {
             await Promise.resolve()
             host.querySelector('button')!.click()
         })
         expect(host.textContent).not.toContain('No activity found')
+        expect(run).toHaveBeenCalledExactlyOnceWith({ type: 'refresh', since: '2026-10-05' })
         await act(async () => {
             await Promise.resolve()
             finish({ state, connections: { github: false, notion: false, protectedStorage: false } })
@@ -51,6 +58,7 @@ it('renders the real empty-result toast after the refresh button completes', asy
         expect(host.textContent).toContain('No activity found')
         expect(host.textContent).toContain('2026-10-05 to 2026-10-11')
         expect(host.querySelector('[aria-live="polite"]')).not.toBeNull()
+        expect(host.querySelector('button')?.getAttribute('aria-busy')).toBe('false')
     } finally {
         await act(async () => {
             await Promise.resolve()
@@ -108,7 +116,9 @@ it('shows only source failures and closes the dialog when they clear', async () 
     const repository = state.repositories[0]
     state.acquisition = {
         [`git:${repository.id}`]: { status: 'running' },
-        [`github:${repository.id}`]: { status: 'error', error: 'HTTP 401' }
+        [`github:${repository.id}`]: { status: 'error', error: 'HTTP 401' },
+        [`git:${state.repositories[1].id}`]: { status: 'cancelled', error: 'Paused by you', windowEnd: '2026-10-10' },
+        'git:removed': { status: 'error', error: 'Removed repository' }
     }
     const onOpenChange = vi.fn()
     const onSettings = vi.fn()
@@ -125,6 +135,8 @@ it('shows only source failures and closes the dialog when they clear', async () 
         expect(dialog.textContent).not.toContain('Local Git')
         expect(dialog.textContent).not.toContain('Pause')
         expect(dialog.textContent).not.toContain('Refreshing')
+        expect(dialog.textContent).not.toContain('Paused by you')
+        expect(dialog.textContent).not.toContain('Removed repository')
         const settings = [...dialog.querySelectorAll('button')].find(
             (button) => button.textContent === 'Open settings'
         )!

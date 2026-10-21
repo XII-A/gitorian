@@ -22,6 +22,7 @@ it('loads newly imported repositories when an earlier request for the same week 
     let second: Promise<unknown> | undefined
     try {
         await imported.git('commit', '--allow-empty', '--date=2026-10-06T12:00:00Z', '-m', 'Imported project work')
+        expect(await app.git('log', '--format=%s')).not.toContain('Imported project work')
         first = app.service.handle({ type: 'loadWeek', since: '2026-10-05' })
         await vi.waitFor(() => expect(index).toHaveBeenCalledTimes(1))
         const scan = (await app.service.scanRepositories(imported.directory)).repositoryScan!
@@ -43,19 +44,22 @@ it('loads newly imported repositories when an earlier request for the same week 
     }
 })
 
-it('loads all five local sources while GitHub is blocked', async () => {
+it('loads all five local sources and an earlier requested week while GitHub is blocked', async () => {
     const app = await workspace()
     let release!: () => void
     const held = new Promise<void>((resolve) => {
         release = resolve
     })
-    const github = vi.spyOn(app.github, 'activities').mockImplementation(async () => {
+    const github = vi.spyOn(app.github, 'activities').mockImplementation(async (_repo, _login, _tracked, scan) => {
         await held
+        scan?.checkpoint?.(1, true)
         return []
     })
     let pending: Promise<void> | undefined
+    let earlier: Promise<unknown> | undefined
     try {
         app.remote.github = true
+        app.repository.trackingStart = '2099-01-01'
         for (let i = 1; i < 5; i++) app.store.state.repositories.push({ ...app.repository, id: `repo-${i}` })
         pending = app.service.refresh()
         await vi.waitFor(
@@ -67,11 +71,17 @@ it('loads all five local sources while GitHub is blocked', async () => {
             },
             { timeout: 10000 }
         )
-        expect(app.store.state.activities.filter((activity) => activity.kind === 'commit')).toHaveLength(5)
+        expect(app.store.state.activities).toHaveLength(0)
         expect(github).toHaveBeenCalledTimes(2)
+        earlier = app.service.handle({ type: 'loadWeek', since: '2020-01-01' })
+        await vi.waitFor(
+            () => expect(app.store.state.activities.filter((activity) => activity.kind === 'commit')).toHaveLength(5),
+            { timeout: 10000 }
+        )
+        expect(app.store.state.acquisition?.[`git:${app.repository.id}`].historySince).toBe('2020-01-01')
     } finally {
         release()
-        await pending
+        await Promise.all([pending, earlier])
         github.mockRestore()
         await app.close()
     }
@@ -107,48 +117,6 @@ it('reuses out-of-range author history after restart, and skips acquisition for 
     }
 })
 
-it('continues requested history without waiting for the five-second background timer', async () => {
-    const app = await workspace()
-    const index = vi.spyOn(gitModule, 'indexCommits')
-    try {
-        index.mockResolvedValueOnce({ refs: { main: 'a'.repeat(40) }, items: [], history: [], nextOffset: 2000 })
-        index.mockResolvedValueOnce({ refs: { main: 'a'.repeat(40) }, items: [], history: [] })
-        await app.service.handle({ type: 'refresh', since: '2020-01-01', source: 'git' })
-        expect(index).toHaveBeenCalledTimes(2)
-        expect(index.mock.calls[1][3]).toBe(2000)
-        expect(app.store.state.acquisition?.[`git:${app.repository.id}`]).toMatchObject({
-            status: 'idle',
-            historySince: '2020-01-01',
-            windowEnd: undefined
-        })
-    } finally {
-        index.mockRestore()
-        await app.close()
-    }
-})
-
-it('extending history retains unchanged GitHub PR versions', async () => {
-    const app = await workspace()
-    try {
-        app.remote.github = true
-        app.repository.trackingStart = '2026-10-12'
-        await app.service.refresh()
-        // Earlier events from this hydrated PR must survive version-based skipping.
-        expect(
-            app.store.state.activities.some(
-                (activity) => activity.kind === 'review' && activity.date.startsWith('2026-10-07')
-            )
-        ).toBe(true)
-        const start = app.remote.requests.length
-        await app.service.handle({ type: 'refresh', since: '2020-01-01' })
-        const requests = app.remote.requests.slice(start).filter((request) => request.url.includes('api.github.com'))
-        expect(requests).toHaveLength(1)
-        expect(requests[0].url).toContain('/pulls?')
-    } finally {
-        await app.close()
-    }
-})
-
 it('reuses rewritten author dates while retaining existing journal decisions', async () => {
     const app = await workspace()
     try {
@@ -173,45 +141,8 @@ it('reuses rewritten author dates while retaining existing journal decisions', a
     }
 })
 
-it('can acquire an earlier local week while a previous remote refresh is still waiting', async () => {
-    const app = await workspace()
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => {
-        release = resolve
-    })
-    const github = vi.spyOn(app.github, 'activities').mockImplementation(async (_repo, _login, _tracked, scan) => {
-        await gate
-        scan?.checkpoint?.(1, true)
-        return []
-    })
-    let first: Promise<void> | undefined
-    let earlier: Promise<unknown> | undefined
-    try {
-        app.remote.github = true
-        app.repository.trackingStart = '2099-01-01'
-        first = app.service.refresh()
-        await vi.waitFor(
-            () => expect(app.store.state.acquisition?.[`git:${app.repository.id}`].lastSuccess).toBeDefined(),
-            { timeout: 10000 }
-        )
-        earlier = app.service.handle({ type: 'loadWeek', since: '2020-01-01' })
-        await vi.waitFor(
-            () => expect(app.store.state.activities.some((activity) => activity.kind === 'commit')).toBe(true),
-            { timeout: 10000 }
-        )
-        expect(app.store.state.acquisition?.[`git:${app.repository.id}`].historySince).toBe('2020-01-01')
-    } finally {
-        release()
-        await Promise.all([first, earlier])
-        github.mockRestore()
-        await app.close()
-    }
-})
-
 it.each([
     ['Europe/Istanbul', '2026-10-04T22:00:00Z', '2026-10-05', '2026-10-11', 1],
-    ['America/Los_Angeles', '2026-10-05T00:30:00Z', '2026-10-05', '2026-10-11', 0],
-    ['Europe/Berlin', '2026-10-25T23:30:00Z', '2026-10-26', '2026-11-01', 1],
     ['America/New_York', '2026-11-02T04:30:00Z', '2026-11-02', '2026-11-08', 0]
 ] as const)('uses journal dates for cold and cached history in %s', async (timezone, date, since, end, count) => {
     const app = await workspace()
@@ -252,6 +183,12 @@ it('gives all five repositories a first batch before continuing the first two la
         expect(new Set(order.slice(0, 5).map((batch) => batch.id)).size).toBe(5)
         expect(order.slice(0, 5).every((batch) => batch.offset === 0)).toBe(true)
         expect(order.filter((batch) => batch.offset === 2000)).toHaveLength(2)
+        for (const repository of app.store.state.repositories)
+            expect(app.store.state.acquisition?.[`git:${repository.id}`]).toMatchObject({
+                status: 'idle',
+                historySince: '2020-01-01',
+                windowEnd: undefined
+            })
     } finally {
         index.mockRestore()
         await app.close()

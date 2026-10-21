@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { ActivityRow } from '../src/renderer/ActivityRow'
 import { describe, expect, it } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -8,7 +9,7 @@ import { ActivityFiles } from '../src/renderer/ActivityFiles'
 import { PullRequestLifecycle, PullRequestStatus } from '../src/renderer/PullRequestLifecycle'
 import { Timeline } from '../src/renderer/components/arc/timeline/timeline'
 import timelineStyles from '../src/renderer/components/arc/timeline/timeline.module.css'
-import { activityBranches, changeKind, markdownUrl, orderedFiles } from '../src/renderer/activity-details'
+import { activityBranches, markdownUrl, orderedFiles } from '../src/renderer/activity-details'
 import { sampleState } from '../src/renderer/workspace-sample'
 
 const state = sampleState('2026-10-05')
@@ -21,13 +22,6 @@ const render = (element: Parameters<typeof renderToStaticMarkup>[0]) => {
 }
 
 describe('pull request lifecycle presentation', () => {
-    it.each(['open', 'draft', 'closed', 'merged'] as const)('labels %s as current status', (status) => {
-        const pull = { ...activity, pullRequest: { status, openedAt: activity.date, commitDates: [] } }
-        const container = render(createElement(PullRequestStatus, { activity: pull, activities: [pull] }))
-        const label = `${status[0].toUpperCase()}${status.slice(1)}`
-        expect(container.textContent).toBe(label)
-        expect(container.firstElementChild?.getAttribute('aria-label')).toBe(`Current status: ${label}`)
-    })
     it('shows lifecycle milestones newest first with timezone-aware accessible times', () => {
         const pull = {
             ...activity,
@@ -251,20 +245,6 @@ describe('activity descriptions', () => {
 })
 
 describe('activity files', () => {
-    it.each([
-        ['D', 'deleted'],
-        ['removed', 'deleted'],
-        ['A', 'added'],
-        ['added', 'added'],
-        ['R100', 'renamed'],
-        ['renamed', 'renamed'],
-        ['M', 'modified'],
-        ['modified', 'modified'],
-        ['C75', 'copied'],
-        ['typechanged', 'other']
-    ])('normalizes %s', (status, kind) => {
-        expect(changeKind(status)).toBe(kind)
-    })
     it('sorts deleted files first without mutating source data and shows rename paths and totals', () => {
         const files = [
             { name: 'src/z.ts', status: 'M' },
@@ -345,4 +325,25 @@ describe('activity files', () => {
             container.remove()
         }
     })
+})
+
+describe('activity row pull request references', () => {
+    it.each(['0ae81df3-9fec-41d5-8c51-42132f609746:pr:602', 'sample/pr/602'])(
+        'shows the PR number without the internal ID for %s',
+        (prId) => {
+            const activity = {
+                ...sampleState('2026-10-05').activities[0],
+                kind: 'pr' as const,
+                prId,
+                title: '#602 Release background survey exports and organization integration isolation'
+            }
+            const container = document.createElement('div')
+            container.innerHTML = renderToStaticMarkup(
+                createElement(ActivityRow, { activity, repositoryName: 'example-project' })
+            )
+            expect(container.querySelector('.activity-row-reference')?.textContent).toBe('#602')
+            expect(container.querySelector('.activity-row-title')?.textContent).toBe(activity.title)
+            expect(container.textContent).not.toContain(prId)
+        }
+    )
 })

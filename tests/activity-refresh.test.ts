@@ -54,35 +54,6 @@ afterEach(async () => {
     })
 })
 
-it('stays silent until a manual refresh finishes and coalesces repeated clicks', async () => {
-    let finish!: (value: Reply) => void
-    const run = vi.fn(
-        () =>
-            new Promise<Reply>((resolve) => {
-                finish = resolve
-            })
-    )
-    await render(run)
-    expect(toast).not.toHaveBeenCalled()
-    let pending!: Promise<void>
-    await act(async () => {
-        await Promise.resolve()
-        await Promise.resolve()
-        pending = controls.refresh()
-    })
-    expect(controls.refreshing).toBe(true)
-    expect(toast).not.toHaveBeenCalled()
-    await act(async () => controls.refresh())
-    expect(run).toHaveBeenCalledExactlyOnceWith({ type: 'refresh', since: '2026-10-05' })
-    await act(async () => {
-        await Promise.resolve()
-        finish(reply())
-        await pending
-    })
-    expect(controls.refreshing).toBe(false)
-    expect(toast).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'info', title: 'No activity found' }))
-})
-
 it('does not announce an empty result when the selected week has activity', async () => {
     await render(() => Promise.resolve(reply(sampleState('2026-10-05'))))
     await act(async () => controls.refresh())
@@ -115,30 +86,6 @@ it('clears loading after a failed command without announcing an empty result', a
     await render(() => Promise.resolve(undefined))
     await act(async () => controls.refresh())
     expect(controls.refreshing).toBe(false)
-    expect(toast).not.toHaveBeenCalled()
-})
-
-it('does not show an empty-result toast for a week the user has left', async () => {
-    let finish!: (value: Reply) => void
-    const run = vi.fn(
-        () =>
-            new Promise<Reply>((resolve) => {
-                finish = resolve
-            })
-    )
-    await render(run)
-    let pending!: Promise<void>
-    await act(async () => {
-        await Promise.resolve()
-        pending = controls.refresh()
-    })
-    await render(run, '2026-10-12')
-    expect(controls.refreshing).toBe(false)
-    await act(async () => {
-        await Promise.resolve()
-        finish(reply())
-        await pending
-    })
     expect(toast).not.toHaveBeenCalled()
 })
 

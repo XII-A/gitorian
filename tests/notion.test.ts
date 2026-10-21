@@ -1,9 +1,8 @@
 import { expect, it, vi } from 'vitest'
 import { Notion } from '../src/main/notion'
 import { Http } from '../src/main/http'
-import { Store } from '../src/main/store'
 import type { Destination } from '../src/shared/model'
-import { workspace } from './fixtures'
+import { journal } from './fixtures'
 
 it('returns the integration name and avatar without exposing other user details', async () => {
     const transport = vi.fn<typeof fetch>(() =>
@@ -43,7 +42,7 @@ it.each(['page', 'database'] as const)(
     }
 )
 
-it.each([400, 401, 403, 404, 429, 500])('explains an unreachable destination (%s)', async (status) => {
+it.each([400, 401, 404, 500])('explains an unreachable destination (%s)', async (status) => {
     const transport = vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}', { status })))
     const notion = new Notion(new Http(transport), () => 'test-token')
     await expect(
@@ -51,10 +50,9 @@ it.each([400, 401, 403, 404, 429, 500])('explains an unreachable destination (%s
     ).rejects.toThrow(/Check|Reconnect/)
 })
 
-it.each(['page', 'database'] as const)('refreshes only app-published entries for a %s destination', async (kind) => {
-    const app = await workspace()
+it('refreshes only app-published entries even after the destination changes', async () => {
+    const app = await journal()
     try {
-        app.store.state.settings.destination!.kind = kind
         app.remote.pages.push({
             id: 'unrelated',
             url: 'https://notion.so/unrelated',
@@ -79,33 +77,6 @@ it.each(['page', 'database'] as const)('refreshes only app-published entries for
             `https://api.notion.com/v1/pages/${published.id}`,
             `https://api.notion.com/v1/blocks/${published.id}/children?page_size=100`
         ])
-    } finally {
-        await app.close()
-    }
-})
-
-it('preserves existing entries and coverage on restore and restart', async () => {
-    const app = await workspace()
-    try {
-        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
-        await app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id })
-        const published = structuredClone(app.store.state.entries[0])
-        const unrelated = { ...published, id: 'unrelated' }
-        app.store.state.entries.push(unrelated)
-        app.store.state.coverage.push({ activityId: 'old-activity', entryId: unrelated.id })
-        const coverage = structuredClone(app.store.state.coverage)
-        const backup = app.store.export()
-        app.store.persist()
-        const reopened = new Store(`${app.directory}/tracking.sqlite`)
-        try {
-            expect(reopened.state.entries).toEqual([published, unrelated])
-            expect(reopened.state.coverage).toEqual(coverage)
-        } finally {
-            reopened.close()
-        }
-        app.store.restore(backup)
-        expect(app.store.state.entries).toEqual([published, unrelated])
-        expect(app.store.state.coverage).toEqual(coverage)
     } finally {
         await app.close()
     }

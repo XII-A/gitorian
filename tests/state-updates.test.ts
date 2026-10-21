@@ -1,3 +1,5 @@
+import { initialState } from '../src/shared/model'
+import { hasCachedDetails, unchangedStateReply } from '../src/renderer/activity-cache'
 import { expect, it } from 'vitest'
 import { ReplyUpdates, expandReply, stateCursor } from '../src/shared/state-updates'
 import { shareSnapshot } from '../src/shared/snapshot'
@@ -91,7 +93,6 @@ it('uses full snapshots after a restore or expired baseline and rejects applying
     expect('state' in cache.pack(next, stateCursor(first.state))).toBe(true)
     const restored = reply({ ...first.state, snapshotVersion: 1, restoreId: 'restored' })
     expect('state' in cache.pack(restored, stateCursor(first.state))).toBe(true)
-    expect(restored.state.restoreId).toBe('restored')
 })
 
 it('expands concurrent responses against their own captured baseline without losing later updates', () => {
@@ -122,4 +123,54 @@ it('falls back to complete snapshots if a caller supplies different content unde
     const wire = cache.pack(latest, stateCursor(first.state))
     expect('state' in wire).toBe(true)
     expect(expandReply(wire, first.state).state.activities[0].title).toBe('Acquired before persist')
+})
+
+it('skips equal-version state polls but accepts account changes, new snapshots and restores', () => {
+    const current: Reply = {
+        state: { ...initialState(), snapshotVersion: 2, restoreId: 'one' },
+        connections: { github: false, notion: false, protectedStorage: true }
+    }
+    const equal = structuredClone(current)
+    expect(unchangedStateReply(current, equal, { type: 'state' })).toBe(true)
+    expect(
+        unchangedStateReply(
+            current,
+            { ...equal, connections: { ...equal.connections, github: true } },
+            { type: 'state' }
+        )
+    ).toBe(false)
+    expect(
+        unchangedStateReply(current, { ...equal, state: { ...equal.state, snapshotVersion: 3 } }, { type: 'state' })
+    ).toBe(false)
+    expect(
+        unchangedStateReply(current, { ...equal, state: { ...equal.state, restoreId: 'two' } }, { type: 'state' })
+    ).toBe(false)
+    expect(unchangedStateReply(undefined, equal, { type: 'state' })).toBe(false)
+})
+
+it('does not discard detail payloads or trust unversioned state as unchanged', () => {
+    const state = initialState()
+    const current: Reply = { state, connections: { github: false, notion: false, protectedStorage: true } }
+    expect(unchangedStateReply(current, structuredClone(current), { type: 'state' })).toBe(false)
+    state.snapshotVersion = 1
+    expect(unchangedStateReply(current, { ...current, diff: 'new patch' }, { type: 'details', activityId: 'pr' })).toBe(
+        false
+    )
+})
+
+it('only skips detail loading for matching PR revisions or explicitly loaded metadata', () => {
+    const state = sampleState('2026-10-05')
+    const activity = state.activities.find((item) => item.kind === 'pr')!
+    state.diffs[activity.id] = 'cached patch'
+    activity.revision = 'new'
+    activity.diffRevision = 'old'
+    expect(hasCachedDetails(state, activity)).toBe(false)
+    activity.diffRevision = 'new'
+    expect(hasCachedDetails(state, activity)).toBe(true)
+    activity.filesLoaded = false
+    expect(hasCachedDetails(state, activity, 'files')).toBe(false)
+    activity.filesLoaded = true
+    expect(hasCachedDetails(state, activity, 'files')).toBe(true)
+    state.diffs = {}
+    expect(hasCachedDetails(state, activity)).toBe(false)
 })

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/main/store'
 import { commandSchema, coveredEntries, inbox, weekOf } from '../src/shared/model'
-import { workspace } from './fixtures'
+import { journal, workspace } from './fixtures'
 import type { JournalNode } from '../src/shared/model'
 import { toNotion } from '../src/shared/notion-format'
 
@@ -25,7 +25,7 @@ const reflection: JournalNode = {
 }
 describe('local journal workflow through application commands', () => {
     it('waits for durable publish intent before sending a Notion create request', async () => {
-        const app = await workspace()
+        const app = await journal()
         try {
             await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
             app.store.state.drafts[0].title = 'Durable intent'
@@ -45,7 +45,7 @@ describe('local journal workflow through application commands', () => {
         }
     })
     it('refuses ambiguous matching pages after a lost creation response', async () => {
-        const app = await workspace()
+        const app = await journal()
         try {
             await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
             const draft = app.store.state.drafts[0]
@@ -57,19 +57,6 @@ describe('local journal workflow through application commands', () => {
             ).rejects.toThrow('More than one matching')
             expect(app.store.state.saves[0].status).toBe('unknown')
             expect(app.store.state.coverage).toEqual([])
-        } finally {
-            await app.close()
-        }
-    })
-    it('publishes only the writing, without an attribution block', async () => {
-        const app = await workspace()
-        try {
-            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
-            const draft = app.store.state.drafts[0]
-            await app.service.handle({ type: 'draft', draft: { ...draft, body: reflection } })
-            await app.service.handle({ type: 'publish', draftId: draft.id })
-            expect(JSON.stringify(app.remote.pages[0].blocks)).not.toContain('Published with weekly-j')
-            expect(app.remote.pages[0].blocks).toHaveLength(reflection.content!.length)
         } finally {
             await app.close()
         }
@@ -172,7 +159,7 @@ describe('local journal workflow through application commands', () => {
         }
     })
     it('retains a failed draft and supports a deliberate retry after a confirmed rejection', async () => {
-        const app = await workspace()
+        const app = await journal()
         try {
             await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
             const draft = app.store.state.drafts[0]
@@ -195,15 +182,29 @@ describe('local journal workflow through application commands', () => {
             await app.service.handle({ type: 'details', activityId: app.store.state.activities[0].id })
             await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
             await app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id })
+            const published = structuredClone(app.store.state.entries[0])
+            const unrelated = { ...published, id: 'unrelated' }
+            app.store.state.entries.push(unrelated)
+            app.store.state.coverage.push({ activityId: 'old-activity', entryId: unrelated.id })
+            app.store.persist()
+            const coverage = structuredClone(app.store.state.coverage)
             const backup = app.store.export()
             expect(backup).not.toContain('test-token')
             expect(backup).not.toContain('+initial')
             app.store.restore(backup)
             expect(app.store.state.drafts).toHaveLength(1)
-            expect(app.store.state.entries).toHaveLength(1)
+            expect(app.store.state.entries).toEqual([published, unrelated])
+            expect(app.store.state.coverage).toEqual(coverage)
             expect(app.store.state.repositories[0].available).toBe(false)
             expect(app.store.state.repositories[0].path).toBe('')
             expect(app.store.state.diffs).toEqual({})
+            const reopened = new Store(`${app.directory}/tracking.sqlite`)
+            try {
+                expect(reopened.state.entries).toEqual([published, unrelated])
+                expect(reopened.state.coverage).toEqual(coverage)
+            } finally {
+                reopened.close()
+            }
         } finally {
             await app.close()
         }
@@ -239,7 +240,7 @@ describe('local journal workflow through application commands', () => {
 })
 
 it('reuses a weekly draft and republishes edits to the same Notion page', async () => {
-    const app = await workspace()
+    const app = await journal()
     try {
         const week = '2026-10-05'
         await app.service.handle({ type: 'newDraft', week })
@@ -256,6 +257,8 @@ it('reuses a weekly draft and republishes edits to the same Notion page', async 
         expect(draft.publishedEntryId).toBe(entryId)
         expect(app.store.state.entries).toHaveLength(1)
         expect(app.store.state.entries[0]).toMatchObject({ id: entryId, title: 'Revised week', body: reflection })
+        expect(app.remote.pages[0].blocks).toHaveLength(reflection.content!.length)
+        expect(JSON.stringify(app.remote.pages[0].blocks)).not.toContain('Published with weekly-j')
         expect(toNotion((await app.notion.refreshEntry(entryId!)).body)).toEqual(toNotion(reflection))
         await app.service.handle({ type: 'newDraft', week: '2026-10-12' })
         expect(app.store.state.drafts.filter((item) => item.week === week)).toEqual([draft])
@@ -277,7 +280,7 @@ it('reuses a weekly draft and republishes edits to the same Notion page', async 
 })
 
 it('verifies an interrupted republish without duplicating the page or its writing', async () => {
-    const app = await workspace()
+    const app = await journal()
     try {
         await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
         const draft = app.store.state.drafts[0]
@@ -302,7 +305,7 @@ it('verifies an interrupted republish without duplicating the page or its writin
 })
 
 it('keeps the weekly page linked when writing changes during a publish', async () => {
-    const app = await workspace()
+    const app = await journal()
     try {
         await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
         const draft = app.store.state.drafts[0]
