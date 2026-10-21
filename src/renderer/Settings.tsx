@@ -23,6 +23,7 @@ import { NumberField } from './components/arc/number-field/number-field'
 import { SearchField } from './components/arc/search-field/search-field'
 import { ConfirmMorph, type ConfirmMorphState } from './components/arc/confirm-morph/confirm-morph'
 import type { EditorHandle } from './Editor'
+import { NotionLogoIcon } from '@phosphor-icons/react/dist/csr/NotionLogo'
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
 import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise'
 import { Editor } from './Editor'
@@ -517,7 +518,13 @@ export function Settings({
                                 <TabsContent value="connections" className="settings-content">
                                     <section className="settings-section" aria-label="GitHub connection">
                                         <div className="settings-section-heading settings-github-heading">
-                                            <h3>GitHub</h3>
+                                            <h3 className="settings-connection-title">
+                                                <span
+                                                    className="settings-connection-logo settings-connection-logo--github"
+                                                    aria-hidden="true"
+                                                />
+                                                GitHub
+                                            </h3>
                                             <div className="settings-github-controls">
                                                 <GitHubSignIn
                                                     identity={
@@ -600,7 +607,17 @@ export function Settings({
                                     </section>
                                     <section className="settings-section" aria-label="Notion connection">
                                         <div className="settings-section-heading settings-github-heading">
-                                            <h3>Notion</h3>
+                                            <h3 className="settings-connection-title">
+                                                <span className="settings-connection-logo settings-connection-logo--notion">
+                                                    <NotionLogoIcon
+                                                        size={24}
+                                                        weight="fill"
+                                                        aria-hidden="true"
+                                                        focusable="false"
+                                                    />
+                                                </span>
+                                                Notion
+                                            </h3>
                                             <div ref={notionAccount} className="settings-github-account">
                                                 {prepareNotionIdentity && (
                                                     <ConnectionIdentity

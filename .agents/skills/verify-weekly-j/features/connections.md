@@ -4,7 +4,7 @@ Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify connections`. The runn
 
 ## GitHub entry points
 
-- Settings > Connections: GitHub and Notion headings have Connect actions instead of disconnected text. GitHub has no client-ID field or app-creation link.
+- Settings > Connections: GitHub and Notion headings have their matching decorative brand logos and Connect actions instead of disconnected text. GitHub has no client-ID field or app-creation link.
 - GitHub Connect: the heading control shows its starting spinner, then expands to the code, icon-only Copy code action, Cancel, and primary Open GitHub action.
 - Offline start > retry: a simulated failure stays in one row (message, Cancel, Retry), without a description; retry obtains a code.
 - Browser failure > Open GitHub: browser recovery guidance leaves the code usable. The button shows loading during the real IPC command with simulated browser launching.
@@ -52,3 +52,7 @@ When reproducing a dirty revision, also copy the retained `ConnectionIdentity.ts
 Before each first hold, Cancel must preserve the existing connection. The IPC fixture rejects the first disconnect command before it reaches the backend; verify the error stays in place, the connection is retained, and Retry reaches the readable result. This simulated failure does not prove recovery from arbitrary partial filesystem/store failures. The repeated cycle then disconnects without the injected failure. Both paths still use real keyboard holds, preload, IPC, vault and store on success.
 
 For a dirty revision, restore the retained `useDisconnectTransition.ts` into `src/renderer/` in addition to applying `source.patch`. This new hook is not included in Git's tracked diff until added.
+
+The initial headings are also captured in `connection-logos-dark.png` and `connection-logos-light.png` through native Electron capture. The journey restores dark mode before continuing; heading/button center alignment remains required.
+
+The GitHub heading uses the circular Primer mark as a theme-colored mask; the Notion mark uses the same solid circular treatment. Restore a retained `github-mark.svg` into `src/renderer/assets/` when reproducing an untracked logo revision.

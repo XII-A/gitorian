@@ -10,6 +10,7 @@ if (!directory || !output) throw new Error('Use pnpm verify connections for mana
 app.setPath('userData', join(directory, 'profile'))
 nativeTheme.themeSource = 'dark'
 mkdirSync(output, { recursive: true })
+writeFileSync(join(output, 'github-mark.svg'), readFileSync(resolve('src/renderer/assets/github-mark.svg')))
 writeFileSync(join(output, 'ConnectionIdentity.tsx'), readFileSync(resolve('src/renderer/ConnectionIdentity.tsx')))
 writeFileSync(
     join(output, 'useDisconnectTransition.ts'),
@@ -322,6 +323,32 @@ app.on('browser-window-created', (_, window) => {
                 throw new Error('Connection titles and buttons are not vertically centered')
             await js(`window.__fixtureGitHubSurface = document.querySelector('.github-signin-surface'); true`)
             await shot('01-idle', 1000)
+            const shotHeadings = async (name) => {
+                const rectangle = await js(
+                    `(() => {const github=document.querySelector('[aria-label="GitHub connection"] .settings-section-heading').getBoundingClientRect();const notion=document.querySelector('[aria-label="Notion connection"] .settings-section-heading').getBoundingClientRect();return {x:Math.floor(github.x),y:Math.floor(github.y),width:Math.ceil(github.width),height:Math.ceil(notion.bottom-github.y)}})()`
+                )
+                writeFileSync(join(output, `${name}.png`), (await window.webContents.capturePage(rectangle)).toPNG())
+            }
+            await shotHeadings('connection-logos-dark')
+            nativeTheme.themeSource = 'light'
+            await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+                features: [
+                    { name: 'prefers-color-scheme', value: 'light' },
+                    { name: 'prefers-reduced-motion', value: stressMotion ? 'reduce' : 'no-preference' }
+                ]
+            })
+            await wait(`document.documentElement.dataset.theme==='light'`)
+            await pause(300)
+            await shotHeadings('connection-logos-light')
+            nativeTheme.themeSource = 'dark'
+            await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+                features: [
+                    { name: 'prefers-color-scheme', value: 'dark' },
+                    { name: 'prefers-reduced-motion', value: stressMotion ? 'reduce' : 'no-preference' }
+                ]
+            })
+            await wait(`document.documentElement.dataset.theme==='dark'`)
+
             await click('Connect GitHub')
             await wait(`document.querySelector('.github-signin-surface')?.dataset.phase==='starting'`)
             await shot('github-starting', 250)
@@ -578,7 +605,11 @@ app.on('browser-window-created', (_, window) => {
         } catch (error) {
             console.error(error)
             writeFileSync(join(output, 'journey.json'), JSON.stringify({ passed: false, error: String(error) }))
-            await shot('failure')
+            try {
+                await shot('failure')
+            } catch (captureFailure) {
+                record({ captureFailure: String(captureFailure) })
+            }
             app.exit(1)
         }
     })

@@ -250,6 +250,29 @@
 .settings-section-heading > h3 {
     line-height: var(--control-height-sm);
 }
+.settings-connection-title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.settings-connection-logo {
+    display: grid;
+    place-items: center;
+    width: var(--space-8);
+    height: var(--space-8);
+    flex: none;
+}
+.settings-connection-logo--github {
+    background: currentColor;
+    mask: url('./assets/github-mark.svg') center / contain no-repeat;
+}
+.settings-connection-logo--notion {
+    border-radius: var(--radius-pill);
+    background: currentColor;
+}
+.settings-connection-logo--notion > svg {
+    color: var(--surface-raised);
+}
 .settings-section-heading,
 .settings-actions {
     display: flex;
