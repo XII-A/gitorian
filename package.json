@@ -1,6 +1,6 @@
 {
     "name": "weekly-j",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "private": true,
     "description": "A local developer journal with revision-aware Notion coverage",
     "main": "out/main/index.js",
