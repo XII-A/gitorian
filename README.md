@@ -89,7 +89,9 @@ git tag v0.1.2
 git push origin v0.1.2
 ```
 
-Download the installer and `SHA256SUMS` from the draft and follow its verification checklist on a test account or machine. Confirm the hash with `Get-FileHash -Algorithm SHA256`, install, and test repository import, writing persistence, backup restore, and any integrations being claimed as tested. Record results in the release notes, then publish that same draft manually. Draft downloads require repository write access. Do not grant write access just to share an installer. A failed candidate should be fixed with a new version/tag rather than replacing a tested asset or moving a tag.
+When creating or updating a release description, use the [release description template](docs/release-notes.md) and save the finished copy in `.github/release-notes.md`.
+
+Download the installer and `SHA256SUMS` from the draft and follow the [maintainer verification checklist](docs/release-notes.md#maintainer-verification) on a test account or machine. Confirm the hash with `Get-FileHash -Algorithm SHA256`, install, and test repository import, writing persistence, backup restore, and any integrations being claimed as tested. Record results under `.ai-docs/verification/`, then publish that same draft manually. Draft downloads require repository write access. Do not grant write access just to share an installer. A failed candidate should be fixed with a new version/tag rather than replacing a tested asset or moving a tag.
 
 If an infrastructure or billing problem prevented the workflow from running, fix it and use **Actions → Draft Windows release → Run workflow** on `main`, supplying the existing tag. This retries the original tagged source without moving the tag. Existing releases are still protected from replacement. Private-repository Actions are subject to your account's included minutes, billing status, and spending limits; workflow files cannot override an account billing block.
 
