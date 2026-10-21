@@ -85,8 +85,8 @@ After the release changes are merged into `main`, a maintainer creates a release
 ```sh
 git switch main
 git pull --ff-only
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 When creating or updating a release description, use the [release description template](docs/release-notes.md) and save the finished copy in `.github/release-notes.md`.
