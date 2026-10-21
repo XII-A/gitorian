@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ConnectionIdentity } from './ConnectionIdentity'
 import { ExternalLink, CircleAlert } from 'lucide-react'
 import type { Reply } from '../shared/model'
 import { Button } from './components/arc/button/button'
@@ -52,6 +53,10 @@ export function GitHubSignIn({
     const expanded = phase === 'device' || phase === 'error' || phase === 'expired'
     const control = useRef<HTMLDivElement>(null)
     const previousPhase = useRef(phase)
+    const [identityReady, setIdentityReady] = useState(connected)
+    useEffect(() => {
+        if (phase !== 'connected') setIdentityReady(false)
+    }, [phase])
     const [disconnectState, setDisconnectState] = useState<ConfirmMorphState>('idle')
     const state: ConfirmMorphState =
         phase === 'connected'
@@ -89,10 +94,18 @@ export function GitHubSignIn({
 
     return (
         <div className="github-signin-track">
-            {identity && <div className="settings-github-account">{identity}</div>}
+            {identity && (
+                <div className="settings-github-account">
+                    <ConnectionIdentity ready={phase === 'connected' && identityReady}>{identity}</ConnectionIdentity>
+                </div>
+            )}
             <div className="github-signin-surface" data-expanded={expanded} data-phase={phase}>
                 <ConfirmMorph
                     ref={control}
+                    actionKey={phase === 'connected' ? 'disconnect-github' : 'connect-github'}
+                    onWidthSettled={(face) => {
+                        if (phase === 'connected' && face === 'idle') setIdentityReady(true)
+                    }}
                     label={phase === 'connected' ? 'Disconnect' : 'Connect'}
                     actionLabel={phase === 'connected' ? 'Disconnect GitHub' : 'Connect GitHub'}
                     prompt={<span className="settings-disconnect-question">Disconnect GitHub?</span>}

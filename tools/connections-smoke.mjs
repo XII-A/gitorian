@@ -1,5 +1,5 @@
 import { app, shell, clipboard, nativeTheme } from 'electron'
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -10,9 +10,13 @@ if (!directory || !output) throw new Error('Use pnpm verify connections for mana
 app.setPath('userData', join(directory, 'profile'))
 nativeTheme.themeSource = 'dark'
 mkdirSync(output, { recursive: true })
+writeFileSync(join(output, 'ConnectionIdentity.tsx'), readFileSync(resolve('src/renderer/ConnectionIdentity.tsx')))
 const record = (event) =>
     appendFileSync(join(output, 'actions.jsonl'), JSON.stringify({ time: new Date().toISOString(), ...event }) + '\n')
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
+const stressMotion = process.env.WEEKLY_J_VERIFY_MOTION === 'stress'
+const githubLogin = stressMotion ? 'weekly-j-fixture-with-a-long-github-name' : 'weekly-j-fixture'
+const notionName = stressMotion ? 'Weekly journal with an exceptionally long integration name' : 'Weekly journal'
 let attempt = 0
 let authorize = false
 let notionAllowed = false
@@ -45,12 +49,12 @@ globalThis.fetch = (input, init) =>
                         ? { access_token: 'fixture-only-token' }
                         : { error: 'authorization_pending' }
             )
-        if (url === 'https://api.github.com/user') return json({ login: 'weekly-j-fixture' })
+        if (url === 'https://api.github.com/user') return json({ login: githubLogin })
         if (url === 'https://api.github.com/user/emails') return json([{ email: 'fixture@example.com' }])
         if (url === 'https://api.notion.com/v1/users/me') {
             await pause(1000)
             return notionAllowed
-                ? json({ name: 'Weekly journal', avatar_url: null })
+                ? json({ name: notionName, avatar_url: stressMotion ? 'https://fixture.invalid/avatar.svg' : null })
                 : new Response(JSON.stringify({ message: 'Fixture invalid token' }), { status: 401 })
         }
         throw new Error(`Unexpected external request: ${url}`)
@@ -64,6 +68,16 @@ shell.openExternal = (url) =>
 
 let checking = false
 app.on('browser-window-created', (_, window) => {
+    window.webContents.session.protocol.handle('https', async (request) => {
+        if (!request.url.endsWith('.png?size=64') && request.url !== 'https://fixture.invalid/avatar.svg')
+            throw new Error(`Unexpected renderer HTTP: ${request.url}`)
+        await pause(1600)
+        record({ avatar: request.url, simulated: true, delay: 1600 })
+        return new Response(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#344d45"/><text x="16" y="22" text-anchor="middle" fill="white" font-size="18">W</text></svg>',
+            { headers: { 'content-type': 'image/svg+xml' } }
+        )
+    })
     window.setMinimumSize(320, 400)
     window.setContentSize(1280, 900)
     window.webContents.setBackgroundThrottling(false)
@@ -92,6 +106,77 @@ app.on('browser-window-created', (_, window) => {
         const click = async (text, scope = 'document') => {
             await js(
                 `Array.from(${scope}.querySelectorAll('button')).find(b=>!b.closest('[inert]') && (b.getAttribute('aria-label')===${JSON.stringify(text)} || b.textContent.trim()===${JSON.stringify(text)})).click()`
+            )
+        }
+        const startIdentityTrace = async (service) => {
+            await js(`(() => {
+                const frames=[]; const started=performance.now();
+                window.__identityTrace={service:${JSON.stringify(service)},frames};
+                const sample=()=>{
+                    const section=document.querySelector('[aria-label="${service} connection"]');
+                    const identity=section?.querySelector('.connection-identity');
+                    const action=section?.querySelector('.settings-section-heading [role="group"]');
+                    const rect=identity?.getBoundingClientRect();
+                    frames.push({time:performance.now()-started,revealed:identity?.dataset.revealed==='true',
+                        opacity:identity ? Number(getComputedStyle(identity).opacity) : 0,
+                        transform:identity ? getComputedStyle(identity).transform : null,
+                        left:rect?.left,top:rect?.top,width:rect?.width,height:rect?.height,
+                        actionRight:action?.getBoundingClientRect().right});
+                    window.__identityTrace.frame=requestAnimationFrame(sample);
+                }; sample();
+            })()`)
+        }
+        const finishIdentityTrace = async (service) => {
+            await wait(
+                `Array.from(document.querySelector('[aria-label="${service} connection"]').querySelectorAll('img')).every(img=>img.complete)`
+            )
+            await assert(
+                `Array.from(document.querySelector('[aria-label="${service} connection"]').querySelectorAll('img')).every(img=>img.naturalWidth>0 && img.dataset.loaded==='true')`
+            )
+            await pause(200)
+            const trace = await js(
+                `(() => {cancelAnimationFrame(window.__identityTrace.frame);return window.__identityTrace})()`
+            )
+            const visible = trace.frames.filter((frame) => frame.opacity > 0.05 && frame.revealed)
+            const landed = visible.filter((frame) => frame.opacity >= 0.99)
+            const range = (frames, key) =>
+                Math.max(...frames.map((frame) => frame[key])) - Math.min(...frames.map((frame) => frame[key]))
+            const metrics = {
+                visibleFrames: visible.length,
+                transitionFrames: visible.filter((frame) => frame.opacity < 0.99).length,
+                landedFrames: landed.length,
+                horizontalShift: range(visible, 'left'),
+                widthShift: range(visible, 'width'),
+                settledVerticalShift: range(landed, 'top'),
+                reducedMotion: stressMotion
+            }
+            writeFileSync(
+                join(output, `${service.toLowerCase()}-identity-motion.json`),
+                JSON.stringify({ trace, metrics }, null, 2)
+            )
+            if (
+                stressMotion &&
+                visible.some((frame) => frame.transform !== 'none' && frame.transform !== 'matrix(1, 0, 0, 1, 0, 0)')
+            )
+                throw new Error('Reduced motion identity used a movement transform')
+            if (
+                visible.length < 3 ||
+                metrics.transitionFrames < 1 ||
+                landed.length < 3 ||
+                metrics.horizontalShift > 0.5 ||
+                metrics.widthShift > 0.5 ||
+                metrics.settledVerticalShift > 0.5
+            )
+                throw new Error(`${service} identity shifted during its reveal: ${JSON.stringify(metrics)}`)
+        }
+        const assertActionsFit = async (service) => {
+            record({
+                actionBounds: await js(
+                    `(() => {const section=document.querySelector('[aria-label="${service} connection"]');return Array.from(section.querySelectorAll('.settings-section-heading,.settings-github-account,[role="group"],button')).filter(b=>!b.closest('[inert]')).map(b=>({tag:b.tagName,text:b.textContent,class:b.className,left:b.getBoundingClientRect().left,right:b.getBoundingClientRect().right,width:b.getBoundingClientRect().width,font:getComputedStyle(b).fontSize}))})()`
+                )
+            })
+            await assert(
+                `(() => {const section=document.querySelector('[aria-label="${service} connection"]');const bounds=section.getBoundingClientRect();return Array.from(section.querySelectorAll('.settings-section-heading button')).filter(b=>!b.closest('[inert]')).every(b=>{const r=b.getBoundingClientRect();return r.left>=bounds.left-0.5 && r.right<=bounds.right+0.5})})()`
             )
         }
         const captures = []
@@ -139,7 +224,10 @@ app.on('browser-window-created', (_, window) => {
             )
             window.webContents.debugger.attach('1.3')
             await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
-                features: [{ name: 'prefers-color-scheme', value: 'dark' }]
+                features: [
+                    { name: 'prefers-color-scheme', value: 'dark' },
+                    { name: 'prefers-reduced-motion', value: stressMotion ? 'reduce' : 'no-preference' }
+                ]
             })
             await openConnections()
             await assert(
@@ -209,7 +297,10 @@ app.on('browser-window-created', (_, window) => {
             await shot('github-code-ready')
             nativeTheme.themeSource = 'dark'
             await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
-                features: [{ name: 'prefers-color-scheme', value: 'dark' }]
+                features: [
+                    { name: 'prefers-color-scheme', value: 'dark' },
+                    { name: 'prefers-reduced-motion', value: stressMotion ? 'reduce' : 'no-preference' }
+                ]
             })
             window.setMinimumSize(320, 400)
             window.setContentSize(390, 844)
@@ -225,22 +316,39 @@ app.on('browser-window-created', (_, window) => {
             )
             nativeTheme.themeSource = 'dark'
             await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
-                features: [{ name: 'prefers-color-scheme', value: 'dark' }]
+                features: [
+                    { name: 'prefers-color-scheme', value: 'dark' },
+                    { name: 'prefers-reduced-motion', value: stressMotion ? 'reduce' : 'no-preference' }
+                ]
             })
-            window.setContentSize(1280, 900)
+            window.setContentSize(stressMotion ? 390 : 1280, 900)
+            await startIdentityTrace('GitHub')
             authorize = true
             await wait(`document.querySelector('.github-signin-surface')?.dataset.phase==='authorizing'`)
             await shot('github-authorizing', 200)
             await wait(`document.querySelector('.github-signin-surface')?.dataset.phase==='success'`)
             await shot('06-success', 250)
+            await assert(
+                `document.querySelector('.github-signin-track .connection-identity')?.getAttribute('aria-hidden')==='true'`
+            )
+            await wait(`document.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
+            await shot('github-handoff-morph', 0)
             await wait(`!!document.querySelector('.settings-github-account')`)
             await assert(`window.__fixtureGitHubSurface === document.querySelector('.github-signin-surface')`)
+            await wait(
+                `document.querySelector('.github-signin-track .connection-identity')?.dataset.revealed === 'true'`
+            )
+            await shot('github-identity-enter', 30)
             await shot('07-connected')
+            await finishIdentityTrace('GitHub')
+            await assertActionsFit('GitHub')
             await js(`location.reload()`)
             await openConnections()
-            await wait(`document.querySelector('.settings-github-account')?.textContent.includes('weekly-j-fixture')`)
+            await wait(
+                `document.querySelector('.settings-github-account')?.textContent.includes(${JSON.stringify(githubLogin)})`
+            )
             const connected = await js(`window.journal.invoke({type:'state'})`)
-            if (!connected.connections.github || connected.state.settings.githubLogin !== 'weekly-j-fixture')
+            if (!connected.connections.github || connected.state.settings.githubLogin !== githubLogin)
                 throw new Error('Account not preserved after reload')
             if (connected.connections.protectedStorage && !existsSync(join(directory, 'profile', 'github.secret')))
                 throw new Error('Protected token not persisted')
@@ -264,6 +372,27 @@ app.on('browser-window-created', (_, window) => {
             )
                 throw new Error('Disconnect retained local token')
             await shot('08-disconnected')
+            // Reconnect without reloading: a previous disconnect must not own the next connection's result.
+            await click('Connect GitHub')
+            await wait(`document.querySelector('.github-signin-surface')?.dataset.phase==='success'`)
+            await shot('github-reconnect-success', 100)
+            await wait(`document.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
+            await wait(
+                `Array.from(document.querySelectorAll('.settings-github-controls button')).some(b=>!b.closest('[inert]') && b.getAttribute('aria-label')==='Disconnect GitHub')`
+            )
+            await shot('github-reconnected', 700)
+            await click('Disconnect GitHub')
+            await wait(`document.querySelector('.github-signin-surface [role="group"]')?.dataset.state==='confirming'`)
+            await pause(350)
+            await js(`document.querySelector('.settings-github-controls button[data-autofocus]').focus()`)
+            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
+            await pause(1800)
+            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
+            await wait(`document.querySelector('.github-signin-surface')?.dataset.phase==='idle'`)
+            await wait(
+                `Array.from(document.querySelectorAll('.settings-github-controls button')).some(b=>!b.closest('[inert]') && b.getAttribute('aria-label')==='Connect GitHub')`
+            )
+
             const notionScope = `document.querySelector('[aria-label="Notion connection"]')`
             await assert(`${notionScope}.querySelector('.settings-section-heading button').disabled`)
             await shot('notion-01-disabled', 350, 'notion')
@@ -279,14 +408,25 @@ app.on('browser-window-created', (_, window) => {
                 `!${notionScope}.textContent.includes('Check your integration token') && !document.querySelector('.settings-feedback').textContent.includes('Fixture invalid token')`
             )
             await shot('notion-04-failed', 350, 'notion')
+            await assertActionsFit('Notion')
             notionAllowed = true
+            await startIdentityTrace('Notion')
             await click('Retry', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="pending"]') !== null`)
             await shot('notion-05-retrying', 250, 'notion')
             await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)
             await shot('notion-06-success', 250, 'notion')
+            await assert(`${notionScope}.querySelector('.connection-identity')?.getAttribute('aria-hidden')==='true'`)
+            await wait(
+                `Array.from(${notionScope}.querySelectorAll('button')).some(b=>!b.closest('[inert]') && b.textContent.trim()==='Disconnect')`
+            )
+            await shot('notion-handoff-morph', 0, 'notion')
             await wait(`${notionScope}.textContent.includes('Weekly journal')`)
+            await wait(`${notionScope}.querySelector('.connection-identity')?.dataset.revealed === 'true'`)
+            await shot('notion-identity-enter', 30, 'notion')
             await shot('notion-07-connected', 350, 'notion')
+            await finishIdentityTrace('Notion')
+            await assertActionsFit('Notion')
             await js(`location.reload()`)
             await openConnections()
             await wait(`${notionScope}.textContent.includes('Weekly journal')`)
@@ -307,6 +447,40 @@ app.on('browser-window-created', (_, window) => {
             )
                 throw new Error('Notion disconnect retained its token')
             await shot('notion-09-disconnected', 350, 'notion')
+            await wait(
+                `${notionScope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='idle'`
+            )
+            await js(`${notionScope}.querySelector('input[type="password"]').focus()`)
+            window.webContents.insertText('fixture-notion-token')
+            await click('Connect', notionScope)
+            await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)
+            await shot('notion-reconnect-success', 100, 'notion')
+            await wait(
+                `Array.from(${notionScope}.querySelectorAll('.settings-section-heading button')).some(b=>!b.closest('[inert]') && b.textContent.trim()==='Disconnect')`
+            )
+            await shot('notion-reconnected', 700, 'notion')
+            await click('Disconnect', notionScope)
+            await wait(
+                `${notionScope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='confirming'`
+            )
+            await pause(350)
+            await js(`${notionScope}.querySelector('button[data-autofocus]').focus()`)
+            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
+            await pause(1800)
+            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
+            await wait(`${notionScope}.querySelector('input[type="password"]') !== null`)
+            await wait(
+                `${notionScope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='idle'`
+            )
+            await assert(`${notionScope}.querySelector('.settings-section-heading button').disabled`)
+            if (
+                (await js(`window.journal.invoke({type:'state'})`)).connections.notion ||
+                existsSync(join(directory, 'profile', 'notion.secret')) ||
+                existsSync(join(directory, 'profile', 'github.secret'))
+            )
+                throw new Error('Repeated disconnect retained credentials')
+            await shot('notion-repeat-disconnected', 350, 'notion')
+
             for (const request of requests.filter(({ body }) => body)) {
                 if (
                     request.method !== 'POST' ||
@@ -320,7 +494,8 @@ app.on('browser-window-created', (_, window) => {
                 join(output, 'journey.json'),
                 JSON.stringify({
                     passed: true,
-                    simulated: ['GitHub and Notion HTTP', 'browser launch', 'clipboard failure'],
+                    simulated: ['GitHub and Notion HTTP', 'delayed avatars', 'browser launch', 'clipboard failure'],
+                    motionVariant: stressMotion ? 'narrow-reduced-long-names' : 'desktop-normal',
                     protectedStorage: connected.connections.protectedStorage
                 })
             )

@@ -225,7 +225,7 @@ it('confirms authorization before revealing the connected account controls', asy
             document.querySelector('.github-signin-surface [data-face="done"]:not([role="group"]):not([inert])')
                 ?.textContent
         ).toBe('Connected')
-        expect(document.querySelector('.settings-github-account')).toBeNull()
+        expect(document.querySelector('.connection-identity')?.getAttribute('aria-hidden')).toBe('true')
         await update(() => vi.advanceTimersByTimeAsync(900))
         expect(document.querySelector('.github-signin-surface')?.getAttribute('data-phase')).toBe('connected')
         expect(document.querySelector('.settings-github-account')?.textContent).toContain('journal-author')

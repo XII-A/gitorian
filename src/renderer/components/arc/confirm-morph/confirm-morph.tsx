@@ -81,6 +81,8 @@ export interface ConfirmMorphProps {
     confirmContent?: ReactNode
     /** Accessible name when the resting action needs more context than its visible label. */
     actionLabel?: string
+    /** Identity of the logical action. Changing it resets feedback and discards the previous action's async result. */
+    actionKey?: string
     /** Adds a Cancel action before Retry in the error face. */
     errorCancelLabel?: string
     /** Offering it adds Undo to the result. Return a promise to show a pending face while it runs. */
@@ -91,6 +93,8 @@ export interface ConfirmMorphProps {
     /** Starting state when uncontrolled. */
     defaultState?: ConfirmMorphState
     onStateChange?: (state: ConfirmMorphState) => void
+    /** Reports the current face after its width has settled, for coordinating adjacent content. */
+    onWidthSettled?: (state: ConfirmMorphState) => void
     /** Milliseconds before an unanswered question returns to rest. Resting the pointer on the control pauses it. 0 turns it off. */
     confirmTimeout?: number
     /** Milliseconds a result stays before returning to rest. Resting the pointer on the control pauses it. 0 turns it off. */
@@ -301,11 +305,13 @@ export function ConfirmMorph({
     onActivate,
     confirmContent,
     actionLabel,
+    actionKey,
     errorCancelLabel,
     onCancel,
     state: stateProp,
     defaultState = 'idle',
     onStateChange,
+    onWidthSettled,
     confirmTimeout = 6000,
     resultTimeout = 5000,
     cancelOnOutsidePress = true,
@@ -327,9 +333,9 @@ export function ConfirmMorph({
     const [announcement, setAnnouncement] = useState('')
     const faceKey: FaceKey = state === 'confirming' && counting ? 'counting' : state
 
-    const live = useRef({ state, onStateChange, controlled: stateProp !== undefined })
+    const live = useRef({ state, onStateChange, onWidthSettled, controlled: stateProp !== undefined })
     useLayoutEffect(() => {
-        live.current = { state, onStateChange, controlled: stateProp !== undefined }
+        live.current = { state, onStateChange, onWidthSettled, controlled: stateProp !== undefined }
     })
     const pendingFocus = useRef(false)
     const run = useRef(0)
@@ -366,6 +372,18 @@ export function ConfirmMorph({
         run.current++
         go('idle')
     }, [go])
+
+    const previousAction = useRef(actionKey)
+    useLayoutEffect(() => {
+        if (previousAction.current === actionKey) return
+        previousAction.current = actionKey
+        // A connection control keeps its pill mounted while switching between two different actions.
+        // Invalidate the old promise before it can complete into the new action's success/error face.
+        run.current++
+        setInner('idle')
+        go('idle')
+        setAnnouncement('')
+    }, [actionKey, go])
 
     const perform = useCallback(
         async (kind: 'confirm' | 'undo') => {
@@ -424,22 +442,36 @@ export function ConfirmMorph({
     const width = useMotionValue<number | 'auto'>('auto')
     const target = useRef(0)
     const flight = useRef(0)
+    const measuredFace = useRef<FaceKey>('idle')
     // Only the present face reports (a leaving face stops observing), so every report is the current face's width.
     const onFaceSize = useCallback(
-        (_id: FaceKey, w: number) => {
-            if (Math.abs(w - target.current) < 0.25) return
+        (id: FaceKey, w: number) => {
+            measuredFace.current = id
+            const settled = () =>
+                queueMicrotask(() => {
+                    if (rootRef.current && width.get() === 'auto' && measuredFace.current === live.current.state)
+                        live.current.onWidthSettled?.(live.current.state)
+                })
+            if (Math.abs(w - target.current) < 0.25) {
+                if (width.get() === 'auto') settled()
+                return
+            }
             const from = target.current
             target.current = w
             if (!from || reduced) {
                 flight.current++
                 width.jump('auto')
+                settled()
                 return
             }
             const now = width.get()
             if (now === 'auto') width.jump(from)
             const token = ++flight.current
             animate(width, w, w > (typeof now === 'number' ? now : from) ? GROW : SHRINK).then(() => {
-                if (token === flight.current) width.jump('auto')
+                if (token === flight.current) {
+                    width.jump('auto')
+                    settled()
+                }
             })
         },
         [reduced, width]
@@ -717,7 +749,9 @@ export function ConfirmMorph({
                     <>
                         <Part reduced={reduced} className={styles.status}>
                             <CircleAlert className={styles.alert} size={16} strokeWidth={1.75} aria-hidden="true" />
-                            <span className={styles.statusText}>{errorLabel}</span>
+                            <span className={styles.statusText} title={errorLabel}>
+                                {errorLabel}
+                            </span>
                         </Part>
                         {errorCancelLabel && (
                             <Part reduced={reduced}>

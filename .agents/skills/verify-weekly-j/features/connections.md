@@ -10,15 +10,15 @@ Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify connections`. The runn
 - Browser failure > Open GitHub: browser recovery guidance leaves the code usable. The button shows loading during the real IPC command with simulated browser launching.
 - Copy code: accessible icon-only control confirms in place; record the OS clipboard comparison separately. A simulated clipboard failure preserves the selectable code and shows error feedback in the same icon. Late polling responses remain owned by existing behavior tests.
 - Cancel / Escape: return to Connect and restore focus. Expiry and declined authorization show distinct recovery copy and offer a fresh attempt.
-- Successful authorization: the same surface contracts to a compact Connecting face, then green Connected, then the hold-to-disconnect control. The fixture identity appears beside it. Reload preserves the account; encrypted fixture-token storage is required when the OS backend is available.
-- Disconnect: keyboard input completes the hold and removes the local token. Account metadata stays in SQLite, consistent with the store contract.
+- Successful authorization: the same surface contracts to a compact Connecting face, then green Connected, then the hold-to-disconnect control. The identity prepares while hidden and reveals only after the final button width settles, without horizontal or secondary layout movement. Delayed avatars fade into fixed boxes. Reload preserves the account; encrypted fixture-token storage is required when the OS backend is available.
+- Disconnect: keyboard input completes the hold and removes the local token. Account metadata stays in SQLite, consistent with the store contract. Without closing Settings, reconnect, observe Connected, require an active Disconnect button, then disconnect again and require an active Connect button. This repeated cycle owns the regression for stale disconnect feedback after reconnect.
 
 ## Notion entry points
 
 - Without a token: the heading Connect action is disabled. Typing a token enables it; no extra Connect action exists below the field.
 - Connect: the same notionConnect command receives the trimmed token. The heading control shows pending, then a safe failure with Retry. The token remains available after failure and raw HTTP diagnostics stay out of the footer.
-- Retry: simulated success clears the token, shows a check, then reveals the integration identity and Disconnect. Reload preserves the connection and its encrypted fixture token when supported.
-- Disconnect: keyboard hold returns the section to the disabled Connect action and removes the local token.
+- Retry: simulated success clears the token, shows a check, prepares its optional profile lookup, then reveals the integration identity after Disconnect settles. The lookup must not briefly show a fallback name before replacing it. Reload preserves the connection and its encrypted fixture token when supported.
+- Disconnect: keyboard hold returns the section to the disabled Connect action and removes the local token. Without closing Settings, enter the fixture token, reconnect, require Connected followed by an active Disconnect button, then disconnect again and require the disabled Connect action. Neither cycle may inherit the previous action's pending/success state.
 
 ## Evidence and scope
 
@@ -29,3 +29,18 @@ The runner targets desktop dark and narrow dark layouts (390px may round to 391p
 Only GitHub/Notion HTTP, browser launching, and one clipboard failure are simulated; renderer, preload, IPC, vault, and local storage are real. Unexpected HTTP requests fail. No Git repositories, live authorization, messages, or publishing are involved. This does not verify real provider credentials, organization policy, or other OS credential backends. A live authorization needs a separately authorized destination.
 
 For reproduction, apply `source.patch`, copy the retained `connections-smoke.mjs` into `tools/`, and follow the shared runner instructions. Keep earlier failed run evidence; require its cleanup result before proceeding.
+
+## Connection handoff motion
+
+The same owning journey records requestAnimationFrame measurements in `github-identity-motion.json` and `notion-identity-motion.json`. Require at least three visible and settled frames, no more than 0.5px horizontal/width change during the reveal, and no more than 0.5px vertical drift once opacity reaches 0.99. The intended normal entrance moves vertically by 4px; reduced motion must contain no translation. The harness simulates a 1600ms avatar response at Electron's HTTPS protocol boundary and waits for image completion before finishing the trace.
+
+Run the normal desktop journey, then the distinct narrow/reduced-motion case with long provider names:
+
+```powershell
+$env:WEEKLY_J_VERIFY_MOTION = 'stress'
+try { pnpm verify connections } finally { Remove-Item Env:WEEKLY_J_VERIFY_MOTION }
+```
+
+Require both runs to exit zero with cleanup confirmed. The stress fixture uses a long GitHub login and Notion integration name and retains its own independent SQLite expectation. Inspect native section screenshots as well as traces: actions must remain fully readable and within the section, with names truncated rather than actions clipped. Both success and failure/recovery paths still run. The renderer HTTPS avatar fixture is simulated; it is not evidence of live provider image availability.
+
+When reproducing a dirty revision, also copy the retained `ConnectionIdentity.tsx` into `src/renderer/ConnectionIdentity.tsx` before building, because untracked new files do not appear in Git's tracked source patch.

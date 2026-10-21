@@ -332,6 +332,7 @@
     justify-content: flex-end;
 }
 .github-signin-surface {
+    flex-shrink: 0;
     min-width: 0;
     max-width: 100%;
 }
@@ -478,5 +479,56 @@
     }
     .github-device-action {
         padding-inline: var(--space-2);
+    }
+}
+
+/* Names and avatars form one reveal; their prepared layout is never interactive. */
+.connection-identity {
+    min-width: 0;
+    max-width: 100%;
+}
+.connection-identity[aria-hidden='true'] {
+    pointer-events: none;
+}
+
+.settings-github-heading > .settings-github-account {
+    flex: 1;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+}
+.settings-github-account > [role='group'] {
+    flex: none;
+}
+.settings-github-identity > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.settings-github-avatar img {
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-enter);
+}
+.settings-github-avatar img[data-loaded='true'] {
+    opacity: 1;
+}
+@media (max-width: 600px) {
+    .settings-github-heading:has([data-state='error']) {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 600px) {
+    .settings-github-heading:has([data-state='confirming']),
+    .settings-github-heading:has(.connection-identity) {
+        flex-wrap: wrap;
+    }
+    .settings-github-heading:has(.connection-identity) > .settings-github-controls,
+    .settings-github-heading:has(.connection-identity) > .settings-github-account,
+    .settings-github-heading:has([data-state='confirming']) > .settings-github-controls,
+    .settings-github-heading:has([data-state='confirming']) > .settings-github-account,
+    .settings-github-heading:has([data-state='error']) > .settings-github-account {
+        flex-basis: 100%;
     }
 }

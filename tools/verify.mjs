@@ -111,7 +111,13 @@ if (mode === 'doctor') {
                 const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
                 const settings = JSON.parse(String(row?.json))
                 writeFileSync(join(output, 'persisted-settings.json'), JSON.stringify(settings, null, 2))
-                if ('githubClientId' in settings || settings.githubLogin !== 'weekly-j-fixture')
+                if (
+                    'githubClientId' in settings ||
+                    settings.githubLogin !==
+                        (process.env.WEEKLY_J_VERIFY_MOTION === 'stress'
+                            ? 'weekly-j-fixture-with-a-long-github-name'
+                            : 'weekly-j-fixture')
+                )
                     throw new Error('Persisted account settings differ from the authorized identity')
             } else {
                 const repositories = db
