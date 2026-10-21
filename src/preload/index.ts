@@ -2,6 +2,11 @@ import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { DesktopBridge, RepositoryImportProgress } from '../shared/model'
 
 const bridge: DesktopBridge = {
+    images: {
+        choose: (restoreId) => ipcRenderer.invoke('journal:image-choose', { restoreId }),
+        import: (bytes, restoreId) => ipcRenderer.invoke('journal:image-import', { bytes, restoreId }),
+        save: (id) => ipcRenderer.invoke('journal:image-save', id)
+    },
     ...(process.platform === 'win32'
         ? {
               windowControls: {

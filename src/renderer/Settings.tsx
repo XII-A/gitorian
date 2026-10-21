@@ -92,6 +92,7 @@ export function Settings({
     const keepEditing = useRef<HTMLButtonElement>(null)
     const previousFocus = useRef<Element | null>(null)
     const templateEditor = useRef<EditorHandle>(null)
+    const [templateImagesReady, setTemplateImagesReady] = useState(true)
     const [templateHistory, setTemplateHistory] = useState({ canUndo: false, canRedo: false })
     const templateWords = plainText(settings.template).trim().split(/\s+/).filter(Boolean).length
     const zones = useMemo(() => timezoneOptions(state.settings.timezone), [state.settings.timezone])
@@ -221,6 +222,7 @@ export function Settings({
     }, [githubFeedback, run])
     const save = () =>
         action('save', async () => {
+            if (!templateImagesReady) throw new Error('Finish or dismiss template image imports before saving.')
             if (!settings.timezone) throw new Error('Choose a timezone before saving.')
             if (repositories.some((repository) => !repository.removed && !repository.base))
                 throw new Error('Choose a comparison base for each tracked repository.')
@@ -861,8 +863,10 @@ export function Settings({
                                                     {templateWords} {templateWords === 1 ? 'word' : 'words'}
                                                 </span>
                                             </header>
-                                            <div className="settings-template-body">
+                                            <div className="settings-template-body" data-journal-drop-zone>
                                                 <Editor
+                                                    restoreId={state.restoreId}
+                                                    onImagesReadyChange={setTemplateImagesReady}
                                                     ref={templateEditor}
                                                     onHistoryChange={setTemplateHistory}
                                                     label="Entry template"
@@ -879,7 +883,8 @@ export function Settings({
                                     <section className="settings-section" aria-label="Journal backup">
                                         <h3>Journal backup</h3>
                                         <p className="settings-hint">
-                                            Includes writing and tracking. Excludes credentials and repository files.
+                                            Includes writing, images, and tracking. Excludes credentials and repository
+                                            files.
                                         </p>
                                         <div className="settings-actions">
                                             <Button

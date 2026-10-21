@@ -211,6 +211,7 @@ function JournalApp() {
             )}
             {settingsOpen && reply && (
                 <Settings
+                    key={reply.state.restoreId ?? 'local'}
                     state={reply.state}
                     connections={reply.connections}
                     remotes={remotes}

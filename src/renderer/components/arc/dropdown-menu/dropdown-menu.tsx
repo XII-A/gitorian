@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { CSSProperties, FocusEvent, ReactNode } from 'react'
+import type { CSSProperties, FocusEvent, ReactElement, ReactNode } from 'react'
 import * as DropdownPrimitive from '@radix-ui/react-dropdown-menu'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { ChevronDown } from 'lucide-react'
@@ -20,6 +20,8 @@ export interface DropdownMenuProps {
     label: string
     items: DropdownItem[]
     icon?: ReactNode
+    /** An existing Arc action may replace the labelled trigger for compact object menus. */
+    trigger?: ReactElement
 }
 
 interface Highlight {
@@ -87,7 +89,7 @@ function TriggerLabel({ text }: { text: string }) {
     )
 }
 
-export function DropdownMenu({ label, items, icon }: DropdownMenuProps) {
+export function DropdownMenu({ label, items, icon, trigger }: DropdownMenuProps) {
     const reduced = useReducedMotion()
     const [highlight, setHighlight] = useState<Highlight | null>(null)
     const pointer = useRef(false)
@@ -115,14 +117,22 @@ export function DropdownMenu({ label, items, icon }: DropdownMenuProps) {
                 }
             }}
         >
-            <DropdownPrimitive.Trigger className={styles.trigger} type="button">
-                {icon && (
-                    <span className={styles.triggerIcon} aria-hidden="true">
-                        {icon}
-                    </span>
+            <DropdownPrimitive.Trigger
+                asChild={!!trigger}
+                className={trigger ? undefined : styles.trigger}
+                type="button"
+            >
+                {trigger ?? (
+                    <>
+                        {icon && (
+                            <span className={styles.triggerIcon} aria-hidden="true">
+                                {icon}
+                            </span>
+                        )}
+                        <TriggerLabel text={label} />
+                        <ChevronDown className={styles.chevron} size={15} strokeWidth={1.8} aria-hidden="true" />
+                    </>
                 )}
-                <TriggerLabel text={label} />
-                <ChevronDown className={styles.chevron} size={15} strokeWidth={1.8} aria-hidden="true" />
             </DropdownPrimitive.Trigger>
             <DropdownPrimitive.Portal>
                 <DropdownPrimitive.Content

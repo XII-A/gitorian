@@ -1,3 +1,4 @@
+import { ToastStackProvider } from '../src/renderer/components/arc/toast-stack/toast-stack'
 // @vitest-environment happy-dom
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -20,7 +21,13 @@ async function withFormatter(run: (writing: TiptapEditor, element: HTMLElement) 
     const root = createRoot(host)
     try {
         await settle(() => {
-            root.render(createElement(Editor, { value: { type: 'doc', content: [{ type: 'paragraph' }] } }))
+            root.render(
+                createElement(
+                    ToastStackProvider,
+                    null,
+                    createElement(Editor, { value: { type: 'doc', content: [{ type: 'paragraph' }] } })
+                )
+            )
         })
         const element = host.querySelector('.tiptap') as HTMLElement & { editor: TiptapEditor }
         await run(element.editor, element)
@@ -234,7 +241,7 @@ it('offers icon-and-label commands, scrolls the active keyboard option, and inse
     const onChange = vi.fn()
     try {
         await act(async () => {
-            root.render(createElement(Editor, { value, template, onChange }))
+            root.render(createElement(ToastStackProvider, null, createElement(Editor, { value, template, onChange })))
             await Promise.resolve()
         })
         const element = host.querySelector('.tiptap') as HTMLElement & { editor: TiptapEditor }
@@ -246,7 +253,7 @@ it('offers icon-and-label commands, scrolls the active keyboard option, and inse
         })
         const options = [...document.querySelectorAll<HTMLElement>('.ws-block-menu [role="option"]')]
         expect(host.contains(document.querySelector('.ws-block-menu'))).toBe(false)
-        expect(options).toHaveLength(12)
+        expect(options).toHaveLength(13)
         expect(options.every((option) => !!option.querySelector('svg') && !option.querySelector('small'))).toBe(true)
         const viewport = document.querySelector<HTMLElement>('[aria-label="Formatting options"]')!
         vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 250, 100))
@@ -255,7 +262,7 @@ it('offers icon-and-label commands, scrolls the active keyboard option, and inse
                 .spyOn(option, 'getBoundingClientRect')
                 .mockImplementation(() => new DOMRect(0, index * 44 - viewport.scrollTop, 250, 44))
         )
-        for (let index = 0; index < 11; index++)
+        for (let index = 0; index < options.length - 1; index++)
             await act(async () => {
                 element.dispatchEvent(
                     new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
