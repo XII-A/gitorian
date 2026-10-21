@@ -1,4 +1,4 @@
-import { app, shell, clipboard, nativeTheme } from 'electron'
+import { app, shell, clipboard, nativeTheme, ipcMain } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -11,6 +11,10 @@ app.setPath('userData', join(directory, 'profile'))
 nativeTheme.themeSource = 'dark'
 mkdirSync(output, { recursive: true })
 writeFileSync(join(output, 'ConnectionIdentity.tsx'), readFileSync(resolve('src/renderer/ConnectionIdentity.tsx')))
+writeFileSync(
+    join(output, 'useDisconnectTransition.ts'),
+    readFileSync(resolve('src/renderer/useDisconnectTransition.ts'))
+)
 const record = (event) =>
     appendFileSync(join(output, 'actions.jsonl'), JSON.stringify({ time: new Date().toISOString(), ...event }) + '\n')
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
@@ -21,6 +25,17 @@ let attempt = 0
 let authorize = false
 let notionAllowed = false
 const requests = []
+let failDisconnect = ''
+const registerHandler = ipcMain.handle.bind(ipcMain)
+ipcMain.handle = (channel, listener) =>
+    registerHandler(channel, async (event, command) => {
+        if (channel === 'journal:command' && command.type === 'disconnect' && command.service === failDisconnect) {
+            failDisconnect = ''
+            await pause(300)
+            throw new Error('Fixture disconnect unavailable')
+        }
+        return listener(event, command)
+    })
 globalThis.fetch = (input, init) =>
     Promise.resolve().then(async () => {
         const url = input instanceof Request ? input.url : input.toString()
@@ -178,6 +193,66 @@ app.on('browser-window-created', (_, window) => {
             await assert(
                 `(() => {const section=document.querySelector('[aria-label="${service} connection"]');const bounds=section.getBoundingClientRect();return Array.from(section.querySelectorAll('.settings-section-heading button')).filter(b=>!b.closest('[inert]')).every(b=>{const r=b.getBoundingClientRect();return r.left>=bounds.left-0.5 && r.right<=bounds.right+0.5})})()`
             )
+        }
+        const cancelDisconnect = async (service) => {
+            const scope = `document.querySelector('[aria-label="${service} connection"]')`
+            await click('Disconnect', scope)
+            await wait(`${scope}.querySelector('[data-state="confirming"]') !== null`)
+            await pause(350)
+            await click('Cancel', scope)
+            await wait(`${scope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='idle'`)
+            await assert(
+                `window.journal.invoke({type:'state'}).then(reply=>reply.connections.${service.toLowerCase()})`
+            )
+        }
+        const holdDisconnect = async (service, cycle) => {
+            const scope = `document.querySelector('[aria-label="${service} connection"]')`
+            if (cycle === 'first') failDisconnect = service.toLowerCase()
+            await js(`(() => {
+                const started=performance.now(),frames=[];
+                window.__disconnectTrace={frames};
+                const sample=()=>{
+                    const root=document.querySelector('[aria-label="${service} connection"] .settings-section-heading [role="group"]');
+                    const done=root?.querySelector('[data-face="done"]:not([role="group"]):not([inert])');
+                    frames.push({time:performance.now()-started,state:root?.dataset.state,label:done?.textContent});
+                    window.__disconnectTrace.frame=requestAnimationFrame(sample);
+                };sample();
+            })()`)
+            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
+            await pause(1200)
+            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
+            if (cycle === 'first') {
+                await wait(`${scope}.querySelector('[data-state="error"]') !== null`)
+                await assert(
+                    `window.journal.invoke({type:'state'}).then(reply=>reply.connections.${service.toLowerCase()})`
+                )
+                await shot(`${service.toLowerCase()}-disconnect-retry`, 0, service.toLowerCase())
+                await click('Retry', scope)
+            }
+            await wait(`${scope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='done'`)
+            await assert(
+                `window.journal.invoke({type:'state'}).then(reply=>!reply.connections.${service.toLowerCase()})`
+            )
+            await shot(`${service.toLowerCase()}-disconnect-result-${cycle}`, 0, service.toLowerCase())
+            await wait(
+                `document.querySelector('[aria-label="${service} connection"] .settings-section-heading [role="group"]')?.dataset.state==='idle'`
+            )
+            await pause(50)
+            const frames = await js(
+                `(() => {cancelAnimationFrame(window.__disconnectTrace.frame);return window.__disconnectTrace.frames})()`
+            )
+            const done = frames.filter((frame) => frame.state === 'done' && frame.label === 'Disconnected')
+            if (frames.some((frame) => frame.state === 'done' && frame.label && frame.label !== 'Disconnected'))
+                throw new Error(`${service} displayed the wrong operation result`)
+            const duration = done.length ? done.at(-1).time - done[0].time : 0
+            writeFileSync(
+                join(output, `${service.toLowerCase()}-disconnect-${cycle}.json`),
+                JSON.stringify({ frames, duration }, null, 2)
+            )
+            if (duration < 700 || duration > 1800)
+                throw new Error(
+                    `${service} Disconnected confirmation lasted ${duration.toFixed(1)}ms; expected a readable result before Connect`
+                )
         }
         const captures = []
         const shot = async (name, settle = 350, service = 'github') => {
@@ -354,6 +429,7 @@ app.on('browser-window-created', (_, window) => {
                 throw new Error('Protected token not persisted')
             writeFileSync(join(output, 'connected-state.json'), JSON.stringify(connected, null, 2))
             // Drive the accessible hold control using real keyboard input.
+            await cancelDisconnect('GitHub')
             await click('Disconnect')
             await wait(`!!document.querySelector('.settings-github-controls button[data-autofocus]')`)
             await shot('github-disconnect-confirm', 700)
@@ -362,9 +438,7 @@ app.on('browser-window-created', (_, window) => {
             )
             await pause(600)
             await js(`document.querySelector('.settings-github-controls button[data-autofocus]').focus()`)
-            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
-            await pause(1800)
-            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
+            await holdDisconnect('GitHub', 'first')
             await wait(`document.querySelector('.github-signin-surface')?.dataset.phase==='idle'`)
             if (
                 (await js(`window.journal.invoke({type:'state'})`)).connections.github ||
@@ -385,9 +459,7 @@ app.on('browser-window-created', (_, window) => {
             await wait(`document.querySelector('.github-signin-surface [role="group"]')?.dataset.state==='confirming'`)
             await pause(350)
             await js(`document.querySelector('.settings-github-controls button[data-autofocus]').focus()`)
-            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
-            await pause(1800)
-            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
+            await holdDisconnect('GitHub', 'repeat')
             await wait(`document.querySelector('.github-signin-surface')?.dataset.phase==='idle'`)
             await wait(
                 `Array.from(document.querySelectorAll('.settings-github-controls button')).some(b=>!b.closest('[inert]') && b.getAttribute('aria-label')==='Connect GitHub')`
@@ -433,13 +505,12 @@ app.on('browser-window-created', (_, window) => {
             if (!(await js(`window.journal.invoke({type:'state'})`)).connections.notion)
                 throw new Error('Notion connection did not survive reload')
             if (!existsSync(join(directory, 'profile', 'notion.secret'))) throw new Error('Notion token not persisted')
+            await cancelDisconnect('Notion')
             await click('Disconnect', notionScope)
             await wait(`${notionScope}.querySelector('button[data-autofocus]') !== null`)
             await shot('notion-08-disconnect-confirm', 350, 'notion')
             await js(`${notionScope}.querySelector('button[data-autofocus]').focus()`)
-            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
-            await pause(1800)
-            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
+            await holdDisconnect('Notion', 'first')
             await wait(`${notionScope}.querySelector('input[type="password"]') !== null`)
             if (
                 (await js(`window.journal.invoke({type:'state'})`)).connections.notion ||
@@ -465,9 +536,7 @@ app.on('browser-window-created', (_, window) => {
             )
             await pause(350)
             await js(`${notionScope}.querySelector('button[data-autofocus]').focus()`)
-            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
-            await pause(1800)
-            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
+            await holdDisconnect('Notion', 'repeat')
             await wait(`${notionScope}.querySelector('input[type="password"]') !== null`)
             await wait(
                 `${notionScope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='idle'`
@@ -494,7 +563,13 @@ app.on('browser-window-created', (_, window) => {
                 join(output, 'journey.json'),
                 JSON.stringify({
                     passed: true,
-                    simulated: ['GitHub and Notion HTTP', 'delayed avatars', 'browser launch', 'clipboard failure'],
+                    simulated: [
+                        'GitHub and Notion HTTP',
+                        'delayed avatars',
+                        'browser launch',
+                        'clipboard failure',
+                        'disconnect IPC failures'
+                    ],
                     motionVariant: stressMotion ? 'narrow-reduced-long-names' : 'desktop-normal',
                     protectedStorage: connected.connections.protectedStorage
                 })

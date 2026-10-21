@@ -81,8 +81,6 @@ export interface ConfirmMorphProps {
     confirmContent?: ReactNode
     /** Accessible name when the resting action needs more context than its visible label. */
     actionLabel?: string
-    /** Identity of the logical action. Changing it resets feedback and discards the previous action's async result. */
-    actionKey?: string
     /** Adds a Cancel action before Retry in the error face. */
     errorCancelLabel?: string
     /** Offering it adds Undo to the result. Return a promise to show a pending face while it runs. */
@@ -305,7 +303,6 @@ export function ConfirmMorph({
     onActivate,
     confirmContent,
     actionLabel,
-    actionKey,
     errorCancelLabel,
     onCancel,
     state: stateProp,
@@ -372,18 +369,6 @@ export function ConfirmMorph({
         run.current++
         go('idle')
     }, [go])
-
-    const previousAction = useRef(actionKey)
-    useLayoutEffect(() => {
-        if (previousAction.current === actionKey) return
-        previousAction.current = actionKey
-        // A connection control keeps its pill mounted while switching between two different actions.
-        // Invalidate the old promise before it can complete into the new action's success/error face.
-        run.current++
-        setInner('idle')
-        go('idle')
-        setAnnouncement('')
-    }, [actionKey, go])
 
     const perform = useCallback(
         async (kind: 'confirm' | 'undo') => {

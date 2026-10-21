@@ -1,3 +1,4 @@
+import { useDisconnectTransition } from './useDisconnectTransition'
 import { ConnectionIdentity } from './ConnectionIdentity'
 import { RepositoryImportReview } from './RepositoryImportReview'
 import { Alert } from './components/arc/alert/alert'
@@ -45,6 +46,7 @@ export function Settings({
     const [settings, setSettings] = useState(state.settings)
     const [repositories, setRepositories] = useState(state.repositories)
     const [token, setToken] = useState('')
+    const notionDisconnect = useDisconnectTransition(connections.notion)
     const [notionConnectState, setNotionConnectState] = useState<ConfirmMorphState>('idle')
     const [notionIdentityReady, setNotionIdentityReady] = useState(false)
     useEffect(() => {
@@ -633,9 +635,11 @@ export function Settings({
                                                         </span>
                                                     </ConnectionIdentity>
                                                 )}
-                                                {connections.notion ? (
+                                                {notionDisconnect.showDisconnect ? (
                                                     <ConfirmMorph
-                                                        actionKey="disconnect-notion"
+                                                        state={notionDisconnect.state}
+                                                        onStateChange={notionDisconnect.setState}
+                                                        resultTimeout={0}
                                                         onWidthSettled={(face) => {
                                                             if (face === 'idle') setNotionIdentityReady(true)
                                                         }}
@@ -651,6 +655,7 @@ export function Settings({
                                                         pendingLabel="Disconnecting"
                                                         doneLabel="Disconnected"
                                                         errorLabel="Could not disconnect"
+                                                        errorCancelLabel="Cancel"
                                                         tone="danger"
                                                         disabled={!!busy}
                                                         onConfirm={async () => {
@@ -667,7 +672,6 @@ export function Settings({
                                                     />
                                                 ) : (
                                                     <ConfirmMorph
-                                                        actionKey="connect-notion"
                                                         label="Connect"
                                                         confirmMode="immediate"
                                                         variant="secondary"
