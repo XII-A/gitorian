@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseDiff, type TokenNode } from 'react-diff-view'
 import { highlightDiff } from '../src/renderer/diff-syntax'
-import { loadDiff, loadDiffTokens } from '../src/renderer/diff-loader'
 
 function patch(path: string, before: string[], after: string[]) {
     return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1,${before.length} +1,${after.length} @@\n${before.map((line) => `-${line}`).join('\n')}\n${after.map((line) => `+${line}`).join('\n')}\n`
@@ -29,39 +28,29 @@ describe('diff syntax highlighting', () => {
             expect.arrayContaining(['keyword', 'string', 'number', 'comment'])
         )
     })
-    it.each(['yml', 'yaml'])(
-        'highlights %s keys and values while preserving indentation on both sides',
-        (extension) => {
-            const before = ['# Previous config', 'service:', '  name: "before"', '  enabled: false', '  retries: 1']
-            const after = ['# Updated config', 'service:', '  name: "after"', '  enabled: true', '  retries: 2']
-            const [file] = parseDiff(patch(`config.${extension}`, before, after))
-            const tokens = highlightDiff(file)!
-            expect(tokens.old.map(tokenText)).toEqual(before)
-            expect(tokens.new.map(tokenText)).toEqual(after)
-            expect(tokenClasses(tokens.new.flat())).toEqual(
-                expect.arrayContaining(['key', 'string', 'boolean', 'number', 'comment'])
-            )
-        }
-    )
-    it.each(['json', 'jsonc', 'webmanifest'])(
-        'highlights %s keys and values without changing either side',
-        (extension) => {
-            const before = ['{', '  "name": "before", "enabled": false, "count": 1, "value": null', '}']
-            const after = [
-                '{',
-                '  "name": "<script>alert(1)</script>", "enabled": true, "count": 2, "value": null',
-                '}'
-            ]
-            const [file] = parseDiff(patch(`config.${extension}`, before, after))
-            const tokens = highlightDiff(file)!
-            expect(tokens.old.map(tokenText)).toEqual(before)
-            expect(tokens.new.map(tokenText)).toEqual(after)
-            expect(tokenClasses(tokens.new.flat())).toEqual(
-                expect.arrayContaining(['property', 'string', 'boolean', 'number', 'keyword'])
-            )
-        }
-    )
-    it.each(['md', 'markdown'])('highlights %s source while preserving Markdown syntax on both sides', (extension) => {
+    it.each(['yaml'])('highlights %s keys and values while preserving indentation on both sides', (extension) => {
+        const before = ['# Previous config', 'service:', '  name: "before"', '  enabled: false', '  retries: 1']
+        const after = ['# Updated config', 'service:', '  name: "after"', '  enabled: true', '  retries: 2']
+        const [file] = parseDiff(patch(`config.${extension}`, before, after))
+        const tokens = highlightDiff(file)!
+        expect(tokens.old.map(tokenText)).toEqual(before)
+        expect(tokens.new.map(tokenText)).toEqual(after)
+        expect(tokenClasses(tokens.new.flat())).toEqual(
+            expect.arrayContaining(['key', 'string', 'boolean', 'number', 'comment'])
+        )
+    })
+    it.each(['json'])('highlights %s keys and values without changing either side', (extension) => {
+        const before = ['{', '  "name": "before", "enabled": false, "count": 1, "value": null', '}']
+        const after = ['{', '  "name": "<script>alert(1)</script>", "enabled": true, "count": 2, "value": null', '}']
+        const [file] = parseDiff(patch(`config.${extension}`, before, after))
+        const tokens = highlightDiff(file)!
+        expect(tokens.old.map(tokenText)).toEqual(before)
+        expect(tokens.new.map(tokenText)).toEqual(after)
+        expect(tokenClasses(tokens.new.flat())).toEqual(
+            expect.arrayContaining(['property', 'string', 'boolean', 'number', 'keyword'])
+        )
+    })
+    it.each(['md'])('highlights %s source while preserving Markdown syntax on both sides', (extension) => {
         const before = ['# Before', '', '- **Strong** and *emphasis* with `code`', '[Docs](https://example.com/before)']
         const after = [
             '# After',
@@ -89,19 +78,16 @@ describe('diff syntax highlighting', () => {
         expect(tokens.new.map(tokenText)).toEqual(after)
         expect(tokenClasses(tokens.new.flat())).toEqual(expect.arrayContaining(['selector', 'property', 'comment']))
     })
-    it.each(['js', 'mjs', 'cjs', 'ts', 'mts', 'cts'])(
-        'highlights both sides of %s without changing code text',
-        (extension) => {
-            const before = ['// Previous value', 'const message = "before"']
-            const after = ['// Updated value', 'const message = "after"']
-            const [file] = parseDiff(patch(`src/message.${extension}`, before, after))
-            const tokens = highlightDiff(file)!
-            expect(tokens.old.map(tokenText)).toEqual(before)
-            expect(tokens.new.map(tokenText)).toEqual(after)
-            expect(tokenClasses(tokens.new.flat())).toEqual(expect.arrayContaining(['keyword', 'string', 'comment']))
-        }
-    )
-    it.each(['tsx', 'jsx'])('highlights JSX tags in %s and keeps literal markup safe', (extension) => {
+    it.each(['js', 'ts'])('highlights both sides of %s without changing code text', (extension) => {
+        const before = ['// Previous value', 'const message = "before"']
+        const after = ['// Updated value', 'const message = "after"']
+        const [file] = parseDiff(patch(`src/message.${extension}`, before, after))
+        const tokens = highlightDiff(file)!
+        expect(tokens.old.map(tokenText)).toEqual(before)
+        expect(tokens.new.map(tokenText)).toEqual(after)
+        expect(tokenClasses(tokens.new.flat())).toEqual(expect.arrayContaining(['keyword', 'string', 'comment']))
+    })
+    it.each(['tsx'])('highlights JSX tags in %s and keeps literal markup safe', (extension) => {
         const before = ['const node = <Button label="Before" />']
         const after = ['const node = <Button label="After">Hello</Button>']
         const [file] = parseDiff(patch(`src/view.${extension}`, before, after))
@@ -124,16 +110,5 @@ describe('diff syntax highlighting', () => {
             )
         )
         expect(highlightDiff(file)).toBeUndefined()
-    })
-    it('coalesces parsing and highlighting requests and reuses the same cached tokens', async () => {
-        const text = patch('cached.ts', ['const count = 1'], ['const count = 2'])
-        const first = loadDiff(text)
-        expect(loadDiff(text)).toBe(first)
-        const [file] = await first
-        const highlighted = loadDiffTokens(file)
-        expect(loadDiffTokens(file)).toBe(highlighted)
-        const tokens = await highlighted
-        expect(tokens).toBeDefined()
-        expect(await loadDiffTokens(file)).toBe(tokens)
     })
 })

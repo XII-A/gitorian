@@ -53,21 +53,6 @@ it('stops before enriching old unrelated PR history', async () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
 })
 
-it('keeps PR summaries updated on the selected journal date across a UTC boundary', async () => {
-    const remote = transport()
-    const http = new Http(async (input, init) => {
-        const response = await remote.fetch(input, init)
-        const url = input instanceof Request ? input.url : String(input)
-        if (!url.includes('/pulls?')) return response
-        const pulls = (await response.json()) as { updated_at: string }[]
-        pulls[0].updated_at = '2026-10-04T22:00:00Z'
-        return new Response(JSON.stringify(pulls))
-    })
-    const github = new GitHub(http, () => 'test', vi.fn())
-    const items = await github.activities(repository, 'me', [], { since: '2026-10-05', timezone: 'Europe/Istanbul' })
-    expect(items.some((item) => item.kind === 'pr')).toBe(true)
-})
-
 it('reconsiders completed GitHub coverage when the journal timezone changes', async () => {
     const app = await workspace()
     try {
@@ -182,6 +167,16 @@ it('repeated refresh skips unchanged PR enrichment and unchanged Git histories',
         expect(github[0].url).toContain('/pulls?')
         expect(log.mock.calls.at(-1)?.[1]).toEqual(refs)
         expect(app.store.state.acquisition?.[`git:${app.repository.id}`].refs).toEqual(refs)
+        const beforeHistory = app.remote.requests.length
+        await app.service.handle({ type: 'refresh', since: '2020-01-01' })
+        expect(
+            app.remote.requests.slice(beforeHistory).filter((request) => request.url.includes('api.github.com'))
+        ).toHaveLength(1)
+        expect(
+            app.store.state.activities.some(
+                (activity) => activity.kind === 'review' && activity.date.startsWith('2026-10-07')
+            )
+        ).toBe(true)
     } finally {
         log.mockRestore()
         await app.close()

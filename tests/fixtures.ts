@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -10,21 +10,43 @@ import { Notion } from '../src/main/notion'
 import { GitHub } from '../src/main/github'
 import { JournalService } from '../src/main/service'
 import type { NotionBlock } from '../src/shared/notion-format'
+import { afterAll } from 'vitest'
 
 const execute = promisify(execFile)
-export const patch =
-    'diff --git a/a.ts b/a.ts\nindex 1111111..2222222 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n'
-export async function workspace() {
-    const directory = await mkdtemp(join(tmpdir(), 'weekly-j-test-'))
-    const git = async (...args: string[]) =>
+const gitAt =
+    (directory: string) =>
+    async (...args: string[]) =>
         (await execute('git', args, { cwd: directory, windowsHide: true })).stdout.trim()
+
+async function removeFixture(directory: string) {
+    const target = resolve(directory)
+    if (dirname(target) !== resolve(tmpdir()) || !target.startsWith(resolve(tmpdir()) + sep + 'weekly-j-'))
+        throw new Error(`Unexpected fixture directory: ${target}`)
+    await rm(target, { recursive: true, force: true })
+}
+
+let gitTemplate: Promise<string> | undefined
+let templateDirectory: string | undefined
+async function createGitTemplate() {
+    templateDirectory = await mkdtemp(join(tmpdir(), 'weekly-j-git-template-'))
+    const git = gitAt(templateDirectory)
     await git('init', '-b', 'development')
     await git('config', 'user.name', 'Journal author')
     await git('config', 'user.email', 'first@example.com')
-    await writeFile(join(directory, 'work.txt'), 'initial\n')
+    await writeFile(join(templateDirectory, 'work.txt'), 'initial\n')
     await git('add', 'work.txt')
     await git('commit', '-m', 'Initial work')
     await git('branch', 'main')
+    return templateDirectory
+}
+
+afterAll(async () => {
+    if (templateDirectory) await removeFixture(templateDirectory)
+})
+export const patch =
+    'diff --git a/a.ts b/a.ts\nindex 1111111..2222222 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n'
+export async function journal() {
+    const directory = await mkdtemp(join(tmpdir(), 'weekly-j-test-'))
     const store = new Store(join(directory, 'tracking.sqlite'))
     const remote = transport()
     const http = new Http(remote.fetch)
@@ -41,24 +63,35 @@ export async function workspace() {
         notion: true,
         protectedStorage: true
     }))
-    await service.addRepository(directory)
-    const repository = store.state.repositories[0]
-    repository.remote = 'https://github.com/example/project.git'
     store.state.settings.githubLogin = 'me'
     store.state.settings.destination = { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' }
     return {
         directory,
-        git,
         store,
         remote,
         service,
         github,
         notion,
-        repository,
         close: async () => {
             store.close()
-            await rm(directory, { recursive: true, force: true })
+            await removeFixture(directory)
         }
+    }
+}
+export async function workspace() {
+    const app = await journal()
+    const git = gitAt(app.directory)
+    try {
+        // Copy a pristine real repository, never hardlink it or share mutable refs.
+        // Each scenario still owns its checkout, SQLite store, and transport state.
+        await cp(await (gitTemplate ??= createGitTemplate()), app.directory, { recursive: true })
+        await app.service.addRepository(app.directory)
+        const repository = app.store.state.repositories[0]
+        repository.remote = 'https://github.com/example/project.git'
+        return { ...app, git, repository }
+    } catch (error) {
+        await app.close()
+        throw error
     }
 }
 export function transport() {

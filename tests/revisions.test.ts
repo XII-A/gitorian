@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { coveredEntries, inbox } from '../src/shared/model'
-import { patch, workspace } from './fixtures'
+import { journal, patch, workspace } from './fixtures'
 import { weekOf } from '../src/shared/model'
 
 // Keep the live refresh timestamps and historical remote fixtures in the same week.
@@ -85,7 +85,7 @@ it('does not infer whole-PR coverage from commits and suppresses a known integra
 })
 
 it('resumes a verified partial Notion save without creating a second page and maps the selected week', async () => {
-    const app = await workspace()
+    const app = await journal()
     try {
         app.store.state.settings.destination = {
             kind: 'database',
@@ -165,7 +165,7 @@ it('does not import newly discovered old PR work as fresh but detects later net 
 })
 
 it('keeps edits made after an uncertain save editable when the earlier captured entry is reconciled', async () => {
-    const app = await workspace()
+    const app = await journal()
     try {
         await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
         const draft = app.store.state.drafts[0]

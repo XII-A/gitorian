@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { discoverRepositories } from '../src/main/repository-discovery'
-import { workspace } from './fixtures'
+import { journal, workspace } from './fixtures'
 import { initialState, type Repository, type RepositoryImportProgress } from '../src/shared/model'
 import { hasUnsavedSettings } from '../src/renderer/settings-model'
 
@@ -167,7 +167,7 @@ it('imports only checked repositories and rejects stale scans and paths outside 
 })
 
 it('uses a saved Arc template for new drafts without changing existing writing', async () => {
-    const app = await workspace()
+    const app = await journal()
     try {
         await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
         const original = structuredClone(app.store.state.drafts[0].body)
