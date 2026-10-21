@@ -1,3 +1,4 @@
+import { useConnectionProfile } from './useConnectionProfile'
 import { useDisconnectTransition } from './useDisconnectTransition'
 import { ConnectionIdentity } from './ConnectionIdentity'
 import { RepositoryImportReview } from './RepositoryImportReview'
@@ -53,36 +54,18 @@ export function Settings({
     useEffect(() => {
         if (!connections.notion) setNotionIdentityReady(false)
     }, [connections.notion])
-    const [notionProfileReady, setNotionProfileReady] = useState(false)
     const prepareNotionIdentity = connections.notion || notionConnectState === 'done'
-    const [notionIdentity, setNotionIdentity] = useState<Reply['notionIdentity']>()
+    const { profile: notionIdentity, ready: notionProfileReady } = useConnectionProfile('notion', prepareNotionIdentity)
     const [destinationTest, setDestinationTest] = useState<{ key: string; state: ConfirmMorphState }>()
     const destinationKey = JSON.stringify([connections.notion, settings.destination])
     const currentDestinationKey = useRef(destinationKey)
     currentDestinationKey.current = destinationKey
-    useEffect(() => {
-        let cancelled = false
-        setNotionProfileReady(false)
-        setNotionIdentity(undefined)
-        if (prepareNotionIdentity)
-            void window.journal.invoke({ type: 'notionProfile' }).then(
-                (reply) => {
-                    if (!cancelled) {
-                        setNotionIdentity(reply.notionIdentity)
-                        setNotionProfileReady(true)
-                    }
-                },
-                () => {
-                    // Reveal the fallback only after lookup settles, so a late name cannot shift the row.
-                    if (!cancelled) setNotionProfileReady(true)
-                }
-            )
-        return () => {
-            cancelled = true
-        }
-    }, [prepareNotionIdentity])
     const [device, setDevice] = useState<Reply['device']>()
     const [githubFeedback, setGithubFeedback] = useState<GitHubSignInFeedback>()
+    const { profile: githubIdentity } = useConnectionProfile(
+        'github',
+        connections.github || githubFeedback?.kind === 'authorizing' || githubFeedback?.kind === 'success'
+    )
     const notionAccount = useRef<HTMLDivElement>(null)
     const [githubNotice, setGithubNotice] = useState('')
     const githubAttempt = useRef(0)
@@ -538,19 +521,21 @@ export function Settings({
                                                                         aria-hidden="true"
                                                                     >
                                                                         {settings.githubLogin.slice(0, 1).toUpperCase()}
-                                                                        <img
-                                                                            src={`https://github.com/${encodeURIComponent(settings.githubLogin)}.png?size=64`}
-                                                                            width={32}
-                                                                            height={32}
-                                                                            alt=""
-                                                                            onLoad={(event) => {
-                                                                                event.currentTarget.dataset.loaded =
-                                                                                    'true'
-                                                                            }}
-                                                                            onError={(event) => {
-                                                                                event.currentTarget.hidden = true
-                                                                            }}
-                                                                        />
+                                                                        {githubIdentity?.avatarUrl && (
+                                                                            <img
+                                                                                src={githubIdentity.avatarUrl}
+                                                                                width={32}
+                                                                                height={32}
+                                                                                alt=""
+                                                                                onLoad={(event) => {
+                                                                                    event.currentTarget.dataset.loaded =
+                                                                                        'true'
+                                                                                }}
+                                                                                onError={(event) => {
+                                                                                    event.currentTarget.hidden = true
+                                                                                }}
+                                                                            />
+                                                                        )}
                                                                     </span>
                                                                 )}
                                                                 <span title={settings.githubLogin}>
@@ -652,7 +637,7 @@ export function Settings({
                                                         </span>
                                                     </ConnectionIdentity>
                                                 )}
-                                                {notionDisconnect.showDisconnect ? (
+                                                {notionDisconnect.showDisconnect && notionConnectState === 'idle' ? (
                                                     <ConfirmMorph
                                                         state={notionDisconnect.state}
                                                         onStateChange={notionDisconnect.setState}

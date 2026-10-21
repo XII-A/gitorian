@@ -32,7 +32,7 @@ For reproduction, apply `source.patch`, copy the retained `connections-smoke.mjs
 
 ## Connection handoff motion
 
-The same owning journey records requestAnimationFrame measurements in `github-identity-motion.json` and `notion-identity-motion.json`. Require at least three visible and settled frames, no more than 0.5px horizontal/width change during the reveal, and no more than 0.5px vertical drift once opacity reaches 0.99. The intended normal entrance moves vertically by 4px; reduced motion must contain no translation. The harness simulates a 1600ms avatar response at Electron's HTTPS protocol boundary and waits for image completion before finishing the trace.
+The same owning journey records requestAnimationFrame measurements in `github-identity-motion.json` and `notion-identity-motion.json`. Require at least three visible and settled frames, no more than 0.5px horizontal/width change during the reveal, and no more than 0.5px vertical drift once opacity reaches 0.99. The intended normal entrance moves vertically by 4px; reduced motion must contain no translation. The harness simulates a 1600ms avatar response at Node's HTTPS request boundary with fixture DNS answers and waits for image completion before finishing the trace.
 
 Run the normal desktop journey, then the distinct narrow/reduced-motion case with long provider names:
 
@@ -41,7 +41,7 @@ $env:WEEKLY_J_VERIFY_MOTION = 'stress'
 try { pnpm verify connections } finally { Remove-Item Env:WEEKLY_J_VERIFY_MOTION }
 ```
 
-Require both runs to exit zero with cleanup confirmed. The stress fixture uses a long GitHub login and Notion integration name and retains its own independent SQLite expectation. Inspect native section screenshots as well as traces: actions must remain fully readable and within the section, with names truncated rather than actions clipped. Both success and failure/recovery paths still run. The renderer HTTPS avatar fixture is simulated; it is not evidence of live provider image availability.
+Require both runs to exit zero with cleanup confirmed. The stress fixture uses a long GitHub login and Notion integration name and retains its own independent SQLite expectation. Inspect native section screenshots as well as traces: actions must remain fully readable and within the section, with names truncated rather than actions clipped. Both success and failure/recovery paths still run. The DNS/HTTPS avatar transport fixture is simulated; it is not evidence of live provider image availability.
 
 When reproducing a dirty revision, also copy the retained `ConnectionIdentity.tsx` into `src/renderer/ConnectionIdentity.tsx` before building, because untracked new files do not appear in Git's tracked source patch.
 
@@ -56,3 +56,13 @@ For a dirty revision, restore the retained `useDisconnectTransition.ts` into `sr
 The initial headings are also captured in `connection-logos-dark.png` and `connection-logos-light.png` through native Electron capture. The journey restores dark mode before continuing; heading/button center alignment remains required.
 
 The GitHub heading uses the circular Primer mark as a theme-colored mask; the Notion mark uses the same solid circular treatment. Restore a retained `github-mark.svg` into `src/renderer/assets/` when reproducing an untracked logo revision.
+
+## Persistent profile cache
+
+Cold profiles use the real main-process downloader, image validation, Sharp thumbnail conversion, cache file and renderer IPC; only DNS/HTTPS responses are fixture transports. Both services have an avatar. The existing geometry/reveal journeys wait for decoded data-URL images, not an empty image list.
+
+`warmReload(service)` marks the old document, reloads it, waits for a new document, then reopens Settings with provider and image transports offline. Require the decoded cached WebP within 1200ms, zero extra provider/profile/image requests, and a native `*-cached-offline.png`. Review `github-warm-cache.json` and `notion-warm-cache.json`. The fixture's cold avatar response takes 1600ms; the warm check must not wait for it.
+
+The Notion repeat cycle uses a different token and name and must never show the old profile. After both final disconnects, `profile-cache-after-disconnect.json` must be empty. Unit behavior tests cover cache reconstruction from disk (application restart seam), stale/offline retention, in-flight deduplication, corrupt cache data, missing images, account scope, and late response invalidation even when the same token is reused. These constructor tests prove persistent cache loading; the desktop journey reloads the renderer, not the whole Electron process.
+
+For reproduction of an uncommitted revision, restore the retained `connection-profiles.ts` into `src/main/` and `useConnectionProfile.ts` into `src/renderer/`, alongside the source patch and retained harness. Runtime cache data stays outside journal state/backups and contains no credential values.

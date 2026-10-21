@@ -9,6 +9,7 @@ import { Effect } from 'effect'
 import { commandSchema } from '../shared/model'
 import type { RepositoryImportProgress } from '../shared/model'
 import { Store } from './store'
+import { ConnectionProfileCache } from './connection-profiles'
 import { Vault } from './vault'
 import { Http } from './http'
 import { GitHub } from './github'
@@ -223,6 +224,17 @@ void app.whenReady().then(() => {
         }
     )
     const notion = new Notion(http, () => vault.get('notion'), store)
+    const profiles = new ConnectionProfileCache(
+        join(app.getPath('userData'), 'connection-profiles.json'),
+        (service) => vault.get(service),
+        (service) =>
+            service === 'notion'
+                ? notion.profile()
+                : Promise.resolve({
+                      name: store.state.settings.githubLogin,
+                      avatarUrl: `https://github.com/${encodeURIComponent(store.state.settings.githubLogin)}.png?size=64`
+                  })
+    )
     service = new JournalService(store, github, notion, () => ({
         github: !!vault.get('github'),
         notion: !!vault.get('notion'),
@@ -321,15 +333,21 @@ void app.whenReady().then(() => {
                 }
                 break
             }
-            case 'notionConnect':
-                await new Notion(http, () => command.token).verify()
+            case 'notionConnect': {
+                const profile = await new Notion(http, () => command.token).profile()
+                profiles.clear('notion')
                 vault.set('notion', command.token)
+                void profiles.refresh('notion', profile)
                 break
+            }
             case 'notionTestDestination':
                 await notion.verifyDestination(command.destination)
                 return service.reply({ message: 'Destination is reachable.' })
-            case 'notionProfile':
-                return service.reply({ notionIdentity: await notion.profile() })
+            case 'connectionProfiles':
+                return service.reply({ connectionProfiles: profiles.snapshot() })
+            case 'refreshConnectionProfile':
+                await profiles.refresh(command.service)
+                return service.reply({ connectionProfiles: profiles.snapshot() })
             case 'githubStart': {
                 const device = await github.start()
                 try {
@@ -345,14 +363,17 @@ void app.whenReady().then(() => {
             case 'githubPoll': {
                 const account = await github.poll()
                 if ('pending' in account) return service.reply({ devicePending: { interval: account.interval } })
+                profiles.clear('github')
                 store.state.settings.githubLogin = account.login
                 for (const repository of store.state.repositories)
                     repository.emails = [...new Set([...repository.emails, ...account.emails])]
                 store.persist()
+                void profiles.refresh('github')
                 break
             }
             case 'disconnect':
                 vault.set(command.service, '')
+                profiles.clear(command.service)
                 break
             case 'export': {
                 const result = await dialog.showSaveDialog(mainWindow, {

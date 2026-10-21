@@ -320,7 +320,8 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('reconcile'), saveId: z.string() }),
     z.object({ type: z.literal('coverage'), activityId: z.string(), entryId: z.string(), linked: z.boolean() }),
     z.object({ type: z.literal('notionConnect'), token: z.string() }),
-    z.object({ type: z.literal('notionProfile') }),
+    z.object({ type: z.literal('connectionProfiles') }),
+    z.object({ type: z.literal('refreshConnectionProfile'), service: z.enum(['github', 'notion']) }),
     z.object({ type: z.literal('notionTestDestination'), destination: destinationSchema }),
     z.object({ type: z.literal('githubStart') }),
     z.object({ type: z.literal('githubPoll') }),
@@ -331,7 +332,9 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('popout'), kind: z.enum(['entry', 'activity']), id: z.string() })
 ])
 export type Command = z.infer<typeof commandSchema>
-export interface NotionIdentity {
+export type ConnectionService = 'github' | 'notion'
+export type ConnectionProfiles = Partial<Record<ConnectionService, ConnectionProfile>>
+export interface ConnectionProfile {
     name: string
     avatarUrl?: string
 }
@@ -342,7 +345,7 @@ export interface Reply {
         repositories: { path: string; name: string; relativePath: string; status: 'new' | 'tracked' | 'stopped' }[]
         unreadable: string[]
     }
-    notionIdentity?: NotionIdentity
+    connectionProfiles?: ConnectionProfiles
     state: State
     diff?: string
     activityIds?: string[]

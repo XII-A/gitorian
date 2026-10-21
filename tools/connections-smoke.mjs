@@ -1,15 +1,26 @@
 import { app, shell, clipboard, nativeTheme, ipcMain } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve, join } from 'node:path'
+import https from 'node:https'
+import dns from 'node:dns/promises'
+import { syncBuiltinESMExports } from 'node:module'
+import { PassThrough } from 'node:stream'
+import { EventEmitter } from 'node:events'
 import { pathToFileURL } from 'node:url'
 
-// Real renderer, preload, IPC, vault and store. Only GitHub HTTP and browser launch are simulated.
+// Real renderer, preload, IPC, vault, profile cache and store. Provider HTTP, avatar transport and explicit failures are fixtures.
 const directory = process.env.WEEKLY_J_VERIFY_STATE
 const output = process.env.WEEKLY_J_VERIFY_OUTPUT
 if (!directory || !output) throw new Error('Use pnpm verify connections for managed isolation and cleanup')
 app.setPath('userData', join(directory, 'profile'))
 nativeTheme.themeSource = 'dark'
 mkdirSync(output, { recursive: true })
+for (const file of [
+    'src/main/connection-profiles.ts',
+    'src/renderer/useConnectionProfile.ts',
+    'tests/connection-profiles.test.ts'
+])
+    writeFileSync(join(output, file.split('/').at(-1)), readFileSync(resolve(file)))
 writeFileSync(join(output, 'github-mark.svg'), readFileSync(resolve('src/renderer/assets/github-mark.svg')))
 writeFileSync(join(output, 'ConnectionIdentity.tsx'), readFileSync(resolve('src/renderer/ConnectionIdentity.tsx')))
 writeFileSync(
@@ -21,7 +32,7 @@ const record = (event) =>
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
 const stressMotion = process.env.WEEKLY_J_VERIFY_MOTION === 'stress'
 const githubLogin = stressMotion ? 'weekly-j-fixture-with-a-long-github-name' : 'weekly-j-fixture'
-const notionName = stressMotion ? 'Weekly journal with an exceptionally long integration name' : 'Weekly journal'
+let notionName = stressMotion ? 'Weekly journal with an exceptionally long integration name' : 'Weekly journal'
 let attempt = 0
 let authorize = false
 let notionAllowed = false
@@ -42,6 +53,7 @@ globalThis.fetch = (input, init) =>
         const url = input instanceof Request ? input.url : input.toString()
         const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
         requests.push({ url, method: init?.method ?? 'GET', body })
+        if (offline) throw new Error('Fixture provider offline')
         const json = (data) => new Response(JSON.stringify(data))
         if (url === 'https://github.com/login/device/code') {
             attempt++
@@ -70,7 +82,7 @@ globalThis.fetch = (input, init) =>
         if (url === 'https://api.notion.com/v1/users/me') {
             await pause(1000)
             return notionAllowed
-                ? json({ name: notionName, avatar_url: stressMotion ? 'https://fixture.invalid/avatar.svg' : null })
+                ? json({ name: notionName, avatar_url: 'https://github.com/weekly-j-fixture/notion-avatar.png' })
                 : new Response(JSON.stringify({ message: 'Fixture invalid token' }), { status: 401 })
         }
         throw new Error(`Unexpected external request: ${url}`)
@@ -82,18 +94,38 @@ shell.openExternal = (url) =>
         if (attempt === 2) throw new Error('Simulated missing browser')
     })
 
+const avatarRequests = []
+let offline = false
+const originalLookup = dns.lookup.bind(dns)
+dns.lookup = (hostname, options) =>
+    hostname === 'github.com' ? Promise.resolve([{ address: '8.8.8.8', family: 4 }]) : originalLookup(hostname, options)
+const originalRequest = https.request.bind(https)
+https.request = (target, options, receive) => {
+    const url = target.toString()
+    if (!url.startsWith('https://github.com/')) return originalRequest(target, options, receive)
+    avatarRequests.push(url)
+    const pending = new EventEmitter()
+    pending.end = () => {
+        void (async () => {
+            await pause(1600)
+            if (offline) {
+                pending.emit('error', new Error('Fixture avatar offline'))
+                return
+            }
+            const response = new PassThrough()
+            response.statusCode = 200
+            response.headers = { 'content-type': 'image/svg+xml' }
+            receive(response)
+            response.end(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#344d45"/></svg>'
+            )
+        })()
+    }
+    return pending
+}
+syncBuiltinESMExports()
 let checking = false
 app.on('browser-window-created', (_, window) => {
-    window.webContents.session.protocol.handle('https', async (request) => {
-        if (!request.url.endsWith('.png?size=64') && request.url !== 'https://fixture.invalid/avatar.svg')
-            throw new Error(`Unexpected renderer HTTP: ${request.url}`)
-        await pause(1600)
-        record({ avatar: request.url, simulated: true, delay: 1600 })
-        return new Response(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#344d45"/><text x="16" y="22" text-anchor="middle" fill="white" font-size="18">W</text></svg>',
-            { headers: { 'content-type': 'image/svg+xml' } }
-        )
-    })
     window.setMinimumSize(320, 400)
     window.setContentSize(1280, 900)
     window.webContents.setBackgroundThrottling(false)
@@ -144,7 +176,7 @@ app.on('browser-window-created', (_, window) => {
         }
         const finishIdentityTrace = async (service) => {
             await wait(
-                `Array.from(document.querySelector('[aria-label="${service} connection"]').querySelectorAll('img')).every(img=>img.complete)`
+                `document.querySelector('[aria-label="${service} connection"] .connection-identity img')?.complete && document.querySelector('[aria-label="${service} connection"] .connection-identity img')?.naturalWidth>0`
             )
             await assert(
                 `Array.from(document.querySelector('[aria-label="${service} connection"]').querySelectorAll('img')).every(img=>img.naturalWidth>0 && img.dataset.loaded==='true')`
@@ -254,6 +286,43 @@ app.on('browser-window-created', (_, window) => {
                 throw new Error(
                     `${service} Disconnected confirmation lasted ${duration.toFixed(1)}ms; expected a readable result before Connect`
                 )
+        }
+        const warmReload = async (service) => {
+            const before = {
+                api: requests.length,
+                avatars: avatarRequests.length,
+                profiles: requests.filter((r) => r.url === 'https://api.notion.com/v1/users/me').length
+            }
+            offline = true
+            const started = Date.now()
+            await js(`window.__warmReloadMarker=true; true`)
+            const loaded = new Promise((resolve) => window.webContents.once('did-finish-load', resolve))
+            window.webContents.reload()
+            await loaded
+            await wait(`!window.__warmReloadMarker && !!document.querySelector('[aria-label="Open settings"]')`)
+            await openConnections()
+            await wait(
+                `document.querySelector('[aria-label="${service} connection"] .connection-identity img')?.naturalWidth>0`
+            )
+            const elapsed = Date.now() - started
+            await pause(150)
+            const after = {
+                api: requests.length,
+                avatars: avatarRequests.length,
+                profiles: requests.filter((r) => r.url === 'https://api.notion.com/v1/users/me').length
+            }
+            record({ warmCache: { service, elapsed, before, after } })
+            writeFileSync(
+                join(output, `${service.toLowerCase()}-warm-cache.json`),
+                JSON.stringify({ elapsed, before, after }, null, 2)
+            )
+            if (elapsed > 1200 || JSON.stringify(before) !== JSON.stringify(after))
+                throw new Error(`${service} warm profile waited for the network`)
+            await assert(
+                `document.querySelector('[aria-label="${service} connection"] img').src.startsWith('data:image/webp;base64,')`
+            )
+            await shot(`${service.toLowerCase()}-cached-offline`, 350, service.toLowerCase())
+            offline = false
         }
         const captures = []
         const shot = async (name, settle = 350, service = 'github') => {
@@ -444,8 +513,7 @@ app.on('browser-window-created', (_, window) => {
             await shot('07-connected')
             await finishIdentityTrace('GitHub')
             await assertActionsFit('GitHub')
-            await js(`location.reload()`)
-            await openConnections()
+            await warmReload('GitHub')
             await wait(
                 `document.querySelector('.settings-github-account')?.textContent.includes(${JSON.stringify(githubLogin)})`
             )
@@ -526,8 +594,7 @@ app.on('browser-window-created', (_, window) => {
             await shot('notion-07-connected', 350, 'notion')
             await finishIdentityTrace('Notion')
             await assertActionsFit('Notion')
-            await js(`location.reload()`)
-            await openConnections()
+            await warmReload('Notion')
             await wait(`${notionScope}.textContent.includes('Weekly journal')`)
             if (!(await js(`window.journal.invoke({type:'state'})`)).connections.notion)
                 throw new Error('Notion connection did not survive reload')
@@ -549,13 +616,16 @@ app.on('browser-window-created', (_, window) => {
                 `${notionScope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='idle'`
             )
             await js(`${notionScope}.querySelector('input[type="password"]').focus()`)
-            window.webContents.insertText('fixture-notion-token')
+            notionName = 'Second integration'
+            window.webContents.insertText('fixture-other-notion-token')
             await click('Connect', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)
             await shot('notion-reconnect-success', 100, 'notion')
             await wait(
                 `Array.from(${notionScope}.querySelectorAll('.settings-section-heading button')).some(b=>!b.closest('[inert]') && b.textContent.trim()==='Disconnect')`
             )
+            await wait(`${notionScope}.textContent.includes('Second integration')`)
+            await assert(`!${notionScope}.textContent.includes('Weekly journal')`)
             await shot('notion-reconnected', 700, 'notion')
             await click('Disconnect', notionScope)
             await wait(
@@ -577,6 +647,11 @@ app.on('browser-window-created', (_, window) => {
                 throw new Error('Repeated disconnect retained credentials')
             await shot('notion-repeat-disconnected', 350, 'notion')
 
+            const cachedProfiles = JSON.parse(
+                readFileSync(join(directory, 'profile', 'connection-profiles.json'), 'utf8')
+            )
+            if (Object.keys(cachedProfiles).length) throw new Error('Disconnect retained cached profile images')
+            writeFileSync(join(output, 'profile-cache-after-disconnect.json'), JSON.stringify(cachedProfiles))
             for (const request of requests.filter(({ body }) => body)) {
                 if (
                     request.method !== 'POST' ||
@@ -586,12 +661,14 @@ app.on('browser-window-created', (_, window) => {
                     throw new Error('OAuth request did not use the shared public registration')
             }
             writeFileSync(join(output, 'http-requests.json'), JSON.stringify(requests, null, 2))
+            writeFileSync(join(output, 'avatar-requests.json'), JSON.stringify(avatarRequests, null, 2))
             writeFileSync(
                 join(output, 'journey.json'),
                 JSON.stringify({
                     passed: true,
                     simulated: [
                         'GitHub and Notion HTTP',
+                        'avatar DNS and HTTPS transport',
                         'delayed avatars',
                         'browser launch',
                         'clipboard failure',

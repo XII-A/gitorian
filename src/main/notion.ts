@@ -1,6 +1,6 @@
 import { fromNotion, toNotion } from '../shared/notion-format'
 import type { NotionBlock } from '../shared/notion-format'
-import type { Destination, Entry, NotionIdentity, State } from '../shared/model'
+import type { Destination, Entry, ConnectionProfile, State } from '../shared/model'
 import type { Http } from './http'
 import { HttpError } from './http'
 import type { Store } from './store'
@@ -30,10 +30,7 @@ export class Notion {
         if (!token) throw new Error('Connect Notion to publish or refresh')
         return this.http.request<T>(`https://api.notion.com/v1/${path}`, token, init)
     }
-    async verify(): Promise<void> {
-        await this.profile()
-    }
-    async profile(): Promise<NotionIdentity> {
+    async profile(): Promise<ConnectionProfile> {
         const user = await this.request<{ name?: string | null; avatar_url?: string | null }>('users/me')
         return {
             name: user.name?.trim() || 'Notion integration',
