@@ -2,28 +2,31 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useDisconnectTransition } from './useDisconnectTransition'
 import { ConnectionIdentity } from './ConnectionIdentity'
 import { ExternalLink, CircleAlert } from 'lucide-react'
-import type { Reply } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { CopyButton } from './components/arc/copy-button/copy-button'
 import { ConfirmMorph, type ConfirmMorphState } from './components/arc/confirm-morph/confirm-morph'
 
-export type GitHubSignInFeedback =
+export type ConnectionFeedback =
     | { kind: 'error' | 'expired'; message: string }
     | { kind: 'authorizing' | 'success'; login: string }
 
-export function githubSignInFailure(failure: unknown): GitHubSignInFeedback {
+export function connectionFailure(failure: unknown, provider: 'GitHub' | 'Notion' = 'GitHub'): ConnectionFeedback {
     const message = failure instanceof Error ? failure.message : String(failure)
-    if (/expired/i.test(message)) return { kind: 'expired', message: 'Code expired' }
+    if (/expired/i.test(message))
+        return { kind: 'expired', message: provider === 'GitHub' ? 'Code expired' : 'Sign-in expired' }
     if (/sign-in is unavailable|incorrect_client_credentials|device_flow_disabled/i.test(message))
         return {
             kind: 'error',
             message: 'Sign-in unavailable'
         }
     if (/declined|access_denied/i.test(message)) return { kind: 'error', message: 'Authorization declined' }
+    if (/Journal setup could not be confirmed/i.test(message))
+        return { kind: 'error', message: 'Choose a journal destination' }
     return { kind: 'error', message: 'Could not connect' }
 }
 
-export function GitHubSignIn({
+export function ConnectionSignIn({
+    provider,
     device,
     feedback,
     notice,
@@ -37,8 +40,9 @@ export function GitHubSignIn({
     onOpen,
     onDisconnect
 }: {
-    device?: Reply['device']
-    feedback?: GitHubSignInFeedback
+    provider: 'GitHub' | 'Notion'
+    device?: { url: string; interval: number; code?: string }
+    feedback?: ConnectionFeedback
     notice?: string
     pending: boolean
     openingBrowser: boolean
@@ -115,8 +119,8 @@ export function GitHubSignIn({
                         if (phase === 'connected' && face === 'idle') setIdentityReady(true)
                     }}
                     label={phase === 'connected' ? 'Disconnect' : 'Connect'}
-                    actionLabel={phase === 'connected' ? 'Disconnect GitHub' : 'Connect GitHub'}
-                    prompt={<span className="settings-disconnect-question">Disconnect GitHub?</span>}
+                    actionLabel={`${phase === 'connected' ? 'Disconnect' : 'Connect'} ${provider}`}
+                    prompt={<span className="settings-disconnect-question">Disconnect {provider}?</span>}
                     confirmLabel="Disconnect"
                     confirmMode={phase === 'connected' ? 'hold' : 'immediate'}
                     variant="secondary"
@@ -137,10 +141,16 @@ export function GitHubSignIn({
                         device ? (
                             <div className="github-signin-code-row">
                                 <span className="github-signin-code-group">
-                                    <code className="github-signin-code">{device.code}</code>
+                                    {device.code ? (
+                                        <code className="github-signin-code">{device.code}</code>
+                                    ) : (
+                                        <span>
+                                            Approve<span className="github-device-label"> in {provider}</span>
+                                        </span>
+                                    )}
                                     <CopyButton
-                                        value={device.code}
-                                        label="Copy code"
+                                        value={device.code ?? device.url}
+                                        label={device.code ? 'Copy code' : 'Copy connection link'}
                                         iconOnly
                                         variant="plain"
                                         className="github-signin-copy"
@@ -155,10 +165,12 @@ export function GitHubSignIn({
                                     loading={openingBrowser}
                                     disabled={disabled}
                                     onClick={onOpen}
-                                    aria-label="Open GitHub"
+                                    aria-label={`Open ${provider}`}
                                     title={
                                         notice
-                                            ? 'Browser unavailable. Visit github.com/login/device to enter the code.'
+                                            ? provider === 'GitHub'
+                                                ? 'Browser unavailable. Visit github.com/login/device to enter the code.'
+                                                : 'Browser unavailable. Copy the connection link or try again.'
                                             : undefined
                                     }
                                 >
@@ -167,7 +179,7 @@ export function GitHubSignIn({
                                     ) : (
                                         <ExternalLink size={16} strokeWidth={1.5} aria-hidden="true" />
                                     )}{' '}
-                                    <span className="github-device-label">Open GitHub</span>
+                                    <span className="github-device-label">Open {provider}</span>
                                 </Button>
                                 {notice && (
                                     <span role="alert" className="settings-sr-only">
@@ -182,7 +194,7 @@ export function GitHubSignIn({
                     {phase === 'success' && feedback && 'login' in feedback
                         ? `Connected as ${feedback.login}`
                         : phase === 'authorizing' || phase === 'starting'
-                          ? 'Connecting GitHub'
+                          ? `Connecting ${provider}`
                           : feedback && 'message' in feedback
                             ? feedback.message
                             : ''}

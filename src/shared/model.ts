@@ -319,7 +319,9 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('publish'), draftId: z.string() }),
     z.object({ type: z.literal('reconcile'), saveId: z.string() }),
     z.object({ type: z.literal('coverage'), activityId: z.string(), entryId: z.string(), linked: z.boolean() }),
-    z.object({ type: z.literal('notionConnect'), token: z.string() }),
+    z.object({ type: z.literal('notionStart') }),
+    z.object({ type: z.literal('notionPoll') }),
+    z.object({ type: z.literal('notionCancel') }),
     z.object({ type: z.literal('connectionProfiles') }),
     z.object({ type: z.literal('refreshConnectionProfile'), service: z.enum(['github', 'notion']) }),
     z.object({ type: z.literal('notionTestDestination'), destination: destinationSchema }),
@@ -351,6 +353,8 @@ export interface Reply {
     activityIds?: string[]
     device?: { code: string; url: string; interval: number }
     devicePending?: { interval: number }
+    notionAuthorization?: { url: string; interval: number }
+    notionPending?: { interval: number }
     connections: { github: boolean; notion: boolean; protectedStorage: boolean }
     message?: string
     detailError?: string

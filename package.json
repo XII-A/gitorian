@@ -7,8 +7,9 @@
     "type": "module",
     "scripts": {
         "postinstall": "install-electron --no",
-        "dev": "electron-vite dev --watch",
-        "build": "pnpm typecheck && electron-vite build",
+        "dev": "node tools/dev.mjs",
+        "dev:oauth": "pnpm --filter @weekly-j/notion-oauth dev",
+        "build": "pnpm typecheck && electron-vite build && pnpm --filter @weekly-j/notion-oauth build",
         "start": "electron-vite preview",
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
@@ -30,6 +31,7 @@
         "smoke:acquisition": "electron tools/acquisition-smoke.mjs",
         "smoke:week-history": "electron tools/week-history-smoke.mjs",
         "smoke:dev-reload": "node tools/dev-reload-smoke.mjs",
+        "smoke:dev-launch": "node tools/dev-launch-smoke.mjs",
         "smoke:writing": "node tools/workspace-writing-dev-profile.mjs --assert",
         "smoke:images": "electron tools/image-smoke.mjs"
     },

@@ -7,6 +7,9 @@ import { syncBuiltinESMExports } from 'node:module'
 import { PassThrough } from 'node:stream'
 import { EventEmitter } from 'node:events'
 import { pathToFileURL } from 'node:url'
+import { tsImport } from 'tsx/esm/api'
+const { createOAuthHandler } = await tsImport('../services/notion-oauth/src/handler.ts', import.meta.url)
+const nativeFetch = globalThis.fetch
 
 // Real renderer, preload, IPC, vault, profile cache and store. Provider HTTP, avatar transport and explicit failures are fixtures.
 const directory = process.env.WEEKLY_J_VERIFY_STATE
@@ -36,6 +39,32 @@ let notionName = stressMotion ? 'Weekly journal with an exceptionally long integ
 let attempt = 0
 let authorize = false
 let notionAllowed = false
+let notionAuthorization
+let notionStarts = 0
+let notionPagesCreated = 0
+const oauthOrigin = 'https://oauth.fixture.test'
+process.env.WEEKLY_J_NOTION_OAUTH_ORIGIN = oauthOrigin
+const oauth = createOAuthHandler(
+    {
+        origin: oauthOrigin,
+        clientId: 'fixture-notion-app',
+        clientSecret: 'fixture-server-only-secret',
+        stateSecret: 'fixture-state-secret-that-is-at-least-32-characters'
+    },
+    (input, init) => globalThis.fetch(input, init)
+)
+async function approveNotion(error) {
+    if (!notionAuthorization) throw new Error('Missing Notion browser authorization')
+    const started = await oauth(new Request(notionAuthorization))
+    const state = new URL(started.headers.get('Location')).searchParams.get('state')
+    const callback = await oauth(
+        new Request(
+            `${oauthOrigin}/callback?state=${encodeURIComponent(state)}&${error ? 'error=access_denied' : 'code=fixture-code'}`
+        )
+    )
+    const response = await nativeFetch(callback.headers.get('Location'))
+    if (!response.ok) throw new Error('Notion loopback callback failed')
+}
 const requests = []
 let failDisconnect = ''
 const registerHandler = ipcMain.handle.bind(ipcMain)
@@ -54,6 +83,14 @@ globalThis.fetch = (input, init) =>
         const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
         requests.push({ url, method: init?.method ?? 'GET', body })
         if (offline) throw new Error('Fixture provider offline')
+        if (url.startsWith(oauthOrigin)) {
+            if (url.endsWith('/health')) {
+                notionStarts++
+                await pause(700)
+                if (notionStarts === 1) throw new Error('Simulated OAuth module offline')
+            }
+            return oauth(new Request(input, init))
+        }
         const json = (data) => new Response(JSON.stringify(data))
         if (url === 'https://github.com/login/device/code') {
             attempt++
@@ -79,6 +116,20 @@ globalThis.fetch = (input, init) =>
             )
         if (url === 'https://api.github.com/user') return json({ login: githubLogin })
         if (url === 'https://api.github.com/user/emails') return json([{ email: 'fixture@example.com' }])
+        if (url === 'https://api.notion.com/v1/oauth/token') {
+            return json({
+                access_token:
+                    notionName === 'Second integration' ? 'fixture-other-notion-token' : 'fixture-notion-token',
+                refresh_token: 'fixture-refresh-token',
+                workspace_id: 'fixture-workspace'
+            })
+        }
+        if (url === 'https://api.notion.com/v1/pages' && init?.method === 'POST') {
+            notionPagesCreated++
+            return json({ id: 'fixture-private-journal', url: 'https://www.notion.so/fixture-private-journal' })
+        }
+        if (url === 'https://api.notion.com/v1/pages/fixture-private-journal')
+            return json({ id: 'fixture-private-journal' })
         if (url === 'https://api.notion.com/v1/users/me') {
             await pause(1000)
             return notionAllowed
@@ -91,6 +142,11 @@ shell.openExternal = (url) =>
     Promise.resolve().then(async () => {
         await pause(700)
         record({ browser: url, simulated: true })
+        if (url.startsWith(oauthOrigin)) {
+            notionAuthorization = url
+            if (!notionAllowed) throw new Error('Simulated Notion browser unavailable')
+            return
+        }
         if (attempt === 2) throw new Error('Simulated missing browser')
     })
 
@@ -561,84 +617,85 @@ app.on('browser-window-created', (_, window) => {
             )
 
             const notionScope = `document.querySelector('[aria-label="Notion connection"]')`
-            await assert(`${notionScope}.querySelector('.settings-section-heading button').disabled`)
-            await shot('notion-01-disabled', 350, 'notion')
-            await js(`${notionScope}.querySelector('input[type="password"]').focus()`)
-            window.webContents.insertText('fixture-notion-token')
-            await wait(`!${notionScope}.querySelector('.settings-section-heading button').disabled`)
-            await shot('notion-02-ready', 350, 'notion')
+            await assert(
+                `!${notionScope}.querySelector('.settings-section-heading button').disabled && !${notionScope}.querySelector('input[type="password"]')`
+            )
+            await shot('notion-01-ready', 350, 'notion')
             await click('Connect', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="pending"]') !== null`)
             await shot('notion-03-connecting', 250, 'notion')
             await wait(`${notionScope}.querySelector('[data-state="error"]') !== null`)
-            await assert(
-                `!${notionScope}.textContent.includes('Check your integration token') && !document.querySelector('.settings-feedback').textContent.includes('Fixture invalid token')`
-            )
             await shot('notion-04-failed', 350, 'notion')
+            await click('Retry', notionScope)
+            await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='device'`)
+            await shot('notion-browser-recovery', 350, 'notion')
             await assertActionsFit('Notion')
+            await click('Cancel', notionScope)
+            await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='idle'`)
             notionAllowed = true
+            await click('Connect', notionScope)
+            await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='device'`)
+            await approveNotion(true)
+            await wait(`${notionScope}.textContent.includes('Authorization declined')`)
+            await shot('notion-authorization-declined', 350, 'notion')
             await startIdentityTrace('Notion')
             await click('Retry', notionScope)
-            await wait(`${notionScope}.querySelector('[data-state="pending"]') !== null`)
+            await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='device'`)
             await shot('notion-05-retrying', 250, 'notion')
+            await click('Open Notion', notionScope)
+            await approveNotion()
             await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)
             await shot('notion-06-success', 250, 'notion')
             await assert(`${notionScope}.querySelector('.connection-identity')?.getAttribute('aria-hidden')==='true'`)
-            await wait(
-                `Array.from(${notionScope}.querySelectorAll('button')).some(b=>!b.closest('[inert]') && b.textContent.trim()==='Disconnect')`
-            )
-            await shot('notion-handoff-morph', 0, 'notion')
-            await wait(`${notionScope}.textContent.includes('Weekly journal')`)
-            await wait(`${notionScope}.querySelector('.connection-identity')?.dataset.revealed === 'true'`)
-            await shot('notion-identity-enter', 30, 'notion')
+            await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
+            await wait(`${notionScope}.querySelector('.connection-identity')?.dataset.revealed==='true'`)
             await shot('notion-07-connected', 350, 'notion')
             await finishIdentityTrace('Notion')
             await assertActionsFit('Notion')
+            const notionConnected = await js(`window.journal.invoke({type:'state'})`)
+            if (
+                notionConnected.state.settings.destination?.id !== 'fixture-private-journal' ||
+                notionPagesCreated !== 1
+            )
+                throw new Error('Private journal was not prepared exactly once')
+            writeFileSync(
+                join(output, 'notion-provisioned.json'),
+                JSON.stringify({ destination: notionConnected.state.settings.destination, created: notionPagesCreated })
+            )
             await warmReload('Notion')
-            await wait(`${notionScope}.textContent.includes('Weekly journal')`)
             if (!(await js(`window.journal.invoke({type:'state'})`)).connections.notion)
                 throw new Error('Notion connection did not survive reload')
-            if (!existsSync(join(directory, 'profile', 'notion.secret'))) throw new Error('Notion token not persisted')
+            if (!existsSync(join(directory, 'profile', 'notion.secret')))
+                throw new Error('Notion credentials not persisted')
             await cancelDisconnect('Notion')
             await click('Disconnect', notionScope)
             await wait(`${notionScope}.querySelector('button[data-autofocus]') !== null`)
             await shot('notion-08-disconnect-confirm', 350, 'notion')
             await js(`${notionScope}.querySelector('button[data-autofocus]').focus()`)
             await holdDisconnect('Notion', 'first')
-            await wait(`${notionScope}.querySelector('input[type="password"]') !== null`)
             if (
                 (await js(`window.journal.invoke({type:'state'})`)).connections.notion ||
                 existsSync(join(directory, 'profile', 'notion.secret'))
             )
-                throw new Error('Notion disconnect retained its token')
+                throw new Error('Notion disconnect retained credentials')
             await shot('notion-09-disconnected', 350, 'notion')
-            await wait(
-                `${notionScope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='idle'`
-            )
-            await js(`${notionScope}.querySelector('input[type="password"]').focus()`)
             notionName = 'Second integration'
-            window.webContents.insertText('fixture-other-notion-token')
             await click('Connect', notionScope)
+            await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='device'`)
+            await approveNotion()
             await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)
             await shot('notion-reconnect-success', 100, 'notion')
-            await wait(
-                `Array.from(${notionScope}.querySelectorAll('.settings-section-heading button')).some(b=>!b.closest('[inert]') && b.textContent.trim()==='Disconnect')`
-            )
+            await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
             await wait(`${notionScope}.textContent.includes('Second integration')`)
             await assert(`!${notionScope}.textContent.includes('Weekly journal')`)
+            if (notionPagesCreated !== 1) throw new Error('Reconnect duplicated the journal destination')
             await shot('notion-reconnected', 700, 'notion')
             await click('Disconnect', notionScope)
-            await wait(
-                `${notionScope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='confirming'`
-            )
+            await wait(`${notionScope}.querySelector('[data-state="confirming"]') !== null`)
             await pause(350)
             await js(`${notionScope}.querySelector('button[data-autofocus]').focus()`)
             await holdDisconnect('Notion', 'repeat')
-            await wait(`${notionScope}.querySelector('input[type="password"]') !== null`)
-            await wait(
-                `${notionScope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='idle'`
-            )
-            await assert(`${notionScope}.querySelector('.settings-section-heading button').disabled`)
+            await assert(`!${notionScope}.querySelector('.settings-section-heading button').disabled`)
             if (
                 (await js(`window.journal.invoke({type:'state'})`)).connections.notion ||
                 existsSync(join(directory, 'profile', 'notion.secret')) ||
@@ -652,7 +709,9 @@ app.on('browser-window-created', (_, window) => {
             )
             if (Object.keys(cachedProfiles).length) throw new Error('Disconnect retained cached profile images')
             writeFileSync(join(output, 'profile-cache-after-disconnect.json'), JSON.stringify(cachedProfiles))
-            for (const request of requests.filter(({ body }) => body)) {
+            for (const request of requests.filter(
+                ({ url, body }) => body && url.startsWith('https://github.com/login/')
+            )) {
                 if (
                     request.method !== 'POST' ||
                     request.body.client_id !== 'Ov23li9PFMAWRrbZQ6Xy' ||

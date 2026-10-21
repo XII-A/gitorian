@@ -60,7 +60,22 @@ if (mode === 'doctor') {
             join(output, 'source.patch'),
             execFileSync(
                 'git',
-                ['diff', '--binary', 'HEAD', '--', 'src', 'tools', 'package.json', 'electron.vite.config.ts'],
+                [
+                    'diff',
+                    '--binary',
+                    'HEAD',
+                    '--',
+                    'src',
+                    'services',
+                    'tools',
+                    'tests',
+                    'package.json',
+                    'pnpm-lock.yaml',
+                    'pnpm-workspace.yaml',
+                    'electron.vite.config.ts',
+                    'tsconfig.json',
+                    'netlify.toml'
+                ],
                 {
                     cwd: root,
                     windowsHide: true
@@ -113,6 +128,8 @@ if (mode === 'doctor') {
                 writeFileSync(join(output, 'persisted-settings.json'), JSON.stringify(settings, null, 2))
                 if (
                     'githubClientId' in settings ||
+                    settings.destination?.id !== 'fixture-private-journal' ||
+                    settings.destination?.kind !== 'page' ||
                     settings.githubLogin !==
                         (process.env.WEEKLY_J_VERIFY_MOTION === 'stress'
                             ? 'weekly-j-fixture-with-a-long-github-name'
@@ -164,6 +181,7 @@ if (mode === 'doctor') {
                       'notion-04-failed.png',
                       'notion-07-connected.png',
                       'notion-09-disconnected.png',
+                      'notion-provisioned.json',
                       'captures.json'
                   ]
                 : [

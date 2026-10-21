@@ -14,10 +14,13 @@ import { Vault } from './vault'
 import { Http } from './http'
 import { GitHub } from './github'
 import { Notion } from './notion'
+import { NotionConnection } from './notion-connection'
 import { JournalService } from './service'
 import { inspectRepository } from './git'
 import { watchWindowTitleBar } from './window-title-bar'
 import { imageLimits, imageIdPattern, imageExtension } from '../shared/images'
+
+if (!app.isPackaged && process.env.WEEKLY_J_DEV_PROFILE) app.setPath('userData', process.env.WEEKLY_J_DEV_PROFILE)
 
 // Chromium 152 hides the thread's native cursor, including inside file dialogs.
 // Remove after Electron includes chromium/chromium@a2be9eeac1d506dae63b2994cd605d83bb7622ea.
@@ -42,6 +45,7 @@ let mainWindow: BrowserWindow
 let store: Store
 let service: JournalService
 let restoring = false
+let notionConnection: NotionConnection | undefined
 const referenceWindows = new Set<number>()
 const work = new Set<Promise<unknown>>()
 function track<T>(promise: Promise<T>): Promise<T> {
@@ -223,7 +227,14 @@ void app.whenReady().then(() => {
             vault.set('github', token)
         }
     )
-    const notion = new Notion(http, () => vault.get('notion'), store)
+    notionConnection = new NotionConnection(
+        vault,
+        (!app.isPackaged && process.env.WEEKLY_J_NOTION_OAUTH_ORIGIN) ||
+            import.meta.env.MAIN_VITE_NOTION_OAUTH_ORIGIN ||
+            ''
+    )
+    const connection = notionConnection
+    const notion = new Notion(http, (refresh, rejected) => connection.token(refresh, rejected), store)
     const profiles = new ConnectionProfileCache(
         join(app.getPath('userData'), 'connection-profiles.json'),
         (service) => vault.get(service),
@@ -237,7 +248,7 @@ void app.whenReady().then(() => {
     )
     service = new JournalService(store, github, notion, () => ({
         github: !!vault.get('github'),
-        notion: !!vault.get('notion'),
+        notion: connection.connected(),
         protectedStorage: vault.protected()
     }))
     mainWindow = windowFor()
@@ -333,11 +344,32 @@ void app.whenReady().then(() => {
                 }
                 break
             }
-            case 'notionConnect': {
-                const profile = await new Notion(http, () => command.token).profile()
+            case 'notionStart': {
+                const notionAuthorization = await connection.start()
+                try {
+                    await openExternal(notionAuthorization.url)
+                } catch {
+                    return service.reply({
+                        notionAuthorization,
+                        message: 'Could not open your browser. Copy the connection link or try Open Notion.'
+                    })
+                }
+                return service.reply({ notionAuthorization })
+            }
+            case 'notionCancel':
+                connection.cancel()
+                break
+            case 'notionPoll': {
+                const result = await connection.poll()
+                if ('pending' in result) return service.reply({ notionPending: { interval: result.interval } })
+                const destination = await connection.completeJournal((setup, checkpoint) =>
+                    notion.prepareJournal(setup, checkpoint, store.state.settings.destination)
+                )
+                store.state.settings.destination = destination
+                store.persist()
                 profiles.clear('notion')
-                vault.set('notion', command.token)
-                void profiles.refresh('notion', profile)
+                void profiles.refresh('notion')
+                connection.cancel()
                 break
             }
             case 'notionTestDestination':
@@ -372,7 +404,8 @@ void app.whenReady().then(() => {
                 break
             }
             case 'disconnect':
-                vault.set(command.service, '')
+                if (command.service === 'notion') connection.disconnect()
+                else vault.set(command.service, '')
                 profiles.clear(command.service)
                 break
             case 'export': {
@@ -411,7 +444,7 @@ void app.whenReady().then(() => {
                             await store.restore(await readFile(result.filePaths[0], 'utf8'))
                             await store.flush()
                             vault.set('github', '')
-                            vault.set('notion', '')
+                            connection.disconnect()
                             return service.reply({ message: 'Backup imported.' })
                         }
                     }
@@ -493,6 +526,7 @@ app.on('window-all-closed', () => {
 let closed = false
 let closing = false
 app.on('before-quit', (event) => {
+    notionConnection?.cancel()
     if (!store || closed) return
     event.preventDefault()
     if (closing) return

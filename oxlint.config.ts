@@ -2,6 +2,7 @@ import { defineConfig, type DummyRuleMap } from 'oxlint'
 
 const frontendFiles = ['src/renderer/**/*.{ts,tsx}']
 const backendFiles = [
+    'services/**/*.ts',
     'src/main/**/*.ts',
     'src/preload/**/*.ts',
     'src/shared/**/*.ts',

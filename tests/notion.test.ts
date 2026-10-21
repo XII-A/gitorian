@@ -4,6 +4,73 @@ import { Http } from '../src/main/http'
 import type { Destination } from '../src/shared/model'
 import { journal } from './fixtures'
 
+it('checkpoints private journal creation before writing, then reuses the confirmed destination', async () => {
+    const events: string[] = []
+    const transport = vi.fn<typeof fetch>((url, init) => {
+        events.push(`${init?.method ?? 'GET'} ${url instanceof Request ? url.url : url.toString()}`)
+        return Promise.resolve(new Response(JSON.stringify({ id: 'private-journal' })))
+    })
+    const notion = new Notion(new Http(transport), () => 'oauth-token')
+    const destination = await notion.prepareJournal({ id: 'setup-one', started: false }, (id) =>
+        events.push(id ?? 'creating')
+    )
+    expect(destination).toEqual({ kind: 'page', id: 'private-journal', titleProperty: 'Name', dateProperty: '' })
+    expect(events).toEqual(['creating', 'POST https://api.notion.com/v1/pages', 'private-journal'])
+    const init = transport.mock.calls[0][1]!
+    expect(new Headers(init.headers).get('Notion-Version')).toBe('2026-03-11')
+    expect(JSON.parse(init.body as string).parent).toEqual({ type: 'workspace', workspace: true })
+    expect(
+        await notion.prepareJournal({ id: 'setup-one', started: true, pageId: 'private-journal' }, () => {
+            throw new Error('Should reuse')
+        })
+    ).toEqual(destination)
+    expect(transport).toHaveBeenCalledTimes(1)
+})
+
+it('recovers an uncertain journal creation only by its setup marker and never blindly creates again', async () => {
+    const transport = vi.fn<typeof fetch>((url) =>
+        Promise.resolve(
+            new Response(
+                JSON.stringify(
+                    (url instanceof Request ? url.url : url.toString()).endsWith('/search')
+                        ? {
+                              results: [
+                                  {
+                                      id: 'matching',
+                                      properties: { title: { title: [{ plain_text: 'Weekly Journal' }] } }
+                                  }
+                              ],
+                              has_more: false
+                          }
+                        : {
+                              results: [
+                                  {
+                                      type: 'paragraph',
+                                      paragraph: { rich_text: [{ plain_text: 'weekly-j setup: setup-one' }] }
+                                  }
+                              ],
+                              has_more: false
+                          }
+                )
+            )
+        )
+    )
+    const notion = new Notion(new Http(transport), () => 'oauth-token')
+    const checkpoint = vi.fn()
+    expect((await notion.prepareJournal({ id: 'setup-one', started: true }, checkpoint)).id).toBe('matching')
+    expect(checkpoint).toHaveBeenCalledWith('matching')
+    expect(
+        transport.mock.calls.some(([url]) => (url instanceof Request ? url.url : url.toString()).endsWith('/pages'))
+    ).toBe(false)
+    const empty = new Notion(
+        new Http(() => Promise.resolve(new Response(JSON.stringify({ results: [], has_more: false })))),
+        () => 'oauth-token'
+    )
+    await expect(empty.prepareJournal({ id: 'uncertain', started: true }, checkpoint)).rejects.toThrow(
+        /confirm|existing/i
+    )
+})
+
 it('returns the integration name and avatar without exposing other user details', async () => {
     const transport = vi.fn<typeof fetch>(() =>
         Promise.resolve(

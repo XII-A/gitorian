@@ -9,7 +9,7 @@ import { journal, workspace } from './fixtures'
 import { stateSchema, initialState, type Repository, type RepositoryImportProgress } from '../src/shared/model'
 import { hasUnsavedSettings } from '../src/renderer/settings-model'
 
-it('warns for unsaved preferences, template, destination, repository edits and connection input', () => {
+it('warns for unsaved preferences, template, destination, repository edits', () => {
     const saved = initialState()
     const repository: Repository = {
         id: 'repo',
@@ -25,8 +25,7 @@ it('warns for unsaved preferences, template, destination, repository edits and c
         branches: ['main']
     }
     saved.repositories = [repository]
-    const dirty = (settings = saved.settings, repos = saved.repositories, token = '') =>
-        hasUnsavedSettings(settings, repos, saved, token)
+    const dirty = (settings = saved.settings, repos = saved.repositories) => hasUnsavedSettings(settings, repos, saved)
     expect(dirty()).toBe(false)
     for (const patch of [
         { timezone: 'UTC' === saved.settings.timezone ? 'Europe/Istanbul' : 'UTC' },
@@ -49,7 +48,6 @@ it('warns for unsaved preferences, template, destination, repository edits and c
         { removed: true }
     ])
         expect(dirty(saved.settings, [{ ...repository, ...patch }])).toBe(true)
-    expect(dirty(saved.settings, saved.repositories, 'unsubmitted-token')).toBe(true)
     expect(dirty()).toBe(false)
 })
 
@@ -58,15 +56,14 @@ it('compares against the latest saved settings and ignores refreshed metadata an
     const template = { type: 'doc', content: [{ type: 'heading', attrs: { level: 2, id: 'heading' } }] }
     saved.settings.template = template
     const local = { ...saved.settings, refreshMinutes: saved.settings.refreshMinutes + 1 }
-    expect(hasUnsavedSettings(local, [], saved, '')).toBe(true)
+    expect(hasUnsavedSettings(local, [], saved)).toBe(true)
     saved.settings = { ...local, githubLogin: 'signed-in', layout: { ...local.layout, hidden: ['details'] } }
-    expect(hasUnsavedSettings(local, [], saved, '')).toBe(false)
+    expect(hasUnsavedSettings(local, [], saved)).toBe(false)
     expect(
         hasUnsavedSettings(
             { ...local, template: { content: [{ attrs: { id: 'heading', level: 2 }, type: 'heading' }], type: 'doc' } },
             [],
-            saved,
-            ''
+            saved
         )
     ).toBe(false)
 })

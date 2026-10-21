@@ -1,0 +1,10 @@
+[build]
+command = "pnpm --filter @weekly-j/notion-oauth build"
+publish = "services/notion-oauth/public"
+functions = "services/notion-oauth/dist/functions"
+
+[functions]
+node_bundler = "esbuild"
+
+[build.environment]
+NODE_VERSION = "24"

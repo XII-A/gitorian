@@ -6,6 +6,7 @@ import { HttpError } from './http'
 import type { Store } from './store'
 import { downloadImage, UnsupportedImageError } from './images'
 import { imageIds, imageExtension } from '../shared/images'
+import type { JournalSetup } from './notion-connection'
 
 interface Page {
     id: string
@@ -21,14 +22,108 @@ interface List<T> {
 export class Notion {
     constructor(
         private readonly http: Http,
-        private readonly token: () => string,
+        private readonly token: (refresh?: boolean, rejected?: string) => string | Promise<string>,
         private readonly images?: Pick<Store, 'image' | 'importImage'>,
         private readonly imageDownload = downloadImage
     ) {}
-    private request<T>(path: string, init?: RequestInit): Promise<T> {
-        const token = this.token()
+    private async request<T>(path: string, init?: RequestInit): Promise<T> {
+        const token = await this.token()
         if (!token) throw new Error('Connect Notion to publish or refresh')
-        return this.http.request<T>(`https://api.notion.com/v1/${path}`, token, init)
+        try {
+            return await this.http.request<T>(`https://api.notion.com/v1/${path}`, token, init)
+        } catch (error) {
+            // A rejected authorization has not applied the write. Never replay uncertain writes.
+            if (!(error instanceof HttpError) || error.status !== 401) throw error
+            const refreshed = await this.token(true, token)
+            if (!refreshed || refreshed === token) throw error
+            return this.http.request<T>(`https://api.notion.com/v1/${path}`, refreshed, init)
+        }
+    }
+    async prepareJournal(
+        setup: JournalSetup,
+        checkpoint: (pageId?: string) => void,
+        existing?: Destination
+    ): Promise<Destination> {
+        const destination = (id: string): Destination => ({ kind: 'page', id, titleProperty: 'Name', dateProperty: '' })
+        if (existing?.id) {
+            if (existing.id === setup.pageId) return existing
+            try {
+                await this.request(
+                    `${existing.kind === 'page' ? 'pages' : 'data_sources'}/${encodeURIComponent(existing.id)}`
+                )
+                checkpoint(existing.id)
+                return existing
+            } catch (error) {
+                // Only a confirmed inaccessible destination warrants a fresh journal.
+                if (!(error instanceof HttpError) || ![403, 404].includes(error.status)) throw error
+            }
+        }
+        if (setup.pageId) return destination(setup.pageId)
+        const marker = `weekly-j setup: ${setup.id}`
+        if (setup.started) {
+            const matches: string[] = []
+            let cursor: string | null = null
+            do {
+                const pages: List<Page> = await this.request('search', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        query: 'Weekly Journal',
+                        filter: { value: 'page', property: 'object' },
+                        ...(cursor ? { start_cursor: cursor } : {})
+                    })
+                })
+                for (const page of pages.results) {
+                    const title = Object.values(page.properties)
+                        .find((property) => property.title)
+                        ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
+                        .join('')
+                    if (title !== 'Weekly Journal') continue
+                    const children = await this.request<{
+                        results: {
+                            type: string
+                            paragraph?: { rich_text: { plain_text?: string; text?: { content: string } }[] }
+                        }[]
+                    }>(`blocks/${page.id}/children?page_size=100`)
+                    if (
+                        children.results.some(
+                            (block) =>
+                                block.type === 'paragraph' &&
+                                block.paragraph?.rich_text
+                                    .map((text) => text.plain_text ?? text.text?.content ?? '')
+                                    .join('') === marker
+                        )
+                    )
+                        matches.push(page.id)
+                }
+                cursor = pages.has_more ? pages.next_cursor : null
+            } while (cursor)
+            if (matches.length !== 1)
+                throw new Error(
+                    'Journal setup could not be confirmed. Set an existing journal destination in Settings, save, then connect again.'
+                )
+            checkpoint(matches[0])
+            return destination(matches[0])
+        }
+        checkpoint()
+        const page = await this.request<{ id: string }>('pages', {
+            method: 'POST',
+            headers: { 'Notion-Version': '2026-03-11' },
+            body: JSON.stringify({
+                parent: { type: 'workspace', workspace: true },
+                properties: { title: { title: [{ text: { content: 'Weekly Journal' } }] } },
+                children: [
+                    {
+                        object: 'block',
+                        type: 'paragraph',
+                        paragraph: { rich_text: [{ type: 'text', text: { content: marker } }] }
+                    }
+                ]
+            })
+        })
+        if (typeof page.id !== 'string' || !page.id)
+            throw new Error('Journal setup could not be confirmed. Connect again to check the saved journal.')
+        checkpoint(page.id)
+        return destination(page.id)
     }
     async profile(): Promise<ConnectionProfile> {
         const user = await this.request<{ name?: string | null; avatar_url?: string | null }>('users/me')
