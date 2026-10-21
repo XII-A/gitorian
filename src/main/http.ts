@@ -48,7 +48,8 @@ export class Http {
         const host = new URL(url).host
         const scope = `${host}:${createHash('sha256').update(token).digest('hex').slice(0, 24)}`
         const headers = new Headers(init.headers)
-        headers.set('Content-Type', 'application/json')
+        if (!(init.body instanceof FormData) && !headers.has('Content-Type'))
+            headers.set('Content-Type', 'application/json')
         headers.set('Authorization', `Bearer ${token}`)
         if (host === 'api.notion.com') headers.set('Notion-Version', '2025-09-03')
         else {

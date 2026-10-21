@@ -3,6 +3,9 @@ import type { NotionBlock } from '../shared/notion-format'
 import type { Destination, Entry, NotionIdentity, State } from '../shared/model'
 import type { Http } from './http'
 import { HttpError } from './http'
+import type { Store } from './store'
+import { downloadImage, UnsupportedImageError } from './images'
+import { imageIds, imageExtension } from '../shared/images'
 
 interface Page {
     id: string
@@ -18,7 +21,9 @@ interface List<T> {
 export class Notion {
     constructor(
         private readonly http: Http,
-        private readonly token: () => string
+        private readonly token: () => string,
+        private readonly images?: Pick<Store, 'image' | 'importImage'>,
+        private readonly imageDownload = downloadImage
     ) {}
     private request<T>(path: string, init?: RequestInit): Promise<T> {
         const token = this.token()
@@ -69,6 +74,18 @@ export class Notion {
                 `blocks/${encodeURIComponent(id)}/children?page_size=100${cursor ? `&start_cursor=${cursor}` : ''}`
             )
             for (const block of response.results) {
+                if (block.type === 'image' && this.images) {
+                    const image = block.image as { type: string; file?: { url: string }; external?: { url: string } }
+                    const url = image.type === 'file' ? image.file?.url : image.external?.url
+                    if (!url) throw new Error('Could not retrieve the Notion image. Refresh again.')
+                    try {
+                        const downloaded = await this.imageDownload(url)
+                        block.managedAssetId = await this.images.importImage(downloaded.bytes)
+                    } catch (error) {
+                        if (!(error instanceof UnsupportedImageError)) throw error
+                        // Unsupported media cannot match a managed image during verification.
+                    }
+                }
                 if (block.has_children && block.id && block.type !== 'child_page' && block.type !== 'child_database')
                     block.children = await this.blocks(block.id)
                 blocks.push(block)
@@ -126,7 +143,7 @@ export class Notion {
         if (!save.title.trim() || save.title.length > 2000)
             throw new HttpError(400, 'Use a title between 1 and 2000 characters')
         if (save.entryId) return this.update(save, checkpoint)
-        const children = toNotion(save.body)
+        const children = toNotion(save.body, await this.uploadImages(save, checkpoint))
         const batches = this.batches(children)
         const destination = save.destination
         const properties: Record<string, unknown> = {
@@ -200,7 +217,8 @@ export class Notion {
                     'The possible saved page differs from the draft. Coverage remains pending; inspect it in Notion.'
                 )
             // A checkpointed ID (or legacy marker) identifies a partial page safely.
-            for (const children of this.batches(expected.slice(actual.length)))
+            const sending = toNotion(save.body, await this.uploadImages(save, checkpoint))
+            for (const children of this.batches(sending.slice(actual.length)))
                 await this.request(`blocks/${page.id}/children`, {
                     method: 'PATCH',
                     body: JSON.stringify({ children })
@@ -212,6 +230,7 @@ export class Notion {
     private async update(save: State['saves'][number], checkpoint?: () => void | Promise<void>): Promise<Entry> {
         const expected = toNotion(save.body)
         this.batches(expected)
+        const sending = toNotion(save.body, await this.uploadImages(save, checkpoint))
         const blocks = await this.blocks(save.entryId!)
         if (!save.replacedBlockIds) {
             if (blocks.some((block) => !block.id))
@@ -237,7 +256,7 @@ export class Notion {
         })
         for (const block of blocks.filter((block) => oldIds.has(block.id!)))
             await this.request(`blocks/${block.id}`, { method: 'DELETE' })
-        for (const children of this.batches(expected.slice(actual.length)))
+        for (const children of this.batches(sending.slice(actual.length)))
             await this.request(`blocks/${save.entryId}/children`, {
                 method: 'PATCH',
                 body: JSON.stringify({ children })
@@ -250,6 +269,64 @@ export class Notion {
             body: save.body,
             refreshedAt: new Date().toISOString()
         }
+    }
+    private async uploadImages(
+        save: State['saves'][number],
+        checkpoint?: () => void | Promise<void>
+    ): Promise<Record<string, string>> {
+        const uploads: Record<string, string> = {}
+        try {
+            for (const id of imageIds(save.body)) {
+                const image = this.images?.image(id)
+                if (!image)
+                    throw new HttpError(400, 'A journal image is missing. Restore it from a backup before publishing.')
+                const existing = save.imageUploads?.[id]
+                if (existing && (!existing.expiresAt || Date.parse(existing.expiresAt) > Date.now() + 60_000)) {
+                    try {
+                        const current = await this.request<{ status: string; expiry_time: string | null }>(
+                            `file_uploads/${existing.id}`
+                        )
+                        if (current.status === 'uploaded') {
+                            uploads[id] = existing.id
+                            continue
+                        }
+                    } catch (error) {
+                        if (!(error instanceof HttpError && error.status === 404)) throw error
+                    }
+                }
+                const created = await this.request<{ id: string }>('file_uploads', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        mode: 'single_part',
+                        filename: `${id}.${imageExtension(image.mime)}`,
+                        content_type: image.mime
+                    })
+                })
+                const form = new FormData()
+                form.append(
+                    'file',
+                    new Blob([new Uint8Array(image.bytes)], { type: image.mime }),
+                    `${id}.${imageExtension(image.mime)}`
+                )
+                const uploaded = await this.request<{ status: string; expiry_time: string | null }>(
+                    `file_uploads/${created.id}/send`,
+                    { method: 'POST', body: form }
+                )
+                if (uploaded.status !== 'uploaded')
+                    throw new Error('Notion has not finished uploading an image. Try publishing again.')
+                save.imageUploads ??= {}
+                save.imageUploads[id] = { id: created.id, expiresAt: uploaded.expiry_time }
+                await checkpoint?.()
+                uploads[id] = created.id
+            }
+        } catch (error) {
+            if (error instanceof HttpError && error.status >= 400 && error.status < 500) throw error
+            throw new HttpError(
+                400,
+                'Could not upload images to Notion. Your page has not been changed. Try publishing again.'
+            )
+        }
+        return uploads
     }
     private batches(blocks: NotionBlock[]): NotionBlock[][] {
         const batches: NotionBlock[][] = []
