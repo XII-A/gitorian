@@ -5,11 +5,11 @@ Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify connections`. The runn
 ## GitHub entry points
 
 - Settings > Connections: GitHub and Notion headings have Connect actions instead of disconnected text. GitHub has no client-ID field or app-creation link.
-- GitHub Connect: the heading control shows its starting spinner, then expands to the code, icon-only Copy code action, Cancel sign-in, and primary Open GitHub action.
+- GitHub Connect: the heading control shows its starting spinner, then expands to the code, icon-only Copy code action, Cancel, and primary Open GitHub action.
 - Offline start > retry: a simulated failure stays in one row (message, Cancel, Retry), without a description; retry obtains a code.
 - Browser failure > Open GitHub: browser recovery guidance leaves the code usable. The button shows loading during the real IPC command with simulated browser launching.
 - Copy code: accessible icon-only control confirms in place; record the OS clipboard comparison separately. A simulated clipboard failure preserves the selectable code and shows error feedback in the same icon. Late polling responses remain owned by existing behavior tests.
-- Cancel sign-in / Escape: return to Connect and restore focus. Expiry and declined authorization show distinct recovery copy and offer a fresh attempt.
+- Cancel / Escape: return to Connect and restore focus. Expiry and declined authorization show distinct recovery copy and offer a fresh attempt.
 - Successful authorization: the same surface contracts to a compact Connecting face, then green Connected, then the hold-to-disconnect control. The fixture identity appears beside it. Reload preserves the account; encrypted fixture-token storage is required when the OS backend is available.
 - Disconnect: keyboard input completes the hold and removes the local token. Account metadata stays in SQLite, consistent with the store contract.
 

@@ -245,6 +245,10 @@
 }
 .settings-section-heading {
     min-width: 0;
+    min-height: var(--control-height-sm);
+}
+.settings-section-heading > h3 {
+    line-height: var(--control-height-sm);
 }
 .settings-section-heading,
 .settings-actions {
@@ -308,11 +312,8 @@
     padding: var(--space-6);
 }
 .settings-github-heading {
-    align-items: flex-start;
+    align-items: center;
     flex-wrap: nowrap;
-}
-.settings-github-heading > h3 {
-    padding-block: var(--space-3);
 }
 .settings-github-controls {
     display: flex;

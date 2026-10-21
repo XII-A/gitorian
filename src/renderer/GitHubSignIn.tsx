@@ -126,7 +126,7 @@ export function GitHubSignIn({
                                     />
                                 </span>
                                 <Button size="sm" className="github-device-action" variant="ghost" onClick={cancel}>
-                                    Cancel<span className="github-device-label"> sign-in</span>
+                                    Cancel
                                 </Button>
                                 <Button
                                     size="sm"

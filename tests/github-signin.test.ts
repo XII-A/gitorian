@@ -171,7 +171,7 @@ it('cancels polling, returns focus to sign-in, and ignores a late poll response'
         await update(() => vi.advanceTimersByTimeAsync(5000))
         expect(app.poll).toHaveBeenCalledTimes(1)
         await update(() => {
-            button('Cancel sign-in').click()
+            button('Cancel').click()
         })
         await update(() => vi.advanceTimersByTimeAsync(32))
         expect(document.activeElement).toBe(button('Connect GitHub'))

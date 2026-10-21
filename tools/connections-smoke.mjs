@@ -148,6 +148,15 @@ app.on('browser-window-created', (_, window) => {
             await assert(
                 `(() => {const g=document.querySelector('[aria-label="Connect GitHub"]').getBoundingClientRect();const n=document.querySelector('[aria-label="Notion connection"] .settings-section-heading button').getBoundingClientRect();return Math.abs(g.height-n.height)<1 && Math.abs(g.width-n.width)<1})()`
             )
+            const headingAlignment = await js(`['GitHub','Notion'].map(name => {
+                const heading=document.querySelector('[aria-label="'+name+' connection"] .settings-section-heading');
+                const title=heading.querySelector('h3').getBoundingClientRect();
+                const button=heading.querySelector('button').getBoundingClientRect();
+                return {name,titleCenter:title.top+title.height/2,buttonCenter:button.top+button.height/2};
+            })`)
+            record({ headingAlignment })
+            if (headingAlignment.some(({ titleCenter, buttonCenter }) => Math.abs(titleCenter - buttonCenter) > 1))
+                throw new Error('Connection titles and buttons are not vertically centered')
             await js(`window.__fixtureGitHubSurface = document.querySelector('.github-signin-surface'); true`)
             await shot('01-idle', 1000)
             await click('Connect GitHub')
@@ -184,7 +193,7 @@ app.on('browser-window-created', (_, window) => {
             await shot('github-copy-failed')
             await assert(`document.querySelector('.github-signin-code').textContent==='ABCD-EFGH'`)
             await js(`navigator.clipboard.writeText = window.__fixtureClipboardWrite; true`)
-            await click('Cancel sign-in')
+            await click('Cancel')
             await wait(`document.activeElement?.getAttribute('aria-label')==='Connect GitHub'`)
             await shot('github-cancelled')
             await click('Connect GitHub')
