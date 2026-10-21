@@ -12,9 +12,11 @@ it('respects GitHub device polling intervals and discovers identities after auth
     let token = ''
     let authorized = false
     let attempts = 0
-    const transport: typeof fetch = (input) =>
+    const requests: { url: string; body: Record<string, string> }[] = []
+    const transport: typeof fetch = (input, init) =>
         Promise.resolve().then(() => {
             const url = input instanceof Request ? input.url : String(input)
+            if (typeof init?.body === 'string') requests.push({ url, body: JSON.parse(init.body) })
             const json = (value: unknown) => new Response(JSON.stringify(value))
             if (url.endsWith('/device/code'))
                 return json({
@@ -39,7 +41,7 @@ it('respects GitHub device polling intervals and discovers identities after auth
             token = value
         }
     )
-    const device = await github.start('public-client-id')
+    const device = await github.start()
     expect(device).toEqual({ code: 'ABCD-EFGH', url: 'https://github.com/login/device', interval: 5 })
     expect(JSON.stringify(device)).not.toContain('private-device-code')
     expect(await github.poll()).toEqual({ pending: true, interval: 5 })
@@ -50,6 +52,11 @@ it('respects GitHub device polling intervals and discovers identities after auth
     vi.advanceTimersByTime(5000)
     expect(await github.poll()).toEqual({ login: 'journal-author', emails: ['one@example.com', 'two@example.com'] })
     expect(token).toBe('private-token')
+    expect(
+        requests
+            .filter(({ url }) => url.includes('github.com/login/'))
+            .every(({ body }) => body.client_id === 'Ov23li9PFMAWRrbZQ6Xy' && !('client_secret' in body))
+    ).toBe(true)
 })
 
 it('backs off after a rate limit without issuing repeated requests', async () => {
@@ -94,7 +101,7 @@ it('keeps polling GitHub after slow_down and reports expiry without connecting',
         })
     vi.stubGlobal('fetch', transport)
     const github = new GitHub(new Http(transport), () => '', setToken)
-    await github.start('test-client')
+    await github.start()
     vi.advanceTimersByTime(5000)
     expect(await github.poll()).toEqual({ pending: true, interval: 10 })
     vi.advanceTimersByTime(5000)
@@ -108,5 +115,5 @@ it('keeps polling GitHub after slow_down and reports expiry without connecting',
 it('explains disabled GitHub device flow before attempting browser authorization', async () => {
     vi.stubGlobal('fetch', () => Promise.resolve(new Response(JSON.stringify({ error: 'device_flow_disabled' }))))
     const github = new GitHub(new Http(), () => '', vi.fn())
-    await expect(github.start('test-client')).rejects.toThrow('Enable device flow')
+    await expect(github.start()).rejects.toThrow('GitHub sign-in is unavailable')
 })

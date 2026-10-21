@@ -331,7 +331,7 @@ void app.whenReady().then(() => {
             case 'notionProfile':
                 return service.reply({ notionIdentity: await notion.profile() })
             case 'githubStart': {
-                const device = await github.start(store.state.settings.githubClientId)
+                const device = await github.start()
                 try {
                     await openExternal(device.url)
                 } catch {

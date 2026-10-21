@@ -137,7 +137,6 @@ export const stateSchema = z.object({
         timezone: z.string(),
         refreshMinutes: z.number().min(0).max(1440),
         template: documentSchema,
-        githubClientId: z.string(),
         githubLogin: z.string(),
         destination: destinationSchema.optional(),
         layout: z.object({
@@ -212,7 +211,6 @@ export function initialState(): State {
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             refreshMinutes: 10,
             template: emptyDocument,
-            githubClientId: '',
             githubLogin: '',
             layout: structuredClone(defaultLayout)
         }

@@ -11,8 +11,10 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
-if (!['doctor', 'repository-import'].includes(mode) || process.argv.length !== 3) {
-    console.error('Usage: pnpm verify doctor | pnpm verify repository-import (run pnpm build first)')
+if (!['doctor', 'repository-import', 'github-signin'].includes(mode) || process.argv.length !== 3) {
+    console.error(
+        'Usage: pnpm verify doctor | pnpm verify repository-import | pnpm verify github-signin (run pnpm build first)'
+    )
     process.exit(1)
 }
 
@@ -43,9 +45,9 @@ if (mode === 'doctor') {
     const build = doctor()
     const evidenceRoot = join(root, '.ai-docs', 'verification')
     mkdirSync(evidenceRoot, { recursive: true })
-    const output = mkdtempSync(join(evidenceRoot, 'repository-import-'))
+    const output = mkdtempSync(join(evidenceRoot, `${mode}-`))
     const scratch = mkdtempSync(join(tmpdir(), 'weekly-j-import-'))
-    const report = { feature: mode, command: 'pnpm verify repository-import', build, scratch, output, passed: false }
+    const report = { feature: mode, command: `pnpm verify ${mode}`, build, scratch, output, passed: false }
     const env = { ...process.env, WEEKLY_J_VERIFY_STATE: scratch, WEEKLY_J_VERIFY_OUTPUT: output }
     // The Codex host exports this flag for itself; Electron must launch as a desktop app.
     delete env.ELECTRON_RUN_AS_NODE
@@ -66,9 +68,10 @@ if (mode === 'doctor') {
             )
         )
         writeFileSync(join(output, 'verify-runner.mjs'), readFileSync(fileURLToPath(import.meta.url)))
+        writeFileSync(join(output, `${mode}-smoke.mjs`), readFileSync(join(root, `tools/${mode}-smoke.mjs`)))
         for (const log of ['stdout.log', 'stderr.log']) writeFileSync(join(output, log), '')
         const result = await new Promise((done, reject) => {
-            const child = spawn(electron, ['tools/repository-import-smoke.mjs'], {
+            const child = spawn(electron, [`tools/${mode}-smoke.mjs`], {
                 cwd: root,
                 env,
                 windowsHide: true,
@@ -104,17 +107,25 @@ if (mode === 'doctor') {
         if (!journey.passed) throw new Error('The journey did not report success')
         const db = new DatabaseSync(join(scratch, 'profile', 'weekly-j.sqlite'), { readOnly: true })
         try {
-            const repositories = db
-                .prepare("SELECT json FROM state_records WHERE collection='repositories'")
-                .all()
-                .map((row) => JSON.parse(String(row.json)))
-            writeFileSync(join(output, 'persisted-repositories.json'), JSON.stringify(repositories, null, 2))
-            const expected = ['api-server', 'archived-tools', 'design-system', 'website', 'website'].sort()
-            if (
-                JSON.stringify(repositories.map((item) => item.name).sort()) !== JSON.stringify(expected) ||
-                repositories.some((item) => item.removed)
-            )
-                throw new Error('Persisted import differs from the selected repositories')
+            if (mode === 'github-signin') {
+                const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
+                const settings = JSON.parse(String(row?.json))
+                writeFileSync(join(output, 'persisted-settings.json'), JSON.stringify(settings, null, 2))
+                if ('githubClientId' in settings || settings.githubLogin !== 'weekly-j-fixture')
+                    throw new Error('Persisted account settings differ from the authorized identity')
+            } else {
+                const repositories = db
+                    .prepare("SELECT json FROM state_records WHERE collection='repositories'")
+                    .all()
+                    .map((row) => JSON.parse(String(row.json)))
+                writeFileSync(join(output, 'persisted-repositories.json'), JSON.stringify(repositories, null, 2))
+                const expected = ['api-server', 'archived-tools', 'design-system', 'website', 'website'].sort()
+                if (
+                    JSON.stringify(repositories.map((item) => item.name).sort()) !== JSON.stringify(expected) ||
+                    repositories.some((item) => item.removed)
+                )
+                    throw new Error('Persisted import differs from the selected repositories')
+            }
         } finally {
             db.close()
         }
@@ -134,14 +145,26 @@ if (mode === 'doctor') {
             cleanupError = String(error)
         }
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
-        report.evidenceRetained = [
-            'doctor.json',
-            'actions.jsonl',
-            '01-choose-folder.png',
-            '08-complete.png',
-            '10-error-details.png',
-            'persisted-repositories.json'
-        ].every((file) => existsSync(join(output, file)))
+        report.evidenceRetained = (
+            mode === 'github-signin'
+                ? [
+                      'doctor.json',
+                      'actions.jsonl',
+                      '01-idle.png',
+                      '05-narrow-dark-code.png',
+                      '08-disconnected.png',
+                      'http-requests.json',
+                      'persisted-settings.json'
+                  ]
+                : [
+                      'doctor.json',
+                      'actions.jsonl',
+                      '01-choose-folder.png',
+                      '08-complete.png',
+                      '10-error-details.png',
+                      'persisted-repositories.json'
+                  ]
+        ).every((file) => existsSync(join(output, file)))
         report.passed &&= report.cleanup.removed && report.evidenceRetained
         report.finishedAt = new Date().toISOString()
         writeFileSync(join(output, 'run.json'), JSON.stringify(report, null, 2))

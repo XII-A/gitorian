@@ -46,7 +46,6 @@ function button(name: string) {
 
 async function setup() {
     const state = initialState()
-    state.settings.githubClientId = 'public-client-id'
     const device = { code: 'ABCD-EFGH', url: 'https://github.com/login/device', interval: 5 }
     const reply = (): Reply => ({
         state,
@@ -109,8 +108,11 @@ it('replaces the sign-in action with a selectable code and copies the exact code
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
     try {
         await update(() => {
-            button('Sign in with browser').click()
+            button('Sign in with GitHub').click()
         })
+        expect(document.querySelector('.settings')?.textContent).not.toContain('OAuth client ID')
+        expect(document.querySelector('.settings')?.textContent).not.toContain('Set up OAuth app')
+        expect(app.invoke.mock.calls.some(([command]) => command.type === 'settings')).toBe(false)
         const surface = document.querySelector('.github-signin-surface')!
         expect(surface.getAttribute('data-expanded')).toBe('true')
         expect(surface.querySelector('code')?.textContent).toBe('ABCD-EFGH')
@@ -133,7 +135,7 @@ it('reports clipboard failure in place and still permits manual use of the code'
     vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('Clipboard unavailable'))
     try {
         await update(() => {
-            button('Sign in with browser').click()
+            button('Sign in with GitHub').click()
         })
         await update(() => {
             button('Copy code').click()
@@ -160,14 +162,14 @@ it('cancels polling, returns focus to sign-in, and ignores a late poll response'
     )
     try {
         await update(() => {
-            button('Sign in with browser').click()
+            button('Sign in with GitHub').click()
         })
         await update(() => vi.advanceTimersByTimeAsync(5000))
         expect(app.poll).toHaveBeenCalledTimes(1)
         await update(() => {
             button('Cancel sign-in').click()
         })
-        expect(document.activeElement).toBe(button('Sign in with browser'))
+        expect(document.activeElement).toBe(button('Sign in with GitHub'))
         await update(() => {
             resolvePoll({ ...app.reply(), devicePending: { interval: 5 } })
         })
@@ -184,7 +186,7 @@ it('shows an expired-code retry in the same surface and obtains a fresh code', a
     app.poll.mockRejectedValueOnce(new Error('GitHub sign-in expired; start again'))
     try {
         await update(() => {
-            button('Sign in with browser').click()
+            button('Sign in with GitHub').click()
         })
         const surface = document.querySelector('.github-signin-surface')
         await update(() => vi.advanceTimersByTimeAsync(5000))
@@ -209,7 +211,7 @@ it('confirms authorization before revealing the connected account controls', asy
     })
     try {
         await update(() => {
-            button('Sign in with browser').click()
+            button('Sign in with GitHub').click()
         })
         await update(() => vi.advanceTimersByTimeAsync(5000))
         expect(document.querySelector('.github-signin-surface')?.textContent).toContain('Connected as journal-author')
@@ -227,7 +229,7 @@ it('keeps actionable setup errors beside sign-in and hides raw request diagnosti
     app.start.mockRejectedValueOnce(new Error('HTTP 401 internal request payload'))
     try {
         await update(() => {
-            button('Sign in with browser').click()
+            button('Sign in with GitHub').click()
         })
         expect(document.querySelector('.github-signin-error')?.textContent).toContain('Check your connection')
         expect(document.querySelector('.settings')?.textContent).not.toContain('internal request payload')

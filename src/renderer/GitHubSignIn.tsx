@@ -12,10 +12,11 @@ export function githubSignInFailure(failure: unknown): GitHubSignInFeedback {
     const message = failure instanceof Error ? failure.message : String(failure)
     if (/expired/i.test(message))
         return { kind: 'expired', message: 'This code has expired. Start again to get a new code.' }
-    if (/client ID|incorrect_client_credentials/i.test(message))
-        return { kind: 'error', message: 'Check the OAuth client ID in your GitHub app settings, then try again.' }
-    if (/device flow|device_flow_disabled/i.test(message))
-        return { kind: 'error', message: 'Enable device flow in your GitHub OAuth app, then try again.' }
+    if (/sign-in is unavailable|incorrect_client_credentials|device_flow_disabled/i.test(message))
+        return {
+            kind: 'error',
+            message: 'GitHub sign-in is unavailable. Check for a weekly-j update or contact the maintainer.'
+        }
     if (/declined|access_denied/i.test(message))
         return { kind: 'error', message: 'Authorization was declined. Start again when you are ready.' }
     return { kind: 'error', message: 'GitHub sign-in could not be completed. Check your connection and try again.' }
@@ -184,7 +185,7 @@ export function GitHubSignIn({
                                     disabled={disabled || openingBrowser}
                                     onClick={onStart}
                                 >
-                                    Sign in with browser
+                                    Sign in with GitHub
                                 </Button>
                             )}
                         </motion.div>

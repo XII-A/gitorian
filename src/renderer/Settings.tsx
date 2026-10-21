@@ -238,12 +238,6 @@ export function Settings({
             const attempt = ++githubAttempt.current
             setGithubNotice('')
             try {
-                if (!settings.githubClientId.trim())
-                    throw new Error('Enter a GitHub OAuth client ID with device flow enabled.')
-                await window.journal.invoke({
-                    type: 'settings',
-                    settings: { ...state.settings, githubClientId: settings.githubClientId.trim() }
-                })
                 const result = await invoke({ type: 'githubStart' })
                 if (githubAttempt.current !== attempt) return
                 if (!result.device) throw new Error('GitHub did not provide a sign-in code')
@@ -549,40 +543,9 @@ export function Settings({
                                         </div>
                                         {(!connections.github || githubFeedback?.kind === 'success') && (
                                             <>
-                                                <Input
-                                                    label="OAuth client ID"
-                                                    value={settings.githubClientId}
-                                                    disabled={
-                                                        !!device ||
-                                                        busy === 'github' ||
-                                                        githubFeedback?.kind === 'success'
-                                                    }
-                                                    onChange={(event) =>
-                                                        setSettings({ ...settings, githubClientId: event.target.value })
-                                                    }
-                                                />
-                                                <div className="settings-actions settings-github-setup">
-                                                    <p className="settings-hint">
-                                                        Enable device flow in your GitHub OAuth app.
-                                                    </p>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        disabled={
-                                                            !!busy || !!device || githubFeedback?.kind === 'success'
-                                                        }
-                                                        onClick={() =>
-                                                            action('oauth', async () => {
-                                                                await invoke({
-                                                                    type: 'open',
-                                                                    url: 'https://github.com/settings/applications/new'
-                                                                })
-                                                            })
-                                                        }
-                                                    >
-                                                        Set up OAuth app
-                                                    </Button>
-                                                </div>
+                                                <p className="settings-hint">
+                                                    Connect your account to import pull requests and reviews.
+                                                </p>
                                                 <GitHubSignIn
                                                     device={device}
                                                     feedback={githubFeedback}

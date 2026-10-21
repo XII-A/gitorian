@@ -4,6 +4,9 @@ import type { Http } from './http'
 import { fingerprint, githubRemote } from './git'
 import { HttpError } from './http'
 
+// Public identifier for weekly-j's OAuth registration. Device flow needs no client secret.
+const githubClientId = 'Ov23li9PFMAWRrbZQ6Xy'
+
 interface User {
     login: string
 }
@@ -57,7 +60,7 @@ interface Device {
     expires_in: number
 }
 export class GitHub {
-    private device?: Device & { clientId: string; expires: number; nextPoll: number }
+    private device?: Device & { expires: number; nextPoll: number }
     constructor(
         private readonly http: Http,
         private readonly token: () => string,
@@ -78,27 +81,23 @@ export class GitHub {
         }
         throw new Error('This activity has more than 3,000 detail records. Open it in GitHub for the complete source.')
     }
-    async start(clientId: string): Promise<{ code: string; url: string; interval: number }> {
-        if (!clientId) throw new Error('Enter the public client ID of a GitHub OAuth app with device flow enabled')
+    async start(): Promise<{ code: string; url: string; interval: number }> {
         const response = await fetch('https://github.com/login/device/code', {
             method: 'POST',
             signal: AbortSignal.timeout(30000),
             headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ client_id: clientId, scope: 'repo read:user user:email' })
+            body: JSON.stringify({ client_id: githubClientId, scope: 'repo read:user user:email' })
         })
         if (!response.ok) throw new Error(`GitHub sign-in failed (${response.status})`)
         const device = (await response.json()) as Device & { error?: string }
         if (device.error || !device.device_code)
             throw new Error(
-                device.error === 'device_flow_disabled'
-                    ? 'Enable device flow in your GitHub OAuth application settings, then try again'
-                    : device.error === 'incorrect_client_credentials'
-                      ? 'GitHub rejected this OAuth client ID. Copy the client ID from your OAuth application settings'
-                      : (device.error ?? 'Invalid device authorization response')
+                device.error === 'device_flow_disabled' || device.error === 'incorrect_client_credentials'
+                    ? 'GitHub sign-in is unavailable in this version of weekly-j. Check for an app update or contact the maintainer.'
+                    : (device.error ?? 'Invalid device authorization response')
             )
         this.device = {
             ...device,
-            clientId,
             expires: Date.now() + device.expires_in * 1000,
             nextPoll: Date.now() + device.interval * 1000
         }
@@ -115,7 +114,7 @@ export class GitHub {
             signal: AbortSignal.timeout(30000),
             headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                client_id: device.clientId,
+                client_id: githubClientId,
                 device_code: device.device_code,
                 grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
             })

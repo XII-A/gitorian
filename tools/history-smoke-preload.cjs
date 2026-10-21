@@ -41,7 +41,6 @@ const state = {
         timezone: 'UTC',
         refreshMinutes: 0,
         template: { type: 'doc', content: [paragraph('')] },
-        githubClientId: '',
         githubLogin: '',
         layout: { order: ['activity', 'draft', 'details'], hidden: [], sizes: { activity: 24, draft: 46, details: 30 } }
     }

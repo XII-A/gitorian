@@ -4,6 +4,7 @@ Read the matching feature recipe before changing or verifying behavior. Each rec
 
 The artifact-backed baseline is `pnpm build`, `pnpm verify doctor`, then `pnpm verify repository-import`. It uses an empty temporary profile, real Git folders, no integration credentials, and unique persistent evidence. Follow [the skill](../SKILL.md) for isolation, proof standards, and cleanup.
 
+- [GitHub connection](github-connection.md): shared OAuth sign-in, simulated failure/retry, code copying, browser recovery, expiry, cancellation, connected persistence, and hold-to-disconnect.
 - [Repository import](repository-import.md): fully automated real desktop journey, cancellation, search, selection, stopped tracking, single-folder entry, scan failure, and persisted side effects.
 - [Weekly activity](weekly-activity.md): current and earlier weeks, empty refresh, unavailable sources, and retry.
 - [Writing](writing.md): hub/workspace entry, template, autosave, reload recovery, and citation.
