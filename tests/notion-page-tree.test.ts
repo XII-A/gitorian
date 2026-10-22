@@ -3,6 +3,7 @@ import { notionPageTree, pageAncestors } from '../src/renderer/notion-page-tree'
 import type { NotionPage } from '../src/shared/model'
 
 const page = (id: string, title: string, parentId?: string): NotionPage => ({
+    kind: 'page',
     id,
     title,
     parentId,

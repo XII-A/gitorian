@@ -4,6 +4,7 @@ export interface PageNode {
     id: string
     label: string
     icon?: string
+    selectable: boolean
     children?: PageNode[]
 }
 
@@ -42,7 +43,10 @@ export function pageAncestors(pages: NotionPage[], selected?: string): string[] 
 export function notionPageTree(pages: NotionPage[], query = ''): PageNode[] {
     const parentIds = parents(pages)
     const nodes = new Map<string, PageNode>(
-        pages.map((page) => [page.id, { id: page.id, label: page.title, icon: page.icon }])
+        pages.map((page) => [
+            page.id,
+            { id: page.id, label: page.title, icon: page.icon, selectable: page.kind === 'page' }
+        ])
     )
     const roots: PageNode[] = []
     for (const node of nodes.values()) {

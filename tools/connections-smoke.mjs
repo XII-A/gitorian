@@ -140,7 +140,7 @@ globalThis.fetch = (input, init) =>
                 id,
                 url: `https://www.notion.so/${id}`,
                 icon: { type: 'emoji', emoji: '📓' },
-                parent: parent ? { page_id: parent } : { workspace: true },
+                parent: typeof parent === 'object' ? parent : parent ? { page_id: parent } : { workspace: true },
                 properties: { title: { title: [{ plain_text: title }] } }
             })
             if (!body.start_cursor)
@@ -156,7 +156,10 @@ globalThis.fetch = (input, init) =>
                         stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes',
                         'fixture-parent'
                     ),
-                    page('fixture-leaf', 'Decisions', 'fixture-existing'),
+                    page('fixture-leaf', 'Decisions', { block_id: 'fixture-inner-toggle' }),
+                    page('fixture-board-entry', 'Board entry', { data_source_id: 'fixture-projects' }),
+                    page('fixture-archive-entry', 'Archived entry', { data_source_id: 'fixture-archive' }),
+                    page('fixture-hidden-ancestor', 'Shared toggle entry', { block_id: 'fixture-hidden-toggle' }),
                     page('fixture-orphan', 'Shared notes', 'not-shared'),
                     page('fixture-twin', 'Engineering notes', 'fixture-parent'),
                     ...(notionPagesCreated ? [page('fixture-private-journal', notionCreatedTitle)] : [])
@@ -165,6 +168,31 @@ globalThis.fetch = (input, init) =>
                 next_cursor: null
             })
         }
+        if (url === 'https://api.notion.com/v1/blocks/fixture-inner-toggle')
+            return json({ parent: { block_id: 'fixture-outer-toggle' } })
+        if (url === 'https://api.notion.com/v1/blocks/fixture-outer-toggle')
+            return json({ parent: { page_id: 'fixture-existing' } })
+        if (url === 'https://api.notion.com/v1/blocks/fixture-database-toggle')
+            return json({ parent: { page_id: 'fixture-parent' } })
+        if (url === 'https://api.notion.com/v1/blocks/fixture-hidden-toggle') return new Response('{}', { status: 404 })
+        if (url === 'https://api.notion.com/v1/data_sources/fixture-projects')
+            return json({
+                id: 'fixture-projects',
+                title: [{ plain_text: 'Projects' }],
+                parent: { database_id: 'fixture-database' }
+            })
+        if (url === 'https://api.notion.com/v1/data_sources/fixture-archive')
+            return json({
+                id: 'fixture-archive',
+                title: [{ plain_text: 'Archive' }],
+                parent: { database_id: 'fixture-database' }
+            })
+        if (url === 'https://api.notion.com/v1/databases/fixture-database')
+            return json({
+                id: 'fixture-database',
+                title: [{ plain_text: 'Work database' }],
+                parent: { block_id: 'fixture-database-toggle' }
+            })
         if (url === 'https://api.notion.com/v1/pages' && init?.method === 'POST') {
             notionPagesCreated++
             notionCreatedTitle = body.properties.title.title[0].text.content
@@ -780,6 +808,38 @@ app.on('browser-window-created', (_, window) => {
                     `document.documentElement.dataset.theme='dark'; document.documentElement.dataset.accent='neutral'; true`
                 )
             }
+            await assert(
+                `document.querySelector('[role="treeitem"][title="Shared toggle entry"]').getAttribute('aria-level')==='1'`
+            )
+            await assert(
+                `document.querySelector('[role="treeitem"][title="Projects"]').getAttribute('aria-level')==='2' && !document.querySelector('[role="treeitem"][title="Projects"]').hasAttribute('aria-selected')`
+            )
+            await js(`document.querySelector('[role="treeitem"][title="Projects"]').click()`)
+            await wait(`!!document.querySelector('[role="treeitem"][title="Board entry"]')`)
+            await assert(
+                `${notionScope}.querySelector('[role="combobox"]').value==='' && document.querySelector('[role="treeitem"][title="Board entry"]').getAttribute('aria-level')==='3'`
+            )
+            await assert(
+                `(async () => {try {await window.journal.invoke({type:'notionConfirm',selection:{kind:'existing',pageId:'fixture-projects'}});return false} catch {return !(await window.journal.invoke({type:'state'})).connections.notion}})()`
+            )
+            await shot('notion-database-groups', 200, 'notion')
+            await js(`document.querySelector('[role="treeitem"][title="Projects"]').focus()`)
+            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
+            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
+            await wait(`!document.querySelector('[role="treeitem"][title="Board entry"]')`)
+            await assert(`${notionScope}.querySelector('[role="combobox"]').value===''`)
+            await js(`${notionScope}.querySelector('[role="combobox"]').focus()`)
+            await window.webContents.insertText('Board entry')
+            await wait(`!!document.querySelector('[role="treeitem"][title="Board entry"]')`)
+            await assert(
+                `document.querySelector('[role="treeitem"][title="Projects"]').getAttribute('aria-expanded')==='true' && !!document.querySelector('[role="treeitem"][title="Personal"]')`
+            )
+            await shot('notion-database-search', 150, 'notion')
+            await js(`document.querySelector('[role="treeitem"][title="Board entry"]').click()`)
+            await wait(`${notionScope}.querySelector('[role="combobox"]').value==='Board entry'`)
+            await assert(`(async () => !(await window.journal.invoke({type:'state'})).connections.notion)()`)
+            await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
+            await wait(`!!document.querySelector('[role="treeitem"][title="Personal"]')`)
             await js(`document.querySelector('[role="treeitem"][title="Personal"]').click()`)
             await wait(`${notionScope}.querySelector('[role="combobox"]').value==='Personal'`)
             if ((await js(`window.journal.invoke({type:'state'})`)).connections.notion)
@@ -788,6 +848,9 @@ app.on('browser-window-created', (_, window) => {
             await window.webContents.insertText('Decisions')
             await wait(`!!document.querySelector('[role="treeitem"][title="Decisions"]')`)
             await assert(`!!document.querySelector('[role="treeitem"][title="Personal"]')`)
+            await assert(
+                `document.querySelector('[role="treeitem"][title="Decisions"]').getAttribute('aria-level')==='3'`
+            )
             await shot('notion-page-tree-search', 250, 'notion')
             await js(`${notionScope}.querySelector('[role="combobox"]').select()`)
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' })
@@ -857,6 +920,7 @@ app.on('browser-window-created', (_, window) => {
                 throw new Error('Existing selection did not save without creating a page')
             await click('Change journal page', notionScope)
             await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+            await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
             await wait(
                 `Array.from(document.querySelectorAll('[role="treeitem"][aria-selected="true"]')).some(n=>n.title===${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes')})`
             )

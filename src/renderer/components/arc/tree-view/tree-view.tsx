@@ -14,6 +14,8 @@ export interface TreeNode {
     icon?: ReactNode
     /** Full path or name when a compact label is used. */
     title?: string
+    /** Group labels expand their children instead of becoming a selection. */
+    selectable?: boolean
 }
 
 export interface TreeViewProps {
@@ -162,6 +164,7 @@ export function TreeView({
     }
 
     function select(node: TreeNode) {
+        if (node.selectable === false) return
         if (controlledSelectedId === undefined) setSelectedId(node.id)
         onSelect?.(node)
     }
@@ -209,7 +212,7 @@ export function TreeView({
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
             select(node)
-            if (node.children?.length && !selectBranches) toggle(node)
+            if (node.children?.length && (!selectBranches || node.selectable === false)) toggle(node)
         }
     }
 
@@ -289,7 +292,7 @@ export function TreeView({
                                 aria-posinset={item.position}
                                 aria-setsize={item.setSize}
                                 aria-expanded={hasChildren ? isExpanded : undefined}
-                                aria-selected={isSelected}
+                                aria-selected={item.node.selectable === false ? undefined : isSelected}
                                 tabIndex={focusableId === item.node.id ? 0 : -1}
                                 style={{ '--tree-depth': item.depth } as CSSProperties}
                                 onFocus={() => setFocusedId(item.node.id)}
@@ -297,7 +300,8 @@ export function TreeView({
                                 onClick={() => {
                                     setFocusedId(item.node.id)
                                     select(item.node)
-                                    if (hasChildren && !selectBranches) toggle(item.node)
+                                    if (hasChildren && (!selectBranches || item.node.selectable === false))
+                                        toggle(item.node)
                                 }}
                             >
                                 {isSelected && <Selection layoutId={selectionLayoutId} reduced={reduced} />}

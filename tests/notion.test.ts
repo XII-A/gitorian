@@ -61,8 +61,22 @@ it('lists every accessible page by name across cursors, preserving duplicate tit
         )
     const notion = new Notion(new Http(transport), () => 'pending-token')
     expect(await notion.accessiblePages()).toEqual([
-        { id: 'parent', title: 'Journal', url: 'https://www.notion.so/parent', icon: '📓', parentId: undefined },
-        { id: 'child', title: 'Journal', url: 'https://www.notion.so/child', icon: '📓', parentId: 'parent' }
+        {
+            kind: 'page',
+            id: 'parent',
+            title: 'Journal',
+            url: 'https://www.notion.so/parent',
+            icon: '📓',
+            parentId: undefined
+        },
+        {
+            kind: 'page',
+            id: 'child',
+            title: 'Journal',
+            url: 'https://www.notion.so/child',
+            icon: '📓',
+            parentId: 'parent'
+        }
     ])
     expect(JSON.parse(transport.mock.calls[1][1]!.body as string).start_cursor).toBe('next-page')
     expect(transport.mock.calls.every(([, init]) => JSON.parse(init!.body as string).filter.value === 'page')).toBe(

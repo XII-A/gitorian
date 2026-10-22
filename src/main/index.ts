@@ -388,7 +388,7 @@ void app.whenReady().then(() => {
                 const selection = command.selection
                 const page =
                     selection.kind === 'existing'
-                        ? availableNotionPages.find((page) => page.id === selection.pageId)
+                        ? availableNotionPages.find((page) => page.kind === 'page' && page.id === selection.pageId)
                         : undefined
                 if (selection.kind === 'existing' && !page) throw new Error('Refresh pages and choose a destination.')
                 const destination = await connection.completeJournal(

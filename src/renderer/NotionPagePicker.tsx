@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { FileText, Plus } from 'lucide-react'
+import { Database, FileText, Plus } from 'lucide-react'
 import type { NotionPage } from '../shared/model'
 import { Combobox, type ComboboxTreeContext } from './components/arc/combobox/combobox'
 import { TreeView, type TreeNode } from './components/arc/tree-view/tree-view'
@@ -36,7 +36,13 @@ function PageTree({ pages, context }: { pages: NotionPage[]; context: ComboboxTr
                 id: node.id,
                 label: node.label,
                 title: node.label,
-                icon: <NotionPageIcon icon={node.icon} />,
+                icon:
+                    node.selectable || node.icon ? (
+                        <NotionPageIcon icon={node.icon} />
+                    ) : (
+                        <Database size={16} strokeWidth={1.5} aria-hidden="true" />
+                    ),
+                selectable: node.selectable,
                 children: node.children ? convert(node.children) : undefined
             }))
         return convert(notionPageTree(pages, context.query))
@@ -101,7 +107,7 @@ export function NotionPagePicker({
             title={pages.find((page) => page.id === value)?.title}
             options={[
                 { value: 'new', label: 'Create a new page' },
-                ...pages.map((page) => ({ value: page.id, label: page.title }))
+                ...pages.filter((page) => page.kind === 'page').map((page) => ({ value: page.id, label: page.title }))
             ]}
             onValueChange={onChange}
             renderTree={(context) => <PageTree pages={pages} context={context} />}

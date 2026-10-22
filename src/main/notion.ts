@@ -1,6 +1,6 @@
 import { fromNotion, toNotion } from '../shared/notion-format'
 import type { NotionBlock } from '../shared/notion-format'
-import type { Destination, Entry, ConnectionProfile, NotionPage, State } from '../shared/model'
+import type { Destination, Entry, ConnectionProfile, State } from '../shared/model'
 import type { Http } from './http'
 import { HttpError } from './http'
 import type { Store } from './store'
@@ -8,6 +8,7 @@ import { downloadImage, UnsupportedImageError } from './images'
 import { imageIds, imageExtension } from '../shared/images'
 import type { JournalSetup } from './notion-connection'
 import sharp from 'sharp'
+import { discoverNotionPages } from './notion-discovery'
 
 interface Page {
     id: string
@@ -135,41 +136,8 @@ export class Notion {
             ...(page.url ? { url: page.url } : {})
         }
     }
-    async accessiblePages(): Promise<NotionPage[]> {
-        const pages: Page[] = []
-        let cursor: string | null = null
-        do {
-            const result: List<Page> = await this.request('search', {
-                method: 'POST',
-                body: JSON.stringify({
-                    filter: { value: 'page', property: 'object' },
-                    page_size: 100,
-                    ...(cursor ? { start_cursor: cursor } : {})
-                })
-            })
-            pages.push(...result.results)
-            cursor = result.has_more ? result.next_cursor : null
-        } while (cursor)
-        const title = (page: Page) =>
-            Object.values(page.properties)
-                .find((property) => property.title)
-                ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
-                .join('')
-                .trim() || 'Untitled'
-        return [
-            ...new Map(
-                pages.map((page) => [
-                    page.id,
-                    {
-                        id: page.id,
-                        title: title(page),
-                        url: page.url,
-                        icon: pageIcon(page),
-                        parentId: page.parent?.page_id
-                    }
-                ])
-            ).values()
-        ]
+    async accessiblePages() {
+        return discoverNotionPages((path, init) => this.request(path, init))
     }
     async destinationIcon(icon?: string): Promise<string | undefined> {
         if (!icon?.startsWith('https://')) return icon

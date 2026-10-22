@@ -353,6 +353,7 @@ export interface ConnectionProfile {
     avatarUrl?: string
 }
 export interface NotionPage {
+    kind: 'page' | 'data_source'
     id: string
     title: string
     url: string
