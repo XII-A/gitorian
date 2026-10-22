@@ -38,6 +38,8 @@ export function ConnectionSignIn({
     selection,
     errorCancelLabel = 'Cancel',
     pendingLabel,
+    pendingContent,
+    expandPending = false,
     onStart,
     onCancel,
     onOpen,
@@ -55,6 +57,8 @@ export function ConnectionSignIn({
     selection?: ReactNode
     errorCancelLabel?: string
     pendingLabel?: string
+    pendingContent?: ReactNode
+    expandPending?: boolean
     onStart: () => void | Promise<void>
     onCancel: () => void
     onOpen: () => void | Promise<void>
@@ -72,7 +76,12 @@ export function ConnectionSignIn({
               : pending
                 ? 'starting'
                 : 'idle'
-    const expanded = phase === 'device' || phase === 'selection' || phase === 'error' || phase === 'expired'
+    const expanded =
+        phase === 'device' ||
+        phase === 'selection' ||
+        phase === 'error' ||
+        phase === 'expired' ||
+        (expandPending && (phase === 'authorizing' || phase === 'starting'))
     const control = useRef<HTMLDivElement>(null)
     const previousPhase = useRef(phase)
     const [identityReady, setIdentityReady] = useState(connected)
@@ -140,6 +149,7 @@ export function ConnectionSignIn({
                     resultTimeout={0}
                     cancelOnOutsidePress={phase === 'connected'}
                     pendingLabel={phase === 'connected' ? 'Disconnecting' : (pendingLabel ?? 'Connecting')}
+                    pendingContent={phase === 'connected' ? undefined : pendingContent}
                     doneLabel={phase === 'connected' ? 'Disconnected' : 'Connected'}
                     errorLabel={feedback && 'message' in feedback ? feedback.message : 'Could not disconnect'}
                     errorCancelLabel={errorCancelLabel}

@@ -52,6 +52,8 @@ export interface ConfirmMorphProps {
     cancelLabel?: string
     /** Shown beside the spinner while `onConfirm` resolves. */
     pendingLabel?: string
+    /** Visual progress content; pendingLabel remains the plain accessible announcement. */
+    pendingContent?: ReactNode
     doneLabel?: string
     errorLabel?: string
     retryLabel?: string
@@ -116,9 +118,8 @@ const physical = ({ visualDuration, bounce }: { visualDuration: number; bounce: 
     const root = (2 * Math.PI) / (visualDuration * 1.2)
     return { type: 'spring', stiffness: root * root, damping: 2 * (1 - bounce) * root, mass: 1 }
 }
-/** Growing follows new content with a little life; shrinking settles without overshoot. */
-const GROW = physical(motionTokens.spring.morph),
-    SHRINK = physical(motionTokens.spring.smooth)
+/** A progress surface follows content without overshoot and retargets from its current velocity. */
+const RESIZE = physical({ ...motionTokens.spring.smooth, visualDuration: motionTokens.duration.standard })
 
 const subscribe = () => () => {
     /* Hydration has no external subscription to clean up. */
@@ -287,6 +288,7 @@ export function ConfirmMorph({
     confirmLabel = 'Delete',
     cancelLabel = 'Cancel',
     pendingLabel = 'Deleting',
+    pendingContent,
     doneLabel = 'Deleted',
     errorLabel = 'Couldn’t finish',
     retryLabel = 'Retry',
@@ -423,7 +425,7 @@ export function ConfirmMorph({
         }
     })
 
-    /* The shape: one pill whose width springs to whichever face is current. At rest it is auto, so it renders right before hydration. */
+    /* Auto is only for the initial render. Keeping the measured width numeric prevents content from resizing the surface before its next spring. */
     const width = useMotionValue<number | 'auto'>('auto')
     const target = useRef(0)
     const flight = useRef(0)
@@ -434,27 +436,29 @@ export function ConfirmMorph({
             measuredFace.current = id
             const settled = () =>
                 queueMicrotask(() => {
-                    if (rootRef.current && width.get() === 'auto' && measuredFace.current === live.current.state)
+                    if (
+                        rootRef.current &&
+                        Math.abs(Number(width.get()) - target.current) < 0.25 &&
+                        measuredFace.current === live.current.state
+                    )
                         live.current.onWidthSettled?.(live.current.state)
                 })
             if (Math.abs(w - target.current) < 0.25) {
-                if (width.get() === 'auto') settled()
+                settled()
                 return
             }
             const from = target.current
             target.current = w
             if (!from || reduced) {
                 flight.current++
-                width.jump('auto')
+                width.jump(w)
                 settled()
                 return
             }
-            const now = width.get()
-            if (now === 'auto') width.jump(from)
             const token = ++flight.current
-            animate(width, w, w > (typeof now === 'number' ? now : from) ? GROW : SHRINK).then(() => {
+            animate(width, w, RESIZE).then(() => {
                 if (token === flight.current) {
-                    width.jump('auto')
+                    width.jump(w)
                     settled()
                 }
             })
@@ -706,7 +710,9 @@ export function ConfirmMorph({
                 return (
                     <Part reduced={reduced} className={styles.status}>
                         <LoaderCircle className={styles.spinner} size={16} strokeWidth={1.75} aria-hidden="true" />
-                        <span className={styles.statusText}>{working === 'undo' ? undoingLabel : pendingLabel}</span>
+                        <span className={styles.statusText}>
+                            {working === 'undo' ? undoingLabel : (pendingContent ?? pendingLabel)}
+                        </span>
                     </Part>
                 )
             case 'done':

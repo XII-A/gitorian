@@ -4,6 +4,7 @@ import { ConnectionSignIn, connectionFailure, type ConnectionFeedback } from './
 import { NotionPagePicker, NotionPageIcon } from './NotionPagePicker'
 import { Input } from './components/arc/input/input'
 import { Button } from './components/arc/button/button'
+import { NotionDiscoveryStatus, notionDiscoveryLabel } from './NotionDiscoveryStatus'
 import { ArrowLeft, Pencil } from 'lucide-react'
 
 export function NotionSignIn({
@@ -176,10 +177,7 @@ export function NotionSignIn({
             setSuccessComplete(false)
         }
     }, [feedback, successComplete, connected])
-    const loadingLabel =
-        progress.stage === 'discovering'
-            ? `Found ${progress.found.toLocaleString()} ${progress.found === 1 ? 'page' : 'pages'}`
-            : `Grouped ${progress.completed.toLocaleString()} of ${progress.total.toLocaleString()} ${progress.total === 1 ? 'page' : 'pages'}`
+    const loadingLabel = notionDiscoveryLabel(progress)
     return (
         <div className="notion-connection">
             {stage === 'load' && (
@@ -197,6 +195,8 @@ export function NotionSignIn({
                 feedback={feedback}
                 notice={notice}
                 pendingLabel={stage === 'load' ? loadingLabel : stage === 'confirm' ? 'Saving page' : undefined}
+                expandPending={stage === 'load' || stage === 'confirm'}
+                pendingContent={stage === 'load' ? <NotionDiscoveryStatus progress={progress} /> : undefined}
                 selection={
                     pages && stage === 'choose' ? (
                         <div className="github-signin-code-row notion-destination-row">

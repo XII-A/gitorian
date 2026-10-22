@@ -22,12 +22,15 @@ for (const file of [
     'src/main/connection-profiles.ts',
     'src/renderer/useConnectionProfile.ts',
     'src/renderer/NotionPagePicker.tsx',
+    'src/renderer/NotionDiscoveryStatus.tsx',
     'src/renderer/notion-page-tree.ts',
     'tests/notion-page-tree.test.ts',
     'src/main/notion-discovery.ts',
     'src/main/notion-discovery-cache.ts',
     'tests/notion-discovery.test.ts',
     'tests/notion-discovery-cache.test.ts',
+    'src/renderer/components/arc/animated-counter/animated-counter.tsx',
+    'src/renderer/components/arc/animated-counter/animated-counter.module.css',
     'tests/connection-profiles.test.ts'
 ])
     writeFileSync(join(output, file.split('/').at(-1)), readFileSync(resolve(file)))
@@ -42,6 +45,7 @@ const record = (event) =>
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
 const notionOnly = process.env.WEEKLY_J_VERIFY_SERVICE === 'notion'
 const stressMotion = process.env.WEEKLY_J_VERIFY_MOTION === 'stress'
+const narrowViewport = stressMotion || process.env.WEEKLY_J_VERIFY_VIEWPORT === 'narrow'
 const githubLogin = stressMotion ? 'weekly-j-fixture-with-a-long-github-name' : 'weekly-j-fixture'
 let notionName = stressMotion ? 'Weekly journal with an exceptionally long integration name' : 'Weekly journal'
 let attempt = 0
@@ -151,7 +155,12 @@ globalThis.fetch = (input, init) =>
             })
             if (!body.start_cursor)
                 return json({
-                    results: [page('fixture-parent', 'Personal')],
+                    results: [
+                        page('fixture-parent', 'Personal'),
+                        ...Array.from({ length: 8 }, (_, index) =>
+                            page(`fixture-reference-${index}`, `Reference ${index + 1}`, 'fixture-twin')
+                        )
+                    ],
                     has_more: true,
                     next_cursor: 'second-page'
                 })
@@ -175,7 +184,7 @@ globalThis.fetch = (input, init) =>
             })
         }
         if (url === 'https://api.notion.com/v1/blocks/fixture-inner-toggle') {
-            await pause(500)
+            await pause(1200)
             return json({ parent: { block_id: 'fixture-outer-toggle' } })
         }
         if (url === 'https://api.notion.com/v1/blocks/fixture-outer-toggle')
@@ -643,7 +652,7 @@ app.on('browser-window-created', (_, window) => {
                         { name: 'prefers-reduced-motion', value: stressMotion ? 'reduce' : 'no-preference' }
                     ]
                 })
-                window.setContentSize(stressMotion ? 390 : 1280, 900)
+                window.setContentSize(narrowViewport ? 390 : 1280, 900)
                 await startIdentityTrace('GitHub')
                 authorize = true
                 await wait(`document.querySelector('.github-signin-surface')?.dataset.phase==='authorizing'`)
@@ -714,8 +723,8 @@ app.on('browser-window-created', (_, window) => {
                 )
             }
             window.setMinimumSize(320, 400)
-            window.setContentSize(stressMotion ? 390 : 1280, 900)
-            await wait(`Math.abs(innerWidth - ${stressMotion ? 390 : 1280}) <= 1`)
+            window.setContentSize(narrowViewport ? 390 : 1280, 900)
+            await wait(`Math.abs(innerWidth - ${narrowViewport ? 390 : 1280}) <= 1`)
             record({
                 notionViewport: await js(
                     `({width:innerWidth,height:innerHeight,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches})`
@@ -751,22 +760,87 @@ app.on('browser-window-created', (_, window) => {
             await approveNotion()
             await wait(`${notionScope}.textContent.includes('Could not load pages')`)
             await shot('notion-pages-load-error', 250, 'notion')
+            await js(`(() => {
+                window.__notionLoadingMotion={frames:[]};
+                const sample=()=>{
+                    const section=${notionScope};
+                    const root=section?.querySelector('.github-signin-surface > [role="group"]');
+                    const surface=root?.firstElementChild;
+                    if(root && surface) {
+                        const bounds=surface.getBoundingClientRect();
+                        const counters=Array.from(section.querySelectorAll('[data-variant="inline"]')).map(counter=>Array.from(counter.querySelectorAll('span')).filter(node=>!node.childElementCount && /^[0-9]$/.test(node.textContent) && getComputedStyle(node).position==='absolute' && node.getBoundingClientRect().width>2).map(node=>({digit:node.textContent,opacity:Number(getComputedStyle(node).opacity),offset:new DOMMatrixReadOnly(getComputedStyle(node).transform).m42,visibility:getComputedStyle(node).visibility})));
+                        window.__notionLoadingMotion.frames.push({time:performance.now(),state:root.dataset.state,width:bounds.width,left:bounds.left,right:bounds.right,top:bounds.top,text:surface.textContent,counters});
+                    }
+                    window.__notionLoadingMotion.frame=requestAnimationFrame(sample);
+                }; sample();
+            })()`)
             await click('Retry', notionScope)
             await wait(
-                `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.textContent.includes('Found 1 page')`
+                `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.querySelector('[aria-label="Found 9 pages"]') != null`
             )
             await shot('notion-discovery-count', 100, 'notion')
             await assertActionsFit('Notion')
             await wait(
-                `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.textContent.includes('Grouped 2 of 8 pages')`
+                `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.querySelector('[aria-label="Grouped 10 of 16 pages"]') != null`
             )
             await shot('notion-grouping-count', 100, 'notion')
+            await wait(`(() => {
+                const values=Array.from(${notionScope}.querySelectorAll('[data-variant="inline"]')).map(counter=>Array.from(counter.querySelectorAll('span')).filter(node=>{
+                    if(node.childElementCount || !/^[0-9]$/.test(node.textContent) || node.getBoundingClientRect().width<=2) return false;
+                    const style=getComputedStyle(node);
+                    const column=getComputedStyle(node.offsetParent);
+                    return style.position==='absolute' && style.visibility==='visible' && Number(style.opacity)>.99 && Math.abs(new DOMMatrixReadOnly(style.transform).m42)<.05 && Number(column.opacity)>.99 && (column.transform==='none' || Math.abs(new DOMMatrixReadOnly(column.transform).m42)<.05);
+                }).map(node=>node.textContent).join(''));
+                return values.join('/')==='10/16';
+            })()`)
+            await shot('notion-counter-settled', 50, 'notion')
             await assertActionsFit('Notion')
             await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+            const loadingFrames = await js(
+                `(() => {cancelAnimationFrame(window.__notionLoadingMotion.frame);return window.__notionLoadingMotion.frames})()`
+            )
+            const pendingSteps = loadingFrames.slice(1).flatMap((frame, index) => {
+                const previous = loadingFrames[index]
+                return frame.state === 'pending' && previous.state === 'pending' && frame.time - previous.time >= 4
+                    ? [
+                          {
+                              delta: Math.abs(frame.width - previous.width),
+                              perFrame: (Math.abs(frame.width - previous.width) * 16.667) / (frame.time - previous.time)
+                          }
+                      ]
+                    : []
+            })
+            const loadingMetrics = {
+                samples: loadingFrames.length,
+                maxPendingStep: Math.max(0, ...pendingSteps.map((step) => step.delta)),
+                maxPendingStepPerFrame: Math.max(0, ...pendingSteps.map((step) => step.perFrame)),
+                reducedMotion: stressMotion,
+                movingDigitFrames: loadingFrames.filter((frame) =>
+                    frame.counters?.some((counter) =>
+                        counter.some(
+                            (glyph) =>
+                                glyph.opacity > 0.01 && glyph.visibility === 'visible' && Math.abs(glyph.offset) > 0.05
+                        )
+                    )
+                ).length,
+                maxTopStep: Math.max(
+                    0,
+                    ...loadingFrames.slice(1).map((frame, index) => Math.abs(frame.top - loadingFrames[index].top))
+                )
+            }
+            writeFileSync(
+                join(output, 'notion-loading-motion.json'),
+                JSON.stringify({ metrics: loadingMetrics, frames: loadingFrames }, null, 2)
+            )
+            if (stressMotion ? loadingMetrics.movingDigitFrames !== 0 : loadingMetrics.movingDigitFrames < 3)
+                throw new Error(`Counter motion did not match the motion preference: ${JSON.stringify(loadingMetrics)}`)
+            if (loadingMetrics.maxTopStep > 1) throw new Error(`Loading row jumped: ${JSON.stringify(loadingMetrics)}`)
+            if (!stressMotion && loadingMetrics.maxPendingStepPerFrame > 24)
+                throw new Error(`Loading width jumped: ${JSON.stringify(loadingMetrics)}`)
             const cachePath = join(directory, 'profile', 'notion-pages.json')
             const cachedPages = JSON.parse(readFileSync(cachePath, 'utf8'))
             if (
-                cachedPages.pages.filter((page) => page.kind === 'page').length !== 8 ||
+                cachedPages.pages.filter((page) => page.kind === 'page').length !== 16 ||
                 /fixture-notion-token|access_token|refresh_token/.test(readFileSync(cachePath, 'utf8'))
             )
                 throw new Error('Discovery cache did not retain bounded metadata without credentials')
@@ -1111,7 +1185,11 @@ app.on('browser-window-created', (_, window) => {
                               'clipboard failure',
                               'disconnect IPC failures'
                           ],
-                    motionVariant: stressMotion ? 'narrow-reduced-long-names' : 'desktop-normal',
+                    motionVariant: stressMotion
+                        ? 'narrow-reduced-long-names'
+                        : narrowViewport
+                          ? 'narrow-normal'
+                          : 'desktop-normal',
                     protectedStorage: initial.connections.protectedStorage
                 })
             )
