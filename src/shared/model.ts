@@ -90,7 +90,10 @@ export const destinationSchema = z.object({
     kind: z.enum(['page', 'database']),
     id: z.string(),
     titleProperty: z.string(),
-    dateProperty: z.string()
+    dateProperty: z.string(),
+    title: z.string().optional(),
+    url: z.string().optional(),
+    icon: z.string().optional()
 })
 export const stateSchema = z.object({
     version: z.literal(1),
@@ -315,16 +318,25 @@ export const commandSchema = z.discriminatedUnion('type', [
         until: z.string().optional(),
         reason: z.string().optional()
     }),
-    z.object({ type: z.literal('settings'), settings: stateSchema.shape.settings }),
+    z.object({ type: z.literal('settings'), settings: stateSchema.shape.settings.omit({ destination: true }) }),
     z.object({ type: z.literal('publish'), draftId: z.string() }),
     z.object({ type: z.literal('reconcile'), saveId: z.string() }),
     z.object({ type: z.literal('coverage'), activityId: z.string(), entryId: z.string(), linked: z.boolean() }),
     z.object({ type: z.literal('notionStart') }),
     z.object({ type: z.literal('notionPoll') }),
     z.object({ type: z.literal('notionCancel') }),
+    z.object({ type: z.literal('notionPages') }),
+    z.object({ type: z.literal('notionChoose') }),
+    z.object({ type: z.literal('notionDestination') }),
+    z.object({
+        type: z.literal('notionConfirm'),
+        selection: z.discriminatedUnion('kind', [
+            z.object({ kind: z.literal('existing'), pageId: z.string().min(1) }),
+            z.object({ kind: z.literal('new'), title: z.string().trim().min(1).max(200) })
+        ])
+    }),
     z.object({ type: z.literal('connectionProfiles') }),
     z.object({ type: z.literal('refreshConnectionProfile'), service: z.enum(['github', 'notion']) }),
-    z.object({ type: z.literal('notionTestDestination'), destination: destinationSchema }),
     z.object({ type: z.literal('githubStart') }),
     z.object({ type: z.literal('githubPoll') }),
     z.object({ type: z.literal('disconnect'), service: z.enum(['github', 'notion']) }),
@@ -339,6 +351,13 @@ export type ConnectionProfiles = Partial<Record<ConnectionService, ConnectionPro
 export interface ConnectionProfile {
     name: string
     avatarUrl?: string
+}
+export interface NotionPage {
+    id: string
+    title: string
+    url: string
+    icon?: string
+    parentId?: string
 }
 export interface Reply {
     repositoryScan?: {
@@ -355,6 +374,7 @@ export interface Reply {
     devicePending?: { interval: number }
     notionAuthorization?: { url: string; interval: number }
     notionPending?: { interval: number }
+    notionPages?: NotionPage[]
     connections: { github: boolean; notion: boolean; protectedStorage: boolean }
     message?: string
     detailError?: string

@@ -12,6 +12,7 @@ export interface JournalSetup {
     id: string
     started: boolean
     pageId?: string
+    title?: string
 }
 const sessionSchema = Schema.Struct({
     ...credentialSchema.fields,
@@ -19,10 +20,11 @@ const sessionSchema = Schema.Struct({
     journal: Schema.Struct({
         id: Schema.NonEmptyString,
         started: Schema.Boolean,
-        pageId: Schema.optional(Schema.NonEmptyString)
+        pageId: Schema.optional(Schema.NonEmptyString),
+        title: Schema.optional(Schema.NonEmptyString)
     })
 })
-type Session = typeof sessionSchema.Type
+type Session = Omit<typeof sessionSchema.Type, 'journal'> & { journal: JournalSetup }
 function decodeTokens(value: unknown) {
     try {
         return Schema.decodeUnknownSync(credentialSchema)(value)
@@ -48,14 +50,15 @@ export class NotionConnection {
     private credentialGeneration = 0
     private refreshing?: Promise<string>
     private completing?: Promise<Destination>
+    private pending?: Session
     constructor(
         private readonly vault: CredentialStore,
         private readonly origin: string,
         private readonly fetcher: typeof fetch = fetch
     ) {}
 
-    private session(): Session | undefined {
-        const raw = this.vault.get('notion')
+    private session(key = 'notion'): Session | undefined {
+        const raw = this.vault.get(key)
         if (!raw.startsWith('{')) return undefined // Real installations may still have a static integration token.
         try {
             return Schema.decodeUnknownSync(sessionSchema)(JSON.parse(raw))
@@ -74,7 +77,7 @@ export class NotionConnection {
                     if (
                         target.origin !== origin ||
                         (target.protocol !== 'https:' &&
-                            !(target.protocol === 'http:' && target.hostname === '127.0.0.1'))
+                            !(target.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(target.hostname)))
                     )
                         throw new Error('Notion sign-in is unavailable. Check the connection configuration.')
                     const response = await this.fetcher(`${origin}${path}`, {
@@ -99,6 +102,7 @@ export class NotionConnection {
         )
     }
     async start(): Promise<{ url: string; interval: number }> {
+        if (this.completing) throw new Error('Notion is finishing setup. Try again in a moment.')
         this.cancel()
         const generation = this.generation
         if (!this.origin) throw new Error('Notion sign-in is unavailable. Check the connection configuration.')
@@ -175,7 +179,7 @@ export class NotionConnection {
         }).toString()
         return { url: url.toString(), interval: 1 }
     }
-    async poll(): Promise<{ pending: true; interval: number } | { connected: true }> {
+    async poll(): Promise<{ pending: true; interval: number } | { authorized: true }> {
         const current = this.attempt
         if (!current) throw new Error('Notion connection cancelled. Connect again.')
         if (current.error) throw new Error(current.error)
@@ -187,22 +191,40 @@ export class NotionConnection {
                 await this.request('/token', { ...current.callback, verifier: current.verifier })
             )
             if (this.generation !== generation) throw new Error('Notion connection cancelled.')
-            const previous = this.session()
-            this.credentialGeneration++
-            this.refreshing = undefined
-            this.save({
+            const previous = this.session('notion-setup')
+            this.pending = {
                 ...tokens,
                 origin: this.origin,
                 journal:
                     previous?.workspace_id === tokens.workspace_id
                         ? previous.journal
                         : { id: randomBytes(16).toString('hex'), started: false }
-            })
+            }
             clearTimeout(current.timer)
         })()
         await current.exchange
         if (generation !== this.generation) throw new Error('Notion connection cancelled.')
-        return { connected: true }
+        return { authorized: true }
+    }
+    pendingToken(): Promise<string> {
+        return this.pending
+            ? Promise.resolve(this.pending.access_token)
+            : Promise.reject(new Error('Connect Notion before choosing a page.'))
+    }
+    choose(): boolean {
+        if (this.completing) throw new Error('Notion is finishing setup. Try again in a moment.')
+        const session = this.session()
+        if (!session) return false
+        this.cancel()
+        const recovery = this.session('notion-setup')
+        this.pending = {
+            ...session,
+            journal:
+                recovery?.workspace_id === session.workspace_id
+                    ? recovery.journal
+                    : { id: randomBytes(16).toString('hex'), started: false }
+        }
+        return true
     }
     token(refresh = false, rejected?: string): Promise<string> {
         const raw = this.vault.get('notion')
@@ -229,29 +251,43 @@ export class NotionConnection {
         this.refreshing = request
         return request
     }
-    private journal(): JournalSetup | undefined {
-        return this.session()?.journal
-    }
     connected(): boolean {
         const raw = this.vault.get('notion')
         return !!raw && (raw.startsWith('{') ? !!this.session()?.journal.pageId : true)
     }
+    profileKey(): string {
+        return this.session()?.access_token ?? this.vault.get('notion')
+    }
     completeJournal(
-        prepare: (setup: JournalSetup, checkpoint: (pageId?: string) => void) => Promise<Destination>
+        prepare: (setup: JournalSetup, checkpoint: (pageId?: string) => void) => Promise<Destination>,
+        title?: string
     ): Promise<Destination> {
         if (this.completing) return this.completing
-        const generation = this.generation
-        const setup = this.journal()
-        if (!setup) return Promise.reject(new Error('Connect Notion before preparing your journal.'))
+        const generation = this.credentialGeneration
+        const session = this.pending
+        if (!session) return Promise.reject(new Error('Connect Notion before preparing your journal.'))
+        if (session.journal.started && title && session.journal.title !== title)
+            return Promise.reject(new Error('Finish creating the original page or choose an existing page.'))
+        if (title) session.journal = { ...session.journal, title }
+        const setup = session.journal
         const check = () => {
-            if (generation !== this.generation) throw new Error('Notion connection cancelled.')
+            if (generation !== this.credentialGeneration) throw new Error('Notion connection cancelled.')
         }
-        const request = prepare(setup, (pageId) => {
-            check()
-            this.checkpointJournal(pageId)
-        })
+        const request = Promise.resolve()
+            .then(() =>
+                prepare(setup, (pageId) => {
+                    check()
+                    session.journal = { ...session.journal, started: true, ...(pageId ? { pageId } : {}) }
+                    this.vault.set('notion-setup', JSON.stringify(session))
+                })
+            )
             .then((destination) => {
                 check()
+                this.save({ ...session, journal: { ...session.journal, pageId: destination.id } })
+                this.credentialGeneration++
+                this.refreshing = undefined
+                this.pending = undefined
+                this.vault.set('notion-setup', '')
                 return destination
             })
             .finally(() => {
@@ -260,14 +296,9 @@ export class NotionConnection {
         this.completing = request
         return request
     }
-    private checkpointJournal(pageId?: string): void {
-        const session = this.session()
-        if (!session) throw new Error('Connect Notion before preparing your journal.')
-        this.save({ ...session, journal: { ...session.journal, started: true, ...(pageId ? { pageId } : {}) } })
-    }
     cancel(): void {
         this.generation++
-        this.completing = undefined
+        if (!this.completing) this.pending = undefined
         if (this.attempt) {
             clearTimeout(this.attempt.timer)
             this.attempt.server.close()
@@ -279,5 +310,7 @@ export class NotionConnection {
         this.credentialGeneration++
         this.refreshing = undefined
         this.vault.set('notion', '')
+        this.vault.set('notion-setup', '')
+        this.pending = undefined
     }
 }

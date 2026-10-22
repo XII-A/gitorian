@@ -1,23 +1,37 @@
 import { fromNotion, toNotion } from '../shared/notion-format'
 import type { NotionBlock } from '../shared/notion-format'
-import type { Destination, Entry, ConnectionProfile, State } from '../shared/model'
+import type { Destination, Entry, ConnectionProfile, NotionPage, State } from '../shared/model'
 import type { Http } from './http'
 import { HttpError } from './http'
 import type { Store } from './store'
 import { downloadImage, UnsupportedImageError } from './images'
 import { imageIds, imageExtension } from '../shared/images'
 import type { JournalSetup } from './notion-connection'
+import sharp from 'sharp'
 
 interface Page {
     id: string
     url: string
     created_time: string
     properties: Record<string, { title?: { plain_text?: string; text?: { content: string } }[] }>
+    icon?: {
+        type: string
+        emoji?: string
+        external?: { url: string }
+        file?: { url: string }
+        custom_emoji?: { url: string }
+    } | null
+    parent?: { page_id?: string }
 }
 interface List<T> {
     results: T[]
     has_more: boolean
     next_cursor: string | null
+}
+const pageIcon = (page: Page) => {
+    if (page.icon?.type === 'emoji') return page.icon.emoji
+    const url = page.icon?.external?.url ?? page.icon?.file?.url ?? page.icon?.custom_emoji?.url
+    return url?.startsWith('https://') ? url : undefined
 }
 export class Notion {
     constructor(
@@ -47,18 +61,12 @@ export class Notion {
         const destination = (id: string): Destination => ({ kind: 'page', id, titleProperty: 'Name', dateProperty: '' })
         if (existing?.id) {
             if (existing.id === setup.pageId) return existing
-            try {
-                await this.request(
-                    `${existing.kind === 'page' ? 'pages' : 'data_sources'}/${encodeURIComponent(existing.id)}`
-                )
-                checkpoint(existing.id)
-                return existing
-            } catch (error) {
-                // Only a confirmed inaccessible destination warrants a fresh journal.
-                if (!(error instanceof HttpError) || ![403, 404].includes(error.status)) throw error
-            }
+            await this.verifyDestination(existing)
+            checkpoint(existing.id)
+            return existing
         }
-        if (setup.pageId) return destination(setup.pageId)
+        const title = setup.title ?? 'Weekly Journal'
+        if (setup.pageId) return { ...destination(setup.pageId), ...(setup.title ? { title } : {}) }
         const marker = `weekly-j setup: ${setup.id}`
         if (setup.started) {
             const matches: string[] = []
@@ -67,17 +75,17 @@ export class Notion {
                 const pages: List<Page> = await this.request('search', {
                     method: 'POST',
                     body: JSON.stringify({
-                        query: 'Weekly Journal',
+                        query: title,
                         filter: { value: 'page', property: 'object' },
                         ...(cursor ? { start_cursor: cursor } : {})
                     })
                 })
                 for (const page of pages.results) {
-                    const title = Object.values(page.properties)
+                    const pageTitle = Object.values(page.properties)
                         .find((property) => property.title)
                         ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
                         .join('')
-                    if (title !== 'Weekly Journal') continue
+                    if (pageTitle !== title) continue
                     const children = await this.request<{
                         results: {
                             type: string
@@ -98,19 +106,17 @@ export class Notion {
                 cursor = pages.has_more ? pages.next_cursor : null
             } while (cursor)
             if (matches.length !== 1)
-                throw new Error(
-                    'Journal setup could not be confirmed. Set an existing journal destination in Settings, save, then connect again.'
-                )
+                throw new Error('Could not confirm page creation. Retry or choose an existing page.')
             checkpoint(matches[0])
-            return destination(matches[0])
+            return { ...destination(matches[0]), ...(setup.title ? { title } : {}) }
         }
         checkpoint()
-        const page = await this.request<{ id: string }>('pages', {
+        const page = await this.request<{ id: string; url?: string }>('pages', {
             method: 'POST',
             headers: { 'Notion-Version': '2026-03-11' },
             body: JSON.stringify({
                 parent: { type: 'workspace', workspace: true },
-                properties: { title: { title: [{ text: { content: 'Weekly Journal' } }] } },
+                properties: { title: { title: [{ text: { content: title } }] } },
                 children: [
                     {
                         object: 'block',
@@ -123,7 +129,75 @@ export class Notion {
         if (typeof page.id !== 'string' || !page.id)
             throw new Error('Journal setup could not be confirmed. Connect again to check the saved journal.')
         checkpoint(page.id)
-        return destination(page.id)
+        return {
+            ...destination(page.id),
+            ...(setup.title ? { title, icon: '' } : {}),
+            ...(page.url ? { url: page.url } : {})
+        }
+    }
+    async accessiblePages(): Promise<NotionPage[]> {
+        const pages: Page[] = []
+        let cursor: string | null = null
+        do {
+            const result: List<Page> = await this.request('search', {
+                method: 'POST',
+                body: JSON.stringify({
+                    filter: { value: 'page', property: 'object' },
+                    page_size: 100,
+                    ...(cursor ? { start_cursor: cursor } : {})
+                })
+            })
+            pages.push(...result.results)
+            cursor = result.has_more ? result.next_cursor : null
+        } while (cursor)
+        const title = (page: Page) =>
+            Object.values(page.properties)
+                .find((property) => property.title)
+                ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
+                .join('')
+                .trim() || 'Untitled'
+        return [
+            ...new Map(
+                pages.map((page) => [
+                    page.id,
+                    {
+                        id: page.id,
+                        title: title(page),
+                        url: page.url,
+                        icon: pageIcon(page),
+                        parentId: page.parent?.page_id
+                    }
+                ])
+            ).values()
+        ]
+    }
+    async destinationIcon(icon?: string): Promise<string | undefined> {
+        if (!icon?.startsWith('https://')) return icon
+        try {
+            const image = await this.imageDownload(icon)
+            const bytes = await sharp(image.bytes).resize(32, 32, { fit: 'inside' }).webp({ quality: 80 }).toBuffer()
+            return `data:image/webp;base64,${bytes.toString('base64')}`
+        } catch {
+            return undefined
+        }
+    }
+    async describeDestination(destination: Destination): Promise<Destination> {
+        if (destination.kind !== 'page') return destination
+        const page = await this.request<Page>(`pages/${encodeURIComponent(destination.id)}`)
+        const title = Object.values(page.properties ?? {})
+            .find((property) => property.title)
+            ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
+            .join('')
+            .trim()
+        return {
+            ...destination,
+            title: title || destination.title || 'Untitled',
+            url: page.url ?? destination.url,
+            icon:
+                page.icon === undefined
+                    ? (destination.icon ?? '')
+                    : ((await this.destinationIcon(pageIcon(page))) ?? '')
+        }
     }
     async profile(): Promise<ConnectionProfile> {
         const user = await this.request<{ name?: string | null; avatar_url?: string | null }>('users/me')

@@ -34,7 +34,7 @@ export function createOAuthHandler(config: OAuthConfig, fetcher: typeof fetch = 
     const origin = new URL(config.origin).origin
     if (
         origin !== config.origin ||
-        (!origin.startsWith('https://') && !/^http:\/\/127\.0\.0\.1:\d+$/.test(origin)) ||
+        (!origin.startsWith('https://') && !/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) ||
         !config.clientId ||
         !config.clientSecret ||
         config.stateSecret.length < 32

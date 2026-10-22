@@ -94,10 +94,10 @@ it('returns safe provider failures, forwards denial only to the paired app, and 
     })
 })
 
-function desktop() {
+function desktop(serviceOrigin = origin) {
     const secrets = new Map<string, string>()
     const provider = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(response(credentials)))
-    const handler = createOAuthHandler(config, provider)
+    const handler = createOAuthHandler({ ...config, origin: serviceOrigin }, provider)
     const fetcher: typeof fetch = (input, init) => handler(new Request(input, init))
     const connection = new NotionConnection(
         {
@@ -106,7 +106,7 @@ function desktop() {
                 secrets.set(key, value)
             }
         },
-        origin,
+        serviceOrigin,
         fetcher
     )
     active.push(connection)
@@ -117,41 +117,53 @@ async function approve(app: ReturnType<typeof desktop>) {
     const started = await app.connection.start()
     const authorization = await app.handler(new Request(started.url))
     const state = new URL(authorization.headers.get('Location')!).searchParams.get('state')!
-    const callback = await app.handler(new Request(`${origin}/callback?state=${state}&code=approved`))
+    const serviceOrigin = new URL(started.url).origin
+    const callback = await app.handler(new Request(`${serviceOrigin}/callback?state=${state}&code=approved`))
     const local = await fetch(callback.headers.get('Location')!)
     expect(local.status).toBe(200)
     return started
 }
 
-it('uses a real loopback callback, persists a token pair, serializes refresh and removes credentials on disconnect', async () => {
-    const app = desktop()
-    await approve(app)
-    const result = await app.connection.poll()
-    expect('pending' in result).toBe(false)
-    expect(await app.connection.token()).toBe('access-one')
-    app.provider.mockImplementation(() =>
-        Promise.resolve(response({ ...credentials, access_token: 'access-two', refresh_token: 'refresh-two' }))
-    )
-    expect(await Promise.all([app.connection.token(true), app.connection.token(true)])).toEqual([
-        'access-two',
-        'access-two'
-    ])
-    expect(app.provider).toHaveBeenCalledTimes(2)
-    const restored = new NotionConnection(
-        {
-            get: (key) => app.secrets.get(key) ?? '',
-            set: (key, value) => {
-                app.secrets.set(key, value)
-            }
-        },
-        origin
-    )
-    active.push(restored)
-    expect(await restored.token()).toBe('access-two')
-    app.connection.disconnect()
-    expect(await app.connection.token()).toBe('')
-    expect(app.secrets.get('notion')).toBe('')
-})
+it.each([origin, 'http://localhost:8788'])(
+    'connects through %s, persists tokens, refreshes and disconnects',
+    async (serviceOrigin) => {
+        const app = desktop(serviceOrigin)
+        await approve(app)
+        const result = await app.connection.poll()
+        expect('pending' in result).toBe(false)
+        expect(app.connection.connected()).toBe(false)
+        expect(app.secrets.size).toBe(0)
+        expect(await app.connection.pendingToken()).toBe('access-one')
+        await app.connection.completeJournal((_setup, checkpoint) => {
+            checkpoint('selected-page')
+            return Promise.resolve({ kind: 'page', id: 'selected-page', titleProperty: 'Name', dateProperty: '' })
+        })
+        expect(app.connection.connected()).toBe(true)
+        expect(await app.connection.token()).toBe('access-one')
+        app.provider.mockImplementation(() =>
+            Promise.resolve(response({ ...credentials, access_token: 'access-two', refresh_token: 'refresh-two' }))
+        )
+        expect(await Promise.all([app.connection.token(true), app.connection.token(true)])).toEqual([
+            'access-two',
+            'access-two'
+        ])
+        expect(app.provider).toHaveBeenCalledTimes(2)
+        const restored = new NotionConnection(
+            {
+                get: (key) => app.secrets.get(key) ?? '',
+                set: (key, value) => {
+                    app.secrets.set(key, value)
+                }
+            },
+            serviceOrigin
+        )
+        active.push(restored)
+        expect(await restored.token()).toBe('access-two')
+        app.connection.disconnect()
+        expect(await app.connection.token()).toBe('')
+        expect(app.secrets.get('notion')).toBe('')
+    }
+)
 
 it('ignores an exchange completing after cancellation and closes the old callback listener', async () => {
     const app = desktop()
@@ -177,6 +189,10 @@ it('does not resurrect a disconnected account after a delayed refresh; installed
     expect(await app.connection.token()).toBe('installed-static-token')
     await approve(app)
     await app.connection.poll()
+    await app.connection.completeJournal((_setup, checkpoint) => {
+        checkpoint('selected-page')
+        return Promise.resolve({ kind: 'page', id: 'selected-page', titleProperty: 'Name', dateProperty: '' })
+    })
     let resolve!: (value: Response) => void
     app.provider.mockImplementation(
         () =>
@@ -196,4 +212,30 @@ it('does not resurrect a disconnected account after a delayed refresh; installed
     resolve(response({ ...credentials, access_token: 'late-token' }))
     await expect(afterClose).rejects.toThrow(/cancel|disconnect/i)
     expect(await app.connection.token()).toBe('')
+})
+
+it('discards unconfirmed authorization, but finishes an explicitly confirmed operation after Settings closes', async () => {
+    const app = desktop()
+    await approve(app)
+    await app.connection.poll()
+    app.connection.cancel()
+    expect(app.secrets.size).toBe(0)
+    await expect(app.connection.pendingToken()).rejects.toThrow(/connect/i)
+    await approve(app)
+    await app.connection.poll()
+    let finish!: () => void
+    const saving = app.connection.completeJournal(async (_setup, checkpoint) => {
+        checkpoint()
+        await new Promise<void>((done) => {
+            finish = done
+        })
+        checkpoint('confirmed-page')
+        return { kind: 'page', id: 'confirmed-page', titleProperty: 'Name', dateProperty: '' }
+    })
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    app.connection.cancel()
+    finish()
+    expect((await saving).id).toBe('confirmed-page')
+    expect(app.connection.connected()).toBe(true)
+    expect(app.secrets.get('notion-setup')).toBe('')
 })

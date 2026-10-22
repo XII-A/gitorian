@@ -17,17 +17,17 @@ const port = await new Promise((done) => {
         probe.close(() => done(port))
     })
 })
-const origin = `http://127.0.0.1:${port}`
+const origin = `http://localhost:${port}`
 const env = {
     ...process.env,
     NOTION_OAUTH_PORT: String(port),
-    NOTION_OAUTH_ORIGIN: origin,
     NOTION_CLIENT_ID: 'fixture-development-app',
     NOTION_CLIENT_SECRET: 'fixture-development-secret',
     NOTION_STATE_SECRET: 'fixture-development-state-secret-at-least-32-characters',
     WEEKLY_J_DEV_PROFILE: join(scratch, 'profile')
 }
 delete env.ELECTRON_RUN_AS_NODE
+delete env.NOTION_OAUTH_ORIGIN
 const child = spawn(process.execPath, ['tools/dev.mjs'], {
     env,
     windowsHide: true,

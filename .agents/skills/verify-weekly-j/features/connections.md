@@ -15,12 +15,20 @@ Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify connections`. The runn
 
 ## Notion entry points
 
-- Settings > Connections: Connect is immediately available with no integration-token field. GitHub and Notion compose the same `ConnectionSignIn` morph presentation.
-- Offline start > Retry: the local/hosted OAuth helper failure remains inside the morph. Retry starts a fresh loopback listener and browser attempt.
-- Browser failure: Approve in Notion, Copy connection link, Cancel and Open Notion remain available. No device code is invented. Cancel closes the listener and restores Connect.
-- Provider denial > Retry: the actual handler forwards a simulated denial through the real loopback callback. The morph reports Authorization declined and a fresh attempt succeeds.
-- Success: signed state and desktop verifier pass through the actual hosted handler; simulated provider token exchange is followed by one private parent-page creation. Require `notion-provisioned.json` to record its destination and `created: 1`. The encrypted credential/checkpoint survives renderer reload. Profile preparation precedes success; the identity reveals after the morph settles, without later name replacement.
-- Disconnect: Cancel preserves the connection. A simulated command failure exercises Retry; successful hold removes the credentials and reports Disconnected for 700?1800ms. Reconnect without closing Settings; require a new identity, the existing reachable destination and no second page creation. Repeat disconnect and require an active Connect button.
+Run `pnpm verify notion` for Notion-only work. It uses the same fixture transports and owning runner, but skips the entire GitHub interaction block and asserts zero GitHub API/OAuth requests. `pnpm verify connections` remains the combined entry point. For the narrow reduced-motion case set `WEEKLY_J_VERIFY_MOTION=stress` before `pnpm verify notion`.
+
+- Connect, offline Retry, browser failure, Cancel and provider denial still use the real loopback listener and hosted handler. No token field or fabricated device code is shown.
+- Authorization alone is incomplete: no saved credentials, destination or page creation before Confirm. The leading picker must meet the morph surface without a gap and leave Cancel/Confirm visible. There is no Refresh button.
+- Page discovery follows two API cursors. Fixtures include a three-level hierarchy, duplicate names and a missing parent. Expand Personal through its chevron without changing the selection. Clicking Personal's name selects it and closes the picker without confirming the connection.
+- Searching Decisions exposes its named ancestors. Clearing search restores the menu's prior collapsed state. Visible row text and tooltips must never contain fixture page IDs.
+- Require the rounded picker/name field and circular revert button to share the Confirm button?s 4px surface inset.
+- Choose Create a new page and close Settings before confirming. Reopen and require Connect, no credentials and zero created pages. A fresh authorization must work.
+- Keyboard-select an existing parent page. A simulated lost-access response shows inline Retry and never creates a fallback page. Retry saves the existing destination. The connected row shows its icon/name, pencil and Disconnect; the app profile name and Open journal row are absent. Require equal vertical centers for destination identity and Disconnect.
+- Pencil editing preselects the saved tree row and expands its ancestors. Cancel retains the saved destination. Edit again, choose Create a new page, type Team journal and Confirm with one click. Closing during the simulated creation delay must still finish exactly one creation. Require notion-provisioned.json to record the named destination and created: 1.
+- Renderer reload with transports offline restores the saved destination row within 1200ms and makes no profile/avatar requests. Page icon metadata is persisted with settings. New image icons are downloaded and converted to bounded WebP in the main process; failed/expired images use a page glyph.
+- Notion disconnect Cancel preserves the connection. A simulated failure exercises Retry; the successful held confirmation removes credentials. Reconnect, explicitly select the existing journal, and require no duplicate creation. Repeat disconnect and require active Connect.
+
+Acceptance evidence for the Notion-only entry point is run.json, doctor.json, actions.jsonl, http-requests.json, persisted-settings.json, notion-page-tree.png, notion-page-tree-search.png, notion-edit-selected.png, notion-07-connected.png, notion-provisioned.json and captures.json. Require exit zero, passed: true, cleanup.removed: true and evidenceRetained: true. Restoring an uncommitted run requires the retained NotionPagePicker.tsx and notion-page-tree.ts under src/renderer in addition to source.patch. The retained notion-smoke.mjs is a copy of tools/connections-smoke.mjs and should be restored to that original path.
 
 ## Evidence and scope
 
@@ -34,7 +42,7 @@ For reproduction, apply `source.patch`, copy the retained `connections-smoke.mjs
 
 ## Connection handoff motion
 
-The same owning journey records requestAnimationFrame measurements in `github-identity-motion.json` and `notion-identity-motion.json`. Require at least three visible and settled frames, no more than 0.5px horizontal/width change during the reveal, and no more than 0.5px vertical drift once opacity reaches 0.99. The intended normal entrance moves vertically by 4px; reduced motion must contain no translation. The harness simulates a 1600ms avatar response at Node's HTTPS request boundary with fixture DNS answers and waits for image completion before finishing the trace.
+The combined GitHub journey records requestAnimationFrame measurements in `github-identity-motion.json`. Notion uses the same reveal mechanism for its page identity, with native screenshots and row-bound assertions in its isolated journey. Require at least three visible and settled frames, no more than 0.5px horizontal/width change during the reveal, and no more than 0.5px vertical drift once opacity reaches 0.99. The intended normal entrance moves vertically by 4px; reduced motion must contain no translation. The harness simulates a 1600ms avatar response at Node's HTTPS request boundary with fixture DNS answers and waits for image completion before finishing the trace.
 
 Run the normal desktop journey, then the distinct narrow/reduced-motion case with long provider names:
 
@@ -43,7 +51,7 @@ $env:WEEKLY_J_VERIFY_MOTION = 'stress'
 try { pnpm verify connections } finally { Remove-Item Env:WEEKLY_J_VERIFY_MOTION }
 ```
 
-Require both runs to exit zero with cleanup confirmed. The stress fixture uses a long GitHub login and Notion integration name and retains its own independent SQLite expectation. Inspect native section screenshots as well as traces: actions must remain fully readable and within the section, with names truncated rather than actions clipped. Both success and failure/recovery paths still run. The DNS/HTTPS avatar transport fixture is simulated; it is not evidence of live provider image availability.
+Require both runs to exit zero with cleanup confirmed. The stress fixture uses a long GitHub login and Notion page name and retains its own independent SQLite expectation. Inspect native section screenshots as well as traces: actions must remain fully readable and within the section, with names truncated rather than actions clipped. Both success and failure/recovery paths still run. The DNS/HTTPS avatar transport fixture is simulated; it is not evidence of live provider image availability.
 
 When reproducing a dirty revision, also copy the retained `ConnectionIdentity.tsx` into `src/renderer/ConnectionIdentity.tsx` before building, because untracked new files do not appear in Git's tracked source patch.
 
@@ -61,7 +69,7 @@ The GitHub heading uses the circular Primer mark as a theme-colored mask; the No
 
 ## Persistent profile cache
 
-Cold profiles use the real main-process downloader, image validation, Sharp thumbnail conversion, cache file and renderer IPC; only DNS/HTTPS responses are fixture transports. Both services have an avatar. The existing geometry/reveal journeys wait for decoded data-URL images, not an empty image list.
+Cold profiles use the real main-process downloader, image validation, Sharp thumbnail conversion, cache file and renderer IPC; only DNS/HTTPS responses are fixture transports. GitHub has an avatar; Notion displays destination icons rather than an OAuth app avatar. The existing geometry/reveal journeys wait for decoded data-URL images, not an empty image list.
 
 `warmReload(service)` marks the old document, reloads it, waits for a new document, then reopens Settings with provider and image transports offline. Require the decoded cached WebP within 1200ms, zero extra provider/profile/image requests, and a native `*-cached-offline.png`. Review `github-warm-cache.json` and `notion-warm-cache.json`. The fixture's cold avatar response takes 1600ms; the warm check must not wait for it.
 

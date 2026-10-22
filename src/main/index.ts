@@ -235,9 +235,11 @@ void app.whenReady().then(() => {
     )
     const connection = notionConnection
     const notion = new Notion(http, (refresh, rejected) => connection.token(refresh, rejected), store)
+    const pendingNotion = new Notion(http, () => connection.pendingToken())
+    let availableNotionPages: Awaited<ReturnType<Notion['accessiblePages']>> = []
     const profiles = new ConnectionProfileCache(
         join(app.getPath('userData'), 'connection-profiles.json'),
-        (service) => vault.get(service),
+        (service) => (service === 'notion' ? connection.profileKey() : vault.get(service)),
         (service) =>
             service === 'notion'
                 ? notion.profile()
@@ -345,6 +347,7 @@ void app.whenReady().then(() => {
                 break
             }
             case 'notionStart': {
+                availableNotionPages = []
                 const notionAuthorization = await connection.start()
                 try {
                     await openExternal(notionAuthorization.url)
@@ -358,23 +361,79 @@ void app.whenReady().then(() => {
             }
             case 'notionCancel':
                 connection.cancel()
+                availableNotionPages = []
                 break
             case 'notionPoll': {
                 const result = await connection.poll()
                 if ('pending' in result) return service.reply({ notionPending: { interval: result.interval } })
-                const destination = await connection.completeJournal((setup, checkpoint) =>
-                    notion.prepareJournal(setup, checkpoint, store.state.settings.destination)
+                return service.reply()
+            }
+            case 'notionPages': {
+                availableNotionPages = await pendingNotion.accessiblePages()
+                return service.reply({ notionPages: availableNotionPages })
+            }
+            case 'notionChoose': {
+                availableNotionPages = []
+                if (connection.choose()) return service.reply()
+                const notionAuthorization = await connection.start()
+                try {
+                    await openExternal(notionAuthorization.url)
+                } catch {
+                    /* The morph retains the browser link. */
+                }
+                return service.reply({ notionAuthorization })
+            }
+            case 'notionConfirm': {
+                const previousIdentity = connection.profileKey()
+                const selection = command.selection
+                const page =
+                    selection.kind === 'existing'
+                        ? availableNotionPages.find((page) => page.id === selection.pageId)
+                        : undefined
+                if (selection.kind === 'existing' && !page) throw new Error('Refresh pages and choose a destination.')
+                const destination = await connection.completeJournal(
+                    async (setup, checkpoint) =>
+                        pendingNotion.prepareJournal(
+                            setup,
+                            checkpoint,
+                            page
+                                ? {
+                                      kind: 'page',
+                                      id: page.id,
+                                      title: page.title,
+                                      icon: (await pendingNotion.destinationIcon(page.icon)) ?? '',
+                                      url: page.url,
+                                      titleProperty: 'Name',
+                                      dateProperty: ''
+                                  }
+                                : undefined
+                        ),
+                    selection.kind === 'new' ? selection.title : undefined
                 )
                 store.state.settings.destination = destination
                 store.persist()
-                profiles.clear('notion')
-                void profiles.refresh('notion')
+                if (previousIdentity !== connection.profileKey()) profiles.clear('notion')
                 connection.cancel()
                 break
             }
-            case 'notionTestDestination':
-                await notion.verifyDestination(command.destination)
-                return service.reply({ message: 'Destination is reachable.' })
+            case 'notionDestination': {
+                const saved = store.state.settings.destination
+                if (!connection.connected() || !saved) break
+                try {
+                    const destination = await notion.describeDestination(saved)
+                    if (
+                        store.state.settings.destination?.id === saved.id &&
+                        connection.connected() &&
+                        JSON.stringify(saved) !== JSON.stringify(destination)
+                    ) {
+                        store.state.settings.destination = destination
+                        store.persist()
+                    }
+                } catch {
+                    /* Metadata failure never blocks an existing connection. */
+                }
+                break
+            }
             case 'connectionProfiles':
                 return service.reply({ connectionProfiles: profiles.snapshot() })
             case 'refreshConnectionProfile':

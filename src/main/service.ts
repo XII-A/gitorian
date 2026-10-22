@@ -938,7 +938,7 @@ export class JournalService {
                 const order = command.settings.layout.order
                 if (order.length !== 3 || new Set(order).size !== 3)
                     throw new Error('Layout must contain each pane once')
-                state.settings = command.settings
+                state.settings = { ...command.settings, destination: state.settings.destination }
                 break
             }
             case 'publish':

@@ -35,6 +35,9 @@ export function ConnectionSignIn({
     disabled,
     connected,
     identity,
+    selection,
+    errorCancelLabel = 'Cancel',
+    pendingLabel,
     onStart,
     onCancel,
     onOpen,
@@ -49,6 +52,9 @@ export function ConnectionSignIn({
     disabled: boolean
     connected: boolean
     identity?: ReactNode
+    selection?: ReactNode
+    errorCancelLabel?: string
+    pendingLabel?: string
     onStart: () => void | Promise<void>
     onCancel: () => void
     onOpen: () => void | Promise<void>
@@ -59,12 +65,14 @@ export function ConnectionSignIn({
         ? 'device'
         : feedback
           ? feedback.kind
-          : showDisconnect
-            ? 'connected'
-            : pending
-              ? 'starting'
-              : 'idle'
-    const expanded = phase === 'device' || phase === 'error' || phase === 'expired'
+          : selection
+            ? 'selection'
+            : showDisconnect
+              ? 'connected'
+              : pending
+                ? 'starting'
+                : 'idle'
+    const expanded = phase === 'device' || phase === 'selection' || phase === 'error' || phase === 'expired'
     const control = useRef<HTMLDivElement>(null)
     const previousPhase = useRef(phase)
     const [identityReady, setIdentityReady] = useState(connected)
@@ -74,7 +82,7 @@ export function ConnectionSignIn({
     const state: ConfirmMorphState =
         phase === 'connected'
             ? disconnectState
-            : phase === 'device'
+            : phase === 'device' || phase === 'selection'
               ? 'confirming'
               : phase === 'starting' || phase === 'authorizing'
                 ? 'pending'
@@ -93,13 +101,15 @@ export function ConnectionSignIn({
         // ConfirmMorph mounts the arriving face after AnimatePresence resolves its child list.
         const frame = setTimeout(() => {
             const selector =
-                phase === 'device'
-                    ? '[data-face="confirming"]:not([role="group"]):not([inert]) [data-copy-state]'
-                    : phase === 'error' || phase === 'expired'
-                      ? '[data-face="error"]:not([role="group"]):not([inert]) [data-autofocus]'
-                      : changed && (phase === 'idle' || phase === 'connected')
-                        ? '[data-face="idle"]:not([role="group"]):not([inert]) button'
-                        : undefined
+                phase === 'selection'
+                    ? '[data-face="confirming"]:not([inert]) [role="combobox"]'
+                    : phase === 'device'
+                      ? '[data-face="confirming"]:not([role="group"]):not([inert]) [data-copy-state]'
+                      : phase === 'error' || phase === 'expired'
+                        ? '[data-face="error"]:not([role="group"]):not([inert]) [data-autofocus]'
+                        : changed && (phase === 'idle' || phase === 'connected')
+                          ? '[data-face="idle"]:not([role="group"]):not([inert]) button'
+                          : undefined
             if (selector) control.current?.querySelector<HTMLButtonElement>(selector)?.focus({ preventScroll: true })
         }, 0)
         return () => clearTimeout(frame)
@@ -129,16 +139,18 @@ export function ConnectionSignIn({
                     confirmTimeout={0}
                     resultTimeout={0}
                     cancelOnOutsidePress={phase === 'connected'}
-                    pendingLabel={phase === 'connected' ? 'Disconnecting' : 'Connecting'}
+                    pendingLabel={phase === 'connected' ? 'Disconnecting' : (pendingLabel ?? 'Connecting')}
                     doneLabel={phase === 'connected' ? 'Disconnected' : 'Connected'}
                     errorLabel={feedback && 'message' in feedback ? feedback.message : 'Could not disconnect'}
-                    errorCancelLabel="Cancel"
+                    errorCancelLabel={errorCancelLabel}
                     disabled={disabled || openingBrowser}
                     onActivate={phase === 'connected' ? undefined : () => void onStart()}
                     onConfirm={onDisconnect}
                     onCancel={cancel}
                     confirmContent={
-                        device ? (
+                        selection && phase === 'selection' ? (
+                            selection
+                        ) : device ? (
                             <div className="github-signin-code-row">
                                 <span className="github-signin-code-group">
                                     {device.code ? (

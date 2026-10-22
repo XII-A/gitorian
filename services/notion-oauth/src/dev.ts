@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import { createOAuthHandler, oauthConfig } from './handler'
 
 const port = Number(process.env.NOTION_OAUTH_PORT ?? 8788)
-const origin = process.env.NOTION_OAUTH_ORIGIN ?? `http://127.0.0.1:${port}`
+const origin = process.env.NOTION_OAUTH_ORIGIN ?? `http://localhost:${port}`
 let handler: ReturnType<typeof createOAuthHandler> | undefined
 try {
     handler = createOAuthHandler(oauthConfig({ ...process.env, NOTION_OAUTH_ORIGIN: origin }))

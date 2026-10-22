@@ -14,7 +14,6 @@ export function hasUnsavedSettings(settings: State['settings'], repositories: Re
         timezone: preferences.timezone,
         refreshMinutes: preferences.refreshMinutes,
         template: preferences.template,
-        destination: preferences.destination,
         repositories: repos
             .map(({ id, base, remote, trackingStart, emails, removed }) => ({
                 id,

@@ -4,6 +4,86 @@ import { Http } from '../src/main/http'
 import type { Destination } from '../src/shared/model'
 import { journal } from './fixtures'
 
+it('describes a saved page by its title and emoji and never stores an expired remote icon URL', async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+            JSON.stringify({
+                id: 'saved',
+                url: 'https://www.notion.so/saved',
+                icon: { type: 'emoji', emoji: '📓' },
+                properties: { title: { title: [{ plain_text: 'Selected journal' }] } }
+            })
+        )
+    )
+    const notion = new Notion(
+        new Http(transport),
+        () => 'token',
+        undefined,
+        () => Promise.reject(new Error('Expired icon'))
+    )
+    const destination: Destination = { kind: 'page', id: 'saved', titleProperty: 'Name', dateProperty: '' }
+    expect(await notion.describeDestination(destination)).toEqual({
+        ...destination,
+        title: 'Selected journal',
+        icon: '📓',
+        url: 'https://www.notion.so/saved'
+    })
+    expect(await notion.destinationIcon('https://example.com/expired.png')).toBeUndefined()
+})
+
+it('lists every accessible page by name across cursors, preserving duplicate titles and parent context', async () => {
+    const page = (id: string, parent?: string) => ({
+        id,
+        url: `https://www.notion.so/${id}`,
+        icon: { type: 'emoji', emoji: '📓' },
+        parent: parent ? { type: 'page_id', page_id: parent } : { type: 'workspace', workspace: true },
+        properties: { title: { title: [{ plain_text: 'Journal' }] } }
+    })
+    const transport = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    results: [page('parent')],
+                    has_more: true,
+                    next_cursor: 'next-page'
+                })
+            )
+        )
+        .mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    results: [page('child', 'parent')],
+                    has_more: false,
+                    next_cursor: null
+                })
+            )
+        )
+    const notion = new Notion(new Http(transport), () => 'pending-token')
+    expect(await notion.accessiblePages()).toEqual([
+        { id: 'parent', title: 'Journal', url: 'https://www.notion.so/parent', icon: '📓', parentId: undefined },
+        { id: 'child', title: 'Journal', url: 'https://www.notion.so/child', icon: '📓', parentId: 'parent' }
+    ])
+    expect(JSON.parse(transport.mock.calls[1][1]!.body as string).start_cursor).toBe('next-page')
+    expect(transport.mock.calls.every(([, init]) => JSON.parse(init!.body as string).filter.value === 'page')).toBe(
+        true
+    )
+})
+
+it('never creates a page when a selected existing destination becomes inaccessible', async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 404 }))
+    const notion = new Notion(new Http(transport), () => 'pending-token')
+    await expect(
+        notion.prepareJournal({ id: 'setup', started: false }, vi.fn(), {
+            kind: 'page',
+            id: 'removed-page',
+            titleProperty: 'Name',
+            dateProperty: ''
+        })
+    ).rejects.toThrow()
+    expect(transport.mock.calls.map(([, init]) => init?.method ?? 'GET')).toEqual(['GET'])
+})
+
 it('checkpoints private journal creation before writing, then reuses the confirmed destination', async () => {
     const events: string[] = []
     const transport = vi.fn<typeof fetch>((url, init) => {

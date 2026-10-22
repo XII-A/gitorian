@@ -15,6 +15,13 @@ export interface ComboboxOption {
     disabled?: boolean
     keywords?: string[]
 }
+export interface ComboboxTreeContext {
+    id: string
+    query: string
+    selected: string
+    select: (value: string) => void
+    close: () => void
+}
 
 export interface ComboboxProps extends Omit<
     InputHTMLAttributes<HTMLInputElement>,
@@ -29,6 +36,10 @@ export interface ComboboxProps extends Omit<
     placeholder?: string
     emptyMessage?: string
     className?: string
+    /** Compact, borderless field for a compound control such as a connection morph. */
+    variant?: 'surface' | 'inline'
+    hideLabel?: boolean
+    renderTree?: (context: ComboboxTreeContext) => ReactNode
 }
 
 /** Follows the listbox height with a critically damped spring, so filtering never snaps the menu. */
@@ -66,6 +77,9 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         emptyMessage = 'No matches found',
         id,
         className,
+        variant = 'surface',
+        hideLabel = false,
+        renderTree,
         disabled,
         onFocus,
         ...inputProps
@@ -78,11 +92,13 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     const hintId = description ? `${controlId}-description` : undefined
     const rootRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
+    const restoringFocus = useRef(false)
     const optionRefs = useRef<Record<string, HTMLDivElement | null>>({})
     const optionsViewport = useRef<HTMLDivElement>(null)
     const reduceMotion = useReducedMotion()
     const [uncontrolledValue, setUncontrolledValue] = useState(defaultValue)
     const [open, setOpen] = useState(false)
+    const [keyboardMenu, setKeyboardMenu] = useState(true)
     const [query, setQuery] = useState('')
     const [activeIndex, setActiveIndex] = useState(-1)
     const selectedValue = controlledValue ?? uncontrolledValue
@@ -97,7 +113,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         if (settledValue.current === selectedValue) return
         settledValue.current = selectedValue
         const input = inputRef.current
-        if (!input || reduceMotion || (selectedValue && open)) return
+        if (!input || reduceMotion || keyboardMenu || variant === 'inline' || (selectedValue && open)) return
         const controls = selectedValue
             ? animate(
                   input,
@@ -110,7 +126,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                   { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] }
               )
         return () => controls.complete()
-    }, [selectedValue, reduceMotion, open])
+    }, [selectedValue, reduceMotion, open, keyboardMenu, variant])
 
     const filteredOptions = useMemo(() => {
         const normalizedQuery = query.trim().toLocaleLowerCase()
@@ -147,7 +163,9 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         onValueChange?.(option.value)
         setQuery('')
         setOpen(false)
+        restoringFocus.current = true
         inputRef.current?.focus()
+        restoringFocus.current = false
     }
 
     const clear = (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -165,11 +183,29 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         setQuery('')
         setActiveIndex(-1)
     }
+    const closeTree = () => {
+        setOpen(false)
+        setQuery('')
+        restoringFocus.current = true
+        inputRef.current?.focus()
+        restoringFocus.current = false
+    }
 
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
         if (disabled) return
+        setKeyboardMenu(true)
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault()
+            if (renderTree) {
+                if (!open) openMenu()
+                requestAnimationFrame(() =>
+                    document
+                        .getElementById(listboxId)
+                        ?.querySelector<HTMLElement>('[role="treeitem"][tabindex="0"]')
+                        ?.focus()
+                )
+                return
+            }
             if (!open) {
                 openMenu()
                 return
@@ -200,6 +236,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
 
     const inputValue = open ? query : (selectedOption?.label ?? '')
     const activeOption = activeIndex >= 0 ? filteredOptions[activeIndex] : undefined
+    const instantMenu = keyboardMenu || !!reduceMotion
 
     return (
         <Popover
@@ -210,11 +247,14 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             }}
         >
             <div ref={rootRef} className={styles.field}>
-                <label htmlFor={controlId}>{label}</label>
+                <label htmlFor={controlId} className={hideLabel ? styles.srOnly : undefined}>
+                    {label}
+                </label>
                 <PopoverAnchor asChild>
                     <div
                         className={[
                             styles.control,
+                            variant === 'inline' ? styles.inline : '',
                             open ? styles.open : '',
                             disabled ? styles.disabled : '',
                             className ?? ''
@@ -237,14 +277,16 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                             aria-expanded={open}
                             aria-controls={open ? listboxId : undefined}
                             aria-autocomplete="list"
+                            aria-haspopup={renderTree ? 'tree' : 'listbox'}
                             aria-activedescendant={
                                 open && activeOption ? `${controlId}-option-${activeOption.value}` : undefined
                             }
                             onFocus={(event) => {
                                 onFocus?.(event)
-                                openMenu()
+                                if (!restoringFocus.current) openMenu()
                             }}
                             onClick={openMenu}
+                            onPointerDown={() => setKeyboardMenu(false)}
                             onChange={(event) => {
                                 setQuery(event.target.value)
                                 setOpen(true)
@@ -253,22 +295,17 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                             onKeyDown={handleKeyDown}
                         />
                         <AnimatePresence initial={false}>
-                            {selectedOption && !disabled && (
+                            {selectedOption && !disabled && !renderTree && (
                                 <motion.button
                                     type="button"
                                     className={styles.clear}
                                     aria-label="Clear selection"
                                     onMouseDown={(event) => event.preventDefault()}
                                     onClick={clear}
-                                    initial={
-                                        reduceMotion
-                                            ? { opacity: 0 }
-                                            : { opacity: 0, scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }
-                                    }
+                                    initial={reduceMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.95)' }}
                                     animate={{
                                         opacity: 1,
-                                        scale: 1,
-                                        filter: 'blur(0px)',
+                                        transform: 'scale(1)',
                                         transition: reduceMotion
                                             ? { duration: motionTokens.duration.instant }
                                             : {
@@ -278,16 +315,14 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                                     }}
                                     exit={{
                                         opacity: 0,
-                                        ...(reduceMotion
-                                            ? {}
-                                            : { scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }),
+                                        ...(reduceMotion ? {} : { transform: 'scale(0.95)' }),
                                         transition: {
                                             duration: motionTokens.duration.instant,
                                             ease: [...motionTokens.ease.standard]
                                         }
                                     }}
                                     whileTap={{
-                                        scale: reduceMotion ? 1 : 0.96,
+                                        transform: reduceMotion ? 'scale(1)' : 'scale(0.97)',
                                         transition: {
                                             duration: motionTokens.duration.instant,
                                             ease: [...motionTokens.ease.standard]
@@ -321,104 +356,115 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                             }}
                         >
                             <motion.div
-                                className={styles.popover}
-                                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.97 }}
+                                className={[styles.popover, variant === 'inline' ? styles.inlinePopover : '']
+                                    .filter(Boolean)
+                                    .join(' ')}
+                                initial={instantMenu ? false : { opacity: 0, transform: 'scale(0.97)' }}
                                 animate={{
                                     opacity: 1,
-                                    y: 0,
-                                    scale: 1,
-                                    transition: reduceMotion
-                                        ? { duration: motionTokens.duration.instant }
-                                        : {
-                                              ...motionTokens.spring.snappy,
-                                              opacity: {
-                                                  duration: motionTokens.duration.fast,
-                                                  ease: [...motionTokens.ease.enter]
-                                              }
-                                          }
+                                    transform: 'scale(1)',
+                                    transition: {
+                                        duration: instantMenu ? 0 : motionTokens.duration.fast,
+                                        ease: [...motionTokens.ease.enter]
+                                    }
                                 }}
                                 exit={{
                                     opacity: 0,
-                                    ...(reduceMotion ? {} : { y: -4, scale: 0.98 }),
+                                    ...(instantMenu ? {} : { transform: 'scale(0.97)' }),
                                     transition: {
-                                        duration: motionTokens.duration.instant,
+                                        duration: instantMenu ? 0 : motionTokens.duration.instant,
                                         ease: [...motionTokens.ease.standard]
                                     }
                                 }}
                                 role="presentation"
                             >
-                                <AutoHeight reduceMotion={reduceMotion}>
+                                <AutoHeight reduceMotion={instantMenu}>
                                     <ScrollArea
                                         maxHeight="min(300px, 40dvh, calc(var(--radix-popover-content-available-height) - 12px))"
                                         viewportRef={optionsViewport}
                                         fade={8}
                                         label={`${label} options`}
                                     >
-                                        <div
-                                            id={listboxId}
-                                            className={styles.listbox}
-                                            role="listbox"
-                                            aria-label={`${label} options`}
-                                        >
-                                            {filteredOptions.length ? (
-                                                filteredOptions.map((option, index) => (
-                                                    <div
-                                                        key={option.value}
-                                                        ref={(element) => {
-                                                            optionRefs.current[option.value] = element
-                                                        }}
-                                                        id={`${controlId}-option-${option.value}`}
-                                                        className={styles.option}
-                                                        data-active={index === activeIndex ? 'true' : undefined}
-                                                        data-disabled={option.disabled ? 'true' : undefined}
-                                                        role="option"
-                                                        tabIndex={-1}
-                                                        aria-selected={option.value === selectedValue}
-                                                        aria-disabled={option.disabled || undefined}
-                                                        onMouseDown={(event) => event.preventDefault()}
-                                                        onMouseEnter={() => !option.disabled && setActiveIndex(index)}
-                                                        onClick={() => choose(option)}
-                                                        onKeyDown={(event) => {
-                                                            if (event.key === 'Enter' || event.key === ' ') {
-                                                                event.preventDefault()
-                                                                choose(option)
+                                        {renderTree ? (
+                                            renderTree({
+                                                id: listboxId,
+                                                query,
+                                                selected: selectedValue,
+                                                close: closeTree,
+                                                select: (value) => {
+                                                    const option = options.find((option) => option.value === value)
+                                                    if (option) choose(option)
+                                                }
+                                            })
+                                        ) : (
+                                            <div
+                                                id={listboxId}
+                                                className={styles.listbox}
+                                                role="listbox"
+                                                aria-label={`${label} options`}
+                                            >
+                                                {filteredOptions.length ? (
+                                                    filteredOptions.map((option, index) => (
+                                                        <div
+                                                            key={option.value}
+                                                            ref={(element) => {
+                                                                optionRefs.current[option.value] = element
+                                                            }}
+                                                            id={`${controlId}-option-${option.value}`}
+                                                            className={styles.option}
+                                                            data-active={index === activeIndex ? 'true' : undefined}
+                                                            data-disabled={option.disabled ? 'true' : undefined}
+                                                            role="option"
+                                                            title={option.label}
+                                                            tabIndex={-1}
+                                                            aria-selected={option.value === selectedValue}
+                                                            aria-disabled={option.disabled || undefined}
+                                                            onMouseDown={(event) => event.preventDefault()}
+                                                            onMouseEnter={() =>
+                                                                !option.disabled && setActiveIndex(index)
                                                             }
+                                                            onClick={() => choose(option)}
+                                                            onKeyDown={(event) => {
+                                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                                    event.preventDefault()
+                                                                    choose(option)
+                                                                }
+                                                            }}
+                                                        >
+                                                            <span>{option.label}</span>
+                                                            {option.value === selectedValue && (
+                                                                <Check
+                                                                    className={styles.check}
+                                                                    size={16}
+                                                                    strokeWidth={1.75}
+                                                                    aria-hidden="true"
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <motion.div
+                                                        className={styles.empty}
+                                                        role="status"
+                                                        initial={
+                                                            instantMenu
+                                                                ? false
+                                                                : {
+                                                                      opacity: 0,
+                                                                      transform: 'translateY(4px)'
+                                                                  }
+                                                        }
+                                                        animate={{ opacity: 1, transform: 'translateY(0)' }}
+                                                        transition={{
+                                                            duration: motionTokens.duration.standard,
+                                                            ease: [...motionTokens.ease.enter]
                                                         }}
                                                     >
-                                                        <span>{option.label}</span>
-                                                        {option.value === selectedValue && (
-                                                            <Check
-                                                                className={styles.check}
-                                                                size={16}
-                                                                strokeWidth={1.75}
-                                                                aria-hidden="true"
-                                                            />
-                                                        )}
-                                                    </div>
-                                                ))
-                                            ) : (
-                                                <motion.div
-                                                    className={styles.empty}
-                                                    role="status"
-                                                    initial={
-                                                        reduceMotion
-                                                            ? false
-                                                            : {
-                                                                  opacity: 0,
-                                                                  y: 4,
-                                                                  filter: `blur(${motionTokens.blur.soft}px)`
-                                                              }
-                                                    }
-                                                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                                                    transition={{
-                                                        duration: motionTokens.duration.standard,
-                                                        ease: [...motionTokens.ease.enter]
-                                                    }}
-                                                >
-                                                    {emptyMessage}
-                                                </motion.div>
-                                            )}
-                                        </div>
+                                                        {emptyMessage}
+                                                    </motion.div>
+                                                )}
+                                            </div>
+                                        )}
                                     </ScrollArea>
                                 </AutoHeight>
                             </motion.div>

@@ -9,7 +9,7 @@ import { journal, workspace } from './fixtures'
 import { stateSchema, initialState, type Repository, type RepositoryImportProgress } from '../src/shared/model'
 import { hasUnsavedSettings } from '../src/renderer/settings-model'
 
-it('warns for unsaved preferences, template, destination, repository edits', () => {
+it('warns for unsaved preferences, template and repository edits while destination changes apply independently', () => {
     const saved = initialState()
     const repository: Repository = {
         id: 'repo',
@@ -36,10 +36,15 @@ it('warns for unsaved preferences, template, destination, repository edits', () 
                 type: 'doc',
                 content: [{ type: 'paragraph', content: [{ type: 'text', text: 'New template' }] }]
             }
-        },
-        { destination: { kind: 'page' as const, id: 'new-page', titleProperty: 'Name', dateProperty: '' } }
+        }
     ])
         expect(dirty({ ...saved.settings, ...patch })).toBe(true)
+    expect(
+        dirty({
+            ...saved.settings,
+            destination: { kind: 'page', id: 'confirmed-page', titleProperty: 'Name', dateProperty: '' }
+        })
+    ).toBe(false)
     for (const patch of [
         { base: 'develop' },
         { remote: 'https://github.com/example/project' },
@@ -174,7 +179,15 @@ it('uses a saved Arc template for new drafts without changing existing writing',
                 { type: 'paragraph', content: [{ type: 'text', text: 'Keep one lesson.', marks: [{ type: 'bold' }] }] }
             ]
         }
-        await app.service.handle({ type: 'settings', settings: { ...app.store.state.settings, template } })
+        const openSettings = structuredClone(app.store.state.settings)
+        app.store.state.settings.destination = {
+            kind: 'page',
+            id: 'newly-confirmed-page',
+            titleProperty: 'Name',
+            dateProperty: ''
+        }
+        await app.service.handle({ type: 'settings', settings: { ...openSettings, template } })
+        expect(app.store.state.settings.destination.id).toBe('newly-confirmed-page')
         await app.service.handle({ type: 'newDraft', week: '2026-10-12' })
         expect(app.store.state.drafts[1].body).toEqual(template)
         expect(app.store.state.drafts[0].body).toEqual(original)

@@ -5,7 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { mkdirSync } from 'node:fs'
 
 const require = createRequire(import.meta.url)
-const origin = `http://127.0.0.1:${process.env.NOTION_OAUTH_PORT ?? 8788}`
+const origin = `http://localhost:${process.env.NOTION_OAUTH_PORT ?? 8788}`
 const profile = process.env.WEEKLY_J_DEV_PROFILE ?? join(process.cwd(), '.ai-docs', 'development-profile')
 mkdirSync(profile, { recursive: true })
 const children = new Set()

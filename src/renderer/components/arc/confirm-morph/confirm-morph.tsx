@@ -604,6 +604,7 @@ export function ConfirmMorph({
         if (
             event.key === 'Enter' &&
             state === 'confirming' &&
+            !confirmContent &&
             !event.repeat &&
             !(event.target instanceof HTMLButtonElement)
         ) {

@@ -3,25 +3,23 @@ import { RepositoryImportReview } from './RepositoryImportReview'
 import { Alert } from './components/arc/alert/alert'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { plainText } from '../shared/notion-format'
-import type { Command, Destination, Reply, Repository, RepositoryImportProgress, State } from '../shared/model'
+import type { Command, Reply, Repository, RepositoryImportProgress, State } from '../shared/model'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/arc/tabs/tabs'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { Button } from './components/arc/button/button'
-import { Input } from './components/arc/input/input'
 import { Select } from './components/arc/select/select'
 import { Combobox } from './components/arc/combobox/combobox'
 import { DatePicker } from './components/arc/date-picker/date-picker'
 import { TagInput } from './components/arc/tag-input/tag-input'
 import { ImportProgressLabel } from './ImportProgressLabel'
-import { Folder, Plug, RefreshCw } from 'lucide-react'
+import { Folder, RefreshCw } from 'lucide-react'
 import { ConnectionSignIn, connectionFailure, type ConnectionFeedback } from './ConnectionSignIn'
 import { NotionSignIn } from './NotionSignIn'
 import { Switch } from './components/arc/switch/switch'
 import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
 import { NumberField } from './components/arc/number-field/number-field'
 import { SearchField } from './components/arc/search-field/search-field'
-import { ConfirmMorph, type ConfirmMorphState } from './components/arc/confirm-morph/confirm-morph'
 import type { EditorHandle } from './Editor'
 import { NotionLogoIcon } from '@phosphor-icons/react/dist/csr/NotionLogo'
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
@@ -45,11 +43,15 @@ export function Settings({
     close: () => void
 }) {
     const [settings, setSettings] = useState(state.settings)
+    const [compact, setCompact] = useState(false)
+    useEffect(() => {
+        const query = window.matchMedia('(max-width: 600px)')
+        const update = () => setCompact(query.matches)
+        update()
+        query.addEventListener('change', update)
+        return () => query.removeEventListener('change', update)
+    }, [])
     const [repositories, setRepositories] = useState(state.repositories)
-    const [destinationTest, setDestinationTest] = useState<{ key: string; state: ConfirmMorphState }>()
-    const destinationKey = JSON.stringify([connections.notion, settings.destination])
-    const currentDestinationKey = useRef(destinationKey)
-    currentDestinationKey.current = destinationKey
     const [device, setDevice] = useState<Reply['device']>()
     const [githubFeedback, setGithubFeedback] = useState<ConnectionFeedback>()
     const { profile: githubIdentity } = useConnectionProfile(
@@ -139,20 +141,6 @@ export function Settings({
             ),
         [state.repositories]
     )
-    const destination = (patch: Partial<Destination>) => {
-        setError('')
-        setSettings((current) => ({
-            ...current,
-            destination: {
-                kind: 'page',
-                id: '',
-                titleProperty: 'Name',
-                dateProperty: '',
-                ...current.destination,
-                ...patch
-            }
-        }))
-    }
     useEffect(() => {
         if (!device) return
         const attempt = githubAttempt.current
@@ -213,8 +201,10 @@ export function Settings({
     }, [githubFeedback, run])
     const notionDestination = useCallback((destination: State['settings']['destination']) => {
         setSettings((current) => ({ ...current, destination }))
-        setDestinationTest(undefined)
     }, [])
+    useEffect(() => {
+        notionDestination(state.settings.destination)
+    }, [state.settings.destination, notionDestination])
     const save = () =>
         action('save', async () => {
             if (!templateImagesReady) throw new Error('Finish or dismiss template image imports before saving.')
@@ -385,10 +375,15 @@ export function Settings({
                         <Tabs
                             value={section}
                             onValueChange={setSection}
-                            orientation="vertical"
+                            orientation={compact ? 'horizontal' : 'vertical'}
                             className="settings-tabs"
                         >
-                            <ScrollArea className="settings-navigation" fade={12} label="Settings navigation">
+                            <ScrollArea
+                                className="settings-navigation"
+                                orientation={compact ? 'horizontal' : 'vertical'}
+                                fade={12}
+                                label="Settings navigation"
+                            >
                                 <TabsList aria-label="Settings sections">
                                     {['repositories', 'connections', 'preferences', 'template', 'backup'].map((tab) => (
                                         <TabsTrigger key={tab} value={tab}>
@@ -582,6 +577,7 @@ export function Settings({
                                             <div className="settings-github-controls">
                                                 <NotionSignIn
                                                     connected={connections.notion}
+                                                    destination={settings.destination}
                                                     disabled={!!busy}
                                                     run={run}
                                                     onDestination={notionDestination}
@@ -594,82 +590,6 @@ export function Settings({
                                                     Credentials are kept for this session only.
                                                 </p>
                                             )}
-                                        <div className="settings-field-grid">
-                                            <Select
-                                                label="Destination"
-                                                value={settings.destination?.kind ?? 'page'}
-                                                options={[
-                                                    { value: 'page', label: 'Parent page' },
-                                                    { value: 'database', label: 'Database data source' }
-                                                ]}
-                                                onValueChange={(kind) =>
-                                                    destination({ kind: kind as Destination['kind'] })
-                                                }
-                                            />
-                                            <Input
-                                                label={
-                                                    settings.destination?.kind === 'database'
-                                                        ? 'Data source ID'
-                                                        : 'Page ID'
-                                                }
-                                                value={settings.destination?.id ?? ''}
-                                                onChange={(event) => destination({ id: event.target.value.trim() })}
-                                            />
-                                        </div>
-                                        {settings.destination?.kind === 'database' && (
-                                            <div className="settings-field-grid">
-                                                <Input
-                                                    label="Title property"
-                                                    value={settings.destination.titleProperty}
-                                                    onChange={(event) =>
-                                                        destination({ titleProperty: event.target.value })
-                                                    }
-                                                />
-                                                <Input
-                                                    label="Date property (optional)"
-                                                    value={settings.destination.dateProperty}
-                                                    onChange={(event) =>
-                                                        destination({ dateProperty: event.target.value })
-                                                    }
-                                                />
-                                            </div>
-                                        )}
-                                        <div className="settings-actions">
-                                            <ConfirmMorph
-                                                key={destinationKey}
-                                                label="Test destination"
-                                                icon={<Plug size={16} strokeWidth={1.75} />}
-                                                confirmMode="immediate"
-                                                variant="secondary"
-                                                tone="neutral"
-                                                pendingLabel="Testing"
-                                                doneLabel="Reachable"
-                                                errorLabel="Unreachable"
-                                                state={
-                                                    destinationTest?.key === destinationKey
-                                                        ? destinationTest.state
-                                                        : 'idle'
-                                                }
-                                                onStateChange={(next) => {
-                                                    if (currentDestinationKey.current === destinationKey)
-                                                        setDestinationTest({ key: destinationKey, state: next })
-                                                }}
-                                                disabled={
-                                                    !connections.notion || !settings.destination?.id.trim() || !!busy
-                                                }
-                                                onConfirm={async () => {
-                                                    setBusy('notion-test')
-                                                    try {
-                                                        await window.journal.invoke({
-                                                            type: 'notionTestDestination',
-                                                            destination: settings.destination!
-                                                        })
-                                                    } finally {
-                                                        setBusy('')
-                                                    }
-                                                }}
-                                            />
-                                        </div>
                                     </section>
                                 </TabsContent>
                                 <TabsContent value="preferences" className="settings-content">
