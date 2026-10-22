@@ -1,3 +1,4 @@
+import { NotionDiscoveryCache } from './notion-discovery-cache'
 import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
@@ -7,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { readFile, writeFile, stat } from 'node:fs/promises'
 import { Effect } from 'effect'
 import { commandSchema } from '../shared/model'
-import type { RepositoryImportProgress } from '../shared/model'
+import type { RepositoryImportProgress, NotionDiscoveryProgress } from '../shared/model'
 import { Store } from './store'
 import { ConnectionProfileCache } from './connection-profiles'
 import { Vault } from './vault'
@@ -236,6 +237,8 @@ void app.whenReady().then(() => {
     const connection = notionConnection
     const notion = new Notion(http, (refresh, rejected) => connection.token(refresh, rejected), store)
     const pendingNotion = new Notion(http, () => connection.pendingToken())
+    const notionDiscovery = new NotionDiscoveryCache(join(app.getPath('userData'), 'notion-pages.json'))
+    let notionPickerGeneration = 0
     let availableNotionPages: Awaited<ReturnType<Notion['accessiblePages']>> = []
     const profiles = new ConnectionProfileCache(
         join(app.getPath('userData'), 'connection-profiles.json'),
@@ -347,6 +350,8 @@ void app.whenReady().then(() => {
                 break
             }
             case 'notionStart': {
+                notionPickerGeneration++
+                notionDiscovery.cancel()
                 availableNotionPages = []
                 const notionAuthorization = await connection.start()
                 try {
@@ -361,6 +366,8 @@ void app.whenReady().then(() => {
             }
             case 'notionCancel':
                 connection.cancel()
+                notionPickerGeneration++
+                notionDiscovery.cancel()
                 availableNotionPages = []
                 break
             case 'notionPoll': {
@@ -369,10 +376,47 @@ void app.whenReady().then(() => {
                 return service.reply()
             }
             case 'notionPages': {
-                availableNotionPages = await pendingNotion.accessiblePages()
-                return service.reply({ notionPages: availableNotionPages })
+                const generation = notionPickerGeneration
+                const token = await connection.pendingToken()
+                if (generation !== notionPickerGeneration) throw new Error('Notion page discovery cancelled.')
+                const discovery = new Notion(http, () => token)
+                let lastStage = ''
+                let latest: NotionDiscoveryProgress | undefined
+                let progressTimer: ReturnType<typeof setTimeout> | undefined
+                const flushProgress = () => {
+                    const progress = latest
+                    latest = undefined
+                    if (progress && generation === notionPickerGeneration && !event.sender.isDestroyed())
+                        event.sender.send('journal:notion-discovery', { requestId: command.requestId, progress })
+                }
+                const pages = await notionDiscovery
+                    .pages(
+                        token,
+                        (signal, progress) => discovery.accessiblePages(progress, signal),
+                        (progress) => {
+                            latest = progress
+                            const final = progress.stage === 'grouping' && progress.completed === progress.total
+                            if (progress.stage !== lastStage || final) {
+                                lastStage = progress.stage
+                                clearTimeout(progressTimer)
+                                progressTimer = undefined
+                                flushProgress()
+                            } else {
+                                progressTimer ??= setTimeout(() => {
+                                    progressTimer = undefined
+                                    flushProgress()
+                                }, 100)
+                            }
+                        }
+                    )
+                    .finally(() => clearTimeout(progressTimer))
+                if (generation !== notionPickerGeneration) throw new Error('Notion page discovery cancelled.')
+                availableNotionPages = pages
+                return service.reply({ notionPages: pages })
             }
             case 'notionChoose': {
+                notionPickerGeneration++
+                notionDiscovery.cancel()
                 availableNotionPages = []
                 if (connection.choose()) return service.reply()
                 const notionAuthorization = await connection.start()
@@ -385,6 +429,7 @@ void app.whenReady().then(() => {
             }
             case 'notionConfirm': {
                 const previousIdentity = connection.profileKey()
+                const pickerToken = await connection.pendingToken()
                 const selection = command.selection
                 const page =
                     selection.kind === 'existing'
@@ -412,6 +457,14 @@ void app.whenReady().then(() => {
                 )
                 store.state.settings.destination = destination
                 store.persist()
+                notionDiscovery.remember(pickerToken, {
+                    ...page,
+                    kind: 'page',
+                    id: destination.id,
+                    title: destination.title || page?.title || 'Untitled',
+                    url: destination.url || page?.url || '',
+                    icon: destination.icon
+                })
                 if (previousIdentity !== connection.profileKey()) profiles.clear('notion')
                 connection.cancel()
                 break
@@ -463,8 +516,12 @@ void app.whenReady().then(() => {
                 break
             }
             case 'disconnect':
-                if (command.service === 'notion') connection.disconnect()
-                else vault.set(command.service, '')
+                if (command.service === 'notion') {
+                    notionPickerGeneration++
+                    notionDiscovery.clear()
+                    availableNotionPages = []
+                    connection.disconnect()
+                } else vault.set(command.service, '')
                 profiles.clear(command.service)
                 break
             case 'export': {
@@ -503,6 +560,9 @@ void app.whenReady().then(() => {
                             await store.restore(await readFile(result.filePaths[0], 'utf8'))
                             await store.flush()
                             vault.set('github', '')
+                            notionPickerGeneration++
+                            notionDiscovery.clear()
+                            availableNotionPages = []
                             connection.disconnect()
                             return service.reply({ message: 'Backup imported.' })
                         }

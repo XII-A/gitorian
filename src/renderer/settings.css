@@ -562,6 +562,7 @@
 }
 
 .notion-connection {
+    font-variant-numeric: tabular-nums;
     display: flex;
     min-width: 0;
     max-width: 100%;

@@ -1,4 +1,4 @@
-import type { NotionPage } from '../shared/model'
+import type { NotionPage, NotionDiscoveryProgress } from '../shared/model'
 import { HttpError } from './http'
 
 interface Parent {
@@ -40,10 +40,14 @@ const icon = (entity: Entity) => {
 
 /** Discovers selectable pages and the named source groups that own them. Blocks and databases only resolve ancestry. */
 export async function discoverNotionPages(
-    request: <T>(path: string, init?: RequestInit) => Promise<T>
+    request: <T>(path: string, init?: RequestInit) => Promise<T>,
+    progress: (update: NotionDiscoveryProgress) => void = () => {
+        /* Discovery also serves non-UI callers. */
+    }
 ): Promise<NotionPage[]> {
     const pages = new Map<string, Entity>()
     let cursor: string | null | undefined
+    progress({ stage: 'discovering', found: 0 })
     do {
         const result = await request<List>('search', {
             method: 'POST',
@@ -54,6 +58,7 @@ export async function discoverNotionPages(
             })
         })
         for (const page of result.results) pages.set(page.id, page)
+        progress({ stage: 'discovering', found: pages.size })
         cursor = result.has_more ? result.next_cursor : undefined
     } while (cursor)
 
@@ -119,6 +124,11 @@ export async function discoverNotionPages(
         }
         return parentId(entity.parent, seen)
     }
-    for (const page of pages.values()) nodes.get(page.id)!.parentId = await parentId(page.parent)
+    let completed = 0
+    progress({ stage: 'grouping', completed, total: pages.size })
+    for (const page of pages.values()) {
+        nodes.get(page.id)!.parentId = await parentId(page.parent)
+        progress({ stage: 'grouping', completed: ++completed, total: pages.size })
+    }
     return [...nodes.values()]
 }

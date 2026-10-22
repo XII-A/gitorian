@@ -325,7 +325,7 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('notionStart') }),
     z.object({ type: z.literal('notionPoll') }),
     z.object({ type: z.literal('notionCancel') }),
-    z.object({ type: z.literal('notionPages') }),
+    z.object({ type: z.literal('notionPages'), requestId: z.string().min(1).max(100) }),
     z.object({ type: z.literal('notionChoose') }),
     z.object({ type: z.literal('notionDestination') }),
     z.object({
@@ -352,6 +352,15 @@ export interface ConnectionProfile {
     name: string
     avatarUrl?: string
 }
+export type NotionDiscoveryProgress =
+    | { stage: 'discovering'; found: number }
+    | { stage: 'grouping'; completed: number; total: number }
+
+export interface NotionDiscoveryEvent {
+    requestId: string
+    progress: NotionDiscoveryProgress
+}
+
 export interface NotionPage {
     kind: 'page' | 'data_source'
     id: string
@@ -396,6 +405,7 @@ export interface DesktopBridge {
     }
     invoke: (command: Command) => Promise<Reply>
     updates?: (command: Command, base?: StateCursor) => Promise<UpdateReply>
+    onNotionDiscoveryProgress?: (listener: (event: NotionDiscoveryEvent) => void) => () => void
     onRepositoryImportProgress?: (listener: (progress: RepositoryImportProgress) => void) => () => void
 }
 export type RepositoryImportProgress =

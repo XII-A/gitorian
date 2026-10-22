@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { Notion } from '../src/main/notion'
+import type { NotionDiscoveryProgress } from '../src/shared/model'
 import { Http } from '../src/main/http'
 
 const urlOf = (input: Parameters<typeof fetch>[0]) => (input instanceof Request ? input.url : input.toString())
@@ -31,7 +32,16 @@ it('places pages through shared nested blocks beneath their enclosing page with 
             'blocks/outer': { parent: { page_id: 'journal' } }
         }
     )
-    const nodes = await notion.accessiblePages()
+    const progress: NotionDiscoveryProgress[] = []
+    const nodes = await notion.accessiblePages((update) => progress.push(update))
+    expect(progress).toEqual([
+        { stage: 'discovering', found: 0 },
+        { stage: 'discovering', found: 3 },
+        { stage: 'grouping', completed: 0, total: 3 },
+        { stage: 'grouping', completed: 1, total: 3 },
+        { stage: 'grouping', completed: 2, total: 3 },
+        { stage: 'grouping', completed: 3, total: 3 }
+    ])
     expect(nodes.filter((n) => n.parentId === 'journal').map((n) => n.id)).toEqual(['first', 'second'])
     expect(nodes.every((n) => n.kind === 'page')).toBe(true)
     expect(transport.mock.calls.filter(([url]) => urlOf(url).includes('/blocks/'))).toHaveLength(2)

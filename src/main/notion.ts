@@ -1,6 +1,6 @@
 import { fromNotion, toNotion } from '../shared/notion-format'
 import type { NotionBlock } from '../shared/notion-format'
-import type { Destination, Entry, ConnectionProfile, State } from '../shared/model'
+import type { Destination, Entry, ConnectionProfile, State, NotionDiscoveryProgress } from '../shared/model'
 import type { Http } from './http'
 import { HttpError } from './http'
 import type { Store } from './store'
@@ -136,8 +136,11 @@ export class Notion {
             ...(page.url ? { url: page.url } : {})
         }
     }
-    async accessiblePages() {
-        return discoverNotionPages((path, init) => this.request(path, init))
+    async accessiblePages(progress?: (update: NotionDiscoveryProgress) => void, signal?: AbortSignal) {
+        return discoverNotionPages((path, init) => {
+            signal?.throwIfAborted()
+            return this.request(path, { ...init, ...(signal ? { signal } : {}) })
+        }, progress)
     }
     async destinationIcon(icon?: string): Promise<string | undefined> {
         if (!icon?.startsWith('https://')) return icon

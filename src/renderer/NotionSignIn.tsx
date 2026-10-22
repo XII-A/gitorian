@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Command, Reply, State, NotionPage } from '../shared/model'
+import type { Command, Reply, State, NotionPage, NotionDiscoveryProgress } from '../shared/model'
 import { ConnectionSignIn, connectionFailure, type ConnectionFeedback } from './ConnectionSignIn'
 import { NotionPagePicker, NotionPageIcon } from './NotionPagePicker'
 import { Input } from './components/arc/input/input'
@@ -22,6 +22,7 @@ export function NotionSignIn({
     const [pages, setPages] = useState<NotionPage[]>()
     const [selected, setSelected] = useState('')
     const [pageName, setPageName] = useState('Weekly Journal')
+    const [progress, setProgress] = useState<NotionDiscoveryProgress>({ stage: 'discovering', found: 0 })
     const [stage, setStage] = useState<'load' | 'choose' | 'confirm'>()
     const [selectionError, setSelectionError] = useState<'load' | 'confirm'>()
     const [authorization, setAuthorization] = useState<Reply['notionAuthorization']>()
@@ -40,7 +41,7 @@ export function NotionSignIn({
         return () => {
             cancelled = true
         }
-    }, [connected, run, onDestination])
+    }, [connected, destination?.title, destination?.icon, run, onDestination])
     const cancel = () => {
         attempt.current++
         setAuthorization(undefined)
@@ -68,10 +69,15 @@ export function NotionSignIn({
     )
     const loadPages = async (generation = attempt.current) => {
         setStage('load')
+        setProgress({ stage: 'discovering', found: 0 })
         setSelectionError(undefined)
         setFeedback({ kind: 'authorizing', login: 'Notion' })
+        const requestId = crypto.randomUUID()
+        const unsubscribe = window.journal.onNotionDiscoveryProgress?.((event) => {
+            if (event.requestId === requestId && attempt.current === generation) setProgress(event.progress)
+        })
         try {
-            const reply = await window.journal.invoke({ type: 'notionPages' })
+            const reply = await window.journal.invoke({ type: 'notionPages', requestId })
             if (attempt.current !== generation) return
             setPages(reply.notionPages ?? [])
             setStage('choose')
@@ -81,6 +87,8 @@ export function NotionSignIn({
                 setSelectionError('load')
                 setFeedback({ kind: 'error', message: 'Could not load pages' })
             }
+        } finally {
+            unsubscribe?.()
         }
     }
     const confirm = async () => {
@@ -168,8 +176,17 @@ export function NotionSignIn({
             setSuccessComplete(false)
         }
     }, [feedback, successComplete, connected])
+    const loadingLabel =
+        progress.stage === 'discovering'
+            ? `Found ${progress.found.toLocaleString()} ${progress.found === 1 ? 'page' : 'pages'}`
+            : `Grouped ${progress.completed.toLocaleString()} of ${progress.total.toLocaleString()} ${progress.total === 1 ? 'page' : 'pages'}`
     return (
         <div className="notion-connection">
+            {stage === 'load' && (
+                <span className="settings-sr-only" role="status" aria-live="polite">
+                    {loadingLabel}
+                </span>
+            )}
             <ConnectionSignIn
                 provider="Notion"
                 connected={connected}
@@ -179,7 +196,7 @@ export function NotionSignIn({
                 device={authorization}
                 feedback={feedback}
                 notice={notice}
-                pendingLabel={stage === 'load' ? 'Loading pages' : stage === 'confirm' ? 'Saving page' : undefined}
+                pendingLabel={stage === 'load' ? loadingLabel : stage === 'confirm' ? 'Saving page' : undefined}
                 selection={
                     pages && stage === 'choose' ? (
                         <div className="github-signin-code-row notion-destination-row">

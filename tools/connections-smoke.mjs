@@ -24,6 +24,10 @@ for (const file of [
     'src/renderer/NotionPagePicker.tsx',
     'src/renderer/notion-page-tree.ts',
     'tests/notion-page-tree.test.ts',
+    'src/main/notion-discovery.ts',
+    'src/main/notion-discovery-cache.ts',
+    'tests/notion-discovery.test.ts',
+    'tests/notion-discovery-cache.test.ts',
     'tests/connection-profiles.test.ts'
 ])
     writeFileSync(join(output, file.split('/').at(-1)), readFileSync(resolve(file)))
@@ -47,6 +51,7 @@ let notionAuthorization
 let notionStarts = 0
 let notionPagesCreated = 0
 let notionCreatedTitle = 'Weekly Journal'
+let refreshedNames = false
 let failPageSearch = true
 let failPageSelection = true
 const oauthOrigin = 'https://oauth.fixture.test'
@@ -132,6 +137,7 @@ globalThis.fetch = (input, init) =>
             })
         }
         if (url === 'https://api.notion.com/v1/search') {
+            await pause(350)
             if (failPageSearch) {
                 failPageSearch = false
                 throw new Error('Fixture search unavailable')
@@ -160,7 +166,7 @@ globalThis.fetch = (input, init) =>
                     page('fixture-board-entry', 'Board entry', { data_source_id: 'fixture-projects' }),
                     page('fixture-archive-entry', 'Archived entry', { data_source_id: 'fixture-archive' }),
                     page('fixture-hidden-ancestor', 'Shared toggle entry', { block_id: 'fixture-hidden-toggle' }),
-                    page('fixture-orphan', 'Shared notes', 'not-shared'),
+                    page('fixture-orphan', refreshedNames ? 'Updated shared notes' : 'Shared notes', 'not-shared'),
                     page('fixture-twin', 'Engineering notes', 'fixture-parent'),
                     ...(notionPagesCreated ? [page('fixture-private-journal', notionCreatedTitle)] : [])
                 ],
@@ -168,8 +174,10 @@ globalThis.fetch = (input, init) =>
                 next_cursor: null
             })
         }
-        if (url === 'https://api.notion.com/v1/blocks/fixture-inner-toggle')
+        if (url === 'https://api.notion.com/v1/blocks/fixture-inner-toggle') {
+            await pause(500)
             return json({ parent: { block_id: 'fixture-outer-toggle' } })
+        }
         if (url === 'https://api.notion.com/v1/blocks/fixture-outer-toggle')
             return json({ parent: { page_id: 'fixture-existing' } })
         if (url === 'https://api.notion.com/v1/blocks/fixture-database-toggle')
@@ -744,7 +752,25 @@ app.on('browser-window-created', (_, window) => {
             await wait(`${notionScope}.textContent.includes('Could not load pages')`)
             await shot('notion-pages-load-error', 250, 'notion')
             await click('Retry', notionScope)
+            await wait(
+                `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.textContent.includes('Found 1 page')`
+            )
+            await shot('notion-discovery-count', 100, 'notion')
+            await assertActionsFit('Notion')
+            await wait(
+                `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.textContent.includes('Grouped 2 of 8 pages')`
+            )
+            await shot('notion-grouping-count', 100, 'notion')
+            await assertActionsFit('Notion')
             await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+            const cachePath = join(directory, 'profile', 'notion-pages.json')
+            const cachedPages = JSON.parse(readFileSync(cachePath, 'utf8'))
+            if (
+                cachedPages.pages.filter((page) => page.kind === 'page').length !== 8 ||
+                /fixture-notion-token|access_token|refresh_token/.test(readFileSync(cachePath, 'utf8'))
+            )
+                throw new Error('Discovery cache did not retain bounded metadata without credentials')
+            writeFileSync(join(output, 'notion-cache-initial.json'), JSON.stringify(cachedPages, null, 2))
             await assert(
                 `!Array.from(${notionScope}.querySelectorAll('label')).some(l=>['Destination','Page ID'].includes(l.textContent))`
             )
@@ -918,15 +944,59 @@ app.on('browser-window-created', (_, window) => {
                     'fixture-existing'
             )
                 throw new Error('Existing selection did not save without creating a page')
+            const warmEditStarted = performance.now()
+            const searchesBeforeEdit = requests.filter(
+                (request) => request.url === 'https://api.notion.com/v1/search'
+            ).length
             await click('Change journal page', notionScope)
             await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
             await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
             await wait(
                 `Array.from(document.querySelectorAll('[role="treeitem"][aria-selected="true"]')).some(n=>n.title===${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes')})`
             )
+            if (
+                requests.filter((request) => request.url === 'https://api.notion.com/v1/search').length !==
+                searchesBeforeEdit
+            )
+                throw new Error('Fresh cached edit fetched all pages again')
+            record({ warmPickerMilliseconds: performance.now() - warmEditStarted, freshCacheDiscoveryRequests: 0 })
             await shot('notion-edit-selected', 200, 'notion')
             await click('Cancel', notionScope)
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
+            const clockNow = Date.now
+            try {
+                Date.now = () => clockNow() + 300001
+                refreshedNames = true
+                await click('Change journal page', notionScope)
+                await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+                await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
+                await wait(`!!document.querySelector('[role="treeitem"][title="Shared notes"]')`)
+                const deadline = clockNow() + 10000
+                while (
+                    !JSON.parse(readFileSync(cachePath, 'utf8')).pages.some(
+                        (page) => page.title === 'Updated shared notes'
+                    )
+                ) {
+                    if (clockNow() > deadline) throw new Error('Background cache refresh did not finish')
+                    await pause(50)
+                }
+                await assert(
+                    `!!document.querySelector('[role="treeitem"][title="Shared notes"]') && !document.querySelector('[role="treeitem"][title="Updated shared notes"]')`
+                )
+                await shot('notion-cached-tree-stable', 100, 'notion')
+                await click('Cancel', notionScope)
+                await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
+                await click('Change journal page', notionScope)
+                await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+                await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
+                await wait(`!!document.querySelector('[role="treeitem"][title="Updated shared notes"]')`)
+                await shot('notion-refreshed-cache-next-open', 100, 'notion')
+                writeFileSync(join(output, 'notion-cache-refresh.json'), readFileSync(cachePath))
+                await click('Cancel', notionScope)
+                await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
+            } finally {
+                Date.now = clockNow
+            }
             await click('Change journal page', notionScope)
             await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
             await choosePage('new')
@@ -982,6 +1052,11 @@ app.on('browser-window-created', (_, window) => {
             await wait(`${notionScope}.textContent.includes('Team journal')`)
             await assert(`!${notionScope}.textContent.includes('Second integration')`)
             if (notionPagesCreated !== 1) throw new Error('Reconnect duplicated the journal destination')
+            record({
+                cacheReusedWithoutDiscovery: true,
+                staleRefreshKeptVisibleTree: true,
+                refreshedTreeOnNextOpen: true
+            })
             await shot('notion-reconnected', 700, 'notion')
             await click('Disconnect', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="confirming"]') !== null`)
@@ -995,6 +1070,7 @@ app.on('browser-window-created', (_, window) => {
                 existsSync(join(directory, 'profile', 'github.secret'))
             )
                 throw new Error('Repeated disconnect retained credentials')
+            if (existsSync(cachePath)) throw new Error('Disconnect retained Notion discovery metadata')
             await shot('notion-repeat-disconnected', 350, 'notion')
 
             const cachedProfiles = JSON.parse(
