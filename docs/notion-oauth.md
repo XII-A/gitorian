@@ -1,6 +1,6 @@
 # Notion connection
 
-weekly-j uses a public Notion OAuth connection. After browser approval, users select an accessible page by name or choose **Create a new page** in the same connection control. **Confirm** validates and saves the selection, or creates the named journal page. Only then is Notion connected. Settings shows the selected page name/icon beside a pencil edit action and Disconnect. Local writing never requires Notion.
+weekly-j uses a public Notion OAuth connection. After browser approval, users select an accessible page by name or choose **Create a new page** in the same connection control. **Confirm** validates and saves the selection, or creates the named journal page. Only then is Notion connected. Settings shows the selected page name/icon in a rounded, transparent selector beside Disconnect. Clicking the selector morphs it into the page picker with Cancel and Confirm. Local writing never requires Notion.
 
 ## Workspaces and modules
 
