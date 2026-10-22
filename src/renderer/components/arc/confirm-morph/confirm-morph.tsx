@@ -178,12 +178,14 @@ function Face({
     useLayoutEffect(() => {
         const node = ref.current
         if (!node || !present) return
-        // Fractional widths, so the spring lands exactly where the pill's natural width is and the hand back to auto is seamless.
-        const report = () => onSize(id, node.getBoundingClientRect().width)
+        // Measure layout size, not the dialog's animated entrance scale. ResizeObserver
+        // preserves fractional widths without including transforms on any ancestor.
+        const report = (entries?: ResizeObserverEntry[]) =>
+            onSize(id, entries?.[0]?.borderBoxSize?.[0]?.inlineSize ?? node.offsetWidth)
         report()
         if (typeof ResizeObserver === 'undefined') return
         const observer = new ResizeObserver(report)
-        observer.observe(node)
+        observer.observe(node, { box: 'border-box' })
         return () => observer.disconnect()
     }, [id, onSize, present])
     return (

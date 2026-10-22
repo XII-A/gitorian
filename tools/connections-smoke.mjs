@@ -83,9 +83,15 @@ async function approveNotion(error) {
 }
 const requests = []
 let failDisconnect = ''
+let failNotionChoose = false
 const registerHandler = ipcMain.handle.bind(ipcMain)
 ipcMain.handle = (channel, listener) =>
     registerHandler(channel, async (event, command) => {
+        if (channel === 'journal:command' && command.type === 'notionChoose' && failNotionChoose) {
+            failNotionChoose = false
+            await pause(300)
+            throw new Error('Fixture edit unavailable')
+        }
         if (channel === 'journal:command' && command.type === 'disconnect' && command.service === failDisconnect) {
             failDisconnect = ''
             await pause(300)
@@ -371,41 +377,47 @@ app.on('browser-window-created', (_, window) => {
         const assertActionsFit = async (service) => {
             record({
                 actionBounds: await js(
-                    `(() => {const section=document.querySelector('[aria-label="${service} connection"]');return Array.from(section.querySelectorAll('.settings-section-heading,.settings-github-account,[role="group"],button')).filter(b=>!b.closest('[inert]')).map(b=>({tag:b.tagName,text:b.textContent,class:b.className,left:b.getBoundingClientRect().left,right:b.getBoundingClientRect().right,width:b.getBoundingClientRect().width,font:getComputedStyle(b).fontSize}))})()`
+                    `(() => {const section=document.querySelector('[aria-label="${service} connection"]');return Array.from(section.querySelectorAll('.settings-section-heading,.settings-github-account,[role="group"],button')).filter(b=>!b.closest('[inert],[hidden]')).map(b=>({tag:b.tagName,text:b.textContent,class:b.className,left:b.getBoundingClientRect().left,right:b.getBoundingClientRect().right,width:b.getBoundingClientRect().width,font:getComputedStyle(b).fontSize}))})()`
                 )
             })
             await assert(
-                `(() => {const section=document.querySelector('[aria-label="${service} connection"]');const bounds=section.getBoundingClientRect();return Array.from(section.querySelectorAll('.settings-section-heading button')).filter(b=>!b.closest('[inert]')).every(b=>{const r=b.getBoundingClientRect();return r.left>=bounds.left-0.5 && r.right<=bounds.right+0.5})})()`
+                `(() => {const section=document.querySelector('[aria-label="${service} connection"]');const bounds=section.getBoundingClientRect();return Array.from(section.querySelectorAll('.settings-section-heading button')).filter(b=>!b.closest('[inert],[hidden]')).every(b=>{const r=b.getBoundingClientRect();return r.left>=bounds.left-0.5 && r.right<=bounds.right+0.5})})()`
             )
         }
         const cancelDisconnect = async (service) => {
             const scope = `document.querySelector('[aria-label="${service} connection"]')`
+            const disconnectSelector =
+                service === 'Notion'
+                    ? '[data-notion-disconnect] [role="group"]'
+                    : '.settings-section-heading [role="group"]'
             await click('Disconnect', scope)
             await wait(`${scope}.querySelector('[data-state="confirming"]') !== null`)
             await pause(350)
             await click('Cancel', scope)
-            await wait(`${scope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='idle'`)
+            await wait(`${scope}.querySelector('${disconnectSelector}')?.dataset.state==='idle'`)
             await assert(
                 `window.journal.invoke({type:'state'}).then(reply=>reply.connections.${service.toLowerCase()})`
             )
         }
         const holdDisconnect = async (service, cycle) => {
             const scope = `document.querySelector('[aria-label="${service} connection"]')`
+            const disconnectSelector =
+                service === 'Notion'
+                    ? '[data-notion-disconnect] [role="group"]'
+                    : '.settings-section-heading [role="group"]'
             if (cycle === 'first') failDisconnect = service.toLowerCase()
             await js(`(() => {
                 const started=performance.now(),frames=[];
                 window.__disconnectTrace={frames};
                 const sample=()=>{
-                    const root=document.querySelector('[aria-label="${service} connection"] .settings-section-heading [role="group"]');
+                    const root=document.querySelector('[aria-label="${service} connection"] ${disconnectSelector}');
                     const done=root?.querySelector('[data-face="done"]:not([role="group"]):not([inert])');
                     frames.push({time:performance.now()-started,state:root?.dataset.state,label:done?.textContent});
                     window.__disconnectTrace.frame=requestAnimationFrame(sample);
                 };sample();
             })()`)
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
-            await wait(
-                `${scope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state !== 'confirming'`
-            )
+            await wait(`${scope}.querySelector('${disconnectSelector}')?.dataset.state !== 'confirming'`)
             window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
             if (cycle === 'first') {
                 await wait(`${scope}.querySelector('[data-state="error"]') !== null`)
@@ -415,13 +427,13 @@ app.on('browser-window-created', (_, window) => {
                 await shot(`${service.toLowerCase()}-disconnect-retry`, 0, service.toLowerCase())
                 await click('Retry', scope)
             }
-            await wait(`${scope}.querySelector('.settings-section-heading [role="group"]')?.dataset.state==='done'`)
+            await wait(`${scope}.querySelector('${disconnectSelector}')?.dataset.state==='done'`)
             await assert(
                 `window.journal.invoke({type:'state'}).then(reply=>!reply.connections.${service.toLowerCase()})`
             )
             await shot(`${service.toLowerCase()}-disconnect-result-${cycle}`, 0, service.toLowerCase())
             await wait(
-                `document.querySelector('[aria-label="${service} connection"] .settings-section-heading [role="group"]')?.dataset.state==='idle'`
+                `document.querySelector('[aria-label="${service} connection"] ${disconnectSelector}')?.dataset.state==='idle'`
             )
             await pause(50)
             const frames = await js(
@@ -732,6 +744,8 @@ app.on('browser-window-created', (_, window) => {
                 nativeSize: window.getContentSize()
             })
             const notionScope = `document.querySelector('[aria-label="Notion connection"]')`
+            const changeJournalPage = () =>
+                js(`${notionScope}.querySelector('[aria-label^="Change journal page:"]').click()`)
             await assert(
                 `!${notionScope}.querySelector('.settings-section-heading button').disabled && !${notionScope}.querySelector('input[type="password"]')`
             )
@@ -1000,15 +1014,16 @@ app.on('browser-window-created', (_, window) => {
             await click('Retry', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)
             await shot('notion-06-success', 250, 'notion')
-            await assert(`${notionScope}.querySelector('.connection-identity')?.getAttribute('aria-hidden')==='true'`)
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
-            await wait(`${notionScope}.querySelector('.connection-identity')?.dataset.revealed==='true'`)
+            await wait(
+                `(() => {const section=${notionScope};return section.querySelector('[aria-label="Disconnect Notion"]').getBoundingClientRect().right <= section.getBoundingClientRect().right + .5})()`
+            )
             await shot('notion-07-connected', 350, 'notion')
             await assert(
                 `${notionScope}.querySelector('.notion-destination-identity').textContent.includes(${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes')}) && !${notionScope}.textContent.includes('Open journal') && !${notionScope}.textContent.includes('Weekly journal')`
             )
             await assert(
-                `(() => {const identity=${notionScope}.querySelector('.notion-destination-identity').getBoundingClientRect(); const button=${notionScope}.querySelector('[aria-label="Disconnect Notion"]').getBoundingClientRect();return Math.abs(identity.top+identity.height/2-button.top-button.height/2)<1})()`
+                `(() => {const identity=${notionScope}.querySelector('[aria-label^="Change journal page:"]').getBoundingClientRect(); const button=${notionScope}.querySelector('[aria-label="Disconnect Notion"]').getBoundingClientRect();return Math.abs(identity.top+identity.height/2-button.top-button.height/2)<1 && Math.abs(identity.height-button.height)<1})()`
             )
 
             await assertActionsFit('Notion')
@@ -1018,12 +1033,49 @@ app.on('browser-window-created', (_, window) => {
                     'fixture-existing'
             )
                 throw new Error('Existing selection did not save without creating a page')
+            if (!narrowViewport) {
+                const originalSize = window.getContentSize()
+                for (const width of [768, 1024, 1440]) {
+                    window.setContentSize(width, originalSize[1])
+                    await pause(400)
+                    await assertActionsFit('Notion')
+                    await shot(`notion-selector-${width}`, 0, 'notion')
+                }
+                window.setContentSize(...originalSize)
+                await pause(400)
+                await js(
+                    `document.documentElement.dataset.theme='light';document.documentElement.dataset.accent='blue';true`
+                )
+                await shot('notion-selector-light-blue', 300, 'notion')
+                await js(
+                    `document.documentElement.dataset.theme='dark';document.documentElement.dataset.accent='neutral';true`
+                )
+            }
             const warmEditStarted = performance.now()
             const searchesBeforeEdit = requests.filter(
                 (request) => request.url === 'https://api.notion.com/v1/search'
             ).length
-            await click('Change journal page', notionScope)
+            await js(`(() => {
+                window.__notionEditNode=${notionScope}.querySelector('.notion-page-connection [role="group"]');
+                window.__notionEditFrames=[];
+                const start=performance.now();
+                const sample=()=>{
+                    const rect=window.__notionEditNode.getBoundingClientRect();
+                    window.__notionEditFrames.push({time:performance.now()-start,left:rect.left,width:rect.width});
+                    window.__notionEditFrame=requestAnimationFrame(sample);
+                }; sample();
+                ${notionScope}.querySelector('[aria-label^="Change journal page:"]').focus();
+            })()`)
+            await assert(
+                `document.activeElement === ${notionScope}.querySelector('[aria-label^="Change journal page:"]') && !document.activeElement.disabled`
+            )
+            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
+            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
             await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+            await assert(
+                `window.__notionEditNode === ${notionScope}.querySelector('.notion-page-connection [role="group"]')`
+            )
+            await assert(`${notionScope}.querySelector('[data-notion-disconnect]').inert`)
             await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
             await wait(
                 `Array.from(document.querySelectorAll('[role="treeitem"][aria-selected="true"]')).some(n=>n.title===${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes')})`
@@ -1037,11 +1089,57 @@ app.on('browser-window-created', (_, window) => {
             await shot('notion-edit-selected', 200, 'notion')
             await click('Cancel', notionScope)
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
+            await pause(400)
+            await assert(
+                `document.activeElement === ${notionScope}.querySelector('[aria-label^="Change journal page:"]')`
+            )
+            await assert(
+                `window.journal.invoke({type:'state'}).then(reply=>reply.state.settings.destination.id==='fixture-existing')`
+            )
+            const editFrames = await js(
+                `(() => {cancelAnimationFrame(window.__notionEditFrame);return window.__notionEditFrames})()`
+            )
+            const maxStep = Math.max(
+                0,
+                ...editFrames.slice(1).map((frame, index) => {
+                    const previous = editFrames[index]
+                    return (
+                        (Math.max(Math.abs(frame.left - previous.left), Math.abs(frame.width - previous.width)) *
+                            16.7) /
+                        Math.max(8, frame.time - previous.time)
+                    )
+                })
+            )
+            // A full picker is much wider than a count label. Scale the continuity bound to
+            // its travel while still rejecting the old 98px single-frame sibling reflow.
+            const travel = Math.max(
+                ...['left', 'width'].map(
+                    (key) =>
+                        Math.max(...editFrames.map((frame) => frame[key])) -
+                        Math.min(...editFrames.map((frame) => frame[key]))
+                )
+            )
+            const stepLimit = Math.max(24, travel / 4)
+            writeFileSync(
+                join(output, 'notion-edit-morph.json'),
+                JSON.stringify({ reduced: stressMotion, maxStep, stepLimit, frames: editFrames }, null, 2)
+            )
+            if (!stressMotion && maxStep > stepLimit)
+                throw new Error(`Page edit morph jumped ${maxStep.toFixed(1)}px in one normalized frame`)
+            await shot('notion-edit-cancelled', 100, 'notion')
+            failNotionChoose = true
+            await changeJournalPage()
+            await wait(`${notionScope}.querySelector('.notion-page-connection [data-state="error"]') !== null`)
+            await shot('notion-edit-retry', 100, 'notion')
+            await click('Retry', notionScope)
+            await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+            await click('Cancel', notionScope)
+            await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
             const clockNow = Date.now
             try {
                 Date.now = () => clockNow() + 300001
                 refreshedNames = true
-                await click('Change journal page', notionScope)
+                await changeJournalPage()
                 await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
                 await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
                 await wait(`!!document.querySelector('[role="treeitem"][title="Shared notes"]')`)
@@ -1060,7 +1158,7 @@ app.on('browser-window-created', (_, window) => {
                 await shot('notion-cached-tree-stable', 100, 'notion')
                 await click('Cancel', notionScope)
                 await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
-                await click('Change journal page', notionScope)
+                await changeJournalPage()
                 await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
                 await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
                 await wait(`!!document.querySelector('[role="treeitem"][title="Updated shared notes"]')`)
@@ -1071,7 +1169,7 @@ app.on('browser-window-created', (_, window) => {
             } finally {
                 Date.now = clockNow
             }
-            await click('Change journal page', notionScope)
+            await changeJournalPage()
             await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
             await choosePage('new')
             await js(`${notionScope}.querySelector('input').select()`)
@@ -1103,9 +1201,9 @@ app.on('browser-window-created', (_, window) => {
                 throw new Error('Notion credentials not persisted')
             await cancelDisconnect('Notion')
             await click('Disconnect', notionScope)
-            await wait(`${notionScope}.querySelector('button[data-autofocus]') !== null`)
+            await wait(`${notionScope}.querySelector('[data-notion-disconnect] button[data-autofocus]') !== null`)
             await shot('notion-08-disconnect-confirm', 350, 'notion')
-            await js(`${notionScope}.querySelector('button[data-autofocus]').focus()`)
+            await js(`${notionScope}.querySelector('[data-notion-disconnect] button[data-autofocus]').focus()`)
             await holdDisconnect('Notion', 'first')
             if (
                 (await js(`window.journal.invoke({type:'state'})`)).connections.notion ||
@@ -1135,7 +1233,7 @@ app.on('browser-window-created', (_, window) => {
             await click('Disconnect', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="confirming"]') !== null`)
             await pause(350)
-            await js(`${notionScope}.querySelector('button[data-autofocus]').focus()`)
+            await js(`${notionScope}.querySelector('[data-notion-disconnect] button[data-autofocus]').focus()`)
             await holdDisconnect('Notion', 'repeat')
             await assert(`!${notionScope}.querySelector('.settings-section-heading button').disabled`)
             if (

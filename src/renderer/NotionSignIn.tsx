@@ -5,7 +5,11 @@ import { NotionPagePicker, NotionPageIcon } from './NotionPagePicker'
 import { Input } from './components/arc/input/input'
 import { Button } from './components/arc/button/button'
 import { NotionDiscoveryStatus, notionDiscoveryLabel } from './NotionDiscoveryStatus'
-import { ArrowLeft, Pencil } from 'lucide-react'
+import { ArrowLeft, ChevronDown } from 'lucide-react'
+import { ConfirmMorph } from './components/arc/confirm-morph/confirm-morph'
+import { useDisconnectTransition } from './useDisconnectTransition'
+import { motion, useReducedMotion } from 'motion/react'
+import { motionTokens } from './components/arc/lib/motion-tokens'
 
 export function NotionSignIn({
     connected,
@@ -25,7 +29,7 @@ export function NotionSignIn({
     const [pageName, setPageName] = useState('Weekly Journal')
     const [progress, setProgress] = useState<NotionDiscoveryProgress>({ stage: 'discovering', found: 0 })
     const [stage, setStage] = useState<'load' | 'choose' | 'confirm'>()
-    const [selectionError, setSelectionError] = useState<'load' | 'confirm'>()
+    const [selectionError, setSelectionError] = useState<'load' | 'choose' | 'confirm'>()
     const [authorization, setAuthorization] = useState<Reply['notionAuthorization']>()
     const [feedback, setFeedback] = useState<ConnectionFeedback>()
     const [pending, setPending] = useState(false)
@@ -33,6 +37,15 @@ export function NotionSignIn({
     const [notice, setNotice] = useState('')
     const [successComplete, setSuccessComplete] = useState(false)
     const attempt = useRef(0)
+    const disconnect = useDisconnectTransition(connected)
+    const reduced = useReducedMotion()
+    const pageControl = useRef<HTMLDivElement>(null)
+    const wasDisconnecting = useRef(disconnect.showDisconnect)
+    useEffect(() => {
+        if (wasDisconnecting.current && !disconnect.showDisconnect)
+            pageControl.current?.querySelector<HTMLButtonElement>('[aria-label="Connect Notion"]')?.focus()
+        wasDisconnecting.current = disconnect.showDisconnect
+    }, [disconnect.showDisconnect])
     useEffect(() => {
         if (!connected || (destination?.title && destination.icon !== undefined)) return
         let cancelled = false
@@ -177,162 +190,214 @@ export function NotionSignIn({
             setSuccessComplete(false)
         }
     }, [feedback, successComplete, connected])
+    const choose = async () => {
+        if (!destination) return
+        const generation = ++attempt.current
+        setPending(true)
+        setStage('load')
+        setProgress({ stage: 'discovering', found: 0 })
+        setSelectionError(undefined)
+        setFeedback({ kind: 'authorizing', login: 'Notion' })
+        setSuccessComplete(false)
+        try {
+            const reply = await window.journal.invoke({ type: 'notionChoose' })
+            if (attempt.current !== generation) return
+            setSelected(destination.id)
+            if (reply.notionAuthorization) {
+                setStage(undefined)
+                setFeedback(undefined)
+                setAuthorization(reply.notionAuthorization)
+            } else await loadPages(generation)
+        } catch (error) {
+            if (attempt.current === generation) {
+                setSelectionError('choose')
+                setFeedback(connectionFailure(error, 'Notion'))
+            }
+        } finally {
+            if (attempt.current === generation) setPending(false)
+        }
+    }
+    const disconnectNotion = async () => {
+        await window.journal.invoke({ type: 'disconnect', service: 'notion' })
+        await run({ type: 'state' })
+    }
     const loadingLabel = notionDiscoveryLabel(progress)
+    const showDisconnect = disconnect.showDisconnect && !stage && !authorization && !feedback && !pending
     return (
-        <div className="notion-connection">
+        <div className="notion-connection" data-connected={connected}>
             {stage === 'load' && (
                 <span className="settings-sr-only" role="status" aria-live="polite">
                     {loadingLabel}
                 </span>
             )}
-            <ConnectionSignIn
-                provider="Notion"
-                connected={connected}
-                disabled={disabled || pending}
-                pending={pending}
-                openingBrowser={opening}
-                device={authorization}
-                feedback={feedback}
-                notice={notice}
-                pendingLabel={stage === 'load' ? loadingLabel : stage === 'confirm' ? 'Saving page' : undefined}
-                expandPending={stage === 'load' || stage === 'confirm'}
-                pendingContent={stage === 'load' ? <NotionDiscoveryStatus progress={progress} /> : undefined}
-                selection={
-                    pages && stage === 'choose' ? (
-                        <div className="github-signin-code-row notion-destination-row">
-                            <div className="notion-page-field">
-                                {selected === 'new' ? (
-                                    <Input
-                                        label="Page name"
-                                        hideLabel
-                                        variant="inline"
-                                        value={pageName}
-                                        maxLength={200}
-                                        onChange={(event) => setPageName(event.target.value)}
-                                        autoFocus
-                                    />
-                                ) : (
-                                    <NotionPagePicker pages={pages} value={selected} onChange={setSelected} />
+            <div
+                ref={pageControl}
+                className="notion-page-connection"
+                hidden={disconnect.state !== 'idle' || (!connected && disconnect.showDisconnect)}
+            >
+                <ConnectionSignIn
+                    provider="Notion"
+                    connected={connected}
+                    disabled={disabled || pending || disconnect.state !== 'idle'}
+                    pending={pending}
+                    openingBrowser={opening}
+                    device={authorization}
+                    feedback={feedback}
+                    notice={notice}
+                    pendingLabel={stage === 'load' ? loadingLabel : stage === 'confirm' ? 'Saving page' : undefined}
+                    expandPending={stage === 'load' || stage === 'confirm'}
+                    pendingContent={stage === 'load' ? <NotionDiscoveryStatus progress={progress} /> : undefined}
+                    selection={
+                        pages && stage === 'choose' ? (
+                            <div className="github-signin-code-row notion-destination-row">
+                                <div className="notion-page-field">
+                                    {selected === 'new' ? (
+                                        <Input
+                                            label="Page name"
+                                            hideLabel
+                                            variant="inline"
+                                            value={pageName}
+                                            maxLength={200}
+                                            onChange={(event) => setPageName(event.target.value)}
+                                            autoFocus
+                                        />
+                                    ) : (
+                                        <NotionPagePicker pages={pages} value={selected} onChange={setSelected} />
+                                    )}
+                                </div>
+                                {selected === 'new' && (
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="notion-picker-action"
+                                        aria-label="Choose an existing page"
+                                        onClick={() => setSelected('')}
+                                    >
+                                        <ArrowLeft size={16} strokeWidth={1.5} />
+                                    </Button>
                                 )}
-                            </div>
-                            {selected === 'new' && (
+                                <Button size="sm" variant="ghost" className="github-device-action" onClick={cancel}>
+                                    Cancel
+                                </Button>
                                 <Button
                                     size="sm"
-                                    variant="ghost"
-                                    className="notion-picker-action"
-                                    aria-label="Choose an existing page"
-                                    onClick={() => setSelected('')}
+                                    className="github-device-action"
+                                    disabled={disabled || !selected || (selected === 'new' && !pageName.trim())}
+                                    onClick={confirm}
                                 >
-                                    <ArrowLeft size={16} strokeWidth={1.5} />
+                                    Confirm
                                 </Button>
-                            )}
-                            <Button size="sm" variant="ghost" className="github-device-action" onClick={cancel}>
-                                Cancel
-                            </Button>
-                            <Button
-                                size="sm"
-                                className="github-device-action"
-                                disabled={disabled || !selected || (selected === 'new' && !pageName.trim())}
-                                onClick={confirm}
-                            >
-                                Confirm
-                            </Button>
-                        </div>
-                    ) : undefined
-                }
-                identity={
-                    destination &&
-                    !stage &&
-                    !authorization &&
-                    (connected || feedback?.kind === 'authorizing' || feedback?.kind === 'success') ? (
-                        <span className="notion-destination-identity">
-                            <NotionPageIcon icon={destination.icon} />
-                            <span className="notion-page-title" title={destination.title || 'Journal page'}>
-                                {destination.title || 'Journal page'}
-                            </span>
-                            <Button
-                                size="sm"
-                                variant="ghost"
-                                className="notion-edit-page"
-                                aria-label="Change journal page"
-                                disabled={disabled}
-                                onClick={async () => {
-                                    const generation = ++attempt.current
-                                    setPending(true)
-                                    setSuccessComplete(false)
-                                    try {
-                                        const reply = await window.journal.invoke({ type: 'notionChoose' })
-                                        if (attempt.current !== generation) return
-                                        setSelected(destination.id)
-                                        if (reply.notionAuthorization) setAuthorization(reply.notionAuthorization)
-                                        else void loadPages(generation)
-                                    } catch (error) {
-                                        if (attempt.current === generation)
-                                            setFeedback(connectionFailure(error, 'Notion'))
-                                    } finally {
-                                        if (attempt.current === generation) setPending(false)
-                                    }
-                                }}
-                            >
-                                <Pencil size={16} strokeWidth={1.5} />
-                            </Button>
-                        </span>
-                    ) : undefined
-                }
-                onStart={async () => {
-                    if (selectionError === 'load') return loadPages()
-                    if (selectionError === 'confirm') return confirm()
-                    const generation = ++attempt.current
-                    setPages(undefined)
-                    setSelected('')
-                    setStage(undefined)
-                    setSelectionError(undefined)
-                    setPending(true)
-                    setSuccessComplete(false)
-                    setFeedback(undefined)
-                    setNotice('')
-                    try {
-                        const reply = await window.journal.invoke({ type: 'notionStart' })
-                        if (attempt.current !== generation) return
-                        if (!reply.notionAuthorization) throw new Error('Notion sign-in unavailable')
-                        setAuthorization(reply.notionAuthorization)
-                        setNotice(reply.message ?? '')
-                    } catch (error) {
-                        if (attempt.current === generation) setFeedback(connectionFailure(error, 'Notion'))
-                    } finally {
-                        if (attempt.current === generation) setPending(false)
+                            </div>
+                        ) : undefined
                     }
-                }}
-                errorCancelLabel={selectionError ? 'Back' : 'Cancel'}
-                onCancel={
-                    selectionError
-                        ? () => {
-                              setFeedback(undefined)
-                              setSelectionError(undefined)
-                              setStage('choose')
-                              setPages((pages) => pages ?? [])
-                          }
-                        : cancel
-                }
-                onOpen={async () => {
-                    if (!authorization) return
-                    const generation = attempt.current
-                    setOpening(true)
-                    try {
-                        await window.journal.invoke({ type: 'open', url: authorization.url })
-                        if (attempt.current === generation) setNotice('')
-                    } catch {
-                        if (attempt.current === generation)
-                            setNotice('Copy the connection link or try opening Notion again.')
-                    } finally {
-                        if (attempt.current === generation) setOpening(false)
+                    connectedAction={
+                        destination
+                            ? {
+                                  name: `Change journal page: ${destination.title || 'Journal page'}`,
+                                  label: (
+                                      <span className="notion-destination-identity">
+                                          <NotionPageIcon icon={destination.icon} />
+                                          <span
+                                              className="notion-page-title"
+                                              title={destination.title || 'Journal page'}
+                                          >
+                                              {destination.title || 'Journal page'}
+                                          </span>
+                                          <ChevronDown size={16} strokeWidth={1.5} aria-hidden="true" />
+                                      </span>
+                                  ),
+                                  onActivate: choose
+                              }
+                            : undefined
                     }
+                    onStart={async () => {
+                        if (selectionError === 'choose') return choose()
+                        if (selectionError === 'load') return loadPages()
+                        if (selectionError === 'confirm') return confirm()
+                        const generation = ++attempt.current
+                        setPages(undefined)
+                        setSelected('')
+                        setStage(undefined)
+                        setSelectionError(undefined)
+                        setPending(true)
+                        setSuccessComplete(false)
+                        setFeedback(undefined)
+                        setNotice('')
+                        try {
+                            const reply = await window.journal.invoke({ type: 'notionStart' })
+                            if (attempt.current !== generation) return
+                            if (!reply.notionAuthorization) throw new Error('Notion sign-in unavailable')
+                            setAuthorization(reply.notionAuthorization)
+                            setNotice(reply.message ?? '')
+                        } catch (error) {
+                            if (attempt.current === generation) setFeedback(connectionFailure(error, 'Notion'))
+                        } finally {
+                            if (attempt.current === generation) setPending(false)
+                        }
+                    }}
+                    errorCancelLabel={selectionError && selectionError !== 'choose' ? 'Back' : 'Cancel'}
+                    onCancel={
+                        selectionError && selectionError !== 'choose'
+                            ? () => {
+                                  setFeedback(undefined)
+                                  setSelectionError(undefined)
+                                  setStage('choose')
+                                  setPages((pages) => pages ?? [])
+                              }
+                            : cancel
+                    }
+                    onOpen={async () => {
+                        if (!authorization) return
+                        const generation = attempt.current
+                        setOpening(true)
+                        try {
+                            await window.journal.invoke({ type: 'open', url: authorization.url })
+                            if (attempt.current === generation) setNotice('')
+                        } catch {
+                            if (attempt.current === generation)
+                                setNotice('Copy the connection link or try opening Notion again.')
+                        } finally {
+                            if (attempt.current === generation) setOpening(false)
+                        }
+                    }}
+                    onDisconnect={disconnectNotion}
+                />
+            </div>
+            <motion.div
+                data-notion-disconnect
+                className="notion-disconnect-slot"
+                inert={!showDisconnect}
+                aria-hidden={!showDisconnect}
+                initial={false}
+                animate={{ width: showDisconnect ? 'auto' : 0, opacity: showDisconnect ? 1 : 0 }}
+                transition={{
+                    width: reduced
+                        ? { duration: 0 }
+                        : { ...motionTokens.spring.smooth, visualDuration: motionTokens.duration.standard },
+                    opacity: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] }
                 }}
-                onDisconnect={async () => {
-                    await window.journal.invoke({ type: 'disconnect', service: 'notion' })
-                    await run({ type: 'state' })
-                }}
-            />
+            >
+                <div className="notion-disconnect-content">
+                    <ConfirmMorph
+                        className="notion-disconnect-action"
+                        label="Disconnect"
+                        actionLabel="Disconnect Notion"
+                        prompt={<span className="settings-disconnect-question">Disconnect Notion?</span>}
+                        confirmLabel="Disconnect"
+                        confirmMode="hold"
+                        variant="secondary"
+                        state={disconnect.state}
+                        onStateChange={disconnect.setState}
+                        confirmTimeout={0}
+                        resultTimeout={0}
+                        pendingLabel="Disconnecting"
+                        doneLabel="Disconnected"
+                        errorLabel="Could not disconnect"
+                        disabled={disabled}
+                        onConfirm={disconnectNotion}
+                    />
+                </div>
+            </motion.div>
         </div>
     )
 }

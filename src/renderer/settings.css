@@ -549,10 +549,12 @@
 
 @media (max-width: 600px) {
     .settings-github-heading:has([data-state='confirming']),
+    .settings-github-heading:has(.notion-connection[data-connected='true']),
     .settings-github-heading:has(.connection-identity) {
         flex-wrap: wrap;
     }
     .settings-github-heading:has(.connection-identity) > .settings-github-controls,
+    .settings-github-heading:has(.notion-connection[data-connected='true']) > .settings-github-controls,
     .settings-github-heading:has(.connection-identity) > .settings-github-account,
     .settings-github-heading:has([data-state='confirming']) > .settings-github-controls,
     .settings-github-heading:has([data-state='confirming']) > .settings-github-account,
@@ -567,9 +569,31 @@
     min-width: 0;
     max-width: 100%;
     flex: 1;
+    align-items: center;
+    justify-content: flex-end;
 }
-.notion-connection > .github-signin-track {
-    width: 100%;
+.notion-page-connection {
+    min-width: 0;
+    max-width: 100%;
+}
+.notion-connection [hidden] {
+    display: none;
+}
+.notion-connection [data-notion-disconnect] {
+    flex: none;
+}
+.notion-disconnect-slot {
+    overflow: clip;
+    overflow-clip-margin: var(--space-1);
+}
+.notion-disconnect-content {
+    display: flex;
+    width: max-content;
+    padding-inline-start: var(--space-3);
+}
+.notion-disconnect-content > .notion-disconnect-action {
+    flex: none;
+    max-width: none;
 }
 .notion-destination-row {
     gap: var(--space-1);
@@ -592,8 +616,12 @@
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
-    color: var(--text-secondary);
+    max-width: min(200px, 28vw);
     font-size: var(--text-sm);
+}
+.notion-destination-identity > svg {
+    flex: none;
+    color: var(--text-muted);
 }
 .notion-page-icon {
     position: relative;
@@ -615,10 +643,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
-}
-.notion-edit-page {
-    padding-inline: var(--space-2);
-    flex: none;
 }
 .notion-create-page {
     width: 100%;

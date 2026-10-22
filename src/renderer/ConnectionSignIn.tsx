@@ -34,6 +34,7 @@ export function ConnectionSignIn({
     openingBrowser,
     disabled,
     connected,
+    connectedAction,
     identity,
     selection,
     errorCancelLabel = 'Cancel',
@@ -53,6 +54,8 @@ export function ConnectionSignIn({
     openingBrowser: boolean
     disabled: boolean
     connected: boolean
+    /** A reversible connected action that uses the same morph for editing instead of disconnecting. */
+    connectedAction?: { label: ReactNode; name: string; onActivate: () => void | Promise<void> }
     identity?: ReactNode
     selection?: ReactNode
     errorCancelLabel?: string
@@ -90,7 +93,9 @@ export function ConnectionSignIn({
     }, [phase])
     const state: ConfirmMorphState =
         phase === 'connected'
-            ? disconnectState
+            ? connectedAction
+                ? 'idle'
+                : disconnectState
             : phase === 'device' || phase === 'selection'
               ? 'confirming'
               : phase === 'starting' || phase === 'authorizing'
@@ -137,24 +142,34 @@ export function ConnectionSignIn({
                     onWidthSettled={(face) => {
                         if (phase === 'connected' && face === 'idle') setIdentityReady(true)
                     }}
-                    label={phase === 'connected' ? 'Disconnect' : 'Connect'}
-                    actionLabel={`${phase === 'connected' ? 'Disconnect' : 'Connect'} ${provider}`}
+                    label={phase === 'connected' ? (connectedAction?.label ?? 'Disconnect') : 'Connect'}
+                    actionLabel={
+                        phase === 'connected'
+                            ? (connectedAction?.name ?? `Disconnect ${provider}`)
+                            : `Connect ${provider}`
+                    }
                     prompt={<span className="settings-disconnect-question">Disconnect {provider}?</span>}
                     confirmLabel="Disconnect"
-                    confirmMode={phase === 'connected' ? 'hold' : 'immediate'}
+                    confirmMode={phase === 'connected' && !connectedAction ? 'hold' : 'immediate'}
                     variant="secondary"
                     state={state}
-                    onStateChange={phase === 'connected' ? setDisconnectState : undefined}
+                    onStateChange={phase === 'connected' && !connectedAction ? setDisconnectState : undefined}
                     confirmTimeout={0}
                     resultTimeout={0}
-                    cancelOnOutsidePress={phase === 'connected'}
+                    cancelOnOutsidePress={phase === 'connected' && !connectedAction}
                     pendingLabel={phase === 'connected' ? 'Disconnecting' : (pendingLabel ?? 'Connecting')}
                     pendingContent={phase === 'connected' ? undefined : pendingContent}
                     doneLabel={phase === 'connected' ? 'Disconnected' : 'Connected'}
                     errorLabel={feedback && 'message' in feedback ? feedback.message : 'Could not disconnect'}
                     errorCancelLabel={errorCancelLabel}
                     disabled={disabled || openingBrowser}
-                    onActivate={phase === 'connected' ? undefined : () => void onStart()}
+                    onActivate={
+                        phase === 'connected'
+                            ? connectedAction
+                                ? () => void connectedAction.onActivate()
+                                : undefined
+                            : () => void onStart()
+                    }
                     onConfirm={onDisconnect}
                     onCancel={cancel}
                     confirmContent={
