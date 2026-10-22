@@ -151,7 +151,7 @@ export function ConnectionSignIn({
                     prompt={<span className="settings-disconnect-question">Disconnect {provider}?</span>}
                     confirmLabel="Disconnect"
                     confirmMode={phase === 'connected' && !connectedAction ? 'hold' : 'immediate'}
-                    variant="secondary"
+                    variant={phase === 'connected' && connectedAction ? 'outline' : 'secondary'}
                     state={state}
                     onStateChange={phase === 'connected' && !connectedAction ? setDisconnectState : undefined}
                     confirmTimeout={0}

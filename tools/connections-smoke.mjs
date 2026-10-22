@@ -1034,6 +1034,38 @@ app.on('browser-window-created', (_, window) => {
             )
                 throw new Error('Existing selection did not save without creating a page')
             if (!narrowViewport) {
+                window.webContents.sendInputEvent({ type: 'mouseMove', x: 30, y: 300 })
+                // Inspect the resting state independently of the retained keyboard-focus fill.
+                await js(`${notionScope}.querySelector('[aria-label^="Change journal page:"]').blur()`)
+                await pause(200)
+                record({
+                    selectorStyle: await js(`(() => {
+                    const button=${notionScope}.querySelector('[aria-label^="Change journal page:"]');
+                    const surface=button.closest('[role="group"]').firstElementChild;
+                    const border=getComputedStyle(surface,'::after');
+                    return {surface:getComputedStyle(surface).backgroundColor,button:getComputedStyle(button).backgroundColor,hover:button.matches(':hover'),borderStyle:border.borderTopStyle,borderWidth:border.borderTopWidth,borderColor:border.borderTopColor};
+                })()`)
+                })
+                await assert(`(() => {
+                    const button=${notionScope}.querySelector('[aria-label^="Change journal page:"]');
+                    const surface=button.closest('[role="group"]').firstElementChild;
+                    const border=getComputedStyle(surface,'::after');
+                    return getComputedStyle(surface).backgroundColor==='rgba(0, 0, 0, 0)' &&
+                        getComputedStyle(button).backgroundColor==='rgba(0, 0, 0, 0)' &&
+                        border.borderTopStyle==='solid' && parseFloat(border.borderTopWidth)>0 &&
+                        border.borderTopColor!=='rgba(0, 0, 0, 0)';
+                })()`)
+                await shot('notion-selector-transparent', 0, 'notion')
+                const hoverPoint = await js(
+                    `(() => {const r=${notionScope}.querySelector('[aria-label^="Change journal page:"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`
+                )
+                window.webContents.sendInputEvent({ type: 'mouseMove', ...hoverPoint })
+                await pause(250)
+                await assert(
+                    `getComputedStyle(${notionScope}.querySelector('[aria-label^="Change journal page:"]')).backgroundColor!=='rgba(0, 0, 0, 0)'`
+                )
+                await shot('notion-selector-hover', 0, 'notion')
+                window.webContents.sendInputEvent({ type: 'mouseMove', x: 30, y: 300 })
                 const originalSize = window.getContentSize()
                 for (const width of [768, 1024, 1440]) {
                     window.setContentSize(width, originalSize[1])

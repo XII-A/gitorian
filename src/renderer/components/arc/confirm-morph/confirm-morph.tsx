@@ -65,8 +65,8 @@ export interface ConfirmMorphProps {
      * accent, for important actions that can be reversed. The resting button is neutral either way.
      */
     tone?: 'danger' | 'neutral'
-    /** Surface treatment. Secondary matches form fields; ghost leaves the surface and border transparent. */
-    variant?: 'raised' | 'secondary' | 'ghost'
+    /** Surface treatment. Outline keeps the border on a transparent surface; ghost also hides the border. */
+    variant?: 'raised' | 'secondary' | 'outline' | 'ghost'
     /** `immediate` runs a safe action on the first press. `press` asks for confirmation. `hold` asks for a press held for `holdDuration`. `countdown` confirms, then counts down `countdown` seconds that Cancel or Escape can still stop. */
     confirmMode?: ConfirmMorphMode
     /** Milliseconds the confirm button must be held in `hold` mode. */
