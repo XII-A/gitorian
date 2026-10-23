@@ -54,6 +54,7 @@ export class NotionConnection {
     private pending?: Session
     private pendingInstalled = false
     private pendingRefreshing?: Promise<string>
+    private savedSetup?: { workspace: string; id: string }
     constructor(
         private readonly vault: CredentialStore,
         private readonly origin: string,
@@ -72,6 +73,12 @@ export class NotionConnection {
     }
     private save(session: Session) {
         this.vault.set('notion', JSON.stringify(session))
+    }
+    private journalSetup(workspace: string): JournalSetup {
+        const recovery = this.recovery.get(workspace)
+        const completed = this.savedSetup?.workspace === workspace && this.savedSetup.id === recovery?.id
+        // A retained checkpoint for the installed destination must not lock future edits.
+        return recovery && !completed ? recovery : { id: randomBytes(16).toString('hex'), started: false }
     }
     private request(path: string, body?: unknown, origin = this.origin): Promise<unknown> {
         return Effect.runPromise(
@@ -199,10 +206,7 @@ export class NotionConnection {
             this.pending = {
                 ...tokens,
                 origin: this.origin,
-                journal: this.recovery.get(tokens.workspace_id) ?? {
-                    id: randomBytes(16).toString('hex'),
-                    started: false
-                }
+                journal: this.journalSetup(tokens.workspace_id)
             }
             clearTimeout(current.timer)
         })()
@@ -239,7 +243,7 @@ export class NotionConnection {
         this.pendingInstalled = true
         this.pending = {
             ...session,
-            journal: this.recovery.get(session.workspace_id) ?? { id: randomBytes(16).toString('hex'), started: false }
+            journal: this.journalSetup(session.workspace_id)
         }
         return true
     }
@@ -321,7 +325,13 @@ export class NotionConnection {
     }
     destinationSaved(): void {
         const session = this.session()
-        if (session) this.recovery.clear(session.workspace_id)
+        if (!session) return
+        this.savedSetup = { workspace: session.workspace_id, id: session.journal.id }
+        try {
+            this.recovery.clear(session.workspace_id)
+        } catch {
+            // Destination and credentials are already saved. Cleanup cannot undo success.
+        }
     }
     cancel(): void {
         this.generation++

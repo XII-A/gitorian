@@ -1,5 +1,6 @@
 import { app, shell, clipboard, nativeTheme, ipcMain } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import fs from 'node:fs'
 import { resolve, join } from 'node:path'
 import https from 'node:https'
 import dns from 'node:dns/promises'
@@ -63,6 +64,21 @@ let failPageSelection = true
 let expireEditSearch = false
 let expireEditCreation = false
 let notionRotations = 0
+let failRecoveryCleanup = false
+let recoveryCleanupFailures = 0
+const renameFile = fs.renameSync
+fs.renameSync = (source, destination) => {
+    if (
+        failRecoveryCleanup &&
+        String(destination).endsWith('notion-setup.json') &&
+        readFileSync(source, 'utf8') === '{}'
+    ) {
+        failRecoveryCleanup = false
+        recoveryCleanupFailures++
+        throw new Error('Fixture recovery cleanup unavailable')
+    }
+    renameFile(source, destination)
+}
 const oauthOrigin = 'https://oauth.fixture.test'
 process.env.WEEKLY_J_NOTION_OAUTH_ORIGIN = oauthOrigin
 const oauth = createOAuthHandler(
@@ -1038,6 +1054,7 @@ app.on('browser-window-created', (_, window) => {
             if (notionPagesCreated) throw new Error('Inaccessible selection created an unwanted page')
             await shot('notion-page-confirm-error', 200, 'notion')
 
+            failRecoveryCleanup = true
             await click('Retry', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)
             await shot('notion-06-success', 250, 'notion')
@@ -1046,6 +1063,7 @@ app.on('browser-window-created', (_, window) => {
                 `(() => {const section=${notionScope};return section.querySelector('[aria-label="Disconnect Notion"]').getBoundingClientRect().right <= section.getBoundingClientRect().right + .5})()`
             )
             await shot('notion-07-connected', 350, 'notion')
+            if (recoveryCleanupFailures !== 1) throw new Error('Recovery cleanup failure was not exercised')
             await assert(
                 `${notionScope}.querySelector('.notion-destination-identity').textContent.includes(${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes')}) && !${notionScope}.textContent.includes('Open journal') && !${notionScope}.textContent.includes('Weekly journal')`
             )

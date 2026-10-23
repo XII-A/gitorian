@@ -257,6 +257,29 @@ it('discards unconfirmed authorization, but finishes an explicitly confirmed ope
 const selectedPage = { kind: 'page' as const, id: 'selected-page', titleProperty: 'Name', dateProperty: '' }
 const rotated = { ...credentials, access_token: 'access-two', refresh_token: 'refresh-two' }
 
+it('keeps a saved connection usable when recovery cleanup fails and permits another destination edit', async () => {
+    const recovery = new Map<string, JournalSetup>()
+    const app = desktop(origin, recovery)
+    await installed(app)
+    vi.spyOn(recovery, 'delete').mockImplementationOnce(() => {
+        throw new Error('Recovery file is locked')
+    })
+    expect(() => app.connection.destinationSaved()).not.toThrow()
+    expect(app.connection.connected()).toBe(true)
+    expect(await app.connection.token()).toBe('access-one')
+    expect(recovery.size).toBe(1)
+    expect(app.connection.choose()).toBe(true)
+    await expect(
+        app.connection.completeJournal((setup, checkpoint) => {
+            expect(setup.started).toBe(false)
+            checkpoint('another-journal')
+            return Promise.resolve({ ...selectedPage, id: 'another-journal' })
+        }, 'Another journal')
+    ).resolves.toMatchObject({ id: 'another-journal' })
+    app.connection.destinationSaved()
+    expect(recovery.size).toBe(0)
+})
+
 async function installed(app: ReturnType<typeof desktop>) {
     await approve(app)
     await app.connection.poll()
