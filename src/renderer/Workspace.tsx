@@ -83,7 +83,7 @@ export function Workspace({
         activityViewport.current?.scrollTo({ top: 0, behavior: 'instant' })
     }, [week, project, branch, kind, authors])
     const [searchExpanded, setSearchExpanded] = useState(false)
-    const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('diff')
+    const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('details')
     const [publishTarget, setPublishTarget] = useState<HTMLElement | null>(null)
     const [selectedId, setSelectedId] = useState(initialActivity)
     const [detailBusy, setDetailBusy] = useState(false)
@@ -192,7 +192,7 @@ export function Workspace({
     const inspectionState = useRef(realState)
     inspectionState.current = realState
     const inspect = useCallback(
-        async (item: Activity, tab: 'diff' | 'details' = 'diff') => {
+        async (item: Activity, tab: 'diff' | 'details' = 'details') => {
             const id = ++requestId.current
             setSelectedId(item.id)
             setInspectionTab(tab)

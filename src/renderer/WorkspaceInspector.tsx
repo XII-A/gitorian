@@ -40,7 +40,7 @@ export function WorkspaceInspector({
     error,
     reference,
     canCite,
-    initialTab = 'diff',
+    initialTab = 'details',
     citationStatus,
     onCite,
     onPopout,
@@ -124,8 +124,8 @@ export function WorkspaceInspector({
                         </div>
                     </div>
                     <TabsList aria-label="Activity information" className="ws-inspector-tab-list" edgeToEdge>
-                        <TabsTrigger value="diff">Diff</TabsTrigger>
                         <TabsTrigger value="details">Details</TabsTrigger>
+                        <TabsTrigger value="diff">Diff</TabsTrigger>
                         <TabsTrigger value="related">
                             Related{' '}
                             <Badge className="ws-header-chip" size="sm" animateChanges={false}>

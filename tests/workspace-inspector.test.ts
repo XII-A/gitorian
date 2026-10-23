@@ -16,6 +16,7 @@ function renderInspector(options: { error?: string; loading?: boolean; diff?: st
         createElement(WorkspaceInspector, {
             state,
             activity,
+            initialTab: 'diff',
             run: vi.fn(),
             onCite: vi.fn(),
             onInspect: vi.fn(),
