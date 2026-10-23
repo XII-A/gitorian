@@ -1,4 +1,4 @@
-import { app, dialog } from 'electron'
+import { app, dialog, nativeTheme } from 'electron'
 import { appendFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -14,6 +14,8 @@ import { syncBuiltinESMExports } from 'node:module'
 const managed = process.env.WEEKLY_J_VERIFY_STATE
 const directory = managed ? resolve(managed) : mkdtempSync(join(tmpdir(), 'weekly-j-import-'))
 app.setPath('userData', join(directory, 'profile'))
+// Verify dark-only startup even when the platform requests light colors.
+nativeTheme.themeSource = 'light'
 const folder = join(directory, 'Projects')
 const names = ['api-server', 'archived-tools', 'design-system', 'playground', 'team/website', 'tools/website']
 for (const name of names) {
@@ -93,6 +95,21 @@ app.on('browser-window-created', (_, window) => {
         try {
             await pause(400)
             await wait(`!!document.querySelector('[aria-label="Open settings"]')`)
+            const expectDark = async () => {
+                await wait(`matchMedia('(prefers-color-scheme: light)').matches`)
+                if (
+                    !(await js(
+                        `document.documentElement.dataset.theme === 'dark' && getComputedStyle(document.documentElement).colorScheme === 'dark'`
+                    ))
+                )
+                    throw new Error('App did not retain dark mode with a light platform theme')
+            }
+            await expectDark()
+            nativeTheme.themeSource = 'dark'
+            await wait(`matchMedia('(prefers-color-scheme: dark)').matches`)
+            nativeTheme.themeSource = 'light'
+            await expectDark()
+            await shot('00-dark-theme-light-platform')
             const doctor = {
                 url: window.webContents.getURL(),
                 profile: app.getPath('userData'),
