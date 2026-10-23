@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { Effect, Schema } from 'effect'
 import { attemptLifetime, credentialSchema } from '../../services/notion-oauth/src/protocol'
 import type { Destination } from '../shared/model'
+import type { JournalSetupStore } from './notion-setup'
 
 interface CredentialStore {
     get: (key: string) => string
@@ -51,10 +52,13 @@ export class NotionConnection {
     private refreshing?: Promise<string>
     private completing?: Promise<Destination>
     private pending?: Session
+    private pendingInstalled = false
+    private pendingRefreshing?: Promise<string>
     constructor(
         private readonly vault: CredentialStore,
         private readonly origin: string,
-        private readonly fetcher: typeof fetch = fetch
+        private readonly fetcher: typeof fetch,
+        private readonly recovery: JournalSetupStore
     ) {}
 
     private session(key = 'notion'): Session | undefined {
@@ -191,14 +195,14 @@ export class NotionConnection {
                 await this.request('/token', { ...current.callback, verifier: current.verifier })
             )
             if (this.generation !== generation) throw new Error('Notion connection cancelled.')
-            const previous = this.session('notion-setup')
+            this.pendingInstalled = false
             this.pending = {
                 ...tokens,
                 origin: this.origin,
-                journal:
-                    previous?.workspace_id === tokens.workspace_id
-                        ? previous.journal
-                        : { id: randomBytes(16).toString('hex'), started: false }
+                journal: this.recovery.get(tokens.workspace_id) ?? {
+                    id: randomBytes(16).toString('hex'),
+                    started: false
+                }
             }
             clearTimeout(current.timer)
         })()
@@ -206,23 +210,36 @@ export class NotionConnection {
         if (generation !== this.generation) throw new Error('Notion connection cancelled.')
         return { authorized: true }
     }
-    pendingToken(): Promise<string> {
-        return this.pending
-            ? Promise.resolve(this.pending.access_token)
-            : Promise.reject(new Error('Connect Notion before choosing a page.'))
+    pendingToken(refresh = false, rejected?: string): Promise<string> {
+        const session = this.pending
+        if (!session) return Promise.reject(new Error('Connect Notion before choosing a page.'))
+        if (this.pendingInstalled) return this.token(refresh, rejected)
+        if (!refresh || (rejected && session.access_token !== rejected)) return Promise.resolve(session.access_token)
+        if (this.pendingRefreshing) return this.pendingRefreshing
+        const request = (async () => {
+            const tokens = decodeTokens(
+                await this.request('/refresh', { refresh_token: session.refresh_token }, session.origin)
+            )
+            if (this.pending !== session) throw new Error('Notion connection cancelled.')
+            if (tokens.workspace_id !== session.workspace_id)
+                throw new Error('Notion workspace changed. Connect again.')
+            Object.assign(session, tokens)
+            return tokens.access_token
+        })().finally(() => {
+            if (this.pendingRefreshing === request) this.pendingRefreshing = undefined
+        })
+        this.pendingRefreshing = request
+        return request
     }
     choose(): boolean {
         if (this.completing) throw new Error('Notion is finishing setup. Try again in a moment.')
         const session = this.session()
         if (!session) return false
         this.cancel()
-        const recovery = this.session('notion-setup')
+        this.pendingInstalled = true
         this.pending = {
             ...session,
-            journal:
-                recovery?.workspace_id === session.workspace_id
-                    ? recovery.journal
-                    : { id: randomBytes(16).toString('hex'), started: false }
+            journal: this.recovery.get(session.workspace_id) ?? { id: randomBytes(16).toString('hex'), started: false }
         }
         return true
     }
@@ -277,13 +294,19 @@ export class NotionConnection {
             .then(() =>
                 prepare(setup, (pageId) => {
                     check()
-                    session.journal = { ...session.journal, started: true, ...(pageId ? { pageId } : {}) }
-                    this.vault.set('notion-setup', JSON.stringify(session))
+                    const journal = { ...session.journal, started: true, ...(pageId ? { pageId } : {}) }
+                    this.recovery.set(session.workspace_id, journal)
+                    session.journal = journal
                 })
             )
-            .then((destination) => {
+            .then(async (destination) => {
+                // A refresh that began before confirmation owns the rotated credentials.
+                const refreshing = this.pendingInstalled ? this.refreshing : this.pendingRefreshing
+                if (refreshing) await refreshing
                 check()
-                this.save({ ...session, journal: { ...session.journal, pageId: destination.id } })
+                const latest = this.pendingInstalled ? this.session() : session
+                if (!latest) throw new Error('Notion connection cancelled.')
+                this.save({ ...latest, journal: { ...session.journal, pageId: destination.id } })
                 this.credentialGeneration++
                 this.refreshing = undefined
                 this.pending = undefined
@@ -296,9 +319,16 @@ export class NotionConnection {
         this.completing = request
         return request
     }
+    destinationSaved(): void {
+        const session = this.session()
+        if (session) this.recovery.clear(session.workspace_id)
+    }
     cancel(): void {
         this.generation++
-        if (!this.completing) this.pending = undefined
+        if (!this.completing) {
+            this.pending = undefined
+            this.pendingRefreshing = undefined
+        }
         if (this.attempt) {
             clearTimeout(this.attempt.timer)
             this.attempt.server.close()

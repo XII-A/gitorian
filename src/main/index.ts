@@ -16,6 +16,7 @@ import { Http } from './http'
 import { GitHub } from './github'
 import { Notion } from './notion'
 import { NotionConnection } from './notion-connection'
+import { NotionSetupStore } from './notion-setup'
 import { JournalService } from './service'
 import { inspectRepository } from './git'
 import { watchWindowTitleBar } from './window-title-bar'
@@ -232,11 +233,13 @@ void app.whenReady().then(() => {
         vault,
         (!app.isPackaged && process.env.WEEKLY_J_NOTION_OAUTH_ORIGIN) ||
             import.meta.env.MAIN_VITE_NOTION_OAUTH_ORIGIN ||
-            ''
+            '',
+        fetch,
+        new NotionSetupStore(join(app.getPath('userData'), 'notion-setup.json'))
     )
     const connection = notionConnection
     const notion = new Notion(http, (refresh, rejected) => connection.token(refresh, rejected), store)
-    const pendingNotion = new Notion(http, () => connection.pendingToken())
+    const pendingNotion = new Notion(http, (refresh, rejected) => connection.pendingToken(refresh, rejected))
     const notionDiscovery = new NotionDiscoveryCache(join(app.getPath('userData'), 'notion-pages.json'))
     let notionPickerGeneration = 0
     let availableNotionPages: Awaited<ReturnType<Notion['accessiblePages']>> = []
@@ -379,7 +382,7 @@ void app.whenReady().then(() => {
                 const generation = notionPickerGeneration
                 const token = await connection.pendingToken()
                 if (generation !== notionPickerGeneration) throw new Error('Notion page discovery cancelled.')
-                const discovery = new Notion(http, () => token)
+                const discovery = new Notion(http, (refresh, rejected) => connection.pendingToken(refresh, rejected))
                 let lastStage = ''
                 let latest: NotionDiscoveryProgress | undefined
                 let progressTimer: ReturnType<typeof setTimeout> | undefined
@@ -429,7 +432,6 @@ void app.whenReady().then(() => {
             }
             case 'notionConfirm': {
                 const previousIdentity = connection.profileKey()
-                const pickerToken = await connection.pendingToken()
                 const selection = command.selection
                 const page =
                     selection.kind === 'existing'
@@ -457,7 +459,9 @@ void app.whenReady().then(() => {
                 )
                 store.state.settings.destination = destination
                 store.persist()
-                notionDiscovery.remember(pickerToken, {
+                await store.flush()
+                connection.destinationSaved()
+                notionDiscovery.remember(await connection.token(), {
                     ...page,
                     kind: 'page',
                     id: destination.id,

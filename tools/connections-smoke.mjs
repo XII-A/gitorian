@@ -19,6 +19,8 @@ app.setPath('userData', join(directory, 'profile'))
 nativeTheme.themeSource = 'dark'
 mkdirSync(output, { recursive: true })
 for (const file of [
+    'src/main/notion-setup.ts',
+    'tests/notion-setup.test.ts',
     'src/main/connection-profiles.ts',
     'src/renderer/useConnectionProfile.ts',
     'src/renderer/NotionPagePicker.tsx',
@@ -58,6 +60,9 @@ let notionCreatedTitle = 'Weekly Journal'
 let refreshedNames = false
 let failPageSearch = true
 let failPageSelection = true
+let expireEditSearch = false
+let expireEditCreation = false
+let notionRotations = 0
 const oauthOrigin = 'https://oauth.fixture.test'
 process.env.WEEKLY_J_NOTION_OAUTH_ORIGIN = oauthOrigin
 const oauth = createOAuthHandler(
@@ -139,6 +144,16 @@ globalThis.fetch = (input, init) =>
         if (url === 'https://api.github.com/user') return json({ login: githubLogin })
         if (url === 'https://api.github.com/user/emails') return json([{ email: 'fixture@example.com' }])
         if (url === 'https://api.notion.com/v1/oauth/token') {
+            if (body.grant_type === 'refresh_token') {
+                const expected = notionRotations ? `fixture-refresh-${notionRotations}` : 'fixture-refresh-token'
+                if (body.refresh_token !== expected) throw new Error('Rotated refresh credential was overwritten')
+                notionRotations++
+                return json({
+                    access_token: `fixture-rotated-${notionRotations}`,
+                    refresh_token: `fixture-refresh-${notionRotations}`,
+                    workspace_id: 'fixture-workspace'
+                })
+            }
             return json({
                 access_token:
                     notionName === 'Second integration' ? 'fixture-other-notion-token' : 'fixture-notion-token',
@@ -147,6 +162,10 @@ globalThis.fetch = (input, init) =>
             })
         }
         if (url === 'https://api.notion.com/v1/search') {
+            if (expireEditSearch) {
+                expireEditSearch = false
+                return new Response('{}', { status: 401 })
+            }
             await pause(350)
             if (failPageSearch) {
                 failPageSearch = false
@@ -217,6 +236,10 @@ globalThis.fetch = (input, init) =>
                 parent: { block_id: 'fixture-database-toggle' }
             })
         if (url === 'https://api.notion.com/v1/pages' && init?.method === 'POST') {
+            if (expireEditCreation) {
+                expireEditCreation = false
+                return new Response('{}', { status: 401 })
+            }
             notionPagesCreated++
             notionCreatedTitle = body.properties.title.title[0].text.content
             await pause(1200)
@@ -809,7 +832,7 @@ app.on('browser-window-created', (_, window) => {
             })()`)
             await shot('notion-counter-settled', 50, 'notion')
             await assertActionsFit('Notion')
-            await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+            await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
             const loadingFrames = await js(
                 `(() => {cancelAnimationFrame(window.__notionLoadingMotion.frame);return window.__notionLoadingMotion.frames})()`
             )
@@ -871,7 +894,7 @@ app.on('browser-window-created', (_, window) => {
             const choosePage = async (id, keyboard = false) => {
                 const wasConnected = (await js(`window.journal.invoke({type:'state'})`)).connections.notion
                 await js(
-                    `(() => {const input=${notionScope}.querySelector('[role="combobox"]'); input.focus(); input.click()})()`
+                    `(() => {const input=${notionScope}.querySelector('[role="combobox"]:not([inert] *)'); input.focus(); input.click()})()`
                 )
                 if (id === 'new') {
                     await wait(
@@ -907,10 +930,10 @@ app.on('browser-window-created', (_, window) => {
             await assert(
                 `(() => {const field=${notionScope}.querySelector('.notion-page-field').getBoundingClientRect(); const surface=${notionScope}.querySelector('[data-state="confirming"] > div').getBoundingClientRect(); return Math.abs(field.left-surface.left-4)<1 && Math.abs(surface.height-field.height-8)<1})()`
             )
-            await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
+            await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').click()`)
             await wait(`!!document.querySelector('button[aria-label="Expand Personal"]')`)
             await click('Expand Personal')
-            await assert(`${notionScope}.querySelector('[role="combobox"]').value===''`)
+            await assert(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value===''`)
             await assert(`!document.querySelector('[role="treeitem"][title="Decisions"]')`)
             await shot('notion-page-tree', 250, 'notion')
             if (!stressMotion) {
@@ -931,7 +954,7 @@ app.on('browser-window-created', (_, window) => {
             await js(`document.querySelector('[role="treeitem"][title="Projects"]').click()`)
             await wait(`!!document.querySelector('[role="treeitem"][title="Board entry"]')`)
             await assert(
-                `${notionScope}.querySelector('[role="combobox"]').value==='' && document.querySelector('[role="treeitem"][title="Board entry"]').getAttribute('aria-level')==='3'`
+                `${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value==='' && document.querySelector('[role="treeitem"][title="Board entry"]').getAttribute('aria-level')==='3'`
             )
             await assert(
                 `(async () => {try {await window.journal.invoke({type:'notionConfirm',selection:{kind:'existing',pageId:'fixture-projects'}});return false} catch {return !(await window.journal.invoke({type:'state'})).connections.notion}})()`
@@ -941,8 +964,8 @@ app.on('browser-window-created', (_, window) => {
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
             window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
             await wait(`!document.querySelector('[role="treeitem"][title="Board entry"]')`)
-            await assert(`${notionScope}.querySelector('[role="combobox"]').value===''`)
-            await js(`${notionScope}.querySelector('[role="combobox"]').focus()`)
+            await assert(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value===''`)
+            await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').focus()`)
             await window.webContents.insertText('Board entry')
             await wait(`!!document.querySelector('[role="treeitem"][title="Board entry"]')`)
             await assert(
@@ -950,15 +973,15 @@ app.on('browser-window-created', (_, window) => {
             )
             await shot('notion-database-search', 150, 'notion')
             await js(`document.querySelector('[role="treeitem"][title="Board entry"]').click()`)
-            await wait(`${notionScope}.querySelector('[role="combobox"]').value==='Board entry'`)
+            await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value==='Board entry'`)
             await assert(`(async () => !(await window.journal.invoke({type:'state'})).connections.notion)()`)
-            await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
+            await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').click()`)
             await wait(`!!document.querySelector('[role="treeitem"][title="Personal"]')`)
             await js(`document.querySelector('[role="treeitem"][title="Personal"]').click()`)
-            await wait(`${notionScope}.querySelector('[role="combobox"]').value==='Personal'`)
+            await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value==='Personal'`)
             if ((await js(`window.journal.invoke({type:'state'})`)).connections.notion)
                 throw new Error('Parent selection implicitly confirmed')
-            await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
+            await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').click()`)
             await window.webContents.insertText('Decisions')
             await wait(`!!document.querySelector('[role="treeitem"][title="Decisions"]')`)
             await assert(`!!document.querySelector('[role="treeitem"][title="Personal"]')`)
@@ -966,10 +989,14 @@ app.on('browser-window-created', (_, window) => {
                 `document.querySelector('[role="treeitem"][title="Decisions"]').getAttribute('aria-level')==='3'`
             )
             await shot('notion-page-tree-search', 250, 'notion')
-            await js(`${notionScope}.querySelector('[role="combobox"]').select()`)
+            await js(`document.querySelector('button[aria-label="Collapse Personal"]').click()`)
+            await wait(`!document.querySelector('[role="treeitem"][title="Decisions"]')`)
+            await js(`document.querySelector('button[aria-label="Expand Personal"]').click()`)
+            await wait(`!!document.querySelector('[role="treeitem"][title="Decisions"]')`)
+            await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').select()`)
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' })
             window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' })
-            await wait(`${notionScope}.querySelector('[role="combobox"]').value===''`)
+            await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value===''`)
             await assert(
                 `!!document.querySelector('button[aria-label="Expand Personal"]') && !document.querySelector('[role="treeitem"][title="Decisions"]')`
             )
@@ -978,10 +1005,10 @@ app.on('browser-window-created', (_, window) => {
                 `Array.from(document.querySelectorAll('[role="status"]')).some(n=>n.textContent==='No matching pages')`
             )
             await shot('notion-page-tree-empty', 150, 'notion')
-            await js(`${notionScope}.querySelector('[role="combobox"]').select()`)
+            await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').select()`)
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' })
             window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' })
-            await wait(`${notionScope}.querySelector('[role="combobox"]').value===''`)
+            await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value===''`)
             await assert(
                 `!Array.from(document.querySelectorAll('[role="treeitem"]')).some(n=>n.textContent.includes('fixture-') || n.title.includes('fixture-'))`
             )
@@ -1003,7 +1030,7 @@ app.on('browser-window-created', (_, window) => {
             await click('Connect', notionScope)
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='device'`)
             await approveNotion()
-            await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+            await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
             await choosePage('fixture-existing', true)
             await shot('notion-existing-selected', 200, 'notion')
             await click('Confirm', notionScope)
@@ -1103,12 +1130,12 @@ app.on('browser-window-created', (_, window) => {
             )
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' })
             window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' })
-            await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+            await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
             await assert(
                 `window.__notionEditNode === ${notionScope}.querySelector('.notion-page-connection [role="group"]')`
             )
             await assert(`${notionScope}.querySelector('[data-notion-disconnect]').inert`)
-            await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
+            await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').click()`)
             await wait(
                 `Array.from(document.querySelectorAll('[role="treeitem"][aria-selected="true"]')).some(n=>n.title===${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes')})`
             )
@@ -1164,16 +1191,17 @@ app.on('browser-window-created', (_, window) => {
             await wait(`${notionScope}.querySelector('.notion-page-connection [data-state="error"]') !== null`)
             await shot('notion-edit-retry', 100, 'notion')
             await click('Retry', notionScope)
-            await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+            await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
             await click('Cancel', notionScope)
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
             const clockNow = Date.now
             try {
                 Date.now = () => clockNow() + 300001
                 refreshedNames = true
+                expireEditSearch = true
                 await changeJournalPage()
-                await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
-                await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
+                await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
+                await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').click()`)
                 await wait(`!!document.querySelector('[role="treeitem"][title="Shared notes"]')`)
                 const deadline = clockNow() + 10000
                 while (
@@ -1188,11 +1216,12 @@ app.on('browser-window-created', (_, window) => {
                     `!!document.querySelector('[role="treeitem"][title="Shared notes"]') && !document.querySelector('[role="treeitem"][title="Updated shared notes"]')`
                 )
                 await shot('notion-cached-tree-stable', 100, 'notion')
+                if (notionRotations !== 1) throw new Error('Destination discovery did not refresh rejected credentials')
                 await click('Cancel', notionScope)
                 await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
                 await changeJournalPage()
-                await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
-                await js(`${notionScope}.querySelector('[role="combobox"]').click()`)
+                await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
+                await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').click()`)
                 await wait(`!!document.querySelector('[role="treeitem"][title="Updated shared notes"]')`)
                 await shot('notion-refreshed-cache-next-open', 100, 'notion')
                 writeFileSync(join(output, 'notion-cache-refresh.json'), readFileSync(cachePath))
@@ -1202,15 +1231,17 @@ app.on('browser-window-created', (_, window) => {
                 Date.now = clockNow
             }
             await changeJournalPage()
-            await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+            await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
             await choosePage('new')
             await js(`${notionScope}.querySelector('input').select()`)
             await window.webContents.insertText('Team journal')
+            expireEditCreation = true
             await click('Confirm', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="pending"]') !== null`)
             await click('Close dialog')
             await wait(`!document.querySelector('[aria-label="Notion connection"]')`)
             await pause(1500)
+            if (notionRotations !== 2) throw new Error('Destination confirmation did not refresh rejected credentials')
             await openConnections()
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
             await shot('notion-created-after-dialog-close', 250, 'notion')
@@ -1247,7 +1278,7 @@ app.on('browser-window-created', (_, window) => {
             await click('Connect', notionScope)
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='device'`)
             await approveNotion()
-            await wait(`${notionScope}.querySelector('[role="combobox"]') !== null`)
+            await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
             await choosePage('fixture-private-journal')
             await click('Confirm', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)

@@ -59,6 +59,10 @@ function PageTree({ pages, context }: { pages: NotionPage[]; context: ComboboxTr
         visit(nodes)
         return ids
     }, [nodes])
+    const query = context.query.trim()
+    const [search, setSearch] = useState({ query, expanded: searchExpanded })
+    // Reset only the search tree when its query changes; preserve ordinary browsing.
+    if (search.query !== query) setSearch({ query, expanded: searchExpanded })
     return (
         <>
             <Button size="sm" variant="ghost" className="notion-create-page" onClick={() => context.select('new')}>
@@ -74,8 +78,8 @@ function PageTree({ pages, context }: { pages: NotionPage[]; context: ComboboxTr
                 animateExpansion={false}
                 selectBranches
                 selectedId={context.selected || null}
-                expandedIds={context.query.trim() ? searchExpanded : expanded}
-                onExpandedChange={setExpanded}
+                expandedIds={query ? (search.query === query ? search.expanded : searchExpanded) : expanded}
+                onExpandedChange={(ids) => (query ? setSearch({ query, expanded: ids }) : setExpanded(ids))}
                 onEscape={context.close}
                 onSelect={(node) => context.select(node.id)}
             />

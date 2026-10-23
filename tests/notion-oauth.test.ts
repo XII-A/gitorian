@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { createOAuthHandler } from '../services/notion-oauth/src/handler'
+import { Notion } from '../src/main/notion'
+import { Http } from '../src/main/http'
+import type { JournalSetup } from '../src/main/notion-connection'
 import { NotionConnection } from '../src/main/notion-connection'
 
 const origin = 'https://auth.example.com'
@@ -94,7 +97,7 @@ it('returns safe provider failures, forwards denial only to the paired app, and 
     })
 })
 
-function desktop(serviceOrigin = origin) {
+function desktop(serviceOrigin = origin, recovery = new Map<string, JournalSetup>()) {
     const secrets = new Map<string, string>()
     const provider = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(response(credentials)))
     const handler = createOAuthHandler({ ...config, origin: serviceOrigin }, provider)
@@ -107,7 +110,16 @@ function desktop(serviceOrigin = origin) {
             }
         },
         serviceOrigin,
-        fetcher
+        fetcher,
+        {
+            get: (workspace: string) => recovery.get(workspace),
+            set: (workspace: string, setup: JournalSetup) => {
+                recovery.set(workspace, structuredClone(setup))
+            },
+            clear: (workspace: string) => {
+                recovery.delete(workspace)
+            }
+        }
     )
     active.push(connection)
     return { connection, secrets, provider, handler }
@@ -155,7 +167,9 @@ it.each([origin, 'http://localhost:8788'])(
                     app.secrets.set(key, value)
                 }
             },
-            serviceOrigin
+            serviceOrigin,
+            (input, init) => app.handler(new Request(input, init)),
+            { get: () => undefined, set: vi.fn(), clear: vi.fn() }
         )
         active.push(restored)
         expect(await restored.token()).toBe('access-two')
@@ -238,4 +252,120 @@ it('discards unconfirmed authorization, but finishes an explicitly confirmed ope
     expect((await saving).id).toBe('confirmed-page')
     expect(app.connection.connected()).toBe(true)
     expect(app.secrets.get('notion-setup')).toBe('')
+})
+
+const selectedPage = { kind: 'page' as const, id: 'selected-page', titleProperty: 'Name', dateProperty: '' }
+const rotated = { ...credentials, access_token: 'access-two', refresh_token: 'refresh-two' }
+
+async function installed(app: ReturnType<typeof desktop>) {
+    await approve(app)
+    await app.connection.poll()
+    await app.connection.completeJournal((_setup, checkpoint) => {
+        checkpoint(selectedPage.id)
+        return Promise.resolve(selectedPage)
+    })
+}
+
+it('recovers a created page after losing all in-memory credentials and restarting authorization', async () => {
+    const recovery = new Map<string, JournalSetup>()
+    const first = desktop(origin, recovery)
+    await approve(first)
+    await first.connection.poll()
+    let creations = 0
+    let marker = ''
+    await expect(
+        first.connection.completeJournal((setup, checkpoint) => {
+            checkpoint()
+            marker = setup.id
+            creations++
+            return Promise.reject(new Error('Process lost after provider accepted creation'))
+        }, 'Work journal')
+    ).rejects.toThrow(/Process lost/)
+    first.connection.cancel()
+    const restarted = desktop(origin, recovery)
+    await approve(restarted)
+    await restarted.connection.poll()
+    await restarted.connection.completeJournal((setup) => {
+        if (!setup.started || setup.id !== marker) creations++
+        expect(setup).toMatchObject({ id: marker, started: true, title: 'Work journal' })
+        return Promise.resolve(selectedPage)
+    }, 'Work journal')
+    expect(creations).toBe(1)
+})
+
+it.each([
+    { name: 'new authorization discovery', edit: false, confirm: false },
+    { name: 'destination edit discovery', edit: true, confirm: false },
+    { name: 'destination edit confirmation', edit: true, confirm: true }
+])('refreshes rejected credentials during $name', async ({ edit, confirm }) => {
+    const app = desktop()
+    if (edit) {
+        await installed(app)
+        expect(app.connection.choose()).toBe(true)
+    } else {
+        await approve(app)
+        await app.connection.poll()
+    }
+    app.provider.mockResolvedValue(response(rotated))
+    const api = vi.fn<typeof fetch>((_url, init) =>
+        Promise.resolve(
+            new Headers(init?.headers).get('Authorization') === 'Bearer access-one'
+                ? response({ message: 'expired' }, 401)
+                : response(confirm ? {} : { results: [], has_more: false, next_cursor: null })
+        )
+    )
+    const notion = new Notion(new Http(api), (refresh, rejected) => app.connection.pendingToken(refresh, rejected))
+    if (confirm) {
+        await expect(
+            app.connection.completeJournal((setup, checkpoint) =>
+                notion.prepareJournal(setup, checkpoint, { ...selectedPage, id: 'another-page' })
+            )
+        ).resolves.toMatchObject({ id: 'another-page' })
+        expect(JSON.parse(app.secrets.get('notion')!).refresh_token).toBe('refresh-two')
+    } else {
+        await expect(notion.accessiblePages()).resolves.toEqual([])
+        expect(await app.connection.pendingToken()).toBe('access-two')
+    }
+    expect(
+        app.provider.mock.calls.filter(
+            ([, init]) => JSON.parse(typeof init?.body === 'string' ? init.body : '{}').grant_type === 'refresh_token'
+        )
+    ).toHaveLength(1)
+    expect(api.mock.calls.map(([, init]) => new Headers(init?.headers).get('Authorization'))).toEqual([
+        'Bearer access-one',
+        'Bearer access-two'
+    ])
+})
+
+it('confirmation preserves credentials rotated by a concurrent installed-session request', async () => {
+    const app = desktop()
+    await installed(app)
+    app.connection.choose()
+    app.provider.mockResolvedValue(response(rotated))
+    await app.connection.completeJournal(async () => {
+        await app.connection.token(true, 'access-one')
+        return { ...selectedPage, id: 'new-destination' }
+    })
+    expect(JSON.parse(app.secrets.get('notion')!)).toMatchObject({ ...rotated, journal: { pageId: 'new-destination' } })
+})
+
+it('waits for an in-flight rotation before committing an edited destination', async () => {
+    const app = desktop()
+    await installed(app)
+    app.connection.choose()
+    let finish!: (response: Response) => void
+    app.provider.mockImplementation(
+        () =>
+            new Promise((resolve) => {
+                finish = resolve
+            })
+    )
+    const refresh = app.connection.token(true, 'access-one')
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    const saved = app.connection.completeJournal(() => Promise.resolve({ ...selectedPage, id: 'new-destination' }))
+    const outcomes = Promise.allSettled([refresh, saved])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    finish(response(rotated))
+    expect((await outcomes).map((result) => result.status)).toEqual(['fulfilled', 'fulfilled'])
+    expect(JSON.parse(app.secrets.get('notion')!)).toMatchObject({ ...rotated, journal: { pageId: 'new-destination' } })
 })
