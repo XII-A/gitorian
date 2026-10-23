@@ -11,6 +11,7 @@ import type { GitHub } from './github'
 import type { Notion } from './notion'
 import { forEachConcurrent, WorkQueue } from './work-queue'
 import { filesFromDiff } from './diff-files'
+import { hasFileStatistics } from '../shared/change-statistics'
 import { isCombinedDiff } from '../shared/diff-format'
 import { imageIds } from '../shared/images'
 import { gitConfiguration, githubConfiguration } from '../shared/activity-history'
@@ -278,7 +279,7 @@ export class JournalService {
         if (retainDiff) {
             state.diffs[activity.id] = snapshot.diff
             activity.diffRevision = id
-            if (!activity.filesLoaded) {
+            if (!hasFileStatistics(activity)) {
                 const files = filesFromDiff(snapshot.diff)
                 if (files !== undefined) {
                     activity.files = files
@@ -688,7 +689,7 @@ export class JournalService {
         const version = activity.sourceVersion
         if (activity.kind === 'pr') {
             if (includeDiff) await this.capture(activity)
-            if (!activity.filesLoaded) activity.files = await this.github.files(repository, activity)
+            if (!hasFileStatistics(activity)) activity.files = await this.github.files(repository, activity)
         } else if (activity.sha) {
             let details: Awaited<ReturnType<typeof commitDetails>>
             try {
@@ -869,7 +870,7 @@ export class JournalService {
                     ? state.diffs[activity.id] !== undefined &&
                       !isCombinedDiff(state.diffs[activity.id]) &&
                       (activity.kind !== 'pr' || activity.diffRevision === activity.revision)
-                    : activity.filesLoaded
+                    : hasFileStatistics(activity)
                 if (!cached) {
                     const key = `${activity.id}:${activity.sourceVersion ?? activity.sha ?? ''}:${includeDiff}`
                     let request = this.details.get(key)

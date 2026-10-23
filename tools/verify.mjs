@@ -11,9 +11,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
-if (!['doctor', 'repository-import', 'inspector-tabs'].includes(mode) || process.argv.length !== 3) {
+if (!['doctor', 'repository-import', 'inspector-tabs', 'line-statistics'].includes(mode) || process.argv.length !== 3) {
     console.error(
-        'Usage: pnpm verify doctor | pnpm verify repository-import | pnpm verify inspector-tabs (run pnpm build first)'
+        'Usage: pnpm verify doctor | repository-import | inspector-tabs | line-statistics (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -57,6 +57,12 @@ if (mode === 'doctor') {
     console.info(`Evidence: ${output}`)
     let cleanupError
     try {
+        if (mode === 'line-statistics')
+            execFileSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'tools/line-statistics-fixture.ts'], {
+                cwd: root,
+                env,
+                windowsHide: true
+            })
         if (mode === 'inspector-tabs') writeFileSync(join(output, 'doctor.json'), JSON.stringify(build, null, 2))
         writeFileSync(
             join(output, 'source.patch'),
@@ -74,7 +80,13 @@ if (mode === 'doctor') {
         const result = await new Promise((done, reject) => {
             const child = spawn(
                 electron,
-                [mode === 'inspector-tabs' ? 'tools/desktop-smoke.mjs' : 'tools/repository-import-smoke.mjs'],
+                [
+                    mode === 'line-statistics'
+                        ? 'tools/line-statistics-smoke.mjs'
+                        : mode === 'inspector-tabs'
+                          ? 'tools/desktop-smoke.mjs'
+                          : 'tools/repository-import-smoke.mjs'
+                ],
                 {
                     cwd: root,
                     env,
@@ -110,6 +122,33 @@ if (mode === 'doctor') {
         if (result.code !== 0 || report.timedOut) throw new Error(`Electron journey failed: ${JSON.stringify(result)}`)
         const journey = JSON.parse(readFileSync(join(output, 'journey.json'), 'utf8'))
         if (!journey.passed) throw new Error('The journey did not report success')
+        if (mode === 'line-statistics') {
+            const db = new DatabaseSync(join(scratch, 'profile', 'weekly-j.sqlite'), { readOnly: true })
+            try {
+                const activities = db
+                    .prepare("SELECT json FROM state_records WHERE collection='activities'")
+                    .all()
+                    .map((row) => JSON.parse(String(row.json)))
+                writeFileSync(join(output, 'persisted-activities.json'), JSON.stringify(activities, null, 2))
+                const fixture = JSON.parse(readFileSync(join(output, 'fixture.json'), 'utf8'))
+                const inspected = activities.filter((activity) =>
+                    [fixture.commitId, fixture.prId].includes(activity.id)
+                )
+                for (const activity of inspected) {
+                    const stats = activity.files.map((file) => file.lineStats).filter(Boolean)
+                    if (
+                        !activity.filesLoaded ||
+                        activity.files.some((file) => file.lineStats === undefined) ||
+                        stats.reduce((sum, item) => Number(sum) + Number(item.additions), 0) !== 647 ||
+                        stats.reduce((sum, item) => Number(sum) + Number(item.deletions), 0) !== 45
+                    )
+                        throw new Error('Persisted line statistics differ from the fixture')
+                }
+                if (inspected.length !== 2) throw new Error('Expected commit and PR metadata to persist')
+            } finally {
+                db.close()
+            }
+        }
         if (mode === 'repository-import') {
             const db = new DatabaseSync(join(scratch, 'profile', 'weekly-j.sqlite'), { readOnly: true })
             try {
@@ -145,23 +184,34 @@ if (mode === 'doctor') {
         }
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
         report.evidenceRetained = (
-            mode === 'inspector-tabs'
+            mode === 'line-statistics'
                 ? [
                       'doctor.json',
-                      'actions.json',
-                      'docked-dark-details.png',
-                      'reference-dark-details.png',
-                      'reference-light-related.png',
+                      'actions.jsonl',
+                      'hub-commit-breakdown.png',
+                      'hub-pr-breakdown.png',
+                      'workspace-details.png',
+                      'selected-file-diff.png',
+                      'persisted-activities.json',
                       'journey.json'
                   ]
-                : [
-                      'doctor.json',
-                      'actions.jsonl',
-                      '01-choose-folder.png',
-                      '08-complete.png',
-                      '10-error-details.png',
-                      'persisted-repositories.json'
-                  ]
+                : mode === 'inspector-tabs'
+                  ? [
+                        'doctor.json',
+                        'actions.json',
+                        'docked-dark-details.png',
+                        'reference-dark-details.png',
+                        'reference-light-related.png',
+                        'journey.json'
+                    ]
+                  : [
+                        'doctor.json',
+                        'actions.jsonl',
+                        '01-choose-folder.png',
+                        '08-complete.png',
+                        '10-error-details.png',
+                        'persisted-repositories.json'
+                    ]
         ).every((file) => existsSync(join(output, file)))
         report.passed &&= report.cleanup.removed && report.evidenceRetained
         report.finishedAt = new Date().toISOString()

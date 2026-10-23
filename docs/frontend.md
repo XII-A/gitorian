@@ -79,6 +79,8 @@ The project chip follows PRs & reviews, shows the available project count at res
 
 Arc `TabsList` supports a local `edgeToEdge` option: the strip spans its pane with square outer corners while individual tabs retain their shared control radius. Related items reuse the activity row styles. Both writing and inspector footers use `--workspace-footer-height` (64px).
 
+Activity details in the hub and workspace share `ChangeStatistics` and `ChangeCounts`. Totals open an Arc Popover with a category table; signs and accessible labels preserve the meaning of the addition/deletion colors. The shared `change-statistics` module owns path classification, complete totals, and parsed-patch line counting. File metadata retains counts independently of patch display limits; older metadata without counts reloads through the existing details command. Binary counts are excluded when identified, and unknown counts stay unavailable rather than becoming zero. Keep the selected file's path and counts visible in the Diff tab in both docked and detached inspectors.
+
 ## Settings
 
 Keep settings layout in `src/renderer/settings.css`. Preserve the compact 850px by 720px desktop dialog, its control radius, header padding, muted save footer, and vertical Arc tabs. Both navigation and content use Arc `ScrollArea`; the content viewport fills the available height. Avoid adding settings overrides to the legacy desktop stylesheet. Fields use a two-column grid that becomes one column on phones; connection actions share a wrapping row. Keep descriptions to the information needed to make a decision.

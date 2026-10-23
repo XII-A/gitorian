@@ -8,6 +8,7 @@ Open activity details, review changed files and diffs, and move a read-only refe
 - `inspect.files`: file filtering retains correct results and usable scroll position.
 - `inspect.reference`: pop-out and dock preserve the selected activity and citation destination.
 - `inspect.reference-tabs`: Details is first and opens by default in the workspace and native reference window. Details, Diff, and Related retain the underline selection when focused. Selecting another activity defaults to Details; selecting Diff explicitly still loads its changes.
+- `inspect.line-statistics`: hub/workspace file details share total added/deleted lines, a category breakdown, and per-file counts; the Diff tab counts only inserted/deleted lines for its selected file.
 
 ## How to get to it (user POV)
 
@@ -24,6 +25,10 @@ Preconditions: `pnpm build`; `pnpm smoke` runs `tools/desktop-smoke.mjs`. Its fi
 - **Other entry:** select the same real activity in the workspace and compare the displayed file paths/diff with hub details. The sample reference result does not prove real activity loading on this entry point.
 
 ## Gotchas
+
+The line-statistics journey measures header text baselines in both hub and workspace; require title/addition/deletion offsets within 0.5 CSS pixels in unfocused, hover, and popover-open states. Inspect `alignment-*.json` and the six state PNGs. `alignment-states.html` composes those real UI captures into one comparison.
+
+For line statistics, run `pnpm build` then `pnpm verify line-statistics`. The runner seeds an old metadata-only commit in a disposable profile and creates a real repository containing runtime, test, eval, docs, config, renamed, binary, root, and empty-commit changes. The app hydrates the old record through real IPC/Git. An isolated GitHub transport supplies PR metadata, fails once, and recovers through Retry details; it makes no external requests. Require hub/workspace totals of +647/−45, matching category sums, selected runtime +55/−7, selected test +77/−1, a binary label, rename zero, root +46/−0, and empty-commit zero. It also exercises pop-out/dock, keyboard disclosure and focus return, dark/light contrast, 320px reflow, 200% zoom, and reopening persisted PR counts without refetching. Preserve `run.json`, screenshots, `actions.jsonl`, `fixture.json`, `http-requests.json`, `contrast-*.json`, and `persisted-activities.json` under the printed evidence directory. Success requires `passed`, `cleanup.removed`, and `evidenceRetained` in `run.json`. This proves the offline GitHub adapter flow, not live GitHub access.
 
 After `pnpm build`, run `pnpm verify inspector-tabs` for the focused tab regression journey. It uses a disposable journal-only sample profile, real Electron mouse/arrow-key input, and visible native windows so Motion can settle. It checks the 2px indicator geometry and transparent trigger background for all three tabs in the docked dark workspace and detached dark/light reference, then docks back. An opaque focus background hides the indicator because it paints behind the trigger. Screenshots, input observations, build/source details, logs, exit status, and cleanup results survive under `.ai-docs/verification/inspector-tabs-*/`; require `run.json.passed`, `cleanup.removed`, and `evidenceRetained` to be true. Sample data proves tab rendering and docking, not real activity loading or publishing.
 

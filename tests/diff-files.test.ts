@@ -12,12 +12,12 @@ it('derives changed-file names and statuses from text and metadata patches', () 
             'diff --git a/mode.sh b/mode.sh\nold mode 100644\nnew mode 100755\n'
     )
     expect(files).toEqual([
-        { name: 'a.ts', status: 'modified' },
-        { name: 'new.bin', status: 'added' },
-        { name: 'deleted.ts', status: 'removed' },
-        { name: 'renamed.ts', status: 'renamed', previousName: 'old.ts' },
-        { name: 'copied.ts', status: 'copied', previousName: 'source.ts' },
-        { name: 'mode.sh', status: 'modified' }
+        { name: 'a.ts', status: 'modified', lineStats: { additions: 1, deletions: 1 } },
+        { name: 'new.bin', status: 'added', lineStats: null },
+        { name: 'deleted.ts', status: 'removed', lineStats: { additions: 0, deletions: 1 } },
+        { name: 'renamed.ts', status: 'renamed', previousName: 'old.ts', lineStats: { additions: 0, deletions: 0 } },
+        { name: 'copied.ts', status: 'copied', previousName: 'source.ts', lineStats: { additions: 0, deletions: 0 } },
+        { name: 'mode.sh', status: 'modified', lineStats: { additions: 0, deletions: 0 } }
     ])
 })
 
@@ -38,7 +38,7 @@ it('opens a PR diff without file-list requests and reuses its files in hub detai
         const start = app.remote.requests.length
         const reply = await app.service.handle({ type: 'details', activityId: pr.id })
         expect(reply.diff).toBe(patch)
-        expect(pr.files).toEqual([{ name: 'a.ts', status: 'modified' }])
+        expect(pr.files).toEqual([{ name: 'a.ts', status: 'modified', lineStats: { additions: 1, deletions: 1 } }])
         expect(pr.filesLoaded).toBe(true)
         expect(app.remote.requests.slice(start).some((request) => request.url.includes('/files'))).toBe(false)
         const loaded = app.remote.requests.length

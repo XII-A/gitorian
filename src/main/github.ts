@@ -48,6 +48,18 @@ interface File {
     filename: string
     status: string
     previous_filename?: string
+    additions?: number
+    deletions?: number
+}
+function activityFile(file: File): Activity['files'][number] {
+    return {
+        name: file.filename,
+        status: file.status,
+        ...(file.previous_filename ? { previousName: file.previous_filename } : {}),
+        ...(file.additions !== undefined && file.deletions !== undefined
+            ? { lineStats: { additions: file.additions, deletions: file.deletions } }
+            : {})
+    }
 }
 interface Device {
     device_code: string
@@ -307,11 +319,7 @@ export class GitHub {
         const remote = githubRemote(repository.remote)
         const number = activity.prId?.split(':').at(-1)
         if (!remote || !number) return []
-        return (await this.list<File>(`repos/${remote}/pulls/${number}/files`)).map((file) => ({
-            name: file.filename,
-            status: file.status,
-            ...(file.previous_filename ? { previousName: file.previous_filename } : {})
-        }))
+        return (await this.list<File>(`repos/${remote}/pulls/${number}/files`)).map(activityFile)
     }
     async commitDetails(
         repository: Repository,
@@ -321,7 +329,14 @@ export class GitHub {
         const remote = githubRemote(repository.remote)
         if (!remote || !/^[a-f0-9]{40,64}$/.test(sha)) throw new Error('GitHub commit source is unavailable')
         const path = `repos/${remote}/commits/${sha}`
-        const metadata = await this.request<{ files: File[] }>(path)
+        const files: File[] = []
+        for (let page = 1; page <= 30; page++) {
+            const metadata = await this.request<{ files: File[] }>(`${path}?per_page=100&page=${page}`)
+            files.push(...metadata.files)
+            if (metadata.files.length < 100) break
+            if (page === 30)
+                throw new Error('This commit has too many changed files. Open it in GitHub for the complete source.')
+        }
         const diff = includeDiff
             ? await this.diff(`https://api.github.com/${path}`, this.token(), {
                   headers: { Accept: 'application/vnd.github.diff' }
@@ -329,11 +344,7 @@ export class GitHub {
             : ''
         return {
             diff: diff.length <= 2_000_000 ? diff : 'Diff is too large. Open in GitHub.',
-            files: metadata.files.map((file) => ({
-                name: file.filename,
-                status: file.status,
-                ...(file.previous_filename ? { previousName: file.previous_filename } : {})
-            }))
+            files: files.map(activityFile)
         }
     }
     private async diff(url: string, token: string, init: RequestInit, background = false): Promise<string> {

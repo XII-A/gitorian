@@ -11,6 +11,8 @@ import { FileDiff, SlidersHorizontal } from 'lucide-react'
 import { Switch } from './components/arc/switch/switch'
 import { Popover, PopoverContent, PopoverTrigger } from './components/arc/popover/popover'
 import { presentationTokens, selectedSource } from './diff-presentation'
+import { ChangeCounts } from './ChangeStatistics'
+import { diffLineStats } from '../shared/change-statistics'
 
 function DiffEmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
     return (
@@ -173,9 +175,7 @@ export function DiffViewer({
             >
                 <div className="ws-file-heading">
                     <code>{path}</code>
-                    <span>
-                        {files.length} {files.length === 1 ? 'file' : 'files'}
-                    </span>
+                    <ChangeCounts stats={diffLineStats(active)} />
                 </div>
                 {lineCount > 4000 ? (
                     <DiffEmptyState

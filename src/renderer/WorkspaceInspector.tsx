@@ -16,6 +16,7 @@ import { isPullRequest } from './pull-request'
 import { Badge } from './components/arc/badge/badge'
 import { activityLink } from './workspace-model'
 import { hasCachedDetails } from './activity-cache'
+import { hasFileStatistics } from '../shared/change-statistics'
 
 interface Props {
     state: State
@@ -76,7 +77,8 @@ export function WorkspaceInspector({
                 onValueChange={(value) => {
                     setTab(value)
                     if (value === 'diff' && !hasCachedDetails(state, activity)) onInspect?.(activity, 'diff')
-                    if (value === 'details' && !activity.filesLoaded && !loading) onInspect?.(activity, 'details')
+                    if (value === 'details' && !hasFileStatistics(activity) && !loading)
+                        onInspect?.(activity, 'details')
                 }}
                 className="ws-inspector-tabs"
             >
@@ -229,7 +231,7 @@ export function WorkspaceInspector({
                                 activity={activity}
                                 state={state}
                                 loading={loading}
-                                error={!activity.filesLoaded ? error : undefined}
+                                error={!hasFileStatistics(activity) ? error : undefined}
                                 onRetry={() => onInspect?.(activity, 'details')}
                             />
                             {url && (

@@ -508,9 +508,6 @@
     color: var(--text-secondary);
     flex: none;
 }
-.ws-inspector:not(.ws-inspector-detached) .ws-file-heading {
-    display: none;
-}
 .ws-file-heading code {
     color: var(--foreground);
     overflow-wrap: anywhere;

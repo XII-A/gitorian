@@ -11,6 +11,8 @@ import { Button } from './components/arc/button/button'
 import { Skeleton } from './components/arc/skeleton/skeleton'
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import './activity-details.css'
+import { hasFileStatistics } from '../shared/change-statistics'
+import { ChangeStatistics } from './ChangeStatistics'
 
 /** The hub and workspace share one presentation of the captured activity. */
 export function ActivityDetails({
@@ -114,8 +116,11 @@ export function ActivityDetails({
                 />
             )}
             <section className="hub-detail-section" aria-label="Changed files" aria-busy={loading}>
-                <h3>Changed files</h3>
-                {loading && !activity.filesLoaded ? (
+                <div className="activity-files-heading">
+                    <h3>Changed files</h3>
+                    {hasFileStatistics(activity) && !error && <ChangeStatistics files={activity.files} />}
+                </div>
+                {loading && !hasFileStatistics(activity) ? (
                     <Skeleton lines={4} label="Loading changed files" />
                 ) : error ? (
                     <Alert tone="danger" title="Changed files could not be loaded">

@@ -142,18 +142,41 @@ export async function commitDetails(
     includeDiff = true
 ): Promise<{ diff: string; files: Activity['files'] }> {
     if (!/^[a-f0-9]{40,64}$/.test(sha)) throw new Error('Invalid commit hash')
-    const names = await git(repository.path, [
+    const comparison = [
         'diff-tree',
         '--root',
         '--no-commit-id',
-        '--name-status',
         '--diff-merges=first-parent',
         '-z',
         '-M',
         '-r',
         sha,
         '--'
+    ]
+    const [names, numstat] = await Promise.all([
+        git(repository.path, [...comparison.slice(0, -1), '--name-status', '--']),
+        git(repository.path, [...comparison.slice(0, -1), '--numstat', '--no-ext-diff', '--no-textconv', '--'])
     ])
+    const statistics = new Map<string, Activity['files'][number]['lineStats']>()
+    const records = numstat.split('\0')
+    for (let index = 0; index < records.length && records[index];) {
+        const record = records[index++]
+        const first = record.indexOf('\t'),
+            second = record.indexOf('\t', first + 1)
+        const additions = record.slice(0, first),
+            deletions = record.slice(first + 1, second)
+        let name = record.slice(second + 1)
+        if (!name) {
+            index++
+            name = records[index++]
+        }
+        statistics.set(
+            name,
+            additions === '-' || deletions === '-'
+                ? null
+                : { additions: Number(additions), deletions: Number(deletions) }
+        )
+    }
     // NUL delimiters preserve filenames containing tabs, newlines, or spaces.
     const paths = names.split('\0')
     const files: Activity['files'] = []
@@ -164,6 +187,7 @@ export async function commitDetails(
             files.push({ status, previousName: firstPath, name: paths[index++] })
         } else files.push({ status, name: firstPath })
     }
+    for (const file of files) file.lineStats = statistics.get(file.name)
     let diff = ''
     if (includeDiff) {
         try {
