@@ -6,6 +6,7 @@ Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify window-chrome` on Wind
 
 - Hub at rest: a 6px frame surrounds the application on every edge, with no visible caption controls or extra page scrolling.
 - Top frame: hover at y=5 across the left, middle, and right. The top frame extends 32px with the caption reveal, preserving both rounded content corners below the controls. Verify the mask joins both content corners and capture both light and dark themes; moving through its native drag area keeps it open. Leaving hides it after a grace period; returning cancels dismissal.
+- Page zoom: change zoom on the same live window to 1.25x and 0.8x. Hover the last visible caption-button row longer than the hide grace; controls must stay open. Leave and approach the scaled 6px frame near its bottom edge; it must reveal again. Native hover heights use current page zoom, not display scale.
 - Caption buttons: the hover/click target fills the complete 38px top frame, ending exactly at the content edge. Pointer maximize updates the restore action, moving away does not pin the bar, restore returns to the original state, and minimize affects the owning window.
 - Keyboard: focus Minimize window after Tab. Controls appear immediately; leaving focus hides them. Native hit testing reports caption only while the drag area is revealed.
 - Reduced motion: the small frame mask changes position instantly; caption movement is removed, opacity reveals and hides the controls. Retain a screenshot with the bar shown.

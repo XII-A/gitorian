@@ -117,6 +117,34 @@ app.on('browser-window-created', (_, window) => {
                 'Frame must stay thin on every edge'
             )
             await shot('01-frame-hidden')
+            // Native cursor samples are DIPs; caption bounds are CSS pixels.
+            // Stay over the last visible button row longer than the hide grace.
+            for (const zoom of [1.25, 0.8]) {
+                window.webContents.setZoomFactor(zoom)
+                await move(300, 200, false)
+                await pause(650)
+                await move(300, 3, false)
+                await pause(250)
+                await expectBar(true, `Top edge did not reveal controls at ${zoom}x`)
+                const button = await evaluate(`(() => {
+                    const r = document.querySelector('[aria-label="Maximize window"]').getBoundingClientRect()
+                    return { x: r.x + r.width / 2, y: r.bottom - 1 }
+                })()`)
+                await move(button.x * zoom, button.y * zoom, false)
+                await pause(650)
+                await expectBar(true, `Visible bottom caption row lost hover at ${zoom}x`)
+                await move(300, 200, false)
+                await pause(650)
+                await expectBar(false, `Caption did not hide after leaving at ${zoom}x`)
+                await move(300, 6 * zoom - 0.5, false)
+                await pause(250)
+                await expectBar(true, `Scaled top frame did not reveal controls at ${zoom}x`)
+                record(`Caption lower edge and hidden frame reveal passed at ${zoom}x`)
+            }
+            await move(300, 200, false)
+            await pause(650)
+            window.webContents.setZoomFactor(1)
+
             if (process.env.WEEKLY_J_CHROME_TRACE) {
                 await window.webContents.debugger.sendCommand('Tracing.start', {
                     categories: 'devtools.timeline,blink.animations,cc',

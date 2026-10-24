@@ -56,7 +56,9 @@ export function watchWindowTitleBar(window: BrowserWindow) {
             reveal(false)
             return
         }
-        const inside = x >= 0 && x < bounds.width && y >= 0 && y < (revealed ? 40 : 6)
+        // Cursor/bounds use DIPs; hover heights are CSS pixels, including their margin.
+        const hoverHeight = (revealed ? 40 : 6) * window.webContents.getZoomFactor()
+        const inside = x >= 0 && x < bounds.width && y >= 0 && y < hoverHeight
         if (inside) {
             leftAt = undefined
             reveal(true)
