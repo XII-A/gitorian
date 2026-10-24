@@ -14,18 +14,45 @@ body:has(.window-chrome) {
 #root:has(.window-chrome) > :is(.hub-scroll, .app, .loading, .reference, .ws-reference) {
     height: var(--window-content-height);
 }
-/* Grow the frame by moving the content's rounded clipping edge with the caption.
-   Keeping the page stationary avoids moving reading and navigation targets. */
-#root:has(.window-chrome) > :is(.hub-scroll, .writing-workspace, .app, .loading, .reference, .ws-reference) {
-    clip-path: inset(0 round var(--radius-inset));
-    transition: clip-path var(--duration-fast) var(--ease-standard);
+/* Only this small mask moves; the page keeps its static rounded clip.
+   The circular cutouts continue the content corners below the growing frame. */
+.window-frame-cap {
+    position: fixed;
+    inset: 6px 6px auto;
+    height: 32px;
+    background: var(--surface-muted);
+    transform: translateY(-32px);
+    transition: transform var(--duration-fast) var(--ease-standard);
+    pointer-events: none;
 }
-#root:has(.window-chrome[data-revealed='true'])
-    > :is(.hub-scroll, .writing-workspace, .app, .loading, .reference, .ws-reference) {
-    clip-path: inset(32px 0 0 round var(--radius-inset));
+.window-frame-cap::before,
+.window-frame-cap::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    width: var(--radius-inset);
+    height: var(--radius-inset);
 }
-#root:has(.window-chrome[data-keyboard='true'])
-    > :is(.hub-scroll, .writing-workspace, .app, .loading, .reference, .ws-reference) {
+.window-frame-cap::before {
+    left: 0;
+    background: radial-gradient(
+        circle at bottom right,
+        transparent calc(var(--radius-inset) - 0.5px),
+        var(--surface-muted) var(--radius-inset)
+    );
+}
+.window-frame-cap::after {
+    right: 0;
+    background: radial-gradient(
+        circle at bottom left,
+        transparent calc(var(--radius-inset) - 0.5px),
+        var(--surface-muted) var(--radius-inset)
+    );
+}
+.window-chrome[data-revealed='true'] .window-frame-cap {
+    transform: translateY(0);
+}
+.window-chrome[data-keyboard='true'] .window-frame-cap {
     transition: none;
 }
 /* Caption controls live in the same surface as the surrounding frame. */
@@ -38,7 +65,7 @@ body:has(.window-chrome) {
 }
 .window-title-bar {
     display: flex;
-    height: 32px;
+    height: 38px;
     background: transparent;
     color: var(--foreground);
     transform: translateY(-100%);
@@ -93,7 +120,7 @@ body:has(.window-chrome) {
     transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
-    #root:has(.window-chrome) > :is(.hub-scroll, .writing-workspace, .app, .loading, .reference, .ws-reference) {
+    .window-frame-cap {
         transition: none;
     }
     .window-title-bar {

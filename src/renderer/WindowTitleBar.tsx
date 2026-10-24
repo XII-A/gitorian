@@ -62,6 +62,7 @@ export function WindowTitleBar() {
                 if (!event.currentTarget.contains(event.relatedTarget)) setKeyboardFocus(false)
             }}
         >
+            <div className="window-frame-cap" aria-hidden="true" />
             <div ref={bar} className="window-title-bar" role="toolbar" aria-label="Window controls">
                 <div className="window-title-bar-drag">weekly-j</div>
                 <button

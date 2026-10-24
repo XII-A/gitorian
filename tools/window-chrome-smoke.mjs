@@ -117,6 +117,12 @@ app.on('browser-window-created', (_, window) => {
                 'Frame must stay thin on every edge'
             )
             await shot('01-frame-hidden')
+            if (process.env.WEEKLY_J_CHROME_TRACE) {
+                await window.webContents.debugger.sendCommand('Tracing.start', {
+                    categories: 'devtools.timeline,blink.animations,cc',
+                    transferMode: 'ReturnAsStream'
+                })
+            }
             for (const x of [20, 300, window.getContentBounds().width - 24]) {
                 await move(x, 5, false)
                 await pause(250)
@@ -127,6 +133,27 @@ app.on('browser-window-created', (_, window) => {
                 await move(300, 200)
                 await pause(650)
                 assert.ok(await hidden())
+            }
+            if (process.env.WEEKLY_J_CHROME_TRACE) {
+                const completed = new Promise((done) => {
+                    const receive = (_event, method, params) => {
+                        if (method === 'Tracing.tracingComplete') {
+                            window.webContents.debugger.removeListener('message', receive)
+                            done(params.stream)
+                        }
+                    }
+                    window.webContents.debugger.on('message', receive)
+                })
+                await window.webContents.debugger.sendCommand('Tracing.end')
+                const handle = String(await completed)
+                let trace = ''
+                for (;;) {
+                    const chunk = await window.webContents.debugger.sendCommand('IO.read', { handle })
+                    trace += String(chunk.data)
+                    if (chunk.eof) break
+                }
+                await window.webContents.debugger.sendCommand('IO.close', { handle })
+                if (output) writeFileSync(join(output, 'reveal-trace.json'), trace)
             }
             await move(300, 5, false)
             await pause(250)
@@ -146,13 +173,29 @@ app.on('browser-window-created', (_, window) => {
                 const surface = document.querySelector('.hub-scroll')
                 const r = surface.getBoundingClientRect()
                 const top = r.y + 32
-                return !surface.contains(document.elementFromPoint(r.x + 1, top + 1)) &&
+                const cap = document.querySelector('.window-frame-cap')
+                const edge = cap.getBoundingClientRect()
+                return edge.bottom === top && edge.left === r.left && edge.right === r.right &&
+                    getComputedStyle(cap, '::before').height === '12px' &&
+                    getComputedStyle(cap, '::after').height === '12px' &&
                     surface.contains(document.elementFromPoint(r.x + 24, top + 8)) &&
-                    !surface.contains(document.elementFromPoint(r.right - 1, top + 1)) &&
                     surface.contains(document.elementFromPoint(r.right - 24, top + 8))
             })()`),
-                'Expanded frame must preserve both rounded content corners below the controls'
+                'Expanded frame mask must join both rounded content corners below the controls'
             )
+            assert.ok(
+                await evaluate(`(() => {
+                const button = document.querySelector('[aria-label="Minimize window"]')
+                const r = button.getBoundingClientRect()
+                const content = document.querySelector('.hub-scroll').getBoundingClientRect()
+                return r.y === 0 && r.bottom === content.y + 32 &&
+                    document.elementFromPoint(r.x + r.width / 2, r.bottom - 1)?.closest('button') === button
+            })()`),
+                'Caption hover target must fill the frame down to the rounded content edge'
+            )
+            await move(window.getContentBounds().width - 120, 36)
+            await pause(100)
+            await shot('02-full-height-hover')
             await shot('02-controls-revealed')
             await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
                 features: [{ name: 'prefers-color-scheme', value: 'light' }]
