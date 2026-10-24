@@ -361,7 +361,7 @@ app.on('browser-window-created', (_, window) => {
             window.webContents.sendInputEvent({ type: 'mouseMove', ...headingPoint })
             window.webContents.sendInputEvent({ type: 'mouseDown', ...headingPoint, button: 'left', clickCount: 1 })
             window.webContents.sendInputEvent({ type: 'mouseUp', ...headingPoint, button: 'left', clickCount: 1 })
-            await assert(
+            await wait(
                 `!document.querySelector('.change-statistics-trigger').matches(':focus')`,
                 'Clicking the heading clears the line-count button focus'
             )
