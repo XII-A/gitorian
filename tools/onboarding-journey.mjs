@@ -221,6 +221,8 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
                 { name: 'prefers-reduced-motion', value: 'reduce' }
             ]
         })
+        // Retained light-theme visual fixture; production stays dark on OS changes.
+        await js(`document.documentElement.dataset.theme=${JSON.stringify(theme)}; true`)
         await wait(`document.documentElement.dataset.theme===${JSON.stringify(theme)}`)
         await pause(100)
         colors.push({
