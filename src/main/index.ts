@@ -455,11 +455,19 @@ void app.whenReady().then(() => {
                                   }
                                 : undefined
                         ),
-                    selection.kind === 'new' ? selection.title : undefined
+                    selection.kind === 'new' ? selection.title : undefined,
+                    async (destination) => {
+                        const previous = store.state.settings.destination
+                        store.state.settings.destination = destination
+                        try {
+                            store.persist()
+                            await store.flush()
+                        } catch (error) {
+                            store.state.settings.destination = previous
+                            throw error
+                        }
+                    }
                 )
-                store.state.settings.destination = destination
-                store.persist()
-                await store.flush()
                 connection.destinationSaved()
                 notionDiscovery.remember(await connection.token(), {
                     ...page,

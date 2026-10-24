@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { Data, Effect, Schema } from 'effect'
 import { attemptLifetime, callbackPath, credentialSchema } from './protocol'
 
@@ -17,7 +17,7 @@ const stateSchema = Schema.Struct({
 })
 const exchangeSchema = Schema.Struct({
     state: Schema.NonEmptyString,
-    code: Schema.NonEmptyString,
+    grant: Schema.NonEmptyString,
     verifier: Schema.String
 })
 const refreshSchema = Schema.Struct({ refresh_token: Schema.NonEmptyString })
@@ -43,6 +43,34 @@ export function createOAuthHandler(config: OAuthConfig, fetcher: typeof fetch = 
             'Configure the OAuth origin, client ID, client secret and a state secret of at least 32 characters.'
         )
     const signature = (payload: string) => createHmac('sha256', config.stateSecret).update(payload).digest('base64url')
+    const handoffKey = createHmac('sha256', config.stateSecret)
+        .update(`weekly-j:notion:handoff:v1:${origin}:${config.clientId}`)
+        .digest()
+    const sealCode = (code: string, state: string) => {
+        const iv = randomBytes(12)
+        const cipher = createCipheriv('aes-256-gcm', handoffKey, iv)
+        cipher.setAAD(Buffer.from(state))
+        const sealed = Buffer.concat([cipher.update(code, 'utf8'), cipher.final()])
+        return [iv, cipher.getAuthTag(), sealed].map((part) => part.toString('base64url')).join('.')
+    }
+    const openCode = (grant: string, state: string) =>
+        Effect.try({
+            try: () => {
+                if (grant.length > 2048) throw new Error('Invalid handoff')
+                const parts = grant.split('.')
+                if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part)))
+                    throw new Error('Invalid handoff')
+                const [iv, tag, sealed] = parts.map((part) => Buffer.from(part, 'base64url'))
+                if (iv.length !== 12 || tag.length !== 16) throw new Error('Invalid handoff')
+                const cipher = createDecipheriv('aes-256-gcm', handoffKey, iv)
+                cipher.setAAD(Buffer.from(state))
+                cipher.setAuthTag(tag)
+                const code = Buffer.concat([cipher.update(sealed), cipher.final()]).toString('utf8')
+                if (!code || code.length > 1024) throw new Error('Invalid handoff')
+                return code
+            },
+            catch: () => failure(400, 'Invalid sign-in. Start again in weekly-j.')
+        })
     const readState = (state: string) =>
         Effect.try({
             try: () => {
@@ -166,7 +194,7 @@ export function createOAuthHandler(config: OAuthConfig, fetcher: typeof fetch = 
                         const code = url.searchParams.get('code')
                         if (!code || code.length > 1024)
                             return yield* failure(400, 'Authorization code is missing. Connect again.')
-                        redirect.searchParams.set('code', code)
+                        redirect.searchParams.set('grant', sealCode(code, state))
                     }
                     return new Response(null, { status: 302, headers: { Location: redirect.toString() } })
                 }
@@ -178,10 +206,11 @@ export function createOAuthHandler(config: OAuthConfig, fetcher: typeof fetch = 
                         !equal(createHash('sha256').update(input.verifier).digest('base64url'), state.challenge)
                     )
                         return yield* failure(400, 'Invalid sign-in. Start again in weekly-j.')
+                    const code = yield* openCode(input.grant, input.state)
                     return Response.json(
                         yield* token({
                             grant_type: 'authorization_code',
-                            code: input.code,
+                            code,
                             redirect_uri: `${origin}${callbackPath}`
                         })
                     )

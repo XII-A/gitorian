@@ -20,6 +20,75 @@ const jsonRequest = (path: string, value: unknown) =>
         body: JSON.stringify(value)
     })
 const active: NotionConnection[] = []
+
+it('rejects an intercepted handoff paired with another valid attempt before contacting Notion', async () => {
+    const provider = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(response(credentials)))
+    const handler = createOAuthHandler(config, provider)
+    const victimState = await authorize(handler)
+    const callback = await handler(new Request(`${origin}/callback?state=${victimState}&code=intercepted-code`))
+    const returned = new URL(callback.headers.get('Location')!)
+    const intercepted = returned.searchParams.get('grant') ?? returned.searchParams.get('code')!
+    const otherVerifier = 'a'.repeat(43)
+    const started = await handler(
+        new Request(
+            `${origin}/authorize?port=23456&challenge=${createHash('sha256').update(otherVerifier).digest('base64url')}&nonce=${'m'.repeat(32)}`
+        )
+    )
+    const otherState = new URL(started.headers.get('Location')!).searchParams.get('state')!
+    const rejected = await handler(
+        jsonRequest('/token', { state: otherState, code: intercepted, grant: intercepted, verifier: otherVerifier })
+    )
+    expect(rejected.status).toBe(400)
+    expect(provider).not.toHaveBeenCalled()
+    expect(returned.searchParams.has('code')).toBe(false)
+    expect(returned.toString()).not.toContain('intercepted-code')
+    const tampered = `${intercepted.slice(0, -4)}AAAA`
+    expect((await handler(jsonRequest('/token', { state: victimState, grant: tampered, verifier }))).status).toBe(400)
+    expect(
+        (await handler(jsonRequest('/token', { state: victimState, code: 'intercepted-code', verifier }))).status
+    ).toBe(400)
+    expect(provider).not.toHaveBeenCalled()
+    const freshInstance = createOAuthHandler(config, provider)
+    const accepted = await freshInstance(jsonRequest('/token', { state: victimState, grant: intercepted, verifier }))
+    expect(await accepted.json()).toEqual(credentials)
+    expect(provider).toHaveBeenCalledTimes(1)
+})
+
+it.each(['persist', 'flush'])(
+    'retains confirmation after local %s fails and retries without creating another page',
+    async (failure) => {
+        const app = desktop()
+        await approve(app)
+        await app.connection.poll()
+        let created = 0
+        const prepare = vi.fn((setup: JournalSetup, checkpoint: (pageId?: string) => void) => {
+            if (!setup.pageId) created++
+            checkpoint('created-journal')
+            return Promise.resolve({
+                kind: 'page' as const,
+                id: 'created-journal',
+                titleProperty: 'Name',
+                dateProperty: ''
+            })
+        })
+        let attempts = 0
+        const persist = () => {
+            if (++attempts === 1) {
+                const error = new Error('Local destination save failed')
+                if (failure === 'persist') throw error
+                return Promise.reject(error)
+            }
+            return Promise.resolve()
+        }
+        const confirm = () => app.connection.completeJournal(prepare, 'Work journal', persist)
+        await expect(confirm()).rejects.toThrow(/Local destination save/)
+        expect(app.connection.connected()).toBe(false)
+        expect(await app.connection.pendingToken()).toBe('access-one')
+        await expect(confirm()).resolves.toMatchObject({ id: 'created-journal' })
+        expect(app.connection.connected()).toBe(true)
+        expect(created).toBe(1)
+    }
+)
 afterEach(() => {
     active.splice(0).forEach((connection) => connection.cancel())
 })
@@ -42,11 +111,14 @@ it('binds the browser callback and token exchange to the desktop verifier withou
     const location = new URL(callback.headers.get('Location')!)
     expect(location.origin).toBe('http://127.0.0.1:12345')
     expect(location.pathname).toBe(`/callback/${nonce}`)
-    expect(location.searchParams.get('code')).toBe('one-use-code')
+    const grant = location.searchParams.get('grant')!
+    expect(grant).toBeTruthy()
+    expect(location.searchParams.has('code')).toBe(false)
+    expect(location.toString()).not.toContain('one-use-code')
     expect(location.toString()).not.toContain('access-one')
-    expect((await handler(jsonRequest('/token', { state, code: 'one-use-code', verifier: 'wrong' }))).status).toBe(400)
+    expect((await handler(jsonRequest('/token', { state, grant, verifier: 'wrong' }))).status).toBe(400)
     expect(provider).not.toHaveBeenCalled()
-    const exchanged = await handler(jsonRequest('/token', { state, code: 'one-use-code', verifier }))
+    const exchanged = await handler(jsonRequest('/token', { state, grant, verifier }))
     expect(await exchanged.json()).toEqual(credentials)
     expect(exchanged.headers.get('Cache-Control')).toBe('no-store')
     const init = provider.mock.calls[0][1]!
@@ -65,10 +137,12 @@ it('rejects tampering, expiration, unsafe callbacks and oversized payloads befor
     let now = 1000000
     const handler = createOAuthHandler(config, provider, () => now)
     const state = await authorize(handler)
+    const callback = await handler(new Request(`${origin}/callback?state=${state}&code=expires`))
+    const grant = new URL(callback.headers.get('Location')!).searchParams.get('grant')!
     for (const bad of [`${state}x`, 'invalid'])
         expect((await handler(new Request(`${origin}/callback?state=${bad}&code=x`))).status).toBe(400)
     now += 11 * 60_000
-    expect((await handler(jsonRequest('/token', { state, code: 'x', verifier }))).status).toBe(400)
+    expect((await handler(jsonRequest('/token', { state, grant, verifier }))).status).toBe(400)
     for (const port of ['0', '65536', '12345@evil.example', '//evil.example'])
         expect(
             (await handler(new Request(`${origin}/authorize?port=${port}&challenge=${challenge}&nonce=${nonce}`)))

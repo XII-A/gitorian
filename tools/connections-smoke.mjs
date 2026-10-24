@@ -7,6 +7,7 @@ import dns from 'node:dns/promises'
 import { syncBuiltinESMExports } from 'node:module'
 import { PassThrough } from 'node:stream'
 import { EventEmitter } from 'node:events'
+import { Worker } from 'node:worker_threads'
 import { pathToFileURL } from 'node:url'
 import { tsImport } from 'tsx/esm/api'
 const { createOAuthHandler } = await tsImport('../services/notion-oauth/src/handler.ts', import.meta.url)
@@ -66,6 +67,32 @@ let expireEditCreation = false
 let notionRotations = 0
 let failRecoveryCleanup = false
 let recoveryCleanupFailures = 0
+let failDestinationSave = ''
+let destinationSaveFailures = 0
+const sendWrite = Worker.prototype.postMessage
+Worker.prototype.postMessage = function (message, ...args) {
+    if (
+        failDestinationSave &&
+        message.batch?.parts.some(
+            ([key, value]) => key === 'settings' && JSON.parse(value).destination?.id === failDestinationSave
+        )
+    ) {
+        failDestinationSave = ''
+        destinationSaveFailures++
+        queueMicrotask(() => this.emit('message', { id: message.id, error: 'Fixture local destination save failed' }))
+        return
+    }
+    if (
+        message.batch?.reset &&
+        message.batch.parts.some(
+            ([key, value]) => key === 'settings' && JSON.parse(value).destination?.id === 'fixture-private-journal'
+        )
+    ) {
+        setTimeout(() => sendWrite.call(this, message, ...args), 700)
+        return
+    }
+    sendWrite.call(this, message, ...args)
+}
 const renameFile = fs.renameSync
 fs.renameSync = (source, destination) => {
     if (
@@ -532,13 +559,24 @@ app.on('browser-window-created', (_, window) => {
             offline = false
         }
         const captures = []
+        const capture = async (rectangle) => {
+            for (let attempt = 0; ; attempt++) {
+                try {
+                    return await window.webContents.capturePage(rectangle)
+                } catch (error) {
+                    if (!String(error).includes('UnknownVizError') || attempt >= 2) throw error
+                    record({ captureRetry: 'UnknownVizError', attempt: attempt + 1 })
+                    await pause(150)
+                }
+            }
+        }
         const shot = async (name, settle = 350, service = notionOnly ? 'notion' : 'github') => {
             await pause(settle)
-            writeFileSync(join(output, `${name}.png`), (await window.webContents.capturePage()).toPNG())
+            writeFileSync(join(output, `${name}.png`), (await capture()).toPNG())
             const rectangle = await js(
                 `(() => { const r=document.querySelector('[aria-label="${service === 'github' ? 'GitHub' : 'Notion'} connection"]').getBoundingClientRect(); return {x:Math.floor(r.x),y:Math.floor(r.y),width:Math.ceil(r.width),height:Math.ceil(r.height)} })()`
             )
-            writeFileSync(join(output, `${name}-detail.png`), (await window.webContents.capturePage(rectangle)).toPNG())
+            writeFileSync(join(output, `${name}-detail.png`), (await capture(rectangle)).toPNG())
             record({
                 geometry: await js(
                     `Object.fromEntries(['.settings-github-controls','.github-signin-track','.github-signin-surface','.github-signin-surface > [role=group]'].map(s=>{const n=document.querySelector(s),r=n.getBoundingClientRect();return [s,{width:r.width,right:r.right,maxWidth:getComputedStyle(n).maxWidth}]}))`
@@ -1059,6 +1097,12 @@ app.on('browser-window-created', (_, window) => {
             await shot('notion-page-confirm-error', 200, 'notion')
 
             failRecoveryCleanup = true
+            failDestinationSave = 'fixture-existing'
+            await click('Retry', notionScope)
+            await wait(`${notionScope}.textContent.includes('Could not save page')`)
+            await shot('notion-existing-save-retry', 200, 'notion')
+            if (existsSync(join(directory, 'profile', 'notion.secret')))
+                throw new Error('Failed local save installed credentials')
             await click('Retry', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)
             await shot('notion-06-success', 250, 'notion')
@@ -1258,12 +1302,18 @@ app.on('browser-window-created', (_, window) => {
             await js(`${notionScope}.querySelector('input').select()`)
             await window.webContents.insertText('Team journal')
             expireEditCreation = true
+            failDestinationSave = 'fixture-private-journal'
             await click('Confirm', notionScope)
+            await wait(`${notionScope}.textContent.includes('Could not save page')`)
+            await shot('notion-created-save-retry', 200, 'notion')
+            if (notionPagesCreated !== 1) throw new Error('Expected one created page before local save failure')
+            await click('Retry', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="pending"]') !== null`)
             await click('Close dialog')
             await wait(`!document.querySelector('[aria-label="Notion connection"]')`)
             await pause(1500)
             if (notionRotations !== 2) throw new Error('Destination confirmation did not refresh rejected credentials')
+            if (destinationSaveFailures !== 2) throw new Error('Destination save retries were not exercised')
             await openConnections()
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
             await shot('notion-created-after-dialog-close', 250, 'notion')

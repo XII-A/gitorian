@@ -38,7 +38,7 @@ interface Attempt {
     nonce: string
     verifier: string
     expires: number
-    callback?: { state: string; code: string }
+    callback?: { state: string; grant: string }
     error?: string
     exchange?: Promise<void>
     timer: ReturnType<typeof setTimeout>
@@ -138,14 +138,14 @@ export class NotionConnection {
                 return
             }
             const state = url.searchParams.get('state')
-            const code = url.searchParams.get('code')
-            if (!state || state.length > 2048 || (!code && !url.searchParams.has('error'))) {
+            const grant = url.searchParams.get('grant')
+            if (!state || state.length > 2048 || (!grant && !url.searchParams.has('error'))) {
                 outgoing.writeHead(400).end()
                 return
             }
             if (Date.now() >= current.expires) current.error = 'Notion sign-in expired. Connect again.'
             else if (url.searchParams.has('error')) current.error = 'Notion authorization declined. Connect again.'
-            else if (code && code.length <= 1024) current.callback = { state, code }
+            else if (grant && grant.length <= 2048) current.callback = { state, grant }
             else {
                 outgoing.writeHead(400).end()
                 return
@@ -281,7 +281,8 @@ export class NotionConnection {
     }
     completeJournal(
         prepare: (setup: JournalSetup, checkpoint: (pageId?: string) => void) => Promise<Destination>,
-        title?: string
+        title?: string,
+        persist?: (destination: Destination) => Promise<void>
     ): Promise<Destination> {
         if (this.completing) return this.completing
         const generation = this.credentialGeneration
@@ -304,6 +305,8 @@ export class NotionConnection {
                 })
             )
             .then(async (destination) => {
+                check()
+                await persist?.(destination)
                 // A refresh that began before confirmation owns the rotated credentials.
                 const refreshing = this.pendingInstalled ? this.refreshing : this.pendingRefreshing
                 if (refreshing) await refreshing
