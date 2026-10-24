@@ -333,8 +333,22 @@ app.on('browser-window-created', (_, window) => {
             await selectFile('tests/retry.test.ts', '77 lines added, 1 line deleted')
             await shot('selected-test-diff')
             await selectFile('assets/retry.bin', null)
+            await wait(`!!document.querySelector('.ws-file-diff .ws-diff-state [data-variant="plain"]')`)
+            await pause(350)
+            await assert(
+                `(() => {
+                const viewport=document.querySelector('.ws-file-diff .ws-diff-state-viewport')
+                const content=viewport.firstElementChild
+                const frame=viewport.getBoundingClientRect(),state=content.getBoundingClientRect()
+                return content.textContent.includes('Binary file') && Math.abs(state.y+state.height/2-frame.y-frame.height/2)<4 && Math.abs(state.x+state.width/2-frame.x-frame.width/2)<4
+            })()`,
+                'Binary file uses the centered plain diff empty state'
+            )
             await shot('selected-binary-diff')
             await selectFile('src/renamed.ts', '0 lines added, 0 lines deleted')
+            await wait(
+                `!!document.querySelector('.ws-file-diff .ws-diff-state') && document.querySelector('.ws-file-diff .ws-diff-state').textContent.includes('No text changes')`
+            )
             await click('.ws-inspector [role="tab"][data-value="details"]')
             await click('[aria-label="Pop out diff"]')
             let reference
@@ -358,6 +372,8 @@ app.on('browser-window-created', (_, window) => {
                 ))
             )
                 throw new Error('Detached reference lost the line totals')
+            reference.show()
+            await pause(350)
             writeFileSync(join(output, 'detached-details.png'), (await reference.webContents.capturePage()).toPNG())
             record({
                 assert: 'Detached reference preserves the commit total',

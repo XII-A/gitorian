@@ -9,6 +9,7 @@ Open activity details, review changed files and diffs, and move a read-only refe
 - `inspect.reference`: pop-out and dock preserve the selected activity and citation destination.
 - `inspect.reference-tabs`: Details is first and opens by default in the workspace and native reference window. Details, Diff, and Related retain the underline selection when focused. Selecting another activity defaults to Details; selecting Diff explicitly still loads its changes.
 - `inspect.line-statistics`: hub/workspace file details share total added/deleted lines, a category breakdown, and per-file counts; the Diff tab counts only inserted/deleted lines for its selected file.
+- Selected binary files use the centered, plain-icon diff empty state with the Binary file title. Pure renames and metadata-only changes use the same layout with No text changes. Keep the file picker and selected path/count header available; the line-statistics journey measures binary-state centering and then switches to the rename fixture.
 
 ## How to get to it (user POV)
 

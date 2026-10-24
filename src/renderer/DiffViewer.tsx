@@ -183,6 +183,16 @@ export function DiffViewer({
                         description="This file has more than 4,000 diff lines. View the full changes at the source."
                         action={sourceAction}
                     />
+                ) : !active.hunks.length ? (
+                    <DiffEmptyState
+                        title={active.isBinary ? 'Binary file' : 'No text changes'}
+                        description={
+                            active.isBinary
+                                ? 'Binary files do not have a text diff.'
+                                : 'This file contains only a rename or metadata changes.'
+                        }
+                        action={sourceAction}
+                    />
                 ) : (
                     <ScrollArea
                         className="ws-diff-scroll"
@@ -190,32 +200,28 @@ export function DiffViewer({
                         label={`Scrollable diff for ${path}`}
                         fade={0}
                     >
-                        {active.hunks.length ? (
-                            <Diff
-                                viewType={mode === 'split' ? 'split' : 'unified'}
-                                diffType={active.type}
-                                hunks={active.hunks}
-                                tokens={displayTokens}
-                                renderToken={(token, renderDefault, index) =>
-                                    token.type === 'source-line' ? (
-                                        <span
-                                            key={index}
-                                            className="ws-diff-source-line"
-                                            data-indent-characters={token.indentCharacters}
-                                            style={{ '--diff-indent': `${token.indentColumns}ch` } as CSSProperties}
-                                        >
-                                            {token.children?.map(renderDefault)}
-                                        </span>
-                                    ) : (
-                                        renderDefault(token, index)
-                                    )
-                                }
-                            >
-                                {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
-                            </Diff>
-                        ) : (
-                            <p>Binary file or metadata change. No text diff.</p>
-                        )}
+                        <Diff
+                            viewType={mode === 'split' ? 'split' : 'unified'}
+                            diffType={active.type}
+                            hunks={active.hunks}
+                            tokens={displayTokens}
+                            renderToken={(token, renderDefault, index) =>
+                                token.type === 'source-line' ? (
+                                    <span
+                                        key={index}
+                                        className="ws-diff-source-line"
+                                        data-indent-characters={token.indentCharacters}
+                                        style={{ '--diff-indent': `${token.indentColumns}ch` } as CSSProperties}
+                                    >
+                                        {token.children?.map(renderDefault)}
+                                    </span>
+                                ) : (
+                                    renderDefault(token, index)
+                                )
+                            }
+                        >
+                            {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
+                        </Diff>
                     </ScrollArea>
                 )}
             </section>
