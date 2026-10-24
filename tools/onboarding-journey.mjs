@@ -6,12 +6,12 @@ import { execFileSync } from 'node:child_process'
 
 /** Runs inside the existing provider-boundary fixture, through the real renderer, preload and store. */
 export async function onboardingJourney({ window, directory, output, js, wait, assert, click, approveNotion, record }) {
-    if (process.env.WEEKLY_J_VERIFY_ONBOARDING_DISCLOSURE === '1') {
+    if (process.env.GITORIAN_VERIFY_ONBOARDING_DISCLOSURE === '1') {
         await onboardingDisclosureJourney({ window, output, js, wait })
         return
     }
-    const reducedMotion = process.env.WEEKLY_J_VERIFY_ONBOARDING_REDUCED === '1'
-    const inline = process.env.WEEKLY_J_VERIFY_ONBOARDING_INLINE === '1'
+    const reducedMotion = process.env.GITORIAN_VERIFY_ONBOARDING_REDUCED === '1'
+    const inline = process.env.GITORIAN_VERIFY_ONBOARDING_INLINE === '1'
     const resume = async () => {
         if (!inline) await click('Continue setup')
         await wait(`!!document.querySelector('section[data-controlled]')`)
@@ -112,7 +112,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         writeFileSync(join(output, `${name}.png`), (await window.webContents.capturePage()).toPNG())
         record({ screenshot: `${name}.png`, text: await js('document.body.innerText') })
     }
-    const key = 'weekly-j:onboarding:v1:local'
+    const key = 'gitorian:onboarding:v1:local'
     const reload = async () => {
         const loaded = new Promise((done) => window.webContents.once('did-finish-load', done))
         window.webContents.reload()
@@ -456,7 +456,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         join(output, 'preferences.json'),
         JSON.stringify(
             await js(
-                `Object.fromEntries(Object.entries(localStorage).filter(([k])=>k.startsWith('weekly-j:onboarding:')))`
+                `Object.fromEntries(Object.entries(localStorage).filter(([k])=>k.startsWith('gitorian:onboarding:')))`
             )
         )
     )

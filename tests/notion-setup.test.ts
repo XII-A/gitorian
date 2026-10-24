@@ -7,7 +7,7 @@ import { NotionSetupStore } from '../src/main/notion-setup'
 const directories: string[] = []
 afterEach(() => directories.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })))
 function file() {
-    const directory = mkdtempSync(join(tmpdir(), 'weekly-j-notion-setup-'))
+    const directory = mkdtempSync(join(tmpdir(), 'gitorian-notion-setup-'))
     directories.push(directory)
     return join(directory, 'setup.json')
 }

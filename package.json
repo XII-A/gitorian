@@ -1,5 +1,5 @@
 {
-    "name": "weekly-j",
+    "name": "gitorian",
     "version": "0.1.3",
     "private": true,
     "description": "A local developer journal with revision-aware Notion coverage",
@@ -8,8 +8,8 @@
     "scripts": {
         "postinstall": "install-electron --no",
         "dev": "node tools/dev.mjs",
-        "dev:oauth": "pnpm --filter @weekly-j/notion-oauth dev",
-        "build": "pnpm typecheck && electron-vite build && pnpm --filter @weekly-j/notion-oauth build",
+        "dev:oauth": "pnpm --filter @gitorian/notion-oauth dev",
+        "build": "pnpm typecheck && electron-vite build && pnpm --filter @gitorian/notion-oauth build",
         "start": "electron-vite preview",
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
@@ -36,8 +36,8 @@
         "smoke:images": "electron tools/image-smoke.mjs"
     },
     "build": {
-        "appId": "io.github.xiia.weeklyj",
-        "productName": "weekly-j",
+        "appId": "io.github.xiia.gitorian",
+        "productName": "Gitorian",
         "directories": {
             "output": "release"
         },
@@ -54,7 +54,7 @@
         ],
         "win": {
             "target": "nsis",
-            "artifactName": "weekly-j-${version}-windows-${arch}-setup.${ext}",
+            "artifactName": "gitorian-${version}-windows-${arch}-setup.${ext}",
             "signAndEditExecutable": false
         },
         "mac": {

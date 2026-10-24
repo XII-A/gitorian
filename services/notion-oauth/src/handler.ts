@@ -44,7 +44,7 @@ export function createOAuthHandler(config: OAuthConfig, fetcher: typeof fetch = 
         )
     const signature = (payload: string) => createHmac('sha256', config.stateSecret).update(payload).digest('base64url')
     const handoffKey = createHmac('sha256', config.stateSecret)
-        .update(`weekly-j:notion:handoff:v1:${origin}:${config.clientId}`)
+        .update(`gitorian:notion:handoff:v1:${origin}:${config.clientId}`)
         .digest()
     const sealCode = (code: string, state: string) => {
         const iv = randomBytes(12)
@@ -69,15 +69,15 @@ export function createOAuthHandler(config: OAuthConfig, fetcher: typeof fetch = 
                 if (!code || code.length > 1024) throw new Error('Invalid handoff')
                 return code
             },
-            catch: () => failure(400, 'Invalid sign-in. Start again in weekly-j.')
+            catch: () => failure(400, 'Invalid sign-in. Start again in Gitorian.')
         })
     const readState = (state: string) =>
         Effect.try({
             try: () => {
-                if (state.length > 2048) throw failure(400, 'Sign-in expired. Start again in weekly-j.')
+                if (state.length > 2048) throw failure(400, 'Sign-in expired. Start again in Gitorian.')
                 const [payload, signed, extra] = state.split('.')
                 if (!payload || !signed || extra || !equal(signature(payload), signed))
-                    throw failure(400, 'Invalid sign-in. Start again in weekly-j.')
+                    throw failure(400, 'Invalid sign-in. Start again in Gitorian.')
                 const decoded = Schema.decodeUnknownSync(stateSchema)(
                     JSON.parse(Buffer.from(payload, 'base64url').toString())
                 )
@@ -90,10 +90,10 @@ export function createOAuthHandler(config: OAuthConfig, fetcher: typeof fetch = 
                     !/^[A-Za-z0-9_-]{32,64}$/.test(decoded.nonce) ||
                     !/^[A-Za-z0-9_-]{43}$/.test(decoded.challenge)
                 )
-                    throw failure(400, 'Sign-in expired. Start again in weekly-j.')
+                    throw failure(400, 'Sign-in expired. Start again in Gitorian.')
                 return decoded
             },
-            catch: () => failure(400, 'Invalid or expired sign-in. Start again in weekly-j.')
+            catch: () => failure(400, 'Invalid or expired sign-in. Start again in Gitorian.')
         })
     const body = <A, I>(request: Request, schema: Schema.Schema<A, I>) =>
         Effect.gen(function* () {
@@ -170,7 +170,7 @@ export function createOAuthHandler(config: OAuthConfig, fetcher: typeof fetch = 
                         !/^[A-Za-z0-9_-]{43}$/.test(challenge) ||
                         !/^[A-Za-z0-9_-]{32,64}$/.test(nonce)
                     )
-                        return yield* failure(400, 'Start sign-in from weekly-j.')
+                        return yield* failure(400, 'Start sign-in from Gitorian.')
                     const payload = Buffer.from(
                         JSON.stringify({ port, challenge, nonce, expires: now() + attemptLifetime })
                     ).toString('base64url')
@@ -205,7 +205,7 @@ export function createOAuthHandler(config: OAuthConfig, fetcher: typeof fetch = 
                         !/^[A-Za-z0-9_-]{43,128}$/.test(input.verifier) ||
                         !equal(createHash('sha256').update(input.verifier).digest('base64url'), state.challenge)
                     )
-                        return yield* failure(400, 'Invalid sign-in. Start again in weekly-j.')
+                        return yield* failure(400, 'Invalid sign-in. Start again in Gitorian.')
                     const code = yield* openCode(input.grant, input.state)
                     return Response.json(
                         yield* token({

@@ -6,7 +6,7 @@ import { mkdirSync } from 'node:fs'
 
 const require = createRequire(import.meta.url)
 const origin = `http://localhost:${process.env.NOTION_OAUTH_PORT ?? 8788}`
-const profile = process.env.WEEKLY_J_DEV_PROFILE ?? join(process.cwd(), '.ai-docs', 'development-profile')
+const profile = process.env.GITORIAN_DEV_PROFILE ?? join(process.cwd(), '.ai-docs', 'development-profile')
 mkdirSync(profile, { recursive: true })
 const children = new Set()
 let stopping = false
@@ -31,7 +31,7 @@ function stop(code = 0) {
 function launch(args, extraEnv = {}) {
     const env = { ...process.env, ...extraEnv }
     delete env.ELECTRON_RUN_AS_NODE
-    if (extraEnv.WEEKLY_J_DEV_PROFILE) {
+    if (extraEnv.GITORIAN_DEV_PROFILE) {
         delete env.NOTION_CLIENT_SECRET
         delete env.NOTION_STATE_SECRET
     }
@@ -73,7 +73,7 @@ try {
     if (!stopping)
         launch(
             [join(dirname(require.resolve('electron-vite/package.json')), 'bin/electron-vite.js'), 'dev', '--watch'],
-            { WEEKLY_J_NOTION_OAUTH_ORIGIN: process.env.NOTION_OAUTH_ORIGIN ?? origin, WEEKLY_J_DEV_PROFILE: profile }
+            { GITORIAN_NOTION_OAUTH_ORIGIN: process.env.NOTION_OAUTH_ORIGIN ?? origin, GITORIAN_DEV_PROFILE: profile }
         )
 } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))

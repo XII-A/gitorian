@@ -68,7 +68,7 @@ export class Notion {
         }
         const title = setup.title ?? 'Weekly Journal'
         if (setup.pageId) return { ...destination(setup.pageId), ...(setup.title ? { title } : {}) }
-        const marker = `weekly-j setup: ${setup.id}`
+        const marker = `gitorian setup: ${setup.id}`
         if (setup.started) {
             const matches: string[] = []
             let cursor: string | null = null

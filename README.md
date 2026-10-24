@@ -1,10 +1,10 @@
-# weekly-j
+# Gitorian
 
 A desktop journal for developers. Review your week’s Git commits, GitHub pull requests and reviews, then write a journal entry with links back to the work. Keep drafts locally and optionally publish to Notion.
 
 ## Downloads
 
-Download installers from [GitHub Releases](https://github.com/XII-A/weekly-j/releases). Windows x64 installers and checksums are available for published releases. GitHub’s automatically generated source archives are source code, not installers.
+Download installers from [GitHub Releases](https://github.com/XII-A/gitorian/releases). Windows x64 installers and checksums are available for published releases. GitHub’s automatically generated source archives are source code, not installers.
 
 The release workflow builds **Windows 10/11 x64** NSIS installers and attaches `SHA256SUMS` to a draft release. Initial Windows installers are **unsigned**, which may cause browser or SmartScreen warnings. Verify the downloaded checksum before installing. macOS and Linux packaging remains available for development but is not included in the release workflow. This is an early app; back up your journal before trying an update.
 
@@ -22,7 +22,7 @@ Add screenshots and diagrams with `/image`, clipboard paste, or file drop. PNG, 
 
 ## Data storage and privacy
 
-The app stores journal state in `weekly-j.sqlite` in Electron’s per-user application data directory (`app.getPath('userData')`). Default locations are `%APPDATA%/weekly-j` on Windows, `~/Library/Application Support/weekly-j` on macOS, and `$XDG_CONFIG_HOME/weekly-j` or `~/.config/weekly-j` on Linux. SQLite may also create `-wal` and `-shm` files.
+The app stores journal state in `gitorian.sqlite` in Electron’s per-user application data directory (`app.getPath('userData')`). Default locations are `%APPDATA%/Gitorian` on Windows, `~/Library/Application Support/Gitorian` on macOS, and `$XDG_CONFIG_HOME/Gitorian` or `~/.config/Gitorian` on Linux. SQLite may also create `-wal` and `-shm` files.
 
 This database is **not encrypted**. It includes image bytes, drafts, repository paths and remotes, author emails, imported activity, cached diffs and revision evidence, and cached Notion entries. Treat it as private source and writing data. There is no app-operated journal storage or analytics service. A small OAuth helper handles Notion credential exchange and refresh. Connected integrations make requests to GitHub and Notion; external links and Notion avatars can also access the network. Publishing sends the entry content, images, and citations to the chosen Notion destination.
 
@@ -34,13 +34,13 @@ Use Settings → Backup to export or import journal state. Exports omit reposito
 
 ### GitHub (optional)
 
-In Settings > Connections, choose **Sign in with GitHub**, then follow the browser sign-in and device-code prompts. Everyone authorizes weekly-j's shared OAuth app using their own GitHub account. No app registration, client ID entry, or client secret is needed. Authentication runs directly between your device and GitHub; no weekly-j authentication server is involved.
+In Settings > Connections, choose **Sign in with GitHub**, then follow the browser sign-in and device-code prompts. Everyone authorizes Gitorian's shared OAuth app using their own GitHub account. No app registration, client ID entry, or client secret is needed. Authentication runs directly between your device and GitHub; no Gitorian authentication server is involved.
 
 Sign-in requests `repo`, `read:user`, and `user:email`. These allow private repository access, reading your profile, and reading your account email addresses to match authored activity. **The `repo` scope also grants write access**, even though the current GitHub integration only reads repository activity and diffs. Review this broad grant before authorizing, particularly for work repositories. Organization policies may restrict access. The integration supports GitHub.com remotes; GitHub Enterprise and other Git hosts are not supported for PR/review imports.
 
 ### Notion (optional)
 
-In Settings ? Connections, choose **Connect** beside Notion and approve weekly-j in your browser. The app prepares a private **Weekly Journal** parent page automatically. Read content, Insert content and Update content permissions support reading saved entries, creating pages and updating published writing. Local writing remains available without connecting.
+In Settings ? Connections, choose **Connect** beside Notion and approve Gitorian in your browser. The app prepares a private **Weekly Journal** parent page automatically. Read content, Insert content and Update content permissions support reading saved entries, creating pages and updating published writing. Local writing remains available without connecting.
 
 The connection uses a small hosted OAuth module to protect the app's client secret and exchange/refresh your credentials. Your journal content and images travel directly from the desktop to Notion. Credentials stay on your device; the helper does not permanently store them. Existing installed integration tokens remain usable until disconnected.
 
@@ -60,8 +60,8 @@ You can change the destination to an existing parent page or database data sourc
 Requirements: Node.js **22.19 or newer**, **pnpm 10.24.0** (pinned in `package.json`), and Git.
 
 ```sh
-git clone https://github.com/XII-A/weekly-j.git
-cd weekly-j
+git clone https://github.com/XII-A/gitorian.git
+cd gitorian
 pnpm install --frozen-lockfile
 pnpm dev
 ```
@@ -112,6 +112,6 @@ The app uses Electron, React, TypeScript, SQLite, and electron-vite. `src/main` 
 
 ## Feedback and license
 
-Use [GitHub Issues](https://github.com/XII-A/weekly-j/issues) for bugs and feature requests. Remove tokens, private repository names, paths, journal content, and personal information from reports and screenshots. Do not attach your application data directory or journal backup.
+Use [GitHub Issues](https://github.com/XII-A/gitorian/issues) for bugs and feature requests. Remove tokens, private repository names, paths, journal content, and personal information from reports and screenshots. Do not attach your application data directory or journal backup.
 
 MIT licensed; see [LICENSE](LICENSE) and [NOTICE](NOTICE) for bundled component attribution.

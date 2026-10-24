@@ -4,8 +4,8 @@ import { join, dirname, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { initialState, type Activity, type Repository } from '../src/shared/model'
 
-const scratch = process.env.WEEKLY_J_VERIFY_STATE!
-const output = process.env.WEEKLY_J_VERIFY_OUTPUT!
+const scratch = process.env.GITORIAN_VERIFY_STATE!
+const output = process.env.GITORIAN_VERIFY_OUTPUT!
 const repositoryPath = join(scratch, 'retry-scheduler')
 mkdirSync(repositoryPath, { recursive: true })
 const git = (...args: string[]) =>
@@ -48,7 +48,7 @@ const repository: Repository = {
     id: 'line-fixture',
     name: 'retry-scheduler',
     path: repositoryPath,
-    remote: 'https://github.com/weekly-j-fixture/retry-scheduler.git',
+    remote: 'https://github.com/gitorian-fixture/retry-scheduler.git',
     base: 'main',
     trackingStart: now.slice(0, 10),
     emails: ['fixture@example.com'],
@@ -96,7 +96,7 @@ const pr: Activity = {
     prId: `${repository.id}:pr:42`,
     title: '#42 Keep queued uploads safe across reconnects',
     author: 'fixture-author',
-    url: 'https://github.com/weekly-j-fixture/retry-scheduler/pull/42',
+    url: 'https://github.com/gitorian-fixture/retry-scheduler/pull/42',
     files: [],
     filesLoaded: false,
     description:
@@ -109,7 +109,7 @@ state.repositories = [repository]
 state.activities = [commit, pr]
 const profile = join(scratch, 'profile')
 mkdirSync(profile, { recursive: true })
-const db = new DatabaseSync(join(profile, 'weekly-j.sqlite'))
+const db = new DatabaseSync(join(profile, 'gitorian.sqlite'))
 db.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)')
 db.prepare('INSERT INTO state VALUES (1, ?)').run(JSON.stringify(state))
 db.close()

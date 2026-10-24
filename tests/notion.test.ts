@@ -140,7 +140,7 @@ it('recovers an uncertain journal creation only by its setup marker and never bl
                               results: [
                                   {
                                       type: 'paragraph',
-                                      paragraph: { rich_text: [{ plain_text: 'weekly-j setup: setup-one' }] }
+                                      paragraph: { rich_text: [{ plain_text: 'gitorian setup: setup-one' }] }
                                   }
                               ],
                               has_more: false

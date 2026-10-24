@@ -30,9 +30,9 @@ Use this guide when creating or updating a release description. Write the finish
 
 [Operating system versions and machine architecture.]
 
-Download and run `[installer filename]` from **Assets** below to install weekly-j.
+Download and run `[installer filename]` from **Assets** below to install Gitorian.
 
-See the [installation details](https://github.com/XII-A/weekly-j#downloads) for unsigned installer warnings and checksums.
+See the [installation details](https://github.com/XII-A/gitorian#downloads) for unsigned installer warnings and checksums.
 ```
 
 ## Maintainer verification

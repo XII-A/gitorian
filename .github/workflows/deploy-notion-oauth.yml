@@ -43,11 +43,11 @@ jobs:
                   git merge-base --is-ancestor HEAD origin/main
             - run: pnpm install --frozen-lockfile
             - run: pnpm check
-            - run: pnpm --filter @weekly-j/notion-oauth build
+            - run: pnpm --filter @gitorian/notion-oauth build
             - name: Deploy the released OAuth module
               env:
                   NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
                   NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-              run: pnpm --package=netlify-cli@27.14.1 dlx netlify deploy --prod --no-build --dir services/notion-oauth/public --functions services/notion-oauth/dist/functions --message "weekly-j $RELEASE_TAG"
+              run: pnpm --package=netlify-cli@27.14.1 dlx netlify deploy --prod --no-build --dir services/notion-oauth/public --functions services/notion-oauth/dist/functions --message "Gitorian $RELEASE_TAG"
             - name: Check deployed OAuth module
               run: curl --fail --retry 3 --retry-delay 2 "$NOTION_OAUTH_ORIGIN/health"

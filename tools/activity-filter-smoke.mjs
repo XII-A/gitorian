@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { checkActivityFilterReset } from './activity-filter-check.mjs'
 
 const temporaryRoot = resolve(tmpdir())
-const directory = mkdtempSync(join(temporaryRoot, 'weekly-j-filter-check-'))
+const directory = mkdtempSync(join(temporaryRoot, 'gitorian-filter-check-'))
 app.setPath('userData', directory)
 app.on('will-quit', () => {
     if (!resolve(directory).startsWith(temporaryRoot + sep)) throw new Error('Unexpected smoke test directory')

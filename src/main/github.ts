@@ -4,7 +4,7 @@ import type { Http } from './http'
 import { fingerprint, githubRemote } from './git'
 import { HttpError } from './http'
 
-// Public identifier for weekly-j's OAuth registration. Device flow needs no client secret.
+// Public identifier for Gitorian's OAuth registration. Device flow needs no client secret.
 const githubClientId = 'Ov23li9PFMAWRrbZQ6Xy'
 
 interface User {
@@ -105,7 +105,7 @@ export class GitHub {
         if (device.error || !device.device_code)
             throw new Error(
                 device.error === 'device_flow_disabled' || device.error === 'incorrect_client_credentials'
-                    ? 'GitHub sign-in is unavailable in this version of weekly-j. Check for an app update or contact the maintainer.'
+                    ? 'GitHub sign-in is unavailable in this version of Gitorian. Check for an app update or contact the maintainer.'
                     : (device.error ?? 'Invalid device authorization response')
             )
         this.device = {

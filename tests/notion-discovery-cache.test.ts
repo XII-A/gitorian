@@ -13,7 +13,7 @@ const pages: NotionPage[] = [
     { kind: 'page', id: 'journal', title: 'Work journal', url: 'https://www.notion.so/journal' }
 ]
 function fixture() {
-    const directory = mkdtempSync(join(tmpdir(), 'weekly-j-notion-cache-'))
+    const directory = mkdtempSync(join(tmpdir(), 'gitorian-notion-cache-'))
     directories.push(directory)
     const path = join(directory, 'notion-pages.json')
     let time = 1000000

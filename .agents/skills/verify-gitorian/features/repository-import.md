@@ -19,6 +19,7 @@ Open settings -> Repositories -> Add repositories from folder. The native picker
 Preconditions: compiled app, installed Electron, Git on PATH, and no integration credentials. `pnpm verify repository-import` provisions all fixture state itself.
 
 - **Open:** `[aria-label="Open settings"]`, then `Add repositories from folder`; capture chooser waiting, scanning, success, and review.
+- **Branding:** the live doctor requires the document title and visible window title to read `Gitorian`; the runner independently reads `gitorian.sqlite` after exit.
 - **Appearance:** launch with Electron's platform theme set to light, then switch dark and back to light. Require the app theme and computed color scheme to remain dark; retain `00-dark-theme-light-platform.png`. This is process-local platform emulation and does not change the user's OS settings.
 - **Select:** `.repository-import-row [role="checkbox"]`; require five eligible checks and one disabled tracked row. Deselect all -> disabled `Import 0 repositories`; Select all -> deselect `playground`.
 - **Search/cancel:** type `website` into `.repository-import-tools input`; require two rows and four total selections. Cancel -> two original stored repositories, no imports.

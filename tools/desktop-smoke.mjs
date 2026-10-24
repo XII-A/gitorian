@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const directory = process.env.WEEKLY_J_VERIFY_STATE
-    ? join(process.env.WEEKLY_J_VERIFY_STATE, 'profile')
-    : mkdtempSync(join(tmpdir(), 'weekly-j-desktop-'))
+const directory = process.env.GITORIAN_VERIFY_STATE
+    ? join(process.env.GITORIAN_VERIFY_STATE, 'profile')
+    : mkdtempSync(join(tmpdir(), 'gitorian-desktop-'))
 app.setPath('userData', directory)
 const repositoryFolder = join(directory, 'repositories')
 for (const name of process.env.INSPECTOR_TABS_ONLY === '1' ? [] : ['first-project', 'second-project']) {
@@ -37,7 +37,7 @@ for (const name of process.env.INSPECTOR_TABS_ONLY === '1' ? [] : ['first-projec
 }
 const pause = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds))
 const tabEvidence =
-    process.env.WEEKLY_J_VERIFY_OUTPUT ?? resolve('.ai-docs/verification', `inspector-tabs-${Date.now()}`)
+    process.env.GITORIAN_VERIFY_OUTPUT ?? resolve('.ai-docs/verification', `inspector-tabs-${Date.now()}`)
 mkdirSync(tabEvidence, { recursive: true })
 const tabObservations = []
 async function checkInspectorTabs(window, surface) {
@@ -375,7 +375,7 @@ app.on('browser-window-created', (_, window) => {
             await window.webContents.executeJavaScript(`(async () => {
                 const state = (await window.journal.invoke({type:'state'})).state
                 const draft = {...state.drafts[0],updatedAt:new Date(Date.now()+1000).toISOString(),body:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Recovered an interrupted save.'}]}]}}
-                localStorage.setItem('weekly-j:recovery:'+(state.restoreId??'local')+':'+draft.week,JSON.stringify(draft))
+                localStorage.setItem('gitorian:recovery:'+(state.restoreId??'local')+':'+draft.week,JSON.stringify(draft))
             })()`)
             await window.loadURL(base + '?workspace=true')
             await waitForElement(window, '[aria-label="Journal body"]')
@@ -521,7 +521,7 @@ app.on('browser-window-created', (_, window) => {
 app.on('will-quit', () => {
     // Check the absolute temporary target before removing smoke-test data on Windows.
     const target = resolve(directory)
-    if (!target.startsWith(resolve(tmpdir()) + '\\') || !target.includes('weekly-j-desktop-')) return
+    if (!target.startsWith(resolve(tmpdir()) + '\\') || !target.includes('gitorian-desktop-')) return
     try {
         rmSync(target, { recursive: true, force: true })
     } catch {

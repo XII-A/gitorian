@@ -1,6 +1,6 @@
 # First-time journal setup
 
-Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify onboarding`. Run the distinct inline-completion case with `WEEKLY_J_VERIFY_ONBOARDING_INLINE=1` and the same verification command. Both use the managed runner's disposable profile, source capture, persistent evidence and cleanup contract.
+Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify onboarding`. Run the distinct inline-completion case with `GITORIAN_VERIFY_ONBOARDING_INLINE=1` and the same verification command. Both use the managed runner's disposable profile, source capture, persistent evidence and cleanup contract.
 
 The scenario owns first-run setup. It reuses the connection harness's simulated provider HTTP, hosted OAuth handler, loopback callback, browser and avatar boundaries. The renderer, preload, IPC, vault, SQLite and localStorage are real. It creates one empty Git repository only for the import step; the native folder picker returns that owned fixture. It performs no live authorization or publishing.
 
@@ -28,7 +28,7 @@ For a dirty revision, apply `source.patch`, copy `source-files/` onto the checko
 
 ## Reveal motion
 
-Run the default and inline variants with normal motion. Also set `WEEKLY_J_VERIFY_ONBOARDING_REDUCED=1` for an isolated reduced-motion default journey (provider names remain unchanged). The default journey includes a keyboard-dismissal subcase, then explicitly resets only its profile-local onboarding preference to test native pointer dismissal independently.
+Run the default and inline variants with normal motion. Also set `GITORIAN_VERIFY_ONBOARDING_REDUCED=1` for an isolated reduced-motion default journey (provider names remain unchanged). The default journey includes a keyboard-dismissal subcase, then explicitly resets only its profile-local onboarding preference to test native pointer dismissal independently.
 
 Require `dismiss-motion.json` for default journeys and `completion-motion.json` for inline completion. The normal default also retains `keyboard-dismiss-motion.json`. Each trace samples real rendered opacity, transforms, layout coordinates and animation properties every frame. Require intermediate fade frames in pointer/automatic reveals, no layout drift beyond 1px, only transform/opacity animations, an inert outgoing card, no translation in reduced motion, and no entrance or exit animation for keyboard dismissal. The preview shares the outgoing setup panel and its 120ms exit; it has no independent idle animation. The two overview regions reveal after the 120ms card exit, with 240ms entrances and a 35ms stagger in normal motion; reduced motion removes the stagger and translation and keeps 160ms fades. Populated-profile and already-dismissed reloads remain static.
 

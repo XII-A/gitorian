@@ -18,7 +18,7 @@ const worker = new URL(
 const pause = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
 
 it('retries a failed image write without another draft edit and flushes image bytes before shutdown', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'weekly-j-worker-image-'))
+    const directory = mkdtempSync(join(tmpdir(), 'gitorian-worker-image-'))
     const path = join(directory, 'journal.sqlite')
     let store = new Store(path)
     const db = new DatabaseSync(path)
@@ -48,7 +48,7 @@ it('retries a failed image write without another draft edit and flushes image by
 })
 
 it('keeps main-thread timers responsive during a locked commit and flushes writes in order before shutdown', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'weekly-j-worker-'))
+    const directory = mkdtempSync(join(tmpdir(), 'gitorian-worker-'))
     const path = join(directory, 'journal.sqlite')
     let store = new Store(path)
     store.state = sampleState('2026-10-12')
@@ -87,7 +87,7 @@ it('keeps main-thread timers responsive during a locked commit and flushes write
 })
 
 it('rejects failed and dependent queued saves, then retries a complete current snapshot without losing updates', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'weekly-j-worker-'))
+    const directory = mkdtempSync(join(tmpdir(), 'gitorian-worker-'))
     const path = join(directory, 'journal.sqlite')
     let store = new Store(path)
     store.state = sampleState('2026-10-12')

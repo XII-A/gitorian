@@ -60,7 +60,7 @@ export function WorkspaceDraft({
     const notifiedSave = useRef('')
     const drafts = state.drafts.filter((item) => item.week === week)
     const ready = !!draft && !busy
-    const storageKey = `weekly-j:recovery:${sample ? 'sample' : (state.restoreId ?? 'local')}:${week}`
+    const storageKey = `gitorian:recovery:${sample ? 'sample' : (state.restoreId ?? 'local')}:${week}`
     const snapshot = useCallback(() => {
         if (bodySnapshot.current && latest.current) {
             latest.current = { ...latest.current, body: bodySnapshot.current.read() }

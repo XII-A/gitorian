@@ -1,5 +1,5 @@
 [build]
-command = "pnpm --filter @weekly-j/notion-oauth build"
+command = "pnpm --filter @gitorian/notion-oauth build"
 publish = "services/notion-oauth/public"
 functions = "services/notion-oauth/dist/functions"
 

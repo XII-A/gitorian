@@ -3,8 +3,8 @@ import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const scratch = process.env.WEEKLY_J_VERIFY_STATE
-const output = process.env.WEEKLY_J_VERIFY_OUTPUT
+const scratch = process.env.GITORIAN_VERIFY_STATE
+const output = process.env.GITORIAN_VERIFY_OUTPUT
 if (!scratch || !output) throw new Error('Run pnpm verify line-statistics with an owned disposable profile')
 app.setPath('userData', join(scratch, 'profile'))
 const fixture = JSON.parse(readFileSync(join(output, 'fixture.json'), 'utf8'))

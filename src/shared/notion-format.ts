@@ -127,9 +127,9 @@ export function fromNotion(blocks: NotionBlock[]): JournalNode {
         const nested = item.children?.length ? (fromNotion(item.children).content ?? []) : []
         if (
             item.type === 'paragraph' &&
-            plainText({ type: 'paragraph', content: text }) === 'Published with weekly-j' &&
+            plainText({ type: 'paragraph', content: text }) === 'Published with Gitorian' &&
             data?.rich_text?.some((value) =>
-                value.text?.link?.url.startsWith('https://github.com/XII-A/weekly-j#weekly-j-operation:')
+                value.text?.link?.url.startsWith('https://github.com/XII-A/gitorian#gitorian-operation:')
             )
         )
             continue

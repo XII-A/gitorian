@@ -13,6 +13,6 @@
 
 Windows 10 or 11, 64-bit Intel or AMD (x64).
 
-Download and run `weekly-j-0.1.3-windows-x64-setup.exe` from **Assets** below to install weekly-j.
+Download and run `gitorian-0.1.3-windows-x64-setup.exe` from **Assets** below to install Gitorian.
 
-See the [installation details](https://github.com/XII-A/weekly-j#downloads) for unsigned installer warnings and checksums.
+See the [installation details](https://github.com/XII-A/gitorian#downloads) for unsigned installer warnings and checksums.

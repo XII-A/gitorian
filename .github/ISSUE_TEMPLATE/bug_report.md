@@ -20,7 +20,7 @@ Describe the problem and what you expected instead.
 
 ## Environment
 
-- weekly-j version (release tag or commit):
+- Gitorian version (release tag or commit):
 - Operating system and version:
 - Installed release or development build:
 - Affected source, if relevant (local Git / GitHub / Notion):

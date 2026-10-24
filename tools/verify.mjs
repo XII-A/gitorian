@@ -67,10 +67,10 @@ if (mode === 'doctor') {
     const evidenceRoot = join(root, '.ai-docs', 'verification')
     mkdirSync(evidenceRoot, { recursive: true })
     const output = mkdtempSync(join(evidenceRoot, `${mode}-`))
-    const scratch = mkdtempSync(join(tmpdir(), 'weekly-j-import-'))
+    const scratch = mkdtempSync(join(tmpdir(), 'gitorian-import-'))
     const report = {
         feature: mode,
-        command: `${onboardingMode && process.env.WEEKLY_J_VERIFY_ONBOARDING_INLINE === '1' ? 'WEEKLY_J_VERIFY_ONBOARDING_INLINE=1 ' : ''}${onboardingMode && process.env.WEEKLY_J_VERIFY_ONBOARDING_REDUCED === '1' ? 'WEEKLY_J_VERIFY_ONBOARDING_REDUCED=1 ' : ''}pnpm verify ${mode}`,
+        command: `${onboardingMode && process.env.GITORIAN_VERIFY_ONBOARDING_INLINE === '1' ? 'GITORIAN_VERIFY_ONBOARDING_INLINE=1 ' : ''}${onboardingMode && process.env.GITORIAN_VERIFY_ONBOARDING_REDUCED === '1' ? 'GITORIAN_VERIFY_ONBOARDING_REDUCED=1 ' : ''}pnpm verify ${mode}`,
         build,
         scratch,
         output,
@@ -78,11 +78,11 @@ if (mode === 'doctor') {
     }
     const env = {
         ...process.env,
-        WEEKLY_J_VERIFY_ONBOARDING: onboardingMode ? '1' : '0',
-        WEEKLY_J_VERIFY_ONBOARDING_DISCLOSURE: disclosureMode ? '1' : '0',
-        WEEKLY_J_VERIFY_STATE: scratch,
-        WEEKLY_J_VERIFY_OUTPUT: output,
-        WEEKLY_J_VERIFY_SERVICE: mode === 'notion' ? 'notion' : ''
+        GITORIAN_VERIFY_ONBOARDING: onboardingMode ? '1' : '0',
+        GITORIAN_VERIFY_ONBOARDING_DISCLOSURE: disclosureMode ? '1' : '0',
+        GITORIAN_VERIFY_STATE: scratch,
+        GITORIAN_VERIFY_OUTPUT: output,
+        GITORIAN_VERIFY_SERVICE: mode === 'notion' ? 'notion' : ''
     }
     // The Codex host exports this flag for itself; Electron must launch as a desktop app.
     delete env.ELECTRON_RUN_AS_NODE
@@ -186,7 +186,7 @@ if (mode === 'doctor') {
         const journey = JSON.parse(readFileSync(join(output, 'journey.json'), 'utf8'))
         if (!journey.passed) throw new Error('The journey did not report success')
         if (mode === 'line-statistics') {
-            const db = new DatabaseSync(join(scratch, 'profile', 'weekly-j.sqlite'), { readOnly: true })
+            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
             try {
                 const activities = db
                     .prepare("SELECT json FROM state_records WHERE collection='activities'")
@@ -213,7 +213,7 @@ if (mode === 'doctor') {
             }
         }
         if (mode !== 'line-statistics' && mode !== 'inspector-tabs' && mode !== 'window-chrome') {
-            const db = new DatabaseSync(join(scratch, 'profile', 'weekly-j.sqlite'), { readOnly: true })
+            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
             try {
                 if (disclosureMode) {
                     const count = db
@@ -233,7 +233,7 @@ if (mode === 'doctor') {
                     )
                         throw new Error('Onboarding import was not persisted')
                     const preferences = JSON.parse(readFileSync(join(output, 'preferences.json'), 'utf8'))
-                    if (preferences['weekly-j:onboarding:v1:local'] !== 'complete')
+                    if (preferences['gitorian:onboarding:v1:local'] !== 'complete')
                         throw new Error('Completion preference was not retained')
                 } else if (connectionMode) {
                     const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
@@ -246,9 +246,9 @@ if (mode === 'doctor') {
                         settings.githubLogin !==
                             (mode === 'notion'
                                 ? ''
-                                : process.env.WEEKLY_J_VERIFY_MOTION === 'stress'
-                                  ? 'weekly-j-fixture-with-a-long-github-name'
-                                  : 'weekly-j-fixture')
+                                : process.env.GITORIAN_VERIFY_MOTION === 'stress'
+                                  ? 'gitorian-fixture-with-a-long-github-name'
+                                  : 'gitorian-fixture')
                     )
                         throw new Error('Persisted account settings differ from the authorized identity')
                 } else {
@@ -276,7 +276,7 @@ if (mode === 'doctor') {
         try {
             if (
                 dirname(target) === resolve(tmpdir()) &&
-                target.startsWith(resolve(tmpdir()) + sep + 'weekly-j-import-')
+                target.startsWith(resolve(tmpdir()) + sep + 'gitorian-import-')
             )
                 rmSync(target, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
             else cleanupError = `Refusing cleanup outside the owned scratch directory: ${target}`
@@ -325,10 +325,10 @@ if (mode === 'doctor') {
                               '01e-dismiss-tooltip.png',
                               'header-actions.json',
                               'header-geometry.json',
-                              process.env.WEEKLY_J_VERIFY_ONBOARDING_INLINE === '1'
+                              process.env.GITORIAN_VERIFY_ONBOARDING_INLINE === '1'
                                   ? 'completion-motion.json'
                                   : 'dismiss-motion.json',
-                              process.env.WEEKLY_J_VERIFY_ONBOARDING_INLINE === '1'
+                              process.env.GITORIAN_VERIFY_ONBOARDING_INLINE === '1'
                                   ? '05-inline-setup.png'
                                   : '05-resume-popover.png',
                               '09-complete-stats.png',

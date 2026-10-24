@@ -15,7 +15,7 @@ Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify connections`. The runn
 
 ## Notion entry points
 
-Run `pnpm verify notion` for Notion-only work. It uses the same fixture transports and owning runner, but skips the entire GitHub interaction block and asserts zero GitHub API/OAuth requests. `pnpm verify connections` remains the combined entry point. For the narrow reduced-motion case set `WEEKLY_J_VERIFY_MOTION=stress` before `pnpm verify notion`.
+Run `pnpm verify notion` for Notion-only work. It uses the same fixture transports and owning runner, but skips the entire GitHub interaction block and asserts zero GitHub API/OAuth requests. `pnpm verify connections` remains the combined entry point. For the narrow reduced-motion case set `GITORIAN_VERIFY_MOTION=stress` before `pnpm verify notion`.
 
 - Connect, offline Retry, browser failure, Cancel and provider denial still use the real loopback listener and hosted handler. No token field, fabricated device code or copy-link button is shown. Browser approval focuses Open Notion for keyboard recovery.
 - Existing-page confirmation and Team journal creation each inject a failed local writer response. Retry must finish without reconnecting; the new page must be created only once. The creation retry delays its successful local save by 700ms so closing Settings still exercises an in-flight confirmation. Require notion-existing-save-retry.png and notion-created-save-retry.png. The successful destination confirmation injects a recovery-file cleanup failure. It must still show success, remain connected and permit subsequent editing and page creation. Authorization alone is incomplete: no saved credentials, destination or page creation before Confirm. The rounded leading picker must share the Confirm button's 4px inset and leave Cancel/Confirm visible. There is no Refresh button.
@@ -45,7 +45,7 @@ For reproduction, apply `source.patch`, copy the retained `connections-smoke.mjs
 
 ## Notion loading motion
 
-Run `pnpm verify notion` for desktop normal motion. Set `WEEKLY_J_VERIFY_VIEWPORT=narrow` for narrow normal motion, or `WEEKLY_J_VERIFY_MOTION=stress` for narrow reduced motion with long names. The fixture includes sixteen pages and checks one/two-digit counter changes. The actual rendered glyphs must settle on 10/16 before the picker appears; no animation delay holds back discovery completion.
+Run `pnpm verify notion` for desktop normal motion. Set `GITORIAN_VERIFY_VIEWPORT=narrow` for narrow normal motion, or `GITORIAN_VERIFY_MOTION=stress` for narrow reduced motion with long names. The fixture includes sixteen pages and checks one/two-digit counter changes. The actual rendered glyphs must settle on 10/16 before the picker appears; no animation delay holds back discovery completion.
 
 Require notion-loading-motion.json with a per-frame trace from the load error through pending discovery/grouping to the picker. Loading-stage vertical movement must stay within 1px; normal pending width changes must remain below 24px per normalized 16.7ms frame. Normal motion must include moving digit frames; reduced motion must have none. Review notion-counter-settled.png alongside discovery/grouping captures. Counter wheels keep their place identities, and final formatted text independently determines the enclosing pill width. Restore retained animated-counter.tsx and animated-counter.module.css into src/renderer/components/arc/animated-counter for dirty-source reproduction.
 
@@ -56,8 +56,8 @@ The combined GitHub journey records requestAnimationFrame measurements in `githu
 Run the normal desktop journey, then the distinct narrow/reduced-motion case with long provider names:
 
 ```powershell
-$env:WEEKLY_J_VERIFY_MOTION = 'stress'
-try { pnpm verify connections } finally { Remove-Item Env:WEEKLY_J_VERIFY_MOTION }
+$env:GITORIAN_VERIFY_MOTION = 'stress'
+try { pnpm verify connections } finally { Remove-Item Env:GITORIAN_VERIFY_MOTION }
 ```
 
 Require both runs to exit zero with cleanup confirmed. The stress fixture uses a long GitHub login and Notion page name and retains its own independent SQLite expectation. Inspect native section screenshots as well as traces: actions must remain fully readable and within the section, with names truncated rather than actions clipped. Both success and failure/recovery paths still run. The DNS/HTTPS avatar transport fixture is simulated; it is not evidence of live provider image availability.

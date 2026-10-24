@@ -6,7 +6,7 @@ import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 
-const directory = mkdtempSync(join(tmpdir(), 'weekly-j-acquisition-'))
+const directory = mkdtempSync(join(tmpdir(), 'gitorian-acquisition-'))
 const repositories = join(directory, 'repositories')
 app.setPath('userData', directory)
 for (let index = 0; index < 24; index++) {
@@ -125,7 +125,7 @@ app.on('browser-window-created', (_, window) => {
             result.hubFilesWithoutPatch = await window.webContents.executeJavaScript(
                 `(async()=>{const state=(await window.journal.invoke({type:'state'})).state;return !!document.querySelector('.hub-detail-files') && Object.keys(state.diffs).length===0})()`
             )
-            const database = new DatabaseSync(join(directory, 'weekly-j.sqlite'))
+            const database = new DatabaseSync(join(directory, 'gitorian.sqlite'))
             result.hubFilesWithoutPatch &&=
                 database.prepare("SELECT count(*) AS count FROM patches WHERE id LIKE 'diff:%'").get().count === 0
             database.close()
@@ -169,7 +169,7 @@ app.on('browser-window-created', (_, window) => {
 })
 app.on('will-quit', () => {
     const target = resolve(directory)
-    if (!target.startsWith(resolve(tmpdir()) + sep) || !target.includes('weekly-j-acquisition-')) return
+    if (!target.startsWith(resolve(tmpdir()) + sep) || !target.includes('gitorian-acquisition-')) return
     try {
         rmSync(target, { recursive: true, force: true })
     } catch {

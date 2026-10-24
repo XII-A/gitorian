@@ -1,6 +1,6 @@
-# weekly-j verification map
+# Gitorian verification map
 
-- [Onboarding](onboarding.md): first-time checklist, direct Settings actions, writing access, dismissal and header popover, real completion truth, reload persistence, existing-profile migration, themes, narrow widths and zoom. Run `pnpm verify onboarding`; use `WEEKLY_J_VERIFY_ONBOARDING_INLINE=1` for completion from the inline card.
+- [Onboarding](onboarding.md): first-time checklist, direct Settings actions, writing access, dismissal and header popover, real completion truth, reload persistence, existing-profile migration, themes, narrow widths and zoom. Run `pnpm verify onboarding`; use `GITORIAN_VERIFY_ONBOARDING_INLINE=1` for completion from the inline card.
 - [Checklist motion](onboarding.md#disclosure-text-stability): `pnpm verify onboarding-disclosure` isolates step/body expansion and native text raster stability with no repositories or account setup.
 
 Read the matching feature recipe before changing or verifying behavior. Each recipe lists user entry points; report coverage per entry point, including failures or missing preconditions.

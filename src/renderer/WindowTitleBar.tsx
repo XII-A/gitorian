@@ -64,7 +64,7 @@ export function WindowTitleBar() {
         >
             <div className="window-frame-cap" aria-hidden="true" />
             <div ref={bar} className="window-title-bar" role="toolbar" aria-label="Window controls">
-                <div className="window-title-bar-drag">weekly-j</div>
+                <div className="window-title-bar-drag">Gitorian</div>
                 <button
                     type="button"
                     aria-label="Minimize window"

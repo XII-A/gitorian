@@ -33,7 +33,7 @@ export function WorkspaceReference({
     const channel = useRef<BroadcastChannel | undefined>(undefined)
     const citationTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     useEffect(() => {
-        const bus = new BroadcastChannel('weekly-j-workspace-reference')
+        const bus = new BroadcastChannel('gitorian-workspace-reference')
         channel.current = bus
         bus.onmessage = (event: MessageEvent<unknown>) => {
             const data = event.data
