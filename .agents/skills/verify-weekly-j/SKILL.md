@@ -60,6 +60,7 @@ Inspect the printed `run.json` after every run, including failures. Require `cle
 
 - `pnpm verify doctor` runs the read-only build check in `tools/verify.mjs`.
 - `pnpm verify repository-import` runs launch, live doctor, drive, evidence, persistence check, and cleanup in one command.
+- `pnpm verify connections` drives the [connections journey](features/connections.md) using a journal-only disposable profile and simulated GitHub HTTP/browser boundaries.
 - Other existing harness commands and concrete entry points are indexed in [features/README.md](features/README.md).
 
 Maintain the map with the app: update changed selectors, entry points, preconditions, and outcomes; rerun affected journeys and retain their evidence. A feature is verified only when every claimed entry point has an observed result.

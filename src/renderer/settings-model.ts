@@ -19,7 +19,6 @@ export function hasUnsavedSettings(
         timezone: preferences.timezone,
         refreshMinutes: preferences.refreshMinutes,
         template: preferences.template,
-        githubClientId: preferences.githubClientId,
         destination: preferences.destination,
         repositories: repos
             .map(({ id, base, remote, trackingStart, emails, removed }) => ({

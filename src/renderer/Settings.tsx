@@ -1,3 +1,6 @@
+import { useConnectionProfile } from './useConnectionProfile'
+import { useDisconnectTransition } from './useDisconnectTransition'
+import { ConnectionIdentity } from './ConnectionIdentity'
 import { RepositoryImportReview } from './RepositoryImportReview'
 import { Alert } from './components/arc/alert/alert'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -21,6 +24,7 @@ import { NumberField } from './components/arc/number-field/number-field'
 import { SearchField } from './components/arc/search-field/search-field'
 import { ConfirmMorph, type ConfirmMorphState } from './components/arc/confirm-morph/confirm-morph'
 import type { EditorHandle } from './Editor'
+import { NotionLogoIcon } from '@phosphor-icons/react/dist/csr/NotionLogo'
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
 import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise'
 import { Editor } from './Editor'
@@ -44,32 +48,27 @@ export function Settings({
     const [settings, setSettings] = useState(state.settings)
     const [repositories, setRepositories] = useState(state.repositories)
     const [token, setToken] = useState('')
-    const [notionIdentity, setNotionIdentity] = useState<Reply['notionIdentity']>()
+    const notionDisconnect = useDisconnectTransition(connections.notion)
+    const [notionConnectState, setNotionConnectState] = useState<ConfirmMorphState>('idle')
+    const [notionIdentityReady, setNotionIdentityReady] = useState(false)
+    useEffect(() => {
+        if (!connections.notion) setNotionIdentityReady(false)
+    }, [connections.notion])
+    const prepareNotionIdentity = connections.notion || notionConnectState === 'done'
+    const { profile: notionIdentity, ready: notionProfileReady } = useConnectionProfile('notion', prepareNotionIdentity)
     const [destinationTest, setDestinationTest] = useState<{ key: string; state: ConfirmMorphState }>()
     const destinationKey = JSON.stringify([connections.notion, settings.destination])
     const currentDestinationKey = useRef(destinationKey)
     currentDestinationKey.current = destinationKey
-    useEffect(() => {
-        let cancelled = false
-        setNotionIdentity(undefined)
-        if (connections.notion)
-            void window.journal.invoke({ type: 'notionProfile' }).then(
-                (reply) => {
-                    if (!cancelled) setNotionIdentity(reply.notionIdentity)
-                },
-                () => {
-                    // Profile details are optional; the connection remains usable if they cannot be loaded.
-                }
-            )
-        return () => {
-            cancelled = true
-        }
-    }, [connections.notion])
     const [device, setDevice] = useState<Reply['device']>()
     const [githubFeedback, setGithubFeedback] = useState<GitHubSignInFeedback>()
+    const { profile: githubIdentity } = useConnectionProfile(
+        'github',
+        connections.github || githubFeedback?.kind === 'authorizing' || githubFeedback?.kind === 'success'
+    )
+    const notionAccount = useRef<HTMLDivElement>(null)
     const [githubNotice, setGithubNotice] = useState('')
     const githubAttempt = useRef(0)
-    const githubAccount = useRef<HTMLDivElement>(null)
     const [error, setError] = useState('')
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState('')
@@ -178,7 +177,7 @@ export function Settings({
                 else {
                     setDevice(undefined)
                     setGithubNotice('')
-                    setGithubFeedback({ kind: 'success', login: result.state.settings.githubLogin })
+                    setGithubFeedback({ kind: 'authorizing', login: result.state.settings.githubLogin })
                     setSettings((current) => ({ ...current, githubLogin: result.state.settings.githubLogin }))
                     setRepositories((local) =>
                         result.state.repositories.map((item) => {
@@ -204,14 +203,35 @@ export function Settings({
         }
     }, [device, run])
     useEffect(() => {
-        if (githubFeedback?.kind !== 'success') return
+        if (githubFeedback?.kind !== 'authorizing' && githubFeedback?.kind !== 'success') return
         let cancelled = false
-        // Give the in-place confirmation time to be read before showing the account controls.
+        const timer = setTimeout(
+            () => {
+                if (githubFeedback.kind === 'authorizing') {
+                    setGithubFeedback({ kind: 'success', login: githubFeedback.login })
+                    return
+                }
+                void run({ type: 'state' }).then(() => {
+                    if (!cancelled) setGithubFeedback(undefined)
+                })
+            },
+            githubFeedback.kind === 'authorizing' ? 450 : 900
+        )
+        return () => {
+            cancelled = true
+            clearTimeout(timer)
+        }
+    }, [githubFeedback, run])
+    useEffect(() => {
+        if (notionConnectState !== 'done') return
+        let cancelled = false
         const timer = setTimeout(() => {
             void run({ type: 'state' }).then(() => {
                 if (!cancelled) {
-                    setGithubFeedback(undefined)
-                    window.requestAnimationFrame(() => githubAccount.current?.focus({ preventScroll: true }))
+                    setNotionConnectState('idle')
+                    requestAnimationFrame(() =>
+                        notionAccount.current?.querySelector('button')?.focus({ preventScroll: true })
+                    )
                 }
             })
         }, 900)
@@ -219,7 +239,7 @@ export function Settings({
             cancelled = true
             clearTimeout(timer)
         }
-    }, [githubFeedback, run])
+    }, [notionConnectState, run])
     const save = () =>
         action('save', async () => {
             if (!templateImagesReady) throw new Error('Finish or dismiss template image imports before saving.')
@@ -237,13 +257,8 @@ export function Settings({
         action('github', async () => {
             const attempt = ++githubAttempt.current
             setGithubNotice('')
+            setGithubFeedback(undefined)
             try {
-                if (!settings.githubClientId.trim())
-                    throw new Error('Enter a GitHub OAuth client ID with device flow enabled.')
-                await window.journal.invoke({
-                    type: 'settings',
-                    settings: { ...state.settings, githubClientId: settings.githubClientId.trim() }
-                })
                 const result = await invoke({ type: 'githubStart' })
                 if (githubAttempt.current !== attempt) return
                 if (!result.device) throw new Error('GitHub did not provide a sign-in code')
@@ -485,105 +500,62 @@ export function Settings({
                                 </TabsContent>
                                 <TabsContent value="connections" className="settings-content">
                                     <section className="settings-section" aria-label="GitHub connection">
-                                        <div className="settings-section-heading">
-                                            <h3>GitHub</h3>
-                                            {connections.github && githubFeedback?.kind !== 'success' ? (
-                                                <div
-                                                    ref={githubAccount}
-                                                    tabIndex={-1}
-                                                    className="settings-github-account"
-                                                >
-                                                    <span className="settings-github-identity">
-                                                        {settings.githubLogin && (
-                                                            <span className="settings-github-avatar" aria-hidden="true">
-                                                                {settings.githubLogin.slice(0, 1).toUpperCase()}
-                                                                <img
-                                                                    src={`https://github.com/${encodeURIComponent(settings.githubLogin)}.png?size=64`}
-                                                                    width={32}
-                                                                    height={32}
-                                                                    alt=""
-                                                                    onError={(event) => {
-                                                                        event.currentTarget.hidden = true
-                                                                    }}
-                                                                />
-                                                            </span>
-                                                        )}
-                                                        <span>{settings.githubLogin || 'Connected'}</span>
-                                                    </span>
-                                                    <ConfirmMorph
-                                                        label="Disconnect"
-                                                        prompt={
-                                                            <span className="settings-disconnect-question">
-                                                                Disconnect GitHub?
-                                                            </span>
-                                                        }
-                                                        confirmLabel="Disconnect"
-                                                        confirmMode="hold"
-                                                        variant="secondary"
-                                                        pendingLabel="Disconnecting"
-                                                        doneLabel="Disconnected"
-                                                        errorLabel="Could not disconnect"
-                                                        tone="danger"
-                                                        disabled={!!busy}
-                                                        onConfirm={async () => {
-                                                            setBusy('disconnect-github')
-                                                            setError('')
-                                                            try {
-                                                                await invoke({ type: 'disconnect', service: 'github' })
-                                                                setSettings((current) => ({
-                                                                    ...current,
-                                                                    githubLogin: ''
-                                                                }))
-                                                                setStatus('GitHub disconnected.')
-                                                            } finally {
-                                                                setBusy('')
-                                                            }
-                                                        }}
-                                                    />
-                                                </div>
-                                            ) : (
-                                                <span className="settings-connection-status">
-                                                    {githubFeedback?.kind === 'success' ? 'Connected' : 'Not connected'}
-                                                </span>
-                                            )}
-                                        </div>
-                                        {(!connections.github || githubFeedback?.kind === 'success') && (
-                                            <>
-                                                <Input
-                                                    label="OAuth client ID"
-                                                    value={settings.githubClientId}
-                                                    disabled={
-                                                        !!device ||
-                                                        busy === 'github' ||
-                                                        githubFeedback?.kind === 'success'
-                                                    }
-                                                    onChange={(event) =>
-                                                        setSettings({ ...settings, githubClientId: event.target.value })
-                                                    }
+                                        <div className="settings-section-heading settings-github-heading">
+                                            <h3 className="settings-connection-title">
+                                                <span
+                                                    className="settings-connection-logo settings-connection-logo--github"
+                                                    aria-hidden="true"
                                                 />
-                                                <div className="settings-actions settings-github-setup">
-                                                    <p className="settings-hint">
-                                                        Enable device flow in your GitHub OAuth app.
-                                                    </p>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        disabled={
-                                                            !!busy || !!device || githubFeedback?.kind === 'success'
-                                                        }
-                                                        onClick={() =>
-                                                            action('oauth', async () => {
-                                                                await invoke({
-                                                                    type: 'open',
-                                                                    url: 'https://github.com/settings/applications/new'
-                                                                })
-                                                            })
-                                                        }
-                                                    >
-                                                        Set up OAuth app
-                                                    </Button>
-                                                </div>
+                                                GitHub
+                                            </h3>
+                                            <div className="settings-github-controls">
                                                 <GitHubSignIn
+                                                    identity={
+                                                        connections.github ||
+                                                        githubFeedback?.kind === 'success' ||
+                                                        githubFeedback?.kind === 'authorizing' ? (
+                                                            <span className="settings-github-identity">
+                                                                {settings.githubLogin && (
+                                                                    <span
+                                                                        className="settings-github-avatar"
+                                                                        aria-hidden="true"
+                                                                    >
+                                                                        {settings.githubLogin.slice(0, 1).toUpperCase()}
+                                                                        {githubIdentity?.avatarUrl && (
+                                                                            <img
+                                                                                src={githubIdentity.avatarUrl}
+                                                                                width={32}
+                                                                                height={32}
+                                                                                alt=""
+                                                                                onLoad={(event) => {
+                                                                                    event.currentTarget.dataset.loaded =
+                                                                                        'true'
+                                                                                }}
+                                                                                onError={(event) => {
+                                                                                    event.currentTarget.hidden = true
+                                                                                }}
+                                                                            />
+                                                                        )}
+                                                                    </span>
+                                                                )}
+                                                                <span title={settings.githubLogin}>
+                                                                    {settings.githubLogin || 'Connected'}
+                                                                </span>
+                                                            </span>
+                                                        ) : undefined
+                                                    }
+                                                    connected={connections.github}
+                                                    onDisconnect={async () => {
+                                                        setBusy('disconnect-github')
+                                                        setError('')
+                                                        try {
+                                                            await invoke({ type: 'disconnect', service: 'github' })
+                                                            setSettings((current) => ({ ...current, githubLogin: '' }))
+                                                            setStatus('GitHub disconnected.')
+                                                        } finally {
+                                                            setBusy('')
+                                                        }
+                                                    }}
                                                     device={device}
                                                     feedback={githubFeedback}
                                                     notice={githubNotice}
@@ -615,33 +587,64 @@ export function Settings({
                                                         setStatus('')
                                                     }}
                                                 />
-                                            </>
-                                        )}
+                                            </div>
+                                        </div>
                                     </section>
                                     <section className="settings-section" aria-label="Notion connection">
-                                        <div className="settings-section-heading">
-                                            <h3>Notion</h3>
-                                            {connections.notion ? (
-                                                <div className="settings-github-account">
-                                                    <span className="settings-github-identity">
-                                                        <span className="settings-github-avatar" aria-hidden="true">
-                                                            {notionIdentity?.name.slice(0, 1).toUpperCase() || 'N'}
-                                                            {notionIdentity?.avatarUrl && (
-                                                                <img
-                                                                    key={notionIdentity.avatarUrl}
-                                                                    src={notionIdentity.avatarUrl}
-                                                                    width={32}
-                                                                    height={32}
-                                                                    alt=""
-                                                                    onError={(event) => {
-                                                                        event.currentTarget.hidden = true
-                                                                    }}
-                                                                />
-                                                            )}
+                                        <div className="settings-section-heading settings-github-heading">
+                                            <h3 className="settings-connection-title">
+                                                <span className="settings-connection-logo settings-connection-logo--notion">
+                                                    <NotionLogoIcon
+                                                        size={24}
+                                                        weight="fill"
+                                                        aria-hidden="true"
+                                                        focusable="false"
+                                                    />
+                                                </span>
+                                                Notion
+                                            </h3>
+                                            <div ref={notionAccount} className="settings-github-account">
+                                                {prepareNotionIdentity && (
+                                                    <ConnectionIdentity
+                                                        ready={
+                                                            connections.notion &&
+                                                            notionProfileReady &&
+                                                            notionIdentityReady
+                                                        }
+                                                    >
+                                                        <span className="settings-github-identity">
+                                                            <span className="settings-github-avatar" aria-hidden="true">
+                                                                {notionIdentity?.name.slice(0, 1).toUpperCase() || 'N'}
+                                                                {notionIdentity?.avatarUrl && (
+                                                                    <img
+                                                                        key={notionIdentity.avatarUrl}
+                                                                        src={notionIdentity.avatarUrl}
+                                                                        width={32}
+                                                                        height={32}
+                                                                        alt=""
+                                                                        onLoad={(event) => {
+                                                                            event.currentTarget.dataset.loaded = 'true'
+                                                                        }}
+                                                                        onError={(event) => {
+                                                                            event.currentTarget.hidden = true
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                            </span>
+                                                            <span title={notionIdentity?.name}>
+                                                                {notionIdentity?.name || 'Connected'}
+                                                            </span>
                                                         </span>
-                                                        <span>{notionIdentity?.name || 'Connected'}</span>
-                                                    </span>
+                                                    </ConnectionIdentity>
+                                                )}
+                                                {notionDisconnect.showDisconnect && notionConnectState === 'idle' ? (
                                                     <ConfirmMorph
+                                                        state={notionDisconnect.state}
+                                                        onStateChange={notionDisconnect.setState}
+                                                        resultTimeout={0}
+                                                        onWidthSettled={(face) => {
+                                                            if (face === 'idle') setNotionIdentityReady(true)
+                                                        }}
                                                         label="Disconnect"
                                                         prompt={
                                                             <span className="settings-disconnect-question">
@@ -654,6 +657,7 @@ export function Settings({
                                                         pendingLabel="Disconnecting"
                                                         doneLabel="Disconnected"
                                                         errorLabel="Could not disconnect"
+                                                        errorCancelLabel="Cancel"
                                                         tone="danger"
                                                         disabled={!!busy}
                                                         onConfirm={async () => {
@@ -668,10 +672,35 @@ export function Settings({
                                                             }
                                                         }}
                                                     />
-                                                </div>
-                                            ) : (
-                                                <span className="settings-connection-status">Not connected</span>
-                                            )}
+                                                ) : (
+                                                    <ConfirmMorph
+                                                        label="Connect"
+                                                        confirmMode="immediate"
+                                                        variant="secondary"
+                                                        state={notionConnectState}
+                                                        onStateChange={setNotionConnectState}
+                                                        pendingLabel="Connecting"
+                                                        doneLabel="Connected"
+                                                        errorLabel="Could not connect"
+                                                        errorCancelLabel="Cancel"
+                                                        onCancel={() => setNotionConnectState('idle')}
+                                                        disabled={!token.trim() || !!busy}
+                                                        onConfirm={async () => {
+                                                            setBusy('notion')
+                                                            setError('')
+                                                            try {
+                                                                await window.journal.invoke({
+                                                                    type: 'notionConnect',
+                                                                    token: token.trim()
+                                                                })
+                                                                setToken('')
+                                                            } finally {
+                                                                setBusy('')
+                                                            }
+                                                        }}
+                                                    />
+                                                )}
+                                            </div>
                                         </div>
                                         {!connections.notion ? (
                                             <>
@@ -680,28 +709,12 @@ export function Settings({
                                                     type="password"
                                                     autoComplete="off"
                                                     value={token}
-                                                    onChange={(event) => setToken(event.target.value)}
+                                                    onChange={(event) => {
+                                                        setToken(event.target.value)
+                                                        if (notionConnectState === 'error')
+                                                            setNotionConnectState('idle')
+                                                    }}
                                                 />
-                                                <div className="settings-actions">
-                                                    <Button
-                                                        variant="secondary"
-                                                        size="sm"
-                                                        disabled={!token.trim() || !!busy}
-                                                        loading={busy === 'notion'}
-                                                        onClick={() =>
-                                                            action('notion', async () => {
-                                                                await invoke({
-                                                                    type: 'notionConnect',
-                                                                    token: token.trim()
-                                                                })
-                                                                setToken('')
-                                                                setStatus('Notion connected.')
-                                                            })
-                                                        }
-                                                    >
-                                                        Connect Notion
-                                                    </Button>
-                                                </div>
                                             </>
                                         ) : null}
                                         {(connections.github || connections.notion) &&

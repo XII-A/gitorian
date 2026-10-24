@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { discoverRepositories } from '../src/main/repository-discovery'
 import { journal, workspace } from './fixtures'
-import { initialState, type Repository, type RepositoryImportProgress } from '../src/shared/model'
+import { stateSchema, initialState, type Repository, type RepositoryImportProgress } from '../src/shared/model'
 import { hasUnsavedSettings } from '../src/renderer/settings-model'
 
 it('warns for unsaved preferences, template, destination, repository edits and connection input', () => {
@@ -32,7 +32,6 @@ it('warns for unsaved preferences, template, destination, repository edits and c
         { timezone: 'UTC' === saved.settings.timezone ? 'Europe/Istanbul' : 'UTC' },
         { refreshMinutes: saved.settings.refreshMinutes + 1 },
         { weekStart: (saved.settings.weekStart + 1) % 7 },
-        { githubClientId: 'new-client' },
         {
             template: {
                 type: 'doc',
@@ -187,4 +186,13 @@ it('uses a saved Arc template for new drafts without changing existing writing',
     } finally {
         await app.close()
     }
+})
+
+it('discards obsolete OAuth app settings from old journals without losing account or writing', () => {
+    const saved = initialState()
+    saved.settings.githubLogin = 'existing-author'
+    const restored = stateSchema.parse({ ...saved, settings: { ...saved.settings, githubClientId: 'old-user-app' } })
+    expect(restored.settings).not.toHaveProperty('githubClientId')
+    expect(restored.settings.githubLogin).toBe('existing-author')
+    expect(restored.settings.template).toEqual(saved.settings.template)
 })

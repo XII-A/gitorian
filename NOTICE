@@ -9,3 +9,7 @@ desktop window.
 
 Runtime dependency licenses are supplied with the packaged dependencies and
 Electron's LICENSES.chromium.html. No Arc Pro source is included.
+
+The GitHub circular mark is from GitHub's MIT-licensed Primer Octicons:
+https://github.com/primer/octicons/blob/main/icons/mark-github-24.svg
+Its full MIT notice is embedded in src/renderer/assets/github-mark.svg.

@@ -34,7 +34,7 @@ Use Settings → Backup to export or import journal state. Exports omit reposito
 
 ### GitHub (optional)
 
-In Settings → Connections, use **Set up OAuth app** to create a GitHub OAuth application and enable its device flow. Enter its public **client ID**, then follow the browser sign-in and device-code prompts. No OAuth client secret is needed or requested by weekly-j. The client ID is an identifier, not a credential. The app currently requires you to supply one; it does not ship a shared OAuth registration.
+In Settings > Connections, choose **Sign in with GitHub**, then follow the browser sign-in and device-code prompts. Everyone authorizes weekly-j's shared OAuth app using their own GitHub account. No app registration, client ID entry, or client secret is needed. Authentication runs directly between your device and GitHub; no weekly-j authentication server is involved.
 
 Sign-in requests `repo`, `read:user`, and `user:email`. These allow private repository access, reading your profile, and reading your account email addresses to match authored activity. **The `repo` scope also grants write access**, even though the current GitHub integration only reads repository activity and diffs. Review this broad grant before authorizing, particularly for work repositories. Organization policies may restrict access. The integration supports GitHub.com remotes; GitHub Enterprise and other Git hosts are not supported for PR/review imports.
 

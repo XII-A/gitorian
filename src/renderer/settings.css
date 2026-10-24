@@ -243,6 +243,36 @@
     clip-path: inset(50%);
     white-space: nowrap;
 }
+.settings-section-heading {
+    min-width: 0;
+    min-height: var(--control-height-sm);
+}
+.settings-section-heading > h3 {
+    line-height: var(--control-height-sm);
+}
+.settings-connection-title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.settings-connection-logo {
+    display: grid;
+    place-items: center;
+    width: var(--space-8);
+    height: var(--space-8);
+    flex: none;
+}
+.settings-connection-logo--github {
+    background: currentColor;
+    mask: url('./assets/github-mark.svg') center / contain no-repeat;
+}
+.settings-connection-logo--notion {
+    border-radius: var(--radius-pill);
+    background: currentColor;
+}
+.settings-connection-logo--notion > svg {
+    color: var(--surface-raised);
+}
 .settings-section-heading,
 .settings-actions {
     display: flex;
@@ -270,8 +300,7 @@
     align-items: start;
     gap: var(--space-4);
 }
-.settings-hint,
-.settings-connection-status {
+.settings-hint {
     color: var(--text-secondary);
     font-size: var(--text-xs);
     line-height: var(--leading-body);
@@ -305,72 +334,59 @@
     min-height: 300px;
     padding: var(--space-6);
 }
-.settings-github-setup {
-    justify-content: space-between;
-    gap: var(--space-2);
+.settings-github-heading {
+    align-items: center;
+    flex-wrap: nowrap;
+}
+.settings-github-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    min-width: 0;
+    flex: 1;
 }
 .github-signin-track {
+    align-items: center;
+    gap: var(--space-3);
     min-width: 0;
-    width: 100%;
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
 }
 .github-signin-surface {
-    max-width: 100%;
-    overflow: hidden;
-    border: 1px solid transparent;
-    border-radius: var(--radius-pill);
-}
-.github-signin-surface[data-expanded='false'] {
-    --radius-control: var(--radius-pill);
-}
-.github-signin-surface[data-expanded='true'] {
-    border-color: var(--border);
-    border-radius: var(--radius-surface);
-    background: var(--surface-muted);
-}
-.github-signin-content {
-    position: relative;
-    max-width: 100%;
-}
-.github-signin-details {
-    display: grid;
-    gap: var(--space-4);
+    flex-shrink: 0;
     min-width: 0;
-    padding: var(--space-4);
+    max-width: 100%;
 }
 .github-signin-code-row {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-3) var(--space-4);
+    gap: var(--space-1);
+    height: var(--control-height-sm);
+}
+.github-signin-code-group {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding-inline-start: var(--space-2);
 }
 .github-signin-code {
     user-select: text;
     font-family: var(--font-mono, monospace);
-    font-size: var(--text-2xl);
-    line-height: var(--leading-tight);
+    font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
-    color: var(--foreground);
+    white-space: nowrap;
+}
+.github-signin-copy,
+.github-device-action {
+    min-height: calc(var(--control-height-sm) - 8px);
 }
 .github-signin-copy {
-    min-height: var(--control-height-md);
+    min-width: calc(var(--control-height-sm) - 8px);
 }
-.github-signin-result {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-sm);
-    color: var(--foreground);
-    overflow-wrap: anywhere;
-}
-.github-signin-result > svg {
-    flex: none;
-}
-.github-signin-error {
-    display: grid;
-    gap: var(--space-2);
-}
-.github-signin-error .github-signin-result {
-    color: var(--danger);
+.github-device-action {
+    --radius-control: var(--radius-pill);
 }
 .settings-footer {
     flex: none;
@@ -469,4 +485,73 @@
     position: absolute;
     inset: 0;
     border-radius: inherit;
+}
+
+@media (max-width: 600px) {
+    .settings-github-heading:has([data-expanded='true']) {
+        flex-wrap: wrap;
+    }
+    .settings-github-heading:has([data-expanded='true']) .settings-github-controls {
+        flex-basis: 100%;
+    }
+}
+
+@media (max-width: 600px) {
+    .github-device-label {
+        display: none;
+    }
+    .github-device-action {
+        padding-inline: var(--space-2);
+    }
+}
+
+/* Names and avatars form one reveal; their prepared layout is never interactive. */
+.connection-identity {
+    min-width: 0;
+    max-width: 100%;
+}
+.connection-identity[aria-hidden='true'] {
+    pointer-events: none;
+}
+
+.settings-github-heading > .settings-github-account {
+    flex: 1;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+}
+.settings-github-account > [role='group'] {
+    flex: none;
+}
+.settings-github-identity > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.settings-github-avatar img {
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-enter);
+}
+.settings-github-avatar img[data-loaded='true'] {
+    opacity: 1;
+}
+@media (max-width: 600px) {
+    .settings-github-heading:has([data-state='error']) {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 600px) {
+    .settings-github-heading:has([data-state='confirming']),
+    .settings-github-heading:has(.connection-identity) {
+        flex-wrap: wrap;
+    }
+    .settings-github-heading:has(.connection-identity) > .settings-github-controls,
+    .settings-github-heading:has(.connection-identity) > .settings-github-account,
+    .settings-github-heading:has([data-state='confirming']) > .settings-github-controls,
+    .settings-github-heading:has([data-state='confirming']) > .settings-github-account,
+    .settings-github-heading:has([data-state='error']) > .settings-github-account {
+        flex-basis: 100%;
+    }
 }
