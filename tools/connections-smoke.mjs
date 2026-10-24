@@ -823,9 +823,31 @@ app.on('browser-window-created', (_, window) => {
                 await click('Disconnect')
                 await wait(`!!document.querySelector('.settings-github-controls button[data-autofocus]')`)
                 await shot('github-disconnect-confirm', 700)
-                await assert(
-                    `Array.from(document.querySelectorAll('.settings-github-controls button[data-autofocus],.settings-github-controls button')).filter(b=>['Cancel','Disconnect'].includes(b.textContent.trim())).every(b=>{const r=b.getBoundingClientRect();const s=document.querySelector('[aria-label="GitHub connection"]').getBoundingClientRect();return r.left>=s.left && r.right<=s.right})`
+                const disconnectBounds = await js(`(() => {
+                    const section=document.querySelector('[aria-label="GitHub connection"]');
+                    const group=section.querySelector('[role="group"][data-state="confirming"]');
+                    const surface=group.firstElementChild;
+                    const rect=node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}};
+                    return {section:rect(section),surface:rect(surface),buttons:Array.from(group.querySelectorAll('button')).filter(b=>!b.closest('[inert],[hidden]') && (b.matches('[data-autofocus]') || b.textContent.trim()==='Cancel')).map(b=>({label:b.matches('[data-autofocus]')?'Disconnect':'Cancel',...rect(b)}))};
+                })()`)
+                record({ disconnectBounds })
+                if (
+                    disconnectBounds.buttons.length !== 2 ||
+                    new Set(disconnectBounds.buttons.map((b) => b.label)).size !== 2 ||
+                    disconnectBounds.buttons.some(
+                        (button) =>
+                            button.width <= 0 ||
+                            button.height <= 0 ||
+                            [disconnectBounds.section, disconnectBounds.surface].some(
+                                (bounds) =>
+                                    button.left < bounds.left - 0.5 ||
+                                    button.right > bounds.right + 0.5 ||
+                                    button.top < bounds.top - 0.5 ||
+                                    button.bottom > bounds.bottom + 0.5
+                            )
+                    )
                 )
+                    throw new Error(`GitHub confirmation actions overflow: ${JSON.stringify(disconnectBounds)}`)
                 await pause(600)
                 await js(`document.querySelector('.settings-github-controls button[data-autofocus]').focus()`)
                 await holdDisconnect('GitHub', 'first')
@@ -1228,14 +1250,23 @@ app.on('browser-window-created', (_, window) => {
             await js(`(() => {
                 window.__notionEditNode=${notionScope}.querySelector('.notion-page-connection [role="group"]');
                 window.__notionEditFrames=[];
-                const start=performance.now();
-                const sample=()=>{
-                    const rect=window.__notionEditNode.getBoundingClientRect();
-                    window.__notionEditFrames.push({time:performance.now()-start,left:rect.left,width:rect.width});
-                    window.__notionEditFrame=requestAnimationFrame(sample);
-                }; sample();
+                let start;
+                window.__notionEditRunning=true;
+                window.__notionEditPhase='opening';
+                const sample=frameTime=>{
+                    start ??= frameTime;
+                    // Read after all animation callbacks have written this presentation frame.
+                    setTimeout(()=>{
+                        if(!window.__notionEditRunning)return;
+                        const rect=window.__notionEditNode.getBoundingClientRect();
+                        const slot=${notionScope}.querySelector('[data-notion-disconnect]').getBoundingClientRect();
+                        window.__notionEditFrames.push({time:frameTime-start,callbackTime:performance.now()-start,lateness:performance.now()-frameTime,phase:window.__notionEditPhase,left:rect.left,width:rect.width,disconnectWidth:slot.width});
+                        window.__notionEditFrame=requestAnimationFrame(sample);
+                    },0);
+                }; window.__notionEditFrame=requestAnimationFrame(sample);
                 ${notionScope}.querySelector('[aria-label^="Change journal page:"]').focus();
             })()`)
+            await wait(`window.__notionEditFrames.length >= 2`)
             await assert(
                 `document.activeElement === ${notionScope}.querySelector('[aria-label^="Change journal page:"]') && !document.activeElement.disabled`
             )
@@ -1257,6 +1288,7 @@ app.on('browser-window-created', (_, window) => {
                 throw new Error('Fresh cached edit fetched all pages again')
             record({ warmPickerMilliseconds: performance.now() - warmEditStarted, freshCacheDiscoveryRequests: 0 })
             await shot('notion-edit-selected', 200, 'notion')
+            await js(`window.__notionEditPhase='cancelling'`)
             await click('Cancel', notionScope)
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
             await pause(400)
@@ -1267,8 +1299,28 @@ app.on('browser-window-created', (_, window) => {
                 `window.journal.invoke({type:'state'}).then(reply=>reply.state.settings.destination.id==='fixture-existing')`
             )
             const editFrames = await js(
-                `(() => {cancelAnimationFrame(window.__notionEditFrame);return window.__notionEditFrames})()`
+                `(() => {window.__notionEditRunning=false;cancelAnimationFrame(window.__notionEditFrame);return window.__notionEditFrames})()`
             )
+            const sampling = Object.fromEntries(
+                ['opening', 'cancelling'].map((phase) => {
+                    const frames = editFrames.filter((frame) => frame.phase === phase)
+                    return [
+                        phase,
+                        {
+                            frames: frames.length,
+                            moving: frames
+                                .slice(1)
+                                .filter(
+                                    (frame, index) =>
+                                        Math.abs(frame.width - frames[index].width) > 0.25 ||
+                                        Math.abs(frame.left - frames[index].left) > 0.25
+                                ).length
+                        }
+                    ]
+                })
+            )
+            if (!stressMotion && Object.values(sampling).some((phase) => phase.frames < 5 || phase.moving < 3))
+                throw new Error(`Insufficient edit-morph samples: ${JSON.stringify(sampling)}`)
             const maxStep = Math.max(
                 0,
                 ...editFrames.slice(1).map((frame, index) => {
@@ -1280,6 +1332,7 @@ app.on('browser-window-created', (_, window) => {
                     )
                 })
             )
+            // Use presentation timestamps, not callback execution intervals, for motion velocity.
             // A full picker is much wider than a count label. Scale the continuity bound to
             // its travel while still rejecting the old 98px single-frame sibling reflow.
             const travel = Math.max(
@@ -1292,7 +1345,7 @@ app.on('browser-window-created', (_, window) => {
             const stepLimit = Math.max(24, travel / 4)
             writeFileSync(
                 join(output, 'notion-edit-morph.json'),
-                JSON.stringify({ reduced: stressMotion, maxStep, stepLimit, frames: editFrames }, null, 2)
+                JSON.stringify({ reduced: stressMotion, sampling, maxStep, stepLimit, frames: editFrames }, null, 2)
             )
             if (!stressMotion && maxStep > stepLimit)
                 throw new Error(`Page edit morph jumped ${maxStep.toFixed(1)}px in one normalized frame`)

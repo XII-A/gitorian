@@ -59,16 +59,19 @@ export async function onboardingDisclosureJourney({ window, output, js, wait }) 
     // This freezes each position for a native paint, separating glyph raster jitter from movement timing.
     const original = await js(`({height:${setup}.getBoundingClientRect().height,inline:${setup}.style.height})`)
     const pixels = []
+    let captureRect
+    const scale = await js(`devicePixelRatio`)
     for (let index = 0; index <= 8; index++) {
         const offset = index / 8
         await js(`${setup}.style.height=${JSON.stringify(`${Number(original.height) + offset}px`)}`)
         await pause(40)
         const rect = await js(
-            `(() => {const r=document.querySelector('.hub-preview-heading p').getBoundingClientRect();return {x:Math.floor(r.left),y:Math.floor(r.top)-4,width:Math.ceil(Math.min(r.width,650)),height:Math.ceil(r.height)+8,top:r.top}})()`
+            `(() => {const r=document.querySelector('.hub-preview-heading p').getBoundingClientRect();return {x:Math.floor(r.left),y:Math.floor(r.top)-4,width:Math.ceil(Math.min(r.width,650)),height:Math.ceil(r.height)+10,top:r.top}})()`
         )
-        const png = (
-            await window.webContents.capturePage({ x: rect.x, y: rect.y, width: rect.width, height: rect.height })
-        ).toPNG()
+        // Keep one physical crop origin: moving it across a CSS-pixel boundary
+        // introduces display-scale rounding into the glyph centroid.
+        captureRect ??= { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+        const png = (await window.webContents.capturePage(captureRect)).toPNG()
         writeFileSync(join(output, `description-${index}.png`), png)
         const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true })
         let weight = 0,
@@ -81,12 +84,11 @@ export async function onboardingDisclosureJourney({ window, output, js, wait }) 
                 moment += ink * (y + 0.5)
             }
         if (!weight) throw new Error('Description capture contains no readable glyphs')
-        const scale = info.width / rect.width
         pixels.push({
             offset,
             top: rect.top,
             centroid: moment / weight,
-            baseline: moment / weight - (rect.top - rect.y) * scale
+            baseline: moment / weight - (rect.top - captureRect.y) * scale
         })
     }
     await js(`${setup}.style.height=${JSON.stringify(original.inline)}`)

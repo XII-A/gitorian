@@ -22,7 +22,7 @@ async function removeFixture(directory: string) {
     const target = resolve(directory)
     if (dirname(target) !== resolve(tmpdir()) || !target.startsWith(resolve(tmpdir()) + sep + 'weekly-j-'))
         throw new Error(`Unexpected fixture directory: ${target}`)
-    await rm(target, { recursive: true, force: true })
+    await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 }
 
 let gitTemplate: Promise<string> | undefined

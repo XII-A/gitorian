@@ -180,7 +180,29 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
     const dismissPoint = await js(
         `(() => {const r=${setupCard}.querySelector('[aria-label="Dismiss setup"]').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()`
     )
-    window.webContents.sendInputEvent({ type: 'mouseMove', ...dismissPoint })
+    window.webContents.focus()
+    await js(`(() => {
+        window.__dismissPointer=[];
+        window.__dismissPointerListener=event=>window.__dismissPointer.push({x:event.clientX,y:event.clientY,type:event.pointerType,buttons:event.buttons,dismiss:!!event.target.closest('[aria-label="Dismiss setup"]')});
+        document.addEventListener('pointermove',window.__dismissPointerListener,true);
+    })()`)
+    // Establish a real leave/enter sequence instead of inheriting pointer state from prior steps.
+    window.webContents.sendInputEvent({ type: 'mouseMove', x: 10, y: 100 })
+    await wait(`window.__dismissPointer.some(event=>!event.dismiss)`)
+    const zoom = window.webContents.getZoomFactor()
+    window.webContents.sendInputEvent({
+        type: 'mouseMove',
+        x: Math.round(dismissPoint.x * zoom),
+        y: Math.round(dismissPoint.y * zoom)
+    })
+    await wait(
+        `window.__dismissPointer.some(event=>event.dismiss && event.type==='mouse' && event.buttons===0) && document.querySelector('[aria-label="Dismiss setup"]').matches(':hover')`
+    )
+    record({
+        dismissHover: await js(
+            `(() => {document.removeEventListener('pointermove',window.__dismissPointerListener,true);return {point:${JSON.stringify(dismissPoint)},zoom:${zoom},focused:document.hasFocus(),events:window.__dismissPointer}})()`
+        )
+    })
     await wait(
         `Array.from(document.querySelectorAll('[role="tooltip"]')).some(n=>n.textContent.includes('Dismiss setup'))`
     )
