@@ -111,10 +111,11 @@ export function sampleState(week: string): State {
                 ? 'Failed batches were dropped after the first error. Retry up to five times with exponential backoff and jitter, and keep the batch queued until it succeeds or runs out of attempts.'
                 : `${title}. A small change toward a more dependable survey experience.`,
         files: [
-            { name: 'sync/retry.ts', status: 'M' },
-            { name: 'sync/queue.ts', status: 'M' },
-            { name: 'sync/retry.test.ts', status: 'M' }
+            { name: 'sync/retry.ts', status: 'M', lineStats: { additions: 13, deletions: 2 } },
+            { name: 'sync/queue.ts', status: 'M', lineStats: { additions: 2, deletions: 1 } },
+            { name: 'sync/retry.test.ts', status: 'M', lineStats: { additions: 1, deletions: 0 } }
         ],
+        filesLoaded: true,
         base: 'main',
         disposition: 'inbox',
         explicit: false,

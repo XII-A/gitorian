@@ -1,6 +1,7 @@
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { isCombinedDiff } from '../shared/diff-format'
 import { shareSnapshot } from '../shared/snapshot'
+import { hasFileStatistics } from '../shared/change-statistics'
 
 export function reconcileReply(current: Reply | undefined, result: Reply, command: Command): Reply {
     if (unchangedStateReply(current, result, command)) return current!
@@ -26,7 +27,7 @@ export function unchangedStateReply(current: Reply | undefined, result: Reply, c
 }
 
 export function hasCachedDetails(state: State, activity: Activity, content: 'files' | 'diff' = 'diff'): boolean {
-    if (content === 'files') return !!activity.filesLoaded
+    if (content === 'files') return hasFileStatistics(activity)
     return (
         state.diffs[activity.id] !== undefined &&
         !isCombinedDiff(state.diffs[activity.id]) &&

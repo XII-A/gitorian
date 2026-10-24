@@ -191,8 +191,3 @@
 .list[data-orientation='vertical'] .trigger {
     justify-items: start;
 }
-.trigger:focus-visible {
-    outline: none;
-    color: var(--foreground);
-    background: var(--surface-raised);
-}

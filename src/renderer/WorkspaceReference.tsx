@@ -23,7 +23,7 @@ export function WorkspaceReference({
     const example = useMemo(() => (sampleWeek ? sampleState(sampleWeek) : undefined), [sampleWeek])
     const source = example ?? state
     const [selectedId, setSelectedId] = useState(id)
-    const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('diff')
+    const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('details')
     const activity = source.activities.find((item) => item.id === selectedId)
     const entry = source.entries.find((item) => item.id === id)
     const [status, setStatus] = useState('')
@@ -60,7 +60,7 @@ export function WorkspaceReference({
         }
     }, [id, selectedId])
     const inspect = useCallback(
-        async (item: Activity, tab: 'diff' | 'details' = 'diff') => {
+        async (item: Activity, tab: 'diff' | 'details' = 'details') => {
             const request = ++requestId.current
             setSelectedId(item.id)
             setInspectionTab(tab)

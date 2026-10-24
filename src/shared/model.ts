@@ -53,7 +53,17 @@ export const activitySchema = z.object({
         .optional(),
     url: z.string().optional(),
     description: z.string(),
-    files: z.array(z.object({ name: z.string(), status: z.string(), previousName: z.string().optional() })),
+    files: z.array(
+        z.object({
+            name: z.string(),
+            status: z.string(),
+            previousName: z.string().optional(),
+            lineStats: z
+                .object({ additions: z.number().int().nonnegative(), deletions: z.number().int().nonnegative() })
+                .nullable()
+                .optional()
+        })
+    ),
     revision: z.string().optional(),
     diffRevision: z.string().optional(),
     base: z.string().optional(),

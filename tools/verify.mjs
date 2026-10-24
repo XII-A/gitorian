@@ -11,9 +11,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
-if (!['doctor', 'repository-import', 'connections'].includes(mode) || process.argv.length !== 3) {
+const runner = mode === 'inspector-tabs' ? 'desktop' : mode
+if (
+    !['doctor', 'repository-import', 'connections', 'inspector-tabs', 'line-statistics'].includes(mode) ||
+    process.argv.length !== 3
+) {
     console.error(
-        'Usage: pnpm verify doctor | pnpm verify repository-import | pnpm verify connections (run pnpm build first)'
+        'Usage: pnpm verify doctor | pnpm verify repository-import | pnpm verify connections | inspector-tabs | line-statistics (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -52,10 +56,18 @@ if (mode === 'doctor') {
     // The Codex host exports this flag for itself; Electron must launch as a desktop app.
     delete env.ELECTRON_RUN_AS_NODE
     delete env.ELECTRON_RENDERER_URL
+    if (mode === 'inspector-tabs') env.INSPECTOR_TABS_ONLY = '1'
     writeFileSync(join(output, 'run.json'), JSON.stringify(report, null, 2))
     console.info(`Evidence: ${output}`)
     let cleanupError
     try {
+        if (mode === 'line-statistics')
+            execFileSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'tools/line-statistics-fixture.ts'], {
+                cwd: root,
+                env,
+                windowsHide: true
+            })
+        if (mode === 'inspector-tabs') writeFileSync(join(output, 'doctor.json'), JSON.stringify(build, null, 2))
         writeFileSync(
             join(output, 'source.patch'),
             execFileSync(
@@ -68,10 +80,10 @@ if (mode === 'doctor') {
             )
         )
         writeFileSync(join(output, 'verify-runner.mjs'), readFileSync(fileURLToPath(import.meta.url)))
-        writeFileSync(join(output, `${mode}-smoke.mjs`), readFileSync(join(root, `tools/${mode}-smoke.mjs`)))
+        writeFileSync(join(output, `${mode}-smoke.mjs`), readFileSync(join(root, `tools/${runner}-smoke.mjs`)))
         for (const log of ['stdout.log', 'stderr.log']) writeFileSync(join(output, log), '')
         const result = await new Promise((done, reject) => {
-            const child = spawn(electron, [`tools/${mode}-smoke.mjs`], {
+            const child = spawn(electron, [`tools/${runner}-smoke.mjs`], {
                 cwd: root,
                 env,
                 windowsHide: true,
@@ -105,35 +117,64 @@ if (mode === 'doctor') {
         if (result.code !== 0 || report.timedOut) throw new Error(`Electron journey failed: ${JSON.stringify(result)}`)
         const journey = JSON.parse(readFileSync(join(output, 'journey.json'), 'utf8'))
         if (!journey.passed) throw new Error('The journey did not report success')
-        const db = new DatabaseSync(join(scratch, 'profile', 'weekly-j.sqlite'), { readOnly: true })
-        try {
-            if (mode === 'connections') {
-                const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
-                const settings = JSON.parse(String(row?.json))
-                writeFileSync(join(output, 'persisted-settings.json'), JSON.stringify(settings, null, 2))
-                if (
-                    'githubClientId' in settings ||
-                    settings.githubLogin !==
-                        (process.env.WEEKLY_J_VERIFY_MOTION === 'stress'
-                            ? 'weekly-j-fixture-with-a-long-github-name'
-                            : 'weekly-j-fixture')
-                )
-                    throw new Error('Persisted account settings differ from the authorized identity')
-            } else {
-                const repositories = db
-                    .prepare("SELECT json FROM state_records WHERE collection='repositories'")
+        if (mode === 'line-statistics') {
+            const db = new DatabaseSync(join(scratch, 'profile', 'weekly-j.sqlite'), { readOnly: true })
+            try {
+                const activities = db
+                    .prepare("SELECT json FROM state_records WHERE collection='activities'")
                     .all()
                     .map((row) => JSON.parse(String(row.json)))
-                writeFileSync(join(output, 'persisted-repositories.json'), JSON.stringify(repositories, null, 2))
-                const expected = ['api-server', 'archived-tools', 'design-system', 'website', 'website'].sort()
-                if (
-                    JSON.stringify(repositories.map((item) => item.name).sort()) !== JSON.stringify(expected) ||
-                    repositories.some((item) => item.removed)
+                writeFileSync(join(output, 'persisted-activities.json'), JSON.stringify(activities, null, 2))
+                const fixture = JSON.parse(readFileSync(join(output, 'fixture.json'), 'utf8'))
+                const inspected = activities.filter((activity) =>
+                    [fixture.commitId, fixture.prId].includes(activity.id)
                 )
-                    throw new Error('Persisted import differs from the selected repositories')
+                for (const activity of inspected) {
+                    const stats = activity.files.map((file) => file.lineStats).filter(Boolean)
+                    if (
+                        !activity.filesLoaded ||
+                        activity.files.some((file) => file.lineStats === undefined) ||
+                        stats.reduce((sum, item) => Number(sum) + Number(item.additions), 0) !== 647 ||
+                        stats.reduce((sum, item) => Number(sum) + Number(item.deletions), 0) !== 45
+                    )
+                        throw new Error('Persisted line statistics differ from the fixture')
+                }
+                if (inspected.length !== 2) throw new Error('Expected commit and PR metadata to persist')
+            } finally {
+                db.close()
             }
-        } finally {
-            db.close()
+        }
+        if (mode === 'connections' || mode === 'repository-import') {
+            const db = new DatabaseSync(join(scratch, 'profile', 'weekly-j.sqlite'), { readOnly: true })
+            try {
+                if (mode === 'connections') {
+                    const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
+                    const settings = JSON.parse(String(row?.json))
+                    writeFileSync(join(output, 'persisted-settings.json'), JSON.stringify(settings, null, 2))
+                    if (
+                        'githubClientId' in settings ||
+                        settings.githubLogin !==
+                            (process.env.WEEKLY_J_VERIFY_MOTION === 'stress'
+                                ? 'weekly-j-fixture-with-a-long-github-name'
+                                : 'weekly-j-fixture')
+                    )
+                        throw new Error('Persisted account settings differ from the authorized identity')
+                } else {
+                    const repositories = db
+                        .prepare("SELECT json FROM state_records WHERE collection='repositories'")
+                        .all()
+                        .map((row) => JSON.parse(String(row.json)))
+                    writeFileSync(join(output, 'persisted-repositories.json'), JSON.stringify(repositories, null, 2))
+                    const expected = ['api-server', 'archived-tools', 'design-system', 'website', 'website'].sort()
+                    if (
+                        JSON.stringify(repositories.map((item) => item.name).sort()) !== JSON.stringify(expected) ||
+                        repositories.some((item) => item.removed)
+                    )
+                        throw new Error('Persisted import differs from the selected repositories')
+                }
+            } finally {
+                db.close()
+            }
         }
         report.passed = true
     } catch (error) {
@@ -152,28 +193,48 @@ if (mode === 'doctor') {
         }
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
         report.evidenceRetained = (
-            mode === 'connections'
+            mode === 'line-statistics'
                 ? [
                       'doctor.json',
                       'actions.jsonl',
-                      '01-idle.png',
-                      '05-narrow-dark-code.png',
-                      '08-disconnected.png',
-                      'http-requests.json',
-                      'persisted-settings.json',
-                      'notion-04-failed.png',
-                      'notion-07-connected.png',
-                      'notion-09-disconnected.png',
-                      'captures.json'
+                      'hub-commit-breakdown.png',
+                      'hub-pr-breakdown.png',
+                      'workspace-details.png',
+                      'selected-file-diff.png',
+                      'persisted-activities.json',
+                      'journey.json'
                   ]
-                : [
-                      'doctor.json',
-                      'actions.jsonl',
-                      '01-choose-folder.png',
-                      '08-complete.png',
-                      '10-error-details.png',
-                      'persisted-repositories.json'
-                  ]
+                : mode === 'inspector-tabs'
+                  ? [
+                        'doctor.json',
+                        'actions.json',
+                        'docked-dark-details.png',
+                        'reference-dark-details.png',
+                        'reference-light-related.png',
+                        'journey.json'
+                    ]
+                  : mode === 'connections'
+                    ? [
+                          'doctor.json',
+                          'actions.jsonl',
+                          '01-idle.png',
+                          '05-narrow-dark-code.png',
+                          '08-disconnected.png',
+                          'http-requests.json',
+                          'persisted-settings.json',
+                          'notion-04-failed.png',
+                          'notion-07-connected.png',
+                          'notion-09-disconnected.png',
+                          'captures.json'
+                      ]
+                    : [
+                          'doctor.json',
+                          'actions.jsonl',
+                          '01-choose-folder.png',
+                          '08-complete.png',
+                          '10-error-details.png',
+                          'persisted-repositories.json'
+                      ]
         ).every((file) => existsSync(join(output, file)))
         report.passed &&= report.cleanup.removed && report.evidenceRetained
         report.finishedAt = new Date().toISOString()

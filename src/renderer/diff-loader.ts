@@ -1,4 +1,5 @@
 import { parseDiff, type FileData, type HunkTokens } from 'react-diff-view'
+import { markBinaryDiffs } from '../shared/diff-format'
 
 type Files = ReturnType<typeof parseDiff>
 export type DiffRequest = { id: number } & ({ type: 'parse'; text: string } | { type: 'highlight'; file: FileData })
@@ -78,6 +79,7 @@ export function loadDiff(text: string): Promise<Files> {
               })
             : requestWorker({ id: ++nextId, type: 'parse', text }).then((reply) => reply.files ?? [])
     ).then((files) => {
+        files = markBinaryDiffs(files, text)
         cache.set(text, files)
         let bytes = [...cache.keys()].reduce((total, key) => total + key.length * 2, 0)
         while (cache.size > 3 || bytes > 6_000_000) {

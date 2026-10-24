@@ -41,8 +41,8 @@ it('loads first-parent merge changes and replaces cached combined patches', asyn
         ).toEqual(['feature.txt', 'work.txt'])
         expect(activity.files).toEqual(
             expect.arrayContaining([
-                { name: 'feature.txt', status: 'A' },
-                { name: 'work.txt', status: 'M' }
+                { name: 'feature.txt', status: 'A', lineStats: { additions: 1, deletions: 0 } },
+                { name: 'work.txt', status: 'M', lineStats: { additions: 1, deletions: 1 } }
             ])
         )
         expect(reply.diff).toContain('-development')
@@ -59,13 +59,21 @@ it('preserves old and new rename paths and filenames containing whitespace in co
     try {
         await app.git('mv', 'work.txt', 'renamed work.txt')
         await writeFile(join(app.directory, ' leading space.txt'), 'new file\n')
+        await writeFile(join(app.directory, 'binary.dat'), Buffer.from([0, 1, 2, 3]))
+        await app.git('add', 'binary.dat')
         await app.git('add', ' leading space.txt')
         await app.git('commit', '-m', 'Rename work and add a file')
         const details = await commitDetails(app.repository, await app.git('rev-parse', 'HEAD'), false)
         expect(details.files).toEqual(
             expect.arrayContaining([
-                { name: 'renamed work.txt', previousName: 'work.txt', status: 'R100' },
-                { name: ' leading space.txt', status: 'A' }
+                {
+                    name: 'renamed work.txt',
+                    previousName: 'work.txt',
+                    status: 'R100',
+                    lineStats: { additions: 0, deletions: 0 }
+                },
+                { name: ' leading space.txt', status: 'A', lineStats: { additions: 1, deletions: 0 } },
+                { name: 'binary.dat', status: 'A', lineStats: null }
             ])
         )
         expect(details.diff).toBe('')

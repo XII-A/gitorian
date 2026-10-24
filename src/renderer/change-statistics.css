@@ -1,0 +1,84 @@
+.line-counts {
+    display: inline-flex;
+    flex: none;
+    align-items: baseline;
+    gap: var(--space-3);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    font-size: var(--text-sm);
+    font-weight: 500;
+}
+.line-additions {
+    color: var(--success);
+}
+.line-deletions {
+    color: var(--danger);
+}
+.line-counts-note {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+}
+.change-statistics-trigger {
+    gap: var(--space-2);
+}
+.change-statistics-popover {
+    font-family: var(--font-display);
+    width: min(296px, calc(100vw - var(--space-6)));
+    max-height: var(--radix-popover-content-available-height);
+    overflow-y: auto;
+    padding: var(--space-4);
+}
+.change-statistics-table {
+    font-family: inherit;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+}
+.change-statistics-table :is(th, td) {
+    padding: var(--space-2) 0;
+    text-align: end;
+    font-weight: 400;
+}
+.change-statistics-table th:first-child {
+    text-align: start;
+}
+.change-statistics-table thead th {
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+.change-statistics-table tbody th {
+    color: var(--text-secondary);
+}
+.change-statistics-table tfoot :is(th, td) {
+    border-top: 1px solid var(--border);
+    padding-top: var(--space-3);
+    font-weight: 500;
+}
+.change-statistics-popover p {
+    margin: var(--space-3) 0 0;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+}
+.activity-files-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-4);
+    margin-bottom: var(--space-4);
+}
+.hub-detail-section .activity-files-heading h3 {
+    margin: 0;
+}
+.hub-detail-files > li {
+    flex-wrap: wrap;
+}
+.hub-detail-file-path {
+    min-width: min(120px, 100%);
+    overflow-wrap: anywhere;
+}
+.ws-file-heading .line-counts {
+    color: inherit;
+}
