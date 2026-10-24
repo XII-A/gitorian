@@ -1,4 +1,34 @@
-/* Caption controls use square native-window geometry rather than in-app buttons. */
+/* A quiet native-window frame, kept outside the scrolling application. */
+body:has(.window-chrome) {
+    background: var(--surface-muted);
+}
+#root:has(.window-chrome),
+#root:has(.window-chrome):has(> .writing-workspace) {
+    --window-content-height: calc(100dvh - 12px);
+    margin: 6px;
+    height: var(--window-content-height);
+    overflow: clip;
+    border-radius: var(--radius-inset);
+    background: var(--surface-muted);
+}
+#root:has(.window-chrome) > :is(.hub-scroll, .app, .loading, .reference, .ws-reference) {
+    height: var(--window-content-height);
+}
+/* Grow the frame by moving the content's rounded clipping edge with the caption.
+   Keeping the page stationary avoids moving reading and navigation targets. */
+#root:has(.window-chrome) > :is(.hub-scroll, .writing-workspace, .app, .loading, .reference, .ws-reference) {
+    clip-path: inset(0 round var(--radius-inset));
+    transition: clip-path var(--duration-fast) var(--ease-standard);
+}
+#root:has(.window-chrome[data-revealed='true'])
+    > :is(.hub-scroll, .writing-workspace, .app, .loading, .reference, .ws-reference) {
+    clip-path: inset(32px 0 0 round var(--radius-inset));
+}
+#root:has(.window-chrome[data-keyboard='true'])
+    > :is(.hub-scroll, .writing-workspace, .app, .loading, .reference, .ws-reference) {
+    transition: none;
+}
+/* Caption controls live in the same surface as the surrounding frame. */
 .window-chrome {
     position: fixed;
     inset: 0 0 auto;
@@ -8,17 +38,20 @@
 }
 .window-title-bar {
     display: flex;
-    height: 44px;
-    background: var(--surface);
+    height: 32px;
+    background: transparent;
     color: var(--foreground);
-    border-bottom: 1px solid var(--border);
     transform: translateY(-100%);
-    transition: transform var(--duration-fast) var(--ease-standard);
+    opacity: 0;
+    transition:
+        transform var(--duration-fast) var(--ease-standard),
+        opacity var(--duration-fast) var(--ease-standard);
     pointer-events: none;
     user-select: none;
 }
 .window-chrome[data-revealed='true'] .window-title-bar {
     transform: translateY(0);
+    opacity: 1;
     pointer-events: auto;
 }
 .window-title-bar-drag {
@@ -47,15 +80,24 @@
     color: inherit;
     -webkit-app-region: no-drag;
 }
-.window-title-bar button:hover {
-    background: var(--surface-muted);
+@media (hover: hover) and (pointer: fine) {
+    .window-title-bar button:hover {
+        background: var(--border);
+    }
+    .window-title-bar .window-title-bar-close:hover {
+        background: var(--danger);
+        color: var(--background);
+    }
 }
-.window-title-bar .window-title-bar-close:hover {
-    background: var(--danger);
-    color: var(--background);
+.window-chrome[data-keyboard='true'] .window-title-bar {
+    transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
-    .window-title-bar {
+    #root:has(.window-chrome) > :is(.hub-scroll, .writing-workspace, .app, .loading, .reference, .ws-reference) {
         transition: none;
+    }
+    .window-title-bar {
+        transform: none;
+        transition: opacity var(--duration-fast) var(--ease-standard) !important;
     }
 }

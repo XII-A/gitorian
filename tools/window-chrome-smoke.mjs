@@ -1,5 +1,5 @@
 import { app, screen } from 'electron'
-import { mkdtempSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -10,7 +10,18 @@ import { promisify } from 'node:util'
 const run = promisify(execFile)
 
 // Exercise the real main/preload bridge against disposable journal data.
-app.setPath('userData', mkdtempSync(join(tmpdir(), 'weekly-j-window-chrome-')))
+app.setPath(
+    'userData',
+    process.env.WEEKLY_J_VERIFY_STATE
+        ? join(process.env.WEEKLY_J_VERIFY_STATE, 'profile')
+        : mkdtempSync(join(tmpdir(), 'weekly-j-window-chrome-'))
+)
+const output = process.env.WEEKLY_J_VERIFY_OUTPUT
+if (output) mkdirSync(output, { recursive: true })
+const record = (action) => {
+    if (output)
+        appendFileSync(join(output, 'actions.jsonl'), JSON.stringify({ at: new Date().toISOString(), action }) + '\n')
+}
 // Smoke windows stay behind the user's apps; keep their compositor ticking.
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 delete process.env.ELECTRON_RENDERER_URL
@@ -29,7 +40,14 @@ app.on('browser-window-created', (_, window) => {
     window.webContents.once('did-finish-load', async () => {
         if (checking) return
         checking = true
-        const evaluate = (source) => window.webContents.executeJavaScript(source)
+        const evaluate = (source) => {
+            record(source)
+            return window.webContents.executeJavaScript(source)
+        }
+        /** @param {string} name */
+        const shot = async (name) => {
+            if (output) writeFileSync(join(output, name + '.png'), (await window.webContents.capturePage()).toPNG())
+        }
         try {
             for (let attempt = 0; attempt < 50; attempt++) {
                 if (await evaluate(`!!document.querySelector('.window-title-bar')`)) break
@@ -49,6 +67,8 @@ app.on('browser-window-created', (_, window) => {
                     })
             }
             const barY = () => evaluate(`document.querySelector('.window-title-bar').getBoundingClientRect().y`)
+            const hidden = () =>
+                evaluate(`getComputedStyle(document.querySelector('.window-title-bar')).opacity === '0'`)
             /** @param {number} x @param {number} y */
             const nativeHit = async (x, y) => {
                 const bounds = window.getContentBounds()
@@ -70,7 +90,7 @@ app.on('browser-window-created', (_, window) => {
             const expectBar = async (visible, message) => {
                 for (let attempt = 0; attempt < 20; attempt++) {
                     const y = await barY()
-                    if (visible ? y === 0 : y <= -43) return
+                    if (visible ? y === 0 : await hidden()) return
                     await pause(50)
                 }
                 assert.fail(
@@ -88,9 +108,17 @@ app.on('browser-window-created', (_, window) => {
             }
             await move(300, 200)
             await pause(250)
-            assert.ok((await barY()) <= -43, 'Title bar is not hidden at rest')
+            assert.ok(await hidden(), 'Title bar is not hidden at rest')
+            assert.deepEqual(
+                await evaluate(
+                    `(() => { const r = document.getElementById('root').getBoundingClientRect(); return [r.x, r.y, innerWidth-r.right, innerHeight-r.bottom] })()`
+                ),
+                [6, 6, 6, 6],
+                'Frame must stay thin on every edge'
+            )
+            await shot('01-frame-hidden')
             for (const x of [20, 300, window.getContentBounds().width - 24]) {
-                await move(x, 8, false)
+                await move(x, 5, false)
                 await pause(250)
                 await expectBar(true, `Native top-edge hover failed at x=${x}`)
                 await move(x, 30, false)
@@ -98,9 +126,9 @@ app.on('browser-window-created', (_, window) => {
                 assert.equal(await barY(), 0, 'Title bar disappeared over a native drag region')
                 await move(300, 200)
                 await pause(650)
-                assert.ok((await barY()) <= -43)
+                assert.ok(await hidden())
             }
-            await move(300, 8, false)
+            await move(300, 5, false)
             await pause(250)
             await move(300, 200)
             await pause(100)
@@ -110,9 +138,30 @@ app.on('browser-window-created', (_, window) => {
             assert.equal(await barY(), 0, 'Returning during the grace period did not cancel hiding')
             await move(300, 200)
             await pause(650)
-            assert.ok((await barY()) <= -43, 'Title bar did not hide after leaving')
-            await move(300, 8, false)
+            assert.ok(await hidden(), 'Title bar did not hide after leaving')
+            await move(300, 5, false)
             await pause(250)
+            assert.ok(
+                await evaluate(`(() => {
+                const surface = document.querySelector('.hub-scroll')
+                const r = surface.getBoundingClientRect()
+                const top = r.y + 32
+                return !surface.contains(document.elementFromPoint(r.x + 1, top + 1)) &&
+                    surface.contains(document.elementFromPoint(r.x + 24, top + 8)) &&
+                    !surface.contains(document.elementFromPoint(r.right - 1, top + 1)) &&
+                    surface.contains(document.elementFromPoint(r.right - 24, top + 8))
+            })()`),
+                'Expanded frame must preserve both rounded content corners below the controls'
+            )
+            await shot('02-controls-revealed')
+            await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+                features: [{ name: 'prefers-color-scheme', value: 'light' }]
+            })
+            await pause(200)
+            await shot('02-controls-revealed-light')
+            await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+                features: [{ name: 'prefers-color-scheme', value: 'dark' }]
+            })
             const clickX = window.getContentBounds().width - 72
             await move(clickX, 22)
             for (const type of ['mousePressed', 'mouseReleased'])
@@ -127,7 +176,7 @@ app.on('browser-window-created', (_, window) => {
             assert.ok(window.isMaximized(), 'Pointer maximize failed')
             await move(300, 200)
             await pause(650)
-            assert.ok((await barY()) <= -43, 'Pointer click pinned the title bar through focus')
+            assert.ok(await hidden(), 'Pointer click pinned the title bar through focus')
             assert.ok(
                 await evaluate(`!document.elementFromPoint(300, 22).closest('.window-chrome')`),
                 'Hidden title bar still intercepts app controls'
@@ -156,7 +205,7 @@ app.on('browser-window-created', (_, window) => {
             assert.equal(await nativeHit(300, 30), 2, 'Visible title bar lost its native drag region')
             await evaluate(`document.activeElement.blur()`)
             await pause(250)
-            assert.ok((await barY()) <= -43, 'Title bar stayed pinned after keyboard focus left')
+            assert.ok(await hidden(), 'Title bar stayed pinned after keyboard focus left')
             assert.equal(
                 await evaluate(`getComputedStyle(document.querySelector('.window-title-bar-drag')).webkitAppRegion`),
                 'no-drag'
@@ -176,10 +225,15 @@ app.on('browser-window-created', (_, window) => {
                 features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
             })
             assert.ok(
-                await evaluate(
-                    `parseFloat(getComputedStyle(document.querySelector('.window-title-bar')).transitionDuration) < 0.001`
-                )
+                await evaluate(`getComputedStyle(document.querySelector('.window-title-bar')).transform === 'none'`)
             )
+            await move(300, 5, false)
+            await pause(250)
+            await expectBar(true, 'Reduced motion reveal failed')
+            await shot('03-reduced-motion')
+            await move(300, 200)
+            await pause(650)
+            await expectBar(false, 'Reduced motion hide failed')
             await evaluate(`window.journal.invoke({ type: 'popout', kind: 'activity', id: 'smoke' })`)
             const { BrowserWindow } = await import('electron')
             const popout = BrowserWindow.getAllWindows().find((item) => item !== window)
@@ -219,7 +273,7 @@ app.on('browser-window-created', (_, window) => {
                     await move(crumb.x * zoom, 5, false)
                     await pause(250)
                     await expectBar(false, `Breadcrumb top-edge revealed chrome at ${width}px / ${zoom}x`)
-                    await move(window.getContentBounds().width - 24, 8, false)
+                    await move(window.getContentBounds().width - 24, 5, false)
                     await pause(250)
                     await expectBar(true, 'Breadcrumb exclusion disabled unrelated window controls')
                     // Resize with the bar open, then return to navigation. The
@@ -268,9 +322,13 @@ app.on('browser-window-created', (_, window) => {
             console.info(
                 'Window chrome smoke passed: hover, keyboard, drag region, maximize/restore, minimize, pop-out close, reduced motion, no menu'
             )
+            if (output) writeFileSync(join(output, 'journey.json'), JSON.stringify({ passed: true }))
             app.exit(0)
         } catch (error) {
             console.error(error)
+            await shot('failure')
+            if (output)
+                writeFileSync(join(output, 'journey.json'), JSON.stringify({ passed: false, error: String(error) }))
             app.exit(1)
         }
     })

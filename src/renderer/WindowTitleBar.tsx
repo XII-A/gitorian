@@ -35,7 +35,8 @@ export function WindowTitleBar() {
         if (!desktop) return
         let active = true
         const unsubscribe = desktop.onState((state) => setMaximized(state.maximized))
-        const unsubscribeHover = desktop.onHover(setHovered)
+        const pointer = window.matchMedia('(hover: hover) and (pointer: fine)')
+        const unsubscribeHover = desktop.onHover((value) => setHovered(value && pointer.matches))
         const blur = () => setKeyboardFocus(false)
         window.addEventListener('blur', blur)
         void desktop.action('state').then((state) => {
@@ -54,6 +55,7 @@ export function WindowTitleBar() {
             className="window-chrome"
             data-revealed={revealed}
             data-draggable={revealed && dragReady}
+            data-keyboard={keyboardFocus}
             onPointerDownCapture={() => setKeyboardFocus(false)}
             onFocusCapture={(event) => setKeyboardFocus(event.target.matches(':focus-visible'))}
             onBlurCapture={(event) => {

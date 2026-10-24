@@ -56,7 +56,7 @@ export function watchWindowTitleBar(window: BrowserWindow) {
             reveal(false)
             return
         }
-        const inside = x >= 0 && x < bounds.width && y >= 0 && y < (revealed ? 52 : 12)
+        const inside = x >= 0 && x < bounds.width && y >= 0 && y < (revealed ? 40 : 6)
         if (inside) {
             leftAt = undefined
             reveal(true)
