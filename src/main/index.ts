@@ -235,7 +235,8 @@ void app.whenReady().then(() => {
             import.meta.env.MAIN_VITE_NOTION_OAUTH_ORIGIN ||
             '',
         fetch,
-        new NotionSetupStore(join(app.getPath('userData'), 'notion-setup.json'))
+        new NotionSetupStore(join(app.getPath('userData'), 'notion-setup.json')),
+        store.state.settings.destination
     )
     const connection = notionConnection
     const notion = new Notion(http, (refresh, rejected) => connection.token(refresh, rejected), store)

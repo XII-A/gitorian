@@ -8,9 +8,13 @@ import { syncBuiltinESMExports } from 'node:module'
 import { PassThrough } from 'node:stream'
 import { EventEmitter } from 'node:events'
 import { Worker } from 'node:worker_threads'
+import { DatabaseSync } from 'node:sqlite'
 import { pathToFileURL } from 'node:url'
 import { tsImport } from 'tsx/esm/api'
 const { createOAuthHandler } = await tsImport('../services/notion-oauth/src/handler.ts', import.meta.url)
+const { NotionConnection } = await tsImport('../src/main/notion-connection.ts', import.meta.url)
+const { NotionSetupStore } = await tsImport('../src/main/notion-setup.ts', import.meta.url)
+const { Vault } = await tsImport('../src/main/vault.ts', import.meta.url)
 const nativeFetch = globalThis.fetch
 
 // Real renderer, preload, IPC, vault, profile cache and store. Provider HTTP, avatar transport and explicit failures are fixtures.
@@ -69,6 +73,28 @@ let failRecoveryCleanup = false
 let recoveryCleanupFailures = 0
 let failDestinationSave = ''
 let destinationSaveFailures = 0
+let failCredentialSave = false
+let credentialSaveFailures = 0
+const hasNotionCredentials = () =>
+    ['notion', 'notion-a', 'notion-b'].some((key) => existsSync(join(directory, 'profile', `${key}.secret`)))
+const assertRestartPair = async (id, access) => {
+    const db = new DatabaseSync(join(directory, 'profile', 'weekly-j.sqlite'), { readOnly: true })
+    const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
+    const destination = row ? JSON.parse(row.json).destination : undefined
+    db.close()
+    const restarted = new NotionConnection(
+        new Vault(join(directory, 'profile')),
+        oauthOrigin,
+        globalThis.fetch,
+        new NotionSetupStore(join(directory, 'profile', 'notion-setup.json')),
+        destination
+    )
+    if (destination?.id !== id || restarted.connected() !== !!id || (access && (await restarted.token()) !== access))
+        throw new Error('Restart did not select a matching committed destination and credential pair')
+    record({
+        restartPair: { id: destination?.id, slot: destination?.credentialSlot, connected: restarted.connected() }
+    })
+}
 const sendWrite = Worker.prototype.postMessage
 Worker.prototype.postMessage = function (message, ...args) {
     if (
@@ -95,6 +121,11 @@ Worker.prototype.postMessage = function (message, ...args) {
 }
 const renameFile = fs.renameSync
 fs.renameSync = (source, destination) => {
+    if (failCredentialSave && String(destination).endsWith('notion-b.secret')) {
+        failCredentialSave = false
+        credentialSaveFailures++
+        throw new Error('Fixture credential storage unavailable')
+    }
     if (
         failRecoveryCleanup &&
         String(destination).endsWith('notion-setup.json') &&
@@ -217,7 +248,7 @@ globalThis.fetch = (input, init) =>
             const page = (id, title, parent) => ({
                 id,
                 url: `https://www.notion.so/${id}`,
-                icon: { type: 'emoji', emoji: '📓' },
+                icon: { type: 'emoji', emoji: 'ًں““' },
                 parent: typeof parent === 'object' ? parent : parent ? { page_id: parent } : { workspace: true },
                 properties: { title: { title: [{ plain_text: title }] } }
             })
@@ -236,7 +267,7 @@ globalThis.fetch = (input, init) =>
                 results: [
                     page(
                         'fixture-existing',
-                        stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes',
+                        stressMotion ? 'Journal with an exceptionally long name و—¥وœ¬èھ‍ ًں“ڑ' : 'Engineering notes',
                         'fixture-parent'
                     ),
                     page('fixture-leaf', 'Decisions', { block_id: 'fixture-inner-toggle' }),
@@ -948,7 +979,7 @@ app.on('browser-window-created', (_, window) => {
             if (
                 (await js(`window.journal.invoke({type:'state'})`)).connections.notion ||
                 notionPagesCreated ||
-                existsSync(join(directory, 'profile', 'notion.secret'))
+                hasNotionCredentials()
             )
                 throw new Error('Authorization completed or created a page before confirmation')
             const choosePage = async (id, keyboard = false) => {
@@ -967,7 +998,7 @@ app.on('browser-window-created', (_, window) => {
                     if (collapsed) await click('Expand Personal')
                     if (id === 'fixture-existing') {
                         await wait(
-                            `Array.from(document.querySelectorAll('[role="treeitem"]')).some(n=>n.title===${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes')})`
+                            `Array.from(document.querySelectorAll('[role="treeitem"]')).some(n=>n.title===${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name و—¥وœ¬èھ‍ ًں“ڑ' : 'Engineering notes')})`
                         )
                         if (keyboard) {
                             await js(`document.querySelector('[role="treeitem"][title="Personal"]').focus()`)
@@ -977,7 +1008,7 @@ app.on('browser-window-created', (_, window) => {
                             window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
                         } else
                             await js(
-                                `Array.from(document.querySelectorAll('[role="treeitem"]')).find(n=>n.title===${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes')}).click()`
+                                `Array.from(document.querySelectorAll('[role="treeitem"]')).find(n=>n.title===${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name و—¥وœ¬èھ‍ ًں“ڑ' : 'Engineering notes')}).click()`
                             )
                     } else await js(`document.querySelector('[role="treeitem"][title="Team journal"]').click()`)
                 }
@@ -1083,7 +1114,7 @@ app.on('browser-window-created', (_, window) => {
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='idle'`)
             if (
                 notionPagesCreated ||
-                existsSync(join(directory, 'profile', 'notion.secret')) ||
+                hasNotionCredentials() ||
                 existsSync(join(directory, 'profile', 'notion-setup.secret'))
             )
                 throw new Error('Closing unconfirmed setup left credentials or a page')
@@ -1103,8 +1134,7 @@ app.on('browser-window-created', (_, window) => {
             await click('Retry', notionScope)
             await wait(`${notionScope}.textContent.includes('Could not save page')`)
             await shot('notion-existing-save-retry', 200, 'notion')
-            if (existsSync(join(directory, 'profile', 'notion.secret')))
-                throw new Error('Failed local save installed credentials')
+            await assertRestartPair(undefined)
             await click('Retry', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)
             await shot('notion-06-success', 250, 'notion')
@@ -1115,7 +1145,7 @@ app.on('browser-window-created', (_, window) => {
             await shot('notion-07-connected', 350, 'notion')
             if (recoveryCleanupFailures !== 1) throw new Error('Recovery cleanup failure was not exercised')
             await assert(
-                `${notionScope}.querySelector('.notion-destination-identity').textContent.includes(${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes')}) && !${notionScope}.textContent.includes('Open journal') && !${notionScope}.textContent.includes('Weekly journal')`
+                `${notionScope}.querySelector('.notion-destination-identity').textContent.includes(${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name و—¥وœ¬èھ‍ ًں“ڑ' : 'Engineering notes')}) && !${notionScope}.textContent.includes('Open journal') && !${notionScope}.textContent.includes('Weekly journal')`
             )
             await assert(
                 `(() => {const identity=${notionScope}.querySelector('[aria-label^="Change journal page:"]').getBoundingClientRect(); const button=${notionScope}.querySelector('[aria-label="Disconnect Notion"]').getBoundingClientRect();return Math.abs(identity.top+identity.height/2-button.top-button.height/2)<1 && Math.abs(identity.height-button.height)<1})()`
@@ -1205,7 +1235,7 @@ app.on('browser-window-created', (_, window) => {
             await assert(`${notionScope}.querySelector('[data-notion-disconnect]').inert`)
             await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').click()`)
             await wait(
-                `Array.from(document.querySelectorAll('[role="treeitem"][aria-selected="true"]')).some(n=>n.title===${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name 日本語 📚' : 'Engineering notes')})`
+                `Array.from(document.querySelectorAll('[role="treeitem"][aria-selected="true"]')).some(n=>n.title===${JSON.stringify(stressMotion ? 'Journal with an exceptionally long name و—¥وœ¬èھ‍ ًں“ڑ' : 'Engineering notes')})`
             )
             if (
                 requests.filter((request) => request.url === 'https://api.notion.com/v1/search').length !==
@@ -1304,11 +1334,16 @@ app.on('browser-window-created', (_, window) => {
             await js(`${notionScope}.querySelector('input').select()`)
             await window.webContents.insertText('Team journal')
             expireEditCreation = true
+            failCredentialSave = true
             failDestinationSave = 'fixture-private-journal'
             await click('Confirm', notionScope)
             await wait(`${notionScope}.textContent.includes('Could not save page')`)
             await shot('notion-created-save-retry', 200, 'notion')
+            await assertRestartPair('fixture-existing', 'fixture-rotated-2')
             if (notionPagesCreated !== 1) throw new Error('Expected one created page before local save failure')
+            await click('Retry', notionScope)
+            await wait(`${notionScope}.textContent.includes('Could not save page')`)
+            await assertRestartPair('fixture-existing', 'fixture-rotated-2')
             await click('Retry', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="pending"]') !== null`)
             await click('Close dialog')
@@ -1316,6 +1351,7 @@ app.on('browser-window-created', (_, window) => {
             await pause(1500)
             if (notionRotations !== 2) throw new Error('Destination confirmation did not refresh rejected credentials')
             if (destinationSaveFailures !== 2) throw new Error('Destination save retries were not exercised')
+            if (credentialSaveFailures !== 1) throw new Error('Credential stage failure was not exercised')
             await openConnections()
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
             await shot('notion-created-after-dialog-close', 250, 'notion')
@@ -1331,21 +1367,18 @@ app.on('browser-window-created', (_, window) => {
                 join(output, 'notion-provisioned.json'),
                 JSON.stringify({ destination: notionConnected.state.settings.destination, created: notionPagesCreated })
             )
+            await assertRestartPair('fixture-private-journal', 'fixture-rotated-2')
             await warmReload('Notion')
             if (!(await js(`window.journal.invoke({type:'state'})`)).connections.notion)
                 throw new Error('Notion connection did not survive reload')
-            if (!existsSync(join(directory, 'profile', 'notion.secret')))
-                throw new Error('Notion credentials not persisted')
+            if (!hasNotionCredentials()) throw new Error('Notion credentials not persisted')
             await cancelDisconnect('Notion')
             await click('Disconnect', notionScope)
             await wait(`${notionScope}.querySelector('[data-notion-disconnect] button[data-autofocus]') !== null`)
             await shot('notion-08-disconnect-confirm', 350, 'notion')
             await js(`${notionScope}.querySelector('[data-notion-disconnect] button[data-autofocus]').focus()`)
             await holdDisconnect('Notion', 'first')
-            if (
-                (await js(`window.journal.invoke({type:'state'})`)).connections.notion ||
-                existsSync(join(directory, 'profile', 'notion.secret'))
-            )
+            if ((await js(`window.journal.invoke({type:'state'})`)).connections.notion || hasNotionCredentials())
                 throw new Error('Notion disconnect retained credentials')
             await shot('notion-09-disconnected', 350, 'notion')
             notionName = 'Second integration'
@@ -1375,7 +1408,7 @@ app.on('browser-window-created', (_, window) => {
             await assert(`!${notionScope}.querySelector('.settings-section-heading button').disabled`)
             if (
                 (await js(`window.journal.invoke({type:'state'})`)).connections.notion ||
-                existsSync(join(directory, 'profile', 'notion.secret')) ||
+                hasNotionCredentials() ||
                 existsSync(join(directory, 'profile', 'github.secret'))
             )
                 throw new Error('Repeated disconnect retained credentials')
