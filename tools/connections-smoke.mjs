@@ -406,6 +406,8 @@ app.on('browser-window-created', (_, window) => {
                     { name: 'prefers-reduced-motion', value: stressMotion ? 'reduce' : 'no-preference' }
                 ]
             })
+            // Explicit visual fixture: production intentionally ignores OS appearance.
+            await js(`document.documentElement.dataset.theme='light'; true`)
             await wait(`document.documentElement.dataset.theme==='light'`)
             await pause(300)
             await shotHeadings('connection-logos-light')
@@ -416,6 +418,7 @@ app.on('browser-window-created', (_, window) => {
                     { name: 'prefers-reduced-motion', value: stressMotion ? 'reduce' : 'no-preference' }
                 ]
             })
+            await js(`document.documentElement.dataset.theme='dark'; true`)
             await wait(`document.documentElement.dataset.theme==='dark'`)
 
             await click('Connect GitHub')

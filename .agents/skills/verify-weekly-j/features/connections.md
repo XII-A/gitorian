@@ -66,3 +66,5 @@ Cold profiles use the real main-process downloader, image validation, Sharp thum
 The Notion repeat cycle uses a different token and name and must never show the old profile. After both final disconnects, `profile-cache-after-disconnect.json` must be empty. Unit behavior tests cover cache reconstruction from disk (application restart seam), stale/offline retention, in-flight deduplication, corrupt cache data, missing images, account scope, and late response invalidation even when the same token is reused. These constructor tests prove persistent cache loading; the desktop journey reloads the renderer, not the whole Electron process.
 
 For reproduction of an uncommitted revision, restore the retained `connection-profiles.ts` into `src/main/` and `useConnectionProfile.ts` into `src/renderer/`, alongside the source patch and retained harness. Runtime cache data stays outside journal state/backups and contains no credential values.
+
+Light-theme captures use an explicit renderer theme fixture because the app stays dark when OS appearance changes. The repository-import journey owns the production startup and OS-change assertions.
