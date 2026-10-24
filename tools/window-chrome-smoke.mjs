@@ -294,7 +294,7 @@ app.on('browser-window-created', (_, window) => {
             }
             popout.webContents.debugger.attach('1.3')
             for (const theme of ['dark', 'light']) {
-                record(`Inspect detached activity header contrast in ${theme} theme`)
+                record(`Inspect detached outer frame contrast in ${theme} theme`)
                 await popout.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
                     features: [{ name: 'prefers-color-scheme', value: theme }]
                 })
@@ -303,13 +303,17 @@ app.on('browser-window-created', (_, window) => {
                     await popout.webContents.executeJavaScript(`(() => {
                     const header = document.querySelector('.ws-reference .ws-inspector-header')
                     const frame = document.querySelector('.window-frame-cap')
-                    return header && frame && getComputedStyle(header).backgroundColor !== getComputedStyle(frame).backgroundColor
+                    const root = document.getElementById('root')
+                    const color = getComputedStyle(frame).backgroundColor
+                    return header && frame && getComputedStyle(header).backgroundColor !== color &&
+                        getComputedStyle(document.body).backgroundColor === color &&
+                        getComputedStyle(root).backgroundColor === color
                 })()`),
-                    `Detached header blends into the frame in ${theme} theme`
+                    `Detached outer frame must contrast with the unchanged header in ${theme} theme`
                 )
                 if (output)
                     writeFileSync(
-                        join(output, `04-reference-header-${theme}.png`),
+                        join(output, `04-reference-frame-${theme}.png`),
                         (await popout.webContents.capturePage()).toPNG()
                     )
             }

@@ -778,7 +778,6 @@
 }
 .ws-reference .ws-inspector-header {
     --inspector-gutter: var(--space-6);
-    background: var(--surface);
 }
 .ws-reference .ws-diff-tools {
     padding-inline: var(--space-6);
