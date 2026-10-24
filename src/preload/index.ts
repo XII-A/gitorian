@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
-import type { DesktopBridge, RepositoryImportProgress } from '../shared/model'
+import type { DesktopBridge, RepositoryImportProgress, NotionDiscoveryEvent } from '../shared/model'
 
 const bridge: DesktopBridge = {
     images: {
@@ -39,6 +39,11 @@ const bridge: DesktopBridge = {
         : {}),
     invoke: (command) => ipcRenderer.invoke('journal:command', command),
     updates: (command, base) => ipcRenderer.invoke('journal:updates', { command, base }),
+    onNotionDiscoveryProgress: (listener) => {
+        const receive = (_event: Electron.IpcRendererEvent, event: NotionDiscoveryEvent) => listener(event)
+        ipcRenderer.on('journal:notion-discovery', receive)
+        return () => ipcRenderer.removeListener('journal:notion-discovery', receive)
+    },
     onRepositoryImportProgress: (listener) => {
         const receive = (_event: Electron.IpcRendererEvent, progress: RepositoryImportProgress) => listener(progress)
         ipcRenderer.on('journal:repository-import', receive)

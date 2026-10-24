@@ -26,6 +26,7 @@ jobs:
         env:
             CSC_IDENTITY_AUTO_DISCOVERY: 'false'
             RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+            MAIN_VITE_NOTION_OAUTH_ORIGIN: ${{ vars.NOTION_OAUTH_ORIGIN }}
         steps:
             - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
               with:
@@ -41,6 +42,10 @@ jobs:
               shell: pwsh
               run: |
                   $ErrorActionPreference = 'Stop'
+                  $oauthOrigin = [Uri]$env:MAIN_VITE_NOTION_OAUTH_ORIGIN
+                  if (-not $oauthOrigin.IsAbsoluteUri -or $oauthOrigin.Scheme -ne 'https' -or $oauthOrigin.AbsolutePath -ne '/' -or $oauthOrigin.Query -or $oauthOrigin.Fragment -or $oauthOrigin.UserInfo -or $env:MAIN_VITE_NOTION_OAUTH_ORIGIN -cne $oauthOrigin.GetLeftPart([UriPartial]::Authority)) {
+                      throw 'Set the repository variable NOTION_OAUTH_ORIGIN to the production HTTPS OAuth origin before packaging.'
+                  }
                   $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
                   if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$' -or $env:RELEASE_TAG -ne "v$version") {
                       throw 'The tag must be vMAJOR.MINOR.PATCH and match package.json.'

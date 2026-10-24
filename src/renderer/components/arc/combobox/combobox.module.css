@@ -4,6 +4,31 @@
     gap: var(--space-2);
     min-width: 0;
 }
+.srOnly {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+.control.inline {
+    min-height: calc(var(--control-height-sm) - 8px);
+    padding-inline: var(--space-3);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--surface-muted);
+    box-shadow: none;
+}
+.control.inline:focus-within {
+    box-shadow: none;
+    background: var(--surface-muted);
+}
+@media (pointer: coarse) {
+    .option {
+        min-height: var(--control-height-md);
+    }
+}
 .field label {
     font-size: var(--text-sm);
     font-weight: 500;
@@ -107,7 +132,7 @@
     max-width: calc(100vw - var(--space-6));
     max-height: none;
     overflow: hidden;
-    transform-origin: top center;
+    transform-origin: var(--radix-popover-content-transform-origin);
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
     padding: 5px;
@@ -120,6 +145,9 @@
 .popover[data-side][data-state] {
     animation: none;
     transition: none;
+}
+.popover.inlinePopover[data-side] {
+    width: min(360px, calc(100vw - var(--space-6)));
 }
 .autoHeight {
     overflow: hidden;

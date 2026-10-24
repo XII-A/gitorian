@@ -1,3 +1,6 @@
+packages:
+    - services/*
+
 onlyBuiltDependencies:
     - esbuild
     - electron-winstaller

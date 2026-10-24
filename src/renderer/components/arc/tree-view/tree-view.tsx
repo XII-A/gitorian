@@ -14,6 +14,8 @@ export interface TreeNode {
     icon?: ReactNode
     /** Full path or name when a compact label is used. */
     title?: string
+    /** Group labels expand their children instead of becoming a selection. */
+    selectable?: boolean
 }
 
 export interface TreeViewProps {
@@ -31,6 +33,8 @@ export interface TreeViewProps {
     wrapLabels?: boolean
     /** An enclosing morph surface can own the size animation instead of the rows. */
     animateExpansion?: boolean
+    /** Keep branch selection independent from its disclosure button. */
+    selectBranches?: boolean
     /** Closes an enclosing picker and restores its trigger focus. */
     onEscape?: () => void
 }
@@ -118,6 +122,7 @@ export function TreeView({
     variant = 'surface',
     wrapLabels = false,
     animateExpansion = true,
+    selectBranches = false,
     onEscape
 }: TreeViewProps) {
     const reduced = useReducedMotion() ?? false
@@ -129,7 +134,7 @@ export function TreeView({
     const selectedId = controlledSelectedId !== undefined ? controlledSelectedId : internalSelectedId
     /** The folder that opened last; its new children fade in one after another, then everything else stays still. */
     const [openedId, setOpenedId] = useState<string | null>(null)
-    const refs = useRef(new Map<string, HTMLButtonElement>())
+    const refs = useRef(new Map<string, HTMLDivElement>())
     const expanded = expandedIds ? new Set(expandedIds) : internalExpanded
     const visible = flatten(nodes, expanded)
     const focusableId = visible.some(({ node }) => node.id === focusedId) ? focusedId : (visible[0]?.node.id ?? null)
@@ -159,11 +164,12 @@ export function TreeView({
     }
 
     function select(node: TreeNode) {
+        if (node.selectable === false) return
         if (controlledSelectedId === undefined) setSelectedId(node.id)
         onSelect?.(node)
     }
 
-    function onKeyDown(event: KeyboardEvent<HTMLButtonElement>, item: VisibleNode, index: number) {
+    function onKeyDown(event: KeyboardEvent<HTMLDivElement>, item: VisibleNode, index: number) {
         const { node } = item
         if (event.key === 'Escape' && onEscape) {
             event.preventDefault()
@@ -206,7 +212,7 @@ export function TreeView({
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
             select(node)
-            if (node.children?.length) toggle(node)
+            if (node.children?.length && (!selectBranches || node.selectable === false)) toggle(node)
         }
     }
 
@@ -274,12 +280,11 @@ export function TreeView({
                             }
                             transition={rowReduced ? still : { layout: motionTokens.spring.smooth }}
                         >
-                            <button
+                            <div
                                 ref={(element) => {
                                     if (element) refs.current.set(item.node.id, element)
                                     else refs.current.delete(item.node.id)
                                 }}
-                                type="button"
                                 className={styles.item}
                                 role="treeitem"
                                 title={item.node.title ?? item.node.label}
@@ -287,7 +292,7 @@ export function TreeView({
                                 aria-posinset={item.position}
                                 aria-setsize={item.setSize}
                                 aria-expanded={hasChildren ? isExpanded : undefined}
-                                aria-selected={isSelected}
+                                aria-selected={item.node.selectable === false ? undefined : isSelected}
                                 tabIndex={focusableId === item.node.id ? 0 : -1}
                                 style={{ '--tree-depth': item.depth } as CSSProperties}
                                 onFocus={() => setFocusedId(item.node.id)}
@@ -295,7 +300,8 @@ export function TreeView({
                                 onClick={() => {
                                     setFocusedId(item.node.id)
                                     select(item.node)
-                                    if (hasChildren) toggle(item.node)
+                                    if (hasChildren && (!selectBranches || item.node.selectable === false))
+                                        toggle(item.node)
                                 }}
                             >
                                 {isSelected && <Selection layoutId={selectionLayoutId} reduced={reduced} />}
@@ -303,10 +309,10 @@ export function TreeView({
                                     <motion.span
                                         aria-hidden="true"
                                         className={styles.branch}
-                                        initial={reduced ? false : { opacity: 0, scaleY: 0 }}
+                                        initial={rowReduced ? false : { opacity: 0, scaleY: 0 }}
                                         animate={{ opacity: 1, scaleY: 1 }}
                                         transition={
-                                            reduced
+                                            rowReduced
                                                 ? still
                                                 : {
                                                       duration: motionTokens.duration.standard,
@@ -316,15 +322,38 @@ export function TreeView({
                                         }
                                     />
                                 )}
-                                <motion.span
-                                    className={styles.disclosure}
-                                    aria-hidden="true"
-                                    initial={false}
-                                    animate={{ rotate: isExpanded ? 90 : 0 }}
-                                    transition={reduced ? still : motionTokens.spring.snappy}
-                                >
-                                    {hasChildren ? <ChevronRight size={14} strokeWidth={1.9} /> : null}
-                                </motion.span>
+                                {selectBranches && hasChildren ? (
+                                    <button
+                                        type="button"
+                                        className={styles.disclosureButton}
+                                        tabIndex={-1}
+                                        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.node.label}`}
+                                        onKeyDown={(event) => {
+                                            if (event.key === 'Enter' || event.key === ' ') event.stopPropagation()
+                                        }}
+                                        onClick={(event) => {
+                                            event.stopPropagation()
+                                            toggle(item.node)
+                                            setFocusedId(item.node.id)
+                                        }}
+                                    >
+                                        <ChevronRight
+                                            size={14}
+                                            strokeWidth={1.5}
+                                            style={{ transform: isExpanded ? 'rotate(90deg)' : undefined }}
+                                        />
+                                    </button>
+                                ) : (
+                                    <motion.span
+                                        className={styles.disclosure}
+                                        aria-hidden="true"
+                                        initial={false}
+                                        animate={{ rotate: isExpanded ? 90 : 0 }}
+                                        transition={reduced ? still : motionTokens.spring.snappy}
+                                    >
+                                        {hasChildren ? <ChevronRight size={14} strokeWidth={1.9} /> : null}
+                                    </motion.span>
+                                )}
                                 <span
                                     className={[
                                         styles.icon,
@@ -340,7 +369,7 @@ export function TreeView({
                                         ))}
                                 </span>
                                 <span className={styles.label}>{item.node.label}</span>
-                            </button>
+                            </div>
                         </motion.div>
                     )
                 })}

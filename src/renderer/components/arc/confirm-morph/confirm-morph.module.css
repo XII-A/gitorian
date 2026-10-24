@@ -50,6 +50,7 @@
     background: var(--surface);
     box-shadow: none;
 }
+.root[data-variant='outline'] .surface,
 .root[data-variant='ghost'] .surface {
     background: transparent;
     box-shadow: none;

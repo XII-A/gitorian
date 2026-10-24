@@ -1,28 +1,25 @@
 import { useConnectionProfile } from './useConnectionProfile'
-import { useDisconnectTransition } from './useDisconnectTransition'
-import { ConnectionIdentity } from './ConnectionIdentity'
 import { RepositoryImportReview } from './RepositoryImportReview'
 import { Alert } from './components/arc/alert/alert'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { plainText } from '../shared/notion-format'
-import type { Command, Destination, Reply, Repository, RepositoryImportProgress, State } from '../shared/model'
+import type { Command, Reply, Repository, RepositoryImportProgress, State } from '../shared/model'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/arc/tabs/tabs'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { Button } from './components/arc/button/button'
-import { Input } from './components/arc/input/input'
 import { Select } from './components/arc/select/select'
 import { Combobox } from './components/arc/combobox/combobox'
 import { DatePicker } from './components/arc/date-picker/date-picker'
 import { TagInput } from './components/arc/tag-input/tag-input'
 import { ImportProgressLabel } from './ImportProgressLabel'
-import { Folder, Plug, RefreshCw } from 'lucide-react'
-import { GitHubSignIn, githubSignInFailure, type GitHubSignInFeedback } from './GitHubSignIn'
+import { Folder, RefreshCw } from 'lucide-react'
+import { ConnectionSignIn, connectionFailure, type ConnectionFeedback } from './ConnectionSignIn'
+import { NotionSignIn } from './NotionSignIn'
 import { Switch } from './components/arc/switch/switch'
 import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
 import { NumberField } from './components/arc/number-field/number-field'
 import { SearchField } from './components/arc/search-field/search-field'
-import { ConfirmMorph, type ConfirmMorphState } from './components/arc/confirm-morph/confirm-morph'
 import type { EditorHandle } from './Editor'
 import { NotionLogoIcon } from '@phosphor-icons/react/dist/csr/NotionLogo'
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
@@ -46,27 +43,21 @@ export function Settings({
     close: () => void
 }) {
     const [settings, setSettings] = useState(state.settings)
-    const [repositories, setRepositories] = useState(state.repositories)
-    const [token, setToken] = useState('')
-    const notionDisconnect = useDisconnectTransition(connections.notion)
-    const [notionConnectState, setNotionConnectState] = useState<ConfirmMorphState>('idle')
-    const [notionIdentityReady, setNotionIdentityReady] = useState(false)
+    const [compact, setCompact] = useState(false)
     useEffect(() => {
-        if (!connections.notion) setNotionIdentityReady(false)
-    }, [connections.notion])
-    const prepareNotionIdentity = connections.notion || notionConnectState === 'done'
-    const { profile: notionIdentity, ready: notionProfileReady } = useConnectionProfile('notion', prepareNotionIdentity)
-    const [destinationTest, setDestinationTest] = useState<{ key: string; state: ConfirmMorphState }>()
-    const destinationKey = JSON.stringify([connections.notion, settings.destination])
-    const currentDestinationKey = useRef(destinationKey)
-    currentDestinationKey.current = destinationKey
+        const query = window.matchMedia('(max-width: 600px)')
+        const update = () => setCompact(query.matches)
+        update()
+        query.addEventListener('change', update)
+        return () => query.removeEventListener('change', update)
+    }, [])
+    const [repositories, setRepositories] = useState(state.repositories)
     const [device, setDevice] = useState<Reply['device']>()
-    const [githubFeedback, setGithubFeedback] = useState<GitHubSignInFeedback>()
+    const [githubFeedback, setGithubFeedback] = useState<ConnectionFeedback>()
     const { profile: githubIdentity } = useConnectionProfile(
         'github',
         connections.github || githubFeedback?.kind === 'authorizing' || githubFeedback?.kind === 'success'
     )
-    const notionAccount = useRef<HTMLDivElement>(null)
     const [githubNotice, setGithubNotice] = useState('')
     const githubAttempt = useRef(0)
     const [error, setError] = useState('')
@@ -109,7 +100,7 @@ export function Settings({
             return
         }
         if (busy) return
-        if (hasUnsavedSettings(settings, repositories, state, token)) setConfirmClose(true)
+        if (hasUnsavedSettings(settings, repositories, state)) setConfirmClose(true)
         else close()
     }
     const invoke = async (command: Command) => {
@@ -150,20 +141,6 @@ export function Settings({
             ),
         [state.repositories]
     )
-    const destination = (patch: Partial<Destination>) => {
-        setError('')
-        setSettings((current) => ({
-            ...current,
-            destination: {
-                kind: 'page',
-                id: '',
-                titleProperty: 'Name',
-                dateProperty: '',
-                ...current.destination,
-                ...patch
-            }
-        }))
-    }
     useEffect(() => {
         if (!device) return
         const attempt = githubAttempt.current
@@ -190,7 +167,7 @@ export function Settings({
                 }
             } catch (failure) {
                 if (!cancelled && githubAttempt.current === attempt) {
-                    setGithubFeedback(githubSignInFailure(failure))
+                    setGithubFeedback(connectionFailure(failure))
                     setDevice(undefined)
                     setGithubNotice('')
                 }
@@ -222,24 +199,12 @@ export function Settings({
             clearTimeout(timer)
         }
     }, [githubFeedback, run])
+    const notionDestination = useCallback((destination: State['settings']['destination']) => {
+        setSettings((current) => ({ ...current, destination }))
+    }, [])
     useEffect(() => {
-        if (notionConnectState !== 'done') return
-        let cancelled = false
-        const timer = setTimeout(() => {
-            void run({ type: 'state' }).then(() => {
-                if (!cancelled) {
-                    setNotionConnectState('idle')
-                    requestAnimationFrame(() =>
-                        notionAccount.current?.querySelector('button')?.focus({ preventScroll: true })
-                    )
-                }
-            })
-        }, 900)
-        return () => {
-            cancelled = true
-            clearTimeout(timer)
-        }
-    }, [notionConnectState, run])
+        notionDestination(state.settings.destination)
+    }, [state.settings.destination, notionDestination])
     const save = () =>
         action('save', async () => {
             if (!templateImagesReady) throw new Error('Finish or dismiss template image imports before saving.')
@@ -269,7 +234,7 @@ export function Settings({
                         'Your browser could not be opened. Use Open GitHub, or visit github.com/login/device.'
                     )
             } catch (failure) {
-                if (githubAttempt.current === attempt) setGithubFeedback(githubSignInFailure(failure))
+                if (githubAttempt.current === attempt) setGithubFeedback(connectionFailure(failure))
             }
         })
     const repositoryFields = (repository: Repository) => (
@@ -410,10 +375,15 @@ export function Settings({
                         <Tabs
                             value={section}
                             onValueChange={setSection}
-                            orientation="vertical"
+                            orientation={compact ? 'horizontal' : 'vertical'}
                             className="settings-tabs"
                         >
-                            <ScrollArea className="settings-navigation" fade={12} label="Settings navigation">
+                            <ScrollArea
+                                className="settings-navigation"
+                                orientation={compact ? 'horizontal' : 'vertical'}
+                                fade={12}
+                                label="Settings navigation"
+                            >
                                 <TabsList aria-label="Settings sections">
                                     {['repositories', 'connections', 'preferences', 'template', 'backup'].map((tab) => (
                                         <TabsTrigger key={tab} value={tab}>
@@ -509,7 +479,8 @@ export function Settings({
                                                 GitHub
                                             </h3>
                                             <div className="settings-github-controls">
-                                                <GitHubSignIn
+                                                <ConnectionSignIn
+                                                    provider="GitHub"
                                                     identity={
                                                         connections.github ||
                                                         githubFeedback?.kind === 'success' ||
@@ -603,202 +574,22 @@ export function Settings({
                                                 </span>
                                                 Notion
                                             </h3>
-                                            <div ref={notionAccount} className="settings-github-account">
-                                                {prepareNotionIdentity && (
-                                                    <ConnectionIdentity
-                                                        ready={
-                                                            connections.notion &&
-                                                            notionProfileReady &&
-                                                            notionIdentityReady
-                                                        }
-                                                    >
-                                                        <span className="settings-github-identity">
-                                                            <span className="settings-github-avatar" aria-hidden="true">
-                                                                {notionIdentity?.name.slice(0, 1).toUpperCase() || 'N'}
-                                                                {notionIdentity?.avatarUrl && (
-                                                                    <img
-                                                                        key={notionIdentity.avatarUrl}
-                                                                        src={notionIdentity.avatarUrl}
-                                                                        width={32}
-                                                                        height={32}
-                                                                        alt=""
-                                                                        onLoad={(event) => {
-                                                                            event.currentTarget.dataset.loaded = 'true'
-                                                                        }}
-                                                                        onError={(event) => {
-                                                                            event.currentTarget.hidden = true
-                                                                        }}
-                                                                    />
-                                                                )}
-                                                            </span>
-                                                            <span title={notionIdentity?.name}>
-                                                                {notionIdentity?.name || 'Connected'}
-                                                            </span>
-                                                        </span>
-                                                    </ConnectionIdentity>
-                                                )}
-                                                {notionDisconnect.showDisconnect && notionConnectState === 'idle' ? (
-                                                    <ConfirmMorph
-                                                        state={notionDisconnect.state}
-                                                        onStateChange={notionDisconnect.setState}
-                                                        resultTimeout={0}
-                                                        onWidthSettled={(face) => {
-                                                            if (face === 'idle') setNotionIdentityReady(true)
-                                                        }}
-                                                        label="Disconnect"
-                                                        prompt={
-                                                            <span className="settings-disconnect-question">
-                                                                Disconnect Notion?
-                                                            </span>
-                                                        }
-                                                        confirmLabel="Disconnect"
-                                                        confirmMode="hold"
-                                                        variant="secondary"
-                                                        pendingLabel="Disconnecting"
-                                                        doneLabel="Disconnected"
-                                                        errorLabel="Could not disconnect"
-                                                        errorCancelLabel="Cancel"
-                                                        tone="danger"
-                                                        disabled={!!busy}
-                                                        onConfirm={async () => {
-                                                            setBusy('disconnect-notion')
-                                                            setError('')
-                                                            try {
-                                                                await invoke({ type: 'disconnect', service: 'notion' })
-                                                                setStatus('Notion disconnected.')
-                                                                setDestinationTest(undefined)
-                                                            } finally {
-                                                                setBusy('')
-                                                            }
-                                                        }}
-                                                    />
-                                                ) : (
-                                                    <ConfirmMorph
-                                                        label="Connect"
-                                                        confirmMode="immediate"
-                                                        variant="secondary"
-                                                        state={notionConnectState}
-                                                        onStateChange={setNotionConnectState}
-                                                        pendingLabel="Connecting"
-                                                        doneLabel="Connected"
-                                                        errorLabel="Could not connect"
-                                                        errorCancelLabel="Cancel"
-                                                        onCancel={() => setNotionConnectState('idle')}
-                                                        disabled={!token.trim() || !!busy}
-                                                        onConfirm={async () => {
-                                                            setBusy('notion')
-                                                            setError('')
-                                                            try {
-                                                                await window.journal.invoke({
-                                                                    type: 'notionConnect',
-                                                                    token: token.trim()
-                                                                })
-                                                                setToken('')
-                                                            } finally {
-                                                                setBusy('')
-                                                            }
-                                                        }}
-                                                    />
-                                                )}
+                                            <div className="settings-github-controls">
+                                                <NotionSignIn
+                                                    connected={connections.notion}
+                                                    destination={settings.destination}
+                                                    disabled={!!busy}
+                                                    run={run}
+                                                    onDestination={notionDestination}
+                                                />
                                             </div>
                                         </div>
-                                        {!connections.notion ? (
-                                            <>
-                                                <Input
-                                                    label="Integration token"
-                                                    type="password"
-                                                    autoComplete="off"
-                                                    value={token}
-                                                    onChange={(event) => {
-                                                        setToken(event.target.value)
-                                                        if (notionConnectState === 'error')
-                                                            setNotionConnectState('idle')
-                                                    }}
-                                                />
-                                            </>
-                                        ) : null}
                                         {(connections.github || connections.notion) &&
                                             !connections.protectedStorage && (
                                                 <p className="settings-hint">
                                                     Credentials are kept for this session only.
                                                 </p>
                                             )}
-                                        <div className="settings-field-grid">
-                                            <Select
-                                                label="Destination"
-                                                value={settings.destination?.kind ?? 'page'}
-                                                options={[
-                                                    { value: 'page', label: 'Parent page' },
-                                                    { value: 'database', label: 'Database data source' }
-                                                ]}
-                                                onValueChange={(kind) =>
-                                                    destination({ kind: kind as Destination['kind'] })
-                                                }
-                                            />
-                                            <Input
-                                                label={
-                                                    settings.destination?.kind === 'database'
-                                                        ? 'Data source ID'
-                                                        : 'Page ID'
-                                                }
-                                                value={settings.destination?.id ?? ''}
-                                                onChange={(event) => destination({ id: event.target.value.trim() })}
-                                            />
-                                        </div>
-                                        {settings.destination?.kind === 'database' && (
-                                            <div className="settings-field-grid">
-                                                <Input
-                                                    label="Title property"
-                                                    value={settings.destination.titleProperty}
-                                                    onChange={(event) =>
-                                                        destination({ titleProperty: event.target.value })
-                                                    }
-                                                />
-                                                <Input
-                                                    label="Date property (optional)"
-                                                    value={settings.destination.dateProperty}
-                                                    onChange={(event) =>
-                                                        destination({ dateProperty: event.target.value })
-                                                    }
-                                                />
-                                            </div>
-                                        )}
-                                        <div className="settings-actions">
-                                            <ConfirmMorph
-                                                key={destinationKey}
-                                                label="Test destination"
-                                                icon={<Plug size={16} strokeWidth={1.75} />}
-                                                confirmMode="immediate"
-                                                variant="secondary"
-                                                tone="neutral"
-                                                pendingLabel="Testing"
-                                                doneLabel="Reachable"
-                                                errorLabel="Unreachable"
-                                                state={
-                                                    destinationTest?.key === destinationKey
-                                                        ? destinationTest.state
-                                                        : 'idle'
-                                                }
-                                                onStateChange={(next) => {
-                                                    if (currentDestinationKey.current === destinationKey)
-                                                        setDestinationTest({ key: destinationKey, state: next })
-                                                }}
-                                                disabled={
-                                                    !connections.notion || !settings.destination?.id.trim() || !!busy
-                                                }
-                                                onConfirm={async () => {
-                                                    setBusy('notion-test')
-                                                    try {
-                                                        await window.journal.invoke({
-                                                            type: 'notionTestDestination',
-                                                            destination: settings.destination!
-                                                        })
-                                                    } finally {
-                                                        setBusy('')
-                                                    }
-                                                }}
-                                            />
-                                        </div>
                                     </section>
                                 </TabsContent>
                                 <TabsContent value="preferences" className="settings-content">

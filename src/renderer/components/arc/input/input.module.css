@@ -31,6 +31,16 @@
 .input::placeholder {
     color: var(--text-muted);
 }
+.input.inline {
+    min-height: calc(var(--control-height-sm) - 8px);
+    padding-inline: var(--space-3);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--surface-muted);
+}
+.input.inline:focus-visible {
+    background: var(--surface-muted);
+}
 @media (hover: hover) and (pointer: fine) {
     .input:hover:not(:disabled, [aria-invalid='true']) {
         border-color: var(--border-strong);

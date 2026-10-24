@@ -275,7 +275,7 @@ export function WorkspaceDraft({
                 id: 'workspace-publish',
                 type: 'error',
                 title: 'Could not publish to Notion',
-                description: 'Your draft is safe. Check the Notion connection and destination in settings.',
+                description: 'Draft saved. Check Notion settings and retry.',
                 action: { label: 'Review settings', onClick: onSettings }
             })
         setBusy(false)
@@ -320,7 +320,7 @@ export function WorkspaceDraft({
             title: unknown ? 'Verify the Notion save' : 'Could not publish to Notion',
             description: unknown
                 ? 'Your draft is safe. Verify the previous save before publishing again.'
-                : 'Your draft is safe. Check the Notion connection and destination in settings, then retry.',
+                : 'Draft saved. Check Notion settings and retry.',
             duration: Infinity,
             action: unknown
                 ? {
