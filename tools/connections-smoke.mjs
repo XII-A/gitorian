@@ -841,9 +841,9 @@ app.on('browser-window-created', (_, window) => {
                             [disconnectBounds.section, disconnectBounds.surface].some(
                                 (bounds) =>
                                     button.left < bounds.left - 0.5 ||
-                                    button.right > bounds.right + 0.5 ||
+                                    button.right > Number(bounds.right) + 0.5 ||
                                     button.top < bounds.top - 0.5 ||
-                                    button.bottom > bounds.bottom + 0.5
+                                    button.bottom > Number(bounds.bottom) + 0.5
                             )
                     )
                 )
