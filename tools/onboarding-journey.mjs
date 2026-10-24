@@ -124,6 +124,11 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         `document.querySelector('[role="progressbar"]').getAttribute('aria-valuenow')==='0' && !document.querySelector('.hub-stats') && !document.querySelector('.hub-thread-layout') && !document.querySelector('.hub-footer')`
     )
     await assert(`${setupCard}.querySelector('[data-step="accounts"] [data-primary]').textContent.trim()==='Connect'`)
+    await assert(`(() => {
+        const preview=document.querySelector('.hub-activity-preview');
+        const illustration=preview?.querySelector('[aria-hidden="true"][inert]');
+        return preview?.textContent.includes('Your commits, pull requests, and reviews will appear here.') && illustration && !preview.querySelector('button,a,input,[tabindex], [aria-busy="true"]') && illustration.getAnimations({subtree:true}).length===0;
+    })()`)
     await shot('01-first-launch')
     const originalHeight = await js(`${setupCard}.getBoundingClientRect().height`)
     await click('Hide checklist')
@@ -131,6 +136,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
     await assert(
         `!document.querySelector('.hub-stats') && !document.querySelector('.hub-setup-trigger') && !document.querySelector('.hub-thread-layout')`
     )
+    await assert(`!!document.querySelector('.hub-activity-preview')`)
     await shot('01c-collapsed')
     await assert(`${setupCard}.getBoundingClientRect().height < ${originalHeight}`)
     await js(`${setupCard}.querySelector('[aria-label="Show checklist"]').focus()`)
@@ -206,7 +212,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
             const card=${setupCard};
             const ctx=document.createElement('canvas').getContext('2d');
             const rgba=color=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=color;ctx.fillRect(0,0,1,1);return Array.from(ctx.getImageData(0,0,1,1).data)};
-            return Array.from(card.querySelectorAll('h2,p,[data-title],[data-primary]')).filter(n=>n.getBoundingClientRect().height>0).map(n=>{
+            return [...card.querySelectorAll('h2,p,[data-title],[data-primary]'),...document.querySelectorAll('.hub-preview-heading h2,.hub-preview-heading p')].filter(n=>n.getBoundingClientRect().height>0).map(n=>{
                 const backgrounds=[]; for(let el=n;el;el=el.parentElement) backgrounds.push(rgba(getComputedStyle(el).backgroundColor));
                 let bg=[255,255,255]; for(const layer of backgrounds.reverse()) bg=bg.map((v,i)=>layer[i]*(layer[3]/255)+v*(1-layer[3]/255));
                 const fg=rgba(getComputedStyle(n).color); const rendered=bg.map((v,i)=>fg[i]*(fg[3]/255)+v*(1-fg[3]/255));
@@ -236,7 +242,17 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
                 throw new Error(`Wide action is not beside its copy: ${JSON.stringify(layout)}`)
             if (width <= 390 && layout.action.top < layout.description.bottom)
                 throw new Error(`Narrow action overlaps its copy: ${JSON.stringify(layout)}`)
-            geometry.push({ theme, width, ...bounds, layout })
+            const preview = await js(`(() => {
+                const node=document.querySelector('.hub-activity-preview'); const r=node.getBoundingClientRect();
+                return {left:r.left,right:r.right,viewport:innerWidth,sidebar:getComputedStyle(node.querySelector('.hub-preview-projects')).display};
+            })()`)
+            if (
+                preview.left < 0 ||
+                preview.right > Number(preview.viewport) + 1 ||
+                (width <= 768 && preview.sidebar !== 'none')
+            )
+                throw new Error(`Preview overflow or narrow sidebar: ${JSON.stringify(preview)}`)
+            geometry.push({ theme, width, ...bounds, layout, preview })
             if ([390, 1440].includes(width)) await shot(`layout-${theme}-${width}`)
         }
     }
@@ -306,6 +322,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         await assert(`!!document.querySelector('.hub-thread-layout')`)
         await click('Show checklist')
         await wait(`${setupCard}.dataset.hidden!=='true'`)
+        await assert(`!document.querySelector('.hub-activity-preview')`)
         await shot('05-resume-popover')
         await assert(
             `(() => {const nodes=Array.from(document.querySelectorAll('.hub-utilities > button')); const trigger=document.querySelector('.hub-setup-trigger').getBoundingClientRect(); return nodes.filter(n=>!n.classList.contains('hub-setup-trigger')).every(n=>n.getBoundingClientRect().left >= trigger.right - 1)})()`
@@ -383,6 +400,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
     await wait(
         `!!document.querySelector('.hub-stats') && !document.querySelector('.hub-setup-trigger') && !${setupCard}`
     )
+    await assert(`!document.querySelector('.hub-activity-preview')`)
     await shot('09-complete-stats')
     await reload()
     await assert(`!document.querySelector('.hub-setup-trigger') && !${setupCard}`)

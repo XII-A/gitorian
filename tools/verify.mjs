@@ -108,6 +108,7 @@ if (mode === 'doctor') {
             )
         for (const file of [
             'src/renderer/GettingStarted.tsx',
+            'src/renderer/OnboardingActivityPreview.tsx',
             'src/renderer/use-onboarding.ts',
             'src/renderer/components/arc/onboarding-checklist/onboarding-checklist.tsx',
             'src/renderer/components/arc/onboarding-checklist/onboarding-checklist.module.css'
