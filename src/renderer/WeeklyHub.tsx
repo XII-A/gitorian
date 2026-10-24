@@ -10,7 +10,7 @@ import type { Variants } from 'motion/react'
 import { motionTokens } from './components/arc/motion-tokens'
 import { Popover, PopoverContent, PopoverTrigger } from './components/arc/popover/popover'
 import { GettingStarted, type SetupSection } from './GettingStarted'
-import { OnboardingActivityPreview } from './OnboardingActivityPreview'
+import { OnboardingSetupLayout } from './OnboardingSetupLayout'
 import type { useOnboarding } from './use-onboarding'
 import { localDate, shiftWeek, weekOf } from '../shared/model'
 import type { Activity, Command, Reply, State } from '../shared/model'
@@ -393,8 +393,7 @@ export function WeeklyHub({
                                 </div>
                             ) : showSetup ? (
                                 <SetupPanel key="setup" reduced={!!reduced}>
-                                    {setup(true)}
-                                    <OnboardingActivityPreview />
+                                    <OnboardingSetupLayout>{setup(true)}</OnboardingSetupLayout>
                                 </SetupPanel>
                             ) : (
                                 <motion.div

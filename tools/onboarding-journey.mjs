@@ -1,3 +1,4 @@
+import { onboardingDisclosureJourney } from './onboarding-disclosure-journey.mjs'
 import { dialog, nativeTheme } from 'electron'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -5,6 +6,10 @@ import { execFileSync } from 'node:child_process'
 
 /** Runs inside the existing provider-boundary fixture, through the real renderer, preload and store. */
 export async function onboardingJourney({ window, directory, output, js, wait, assert, click, approveNotion, record }) {
+    if (process.env.WEEKLY_J_VERIFY_ONBOARDING_DISCLOSURE === '1') {
+        await onboardingDisclosureJourney({ window, output, js, wait })
+        return
+    }
     const reducedMotion = process.env.WEEKLY_J_VERIFY_ONBOARDING_REDUCED === '1'
     const inline = process.env.WEEKLY_J_VERIFY_ONBOARDING_INLINE === '1'
     const resume = async () => {

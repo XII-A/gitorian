@@ -302,6 +302,17 @@
     position: relative;
     z-index: 1;
 }
+.hub-setup-layout {
+    position: relative;
+}
+.hub-preview-positioner {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    display: flow-root;
+    /* Layout-driven glyph rasterization snapped at fractional disclosure heights. */
+    will-change: transform;
+}
 .hub-activity-preview {
     margin-block-start: var(--space-8);
     padding-block-start: var(--space-6);
