@@ -55,24 +55,33 @@ export class NotionConnection {
     private pendingInstalled = false
     private pendingRefreshing?: Promise<string>
     private savedSetup?: { workspace: string; id: string }
+    private credentialKey: string
+    private committing = false
+    private stagedKey?: string
+    private destinationId?: string
     constructor(
         private readonly vault: CredentialStore,
         private readonly origin: string,
         private readonly fetcher: typeof fetch,
-        private readonly recovery: JournalSetupStore
-    ) {}
+        private readonly recovery: JournalSetupStore,
+        destination?: Destination
+    ) {
+        this.credentialKey = destination?.credentialSlot ? `notion-${destination.credentialSlot}` : 'notion'
+        this.destinationId = destination?.id
+    }
 
-    private session(key = 'notion'): Session | undefined {
+    private session(key = this.credentialKey): Session | undefined {
         const raw = this.vault.get(key)
         if (!raw.startsWith('{')) return undefined // Real installations may still have a static integration token.
         try {
-            return Schema.decodeUnknownSync(sessionSchema)(JSON.parse(raw))
+            const session = Schema.decodeUnknownSync(sessionSchema)(JSON.parse(raw))
+            return session.journal.pageId !== this.destinationId ? undefined : session
         } catch {
             return undefined
         }
     }
-    private save(session: Session) {
-        this.vault.set('notion', JSON.stringify(session))
+    private save(session: Session, key = this.credentialKey) {
+        this.vault.set(key, JSON.stringify(session))
     }
     private journalSetup(workspace: string): JournalSetup {
         const recovery = this.recovery.get(workspace)
@@ -215,6 +224,11 @@ export class NotionConnection {
         return { authorized: true }
     }
     pendingToken(refresh = false, rejected?: string): Promise<string> {
+        if (refresh && this.committing && this.completing)
+            return this.completing.then(
+                () => this.token(refresh, rejected),
+                () => this.pendingToken(refresh, rejected)
+            )
         const session = this.pending
         if (!session) return Promise.reject(new Error('Connect Notion before choosing a page.'))
         if (this.pendingInstalled) return this.token(refresh, rejected)
@@ -248,9 +262,14 @@ export class NotionConnection {
         return true
     }
     token(refresh = false, rejected?: string): Promise<string> {
-        const raw = this.vault.get('notion')
+        if (refresh && this.committing && this.completing)
+            return this.completing.then(
+                () => this.token(refresh, rejected),
+                () => this.token(refresh, rejected)
+            )
+        const raw = this.vault.get(this.credentialKey)
         const session = this.session()
-        if (!session) return Promise.resolve(raw.startsWith('{') ? '' : raw)
+        if (!session) return Promise.resolve(this.credentialKey === 'notion' && !raw.startsWith('{') ? raw : '')
         if (!refresh) return Promise.resolve(session.access_token)
         if (rejected && session.access_token !== rejected) return Promise.resolve(session.access_token)
         if (this.refreshing) return this.refreshing
@@ -273,11 +292,14 @@ export class NotionConnection {
         return request
     }
     connected(): boolean {
-        const raw = this.vault.get('notion')
-        return !!raw && (raw.startsWith('{') ? !!this.session()?.journal.pageId : true)
+        if (this.committing) return false
+        const raw = this.vault.get(this.credentialKey)
+        return !!raw && (raw.startsWith('{') ? !!this.session()?.journal.pageId : this.credentialKey === 'notion')
     }
     profileKey(): string {
-        return this.session()?.access_token ?? this.vault.get('notion')
+        return (
+            this.session()?.access_token ?? (this.credentialKey === 'notion' ? this.vault.get(this.credentialKey) : '')
+        )
     }
     completeJournal(
         prepare: (setup: JournalSetup, checkpoint: (pageId?: string) => void) => Promise<Destination>,
@@ -306,21 +328,34 @@ export class NotionConnection {
             )
             .then(async (destination) => {
                 check()
-                await persist?.(destination)
-                // A refresh that began before confirmation owns the rotated credentials.
-                const refreshing = this.pendingInstalled ? this.refreshing : this.pendingRefreshing
-                if (refreshing) await refreshing
+                // Finish any rotation before staging. Later refreshes wait for this commit.
+                for (;;) {
+                    const refreshing = this.pendingInstalled ? this.refreshing : this.pendingRefreshing
+                    if (!refreshing) break
+                    await refreshing
+                }
                 check()
                 const latest = this.pendingInstalled ? this.session() : session
                 if (!latest) throw new Error('Notion connection cancelled.')
-                this.save({ ...latest, journal: { ...session.journal, pageId: destination.id } })
+                this.committing = true
+                const slot = this.credentialKey === 'notion-a' ? 'b' : 'a'
+                const key = `notion-${slot}`
+                // Only the SQLite destination pointer activates this inactive encrypted slot.
+                this.stagedKey = key
+                this.save({ ...latest, journal: { ...session.journal, pageId: destination.id } }, key)
+                const committed: Destination = { ...destination, credentialSlot: slot }
+                await persist?.(committed)
+                check()
+                this.credentialKey = key
+                this.destinationId = committed.id
+                this.stagedKey = undefined
                 this.credentialGeneration++
                 this.refreshing = undefined
                 this.pending = undefined
-                this.vault.set('notion-setup', '')
-                return destination
+                return committed
             })
             .finally(() => {
+                this.committing = false
                 if (this.completing === request) this.completing = undefined
             })
         this.completing = request
@@ -339,6 +374,14 @@ export class NotionConnection {
     cancel(): void {
         this.generation++
         if (!this.completing) {
+            if (this.stagedKey) {
+                try {
+                    this.vault.set(this.stagedKey, '')
+                } catch {
+                    // An unreferenced encrypted slot is inactive even if cleanup fails.
+                }
+                this.stagedKey = undefined
+            }
             this.pending = undefined
             this.pendingRefreshing = undefined
         }
@@ -352,7 +395,7 @@ export class NotionConnection {
         this.cancel()
         this.credentialGeneration++
         this.refreshing = undefined
-        this.vault.set('notion', '')
+        for (const key of ['notion', 'notion-a', 'notion-b']) this.vault.set(key, '')
         this.vault.set('notion-setup', '')
         this.pending = undefined
     }

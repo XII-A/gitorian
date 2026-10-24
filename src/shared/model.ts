@@ -93,7 +93,8 @@ export const destinationSchema = z.object({
     dateProperty: z.string(),
     title: z.string().optional(),
     url: z.string().optional(),
-    icon: z.string().optional()
+    icon: z.string().optional(),
+    credentialSlot: z.enum(['a', 'b']).optional()
 })
 export const stateSchema = z.object({
     version: z.literal(1),
