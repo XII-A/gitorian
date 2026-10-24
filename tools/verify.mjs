@@ -11,13 +11,30 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
-const runner = mode === 'notion' ? 'connections' : mode === 'inspector-tabs' ? 'desktop' : mode
+const runner = ['notion', 'onboarding', 'onboarding-disclosure'].includes(mode)
+    ? 'connections'
+    : mode === 'inspector-tabs'
+      ? 'desktop'
+      : mode
+const disclosureMode = mode === 'onboarding-disclosure'
+const onboardingMode = mode === 'onboarding' || disclosureMode
+const connectionMode = mode === 'connections' || mode === 'notion'
 if (
-    !['doctor', 'repository-import', 'connections', 'notion', 'inspector-tabs', 'line-statistics'].includes(mode) ||
+    ![
+        'doctor',
+        'repository-import',
+        'connections',
+        'notion',
+        'onboarding',
+        'onboarding-disclosure',
+        'inspector-tabs',
+        'line-statistics',
+        'window-chrome'
+    ].includes(mode) ||
     process.argv.length !== 3
 ) {
     console.error(
-        'Usage: pnpm verify doctor | pnpm verify repository-import | pnpm verify connections | notion | inspector-tabs | line-statistics (run pnpm build first)'
+        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -51,9 +68,18 @@ if (mode === 'doctor') {
     mkdirSync(evidenceRoot, { recursive: true })
     const output = mkdtempSync(join(evidenceRoot, `${mode}-`))
     const scratch = mkdtempSync(join(tmpdir(), 'weekly-j-import-'))
-    const report = { feature: mode, command: `pnpm verify ${mode}`, build, scratch, output, passed: false }
+    const report = {
+        feature: mode,
+        command: `${onboardingMode && process.env.WEEKLY_J_VERIFY_ONBOARDING_INLINE === '1' ? 'WEEKLY_J_VERIFY_ONBOARDING_INLINE=1 ' : ''}${onboardingMode && process.env.WEEKLY_J_VERIFY_ONBOARDING_REDUCED === '1' ? 'WEEKLY_J_VERIFY_ONBOARDING_REDUCED=1 ' : ''}pnpm verify ${mode}`,
+        build,
+        scratch,
+        output,
+        passed: false
+    }
     const env = {
         ...process.env,
+        WEEKLY_J_VERIFY_ONBOARDING: onboardingMode ? '1' : '0',
+        WEEKLY_J_VERIFY_ONBOARDING_DISCLOSURE: disclosureMode ? '1' : '0',
         WEEKLY_J_VERIFY_STATE: scratch,
         WEEKLY_J_VERIFY_OUTPUT: output,
         WEEKLY_J_VERIFY_SERVICE: mode === 'notion' ? 'notion' : ''
@@ -77,13 +103,50 @@ if (mode === 'doctor') {
             join(output, 'source.patch'),
             execFileSync(
                 'git',
-                ['diff', '--binary', 'HEAD', '--', 'src', 'tools', 'package.json', 'electron.vite.config.ts'],
+                [
+                    'diff',
+                    '--binary',
+                    'HEAD',
+                    '--',
+                    'src',
+                    'services',
+                    'tools',
+                    'tests',
+                    'package.json',
+                    'pnpm-lock.yaml',
+                    'pnpm-workspace.yaml',
+                    'electron.vite.config.ts',
+                    'tsconfig.json',
+                    'netlify.toml'
+                ],
                 {
                     cwd: root,
                     windowsHide: true
                 }
             )
         )
+        if (onboardingMode)
+            writeFileSync(
+                join(output, 'onboarding-journey.mjs'),
+                readFileSync(join(root, 'tools/onboarding-journey.mjs'))
+            )
+        if (onboardingMode)
+            writeFileSync(
+                join(output, 'onboarding-disclosure-journey.mjs'),
+                readFileSync(join(root, 'tools/onboarding-disclosure-journey.mjs'))
+            )
+        for (const file of [
+            'src/renderer/GettingStarted.tsx',
+            'src/renderer/OnboardingActivityPreview.tsx',
+            'src/renderer/OnboardingSetupLayout.tsx',
+            'src/renderer/use-onboarding.ts',
+            'src/renderer/components/arc/onboarding-checklist/onboarding-checklist.tsx',
+            'src/renderer/components/arc/onboarding-checklist/onboarding-checklist.module.css'
+        ]) {
+            const target = join(output, 'source-files', file)
+            mkdirSync(dirname(target), { recursive: true })
+            writeFileSync(target, readFileSync(join(root, file)))
+        }
         writeFileSync(join(output, 'verify-runner.mjs'), readFileSync(fileURLToPath(import.meta.url)))
         writeFileSync(join(output, `${mode}-smoke.mjs`), readFileSync(join(root, `tools/${runner}-smoke.mjs`)))
         for (const log of ['stdout.log', 'stderr.log']) writeFileSync(join(output, log), '')
@@ -149,10 +212,30 @@ if (mode === 'doctor') {
                 db.close()
             }
         }
-        if (mode === 'connections' || mode === 'notion' || mode === 'repository-import') {
+        if (mode !== 'line-statistics' && mode !== 'inspector-tabs' && mode !== 'window-chrome') {
             const db = new DatabaseSync(join(scratch, 'profile', 'weekly-j.sqlite'), { readOnly: true })
             try {
-                if (mode === 'connections' || mode === 'notion') {
+                if (disclosureMode) {
+                    const count = db
+                        .prepare("SELECT count(*) AS total FROM state_records WHERE collection='repositories'")
+                        .get()
+                    if (count.total !== 0) throw new Error('Disclosure fixture unexpectedly imported repositories')
+                } else if (onboardingMode) {
+                    const repositories = db
+                        .prepare("SELECT json FROM state_records WHERE collection='repositories'")
+                        .all()
+                        .map((row) => JSON.parse(String(row.json)))
+                    writeFileSync(join(output, 'persisted-repositories.json'), JSON.stringify(repositories, null, 2))
+                    if (
+                        repositories.length !== 1 ||
+                        repositories[0].name !== 'journal-project' ||
+                        repositories[0].removed
+                    )
+                        throw new Error('Onboarding import was not persisted')
+                    const preferences = JSON.parse(readFileSync(join(output, 'preferences.json'), 'utf8'))
+                    if (preferences['weekly-j:onboarding:v1:local'] !== 'complete')
+                        throw new Error('Completion preference was not retained')
+                } else if (connectionMode) {
                     const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
                     const settings = JSON.parse(String(row?.json))
                     writeFileSync(join(output, 'persisted-settings.json'), JSON.stringify(settings, null, 2))
@@ -202,17 +285,14 @@ if (mode === 'doctor') {
         }
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
         report.evidenceRetained = (
-            mode === 'notion'
+            mode === 'window-chrome'
                 ? [
-                      'doctor.json',
                       'actions.jsonl',
-                      'http-requests.json',
-                      'persisted-settings.json',
-                      'notion-01-ready.png',
-                      'notion-07-connected.png',
-                      'notion-09-disconnected.png',
-                      'notion-provisioned.json',
-                      'captures.json'
+                      '01-frame-hidden.png',
+                      '02-controls-revealed.png',
+                      '03-reduced-motion.png',
+                      '04-reference-frame-dark.png',
+                      '04-reference-frame-light.png'
                   ]
                 : mode === 'line-statistics'
                   ? [
@@ -234,29 +314,62 @@ if (mode === 'doctor') {
                           'reference-light-related.png',
                           'journey.json'
                       ]
-                    : mode === 'connections'
-                      ? [
-                            'doctor.json',
-                            'actions.jsonl',
-                            '01-idle.png',
-                            '05-narrow-dark-code.png',
-                            '08-disconnected.png',
-                            'http-requests.json',
-                            'persisted-settings.json',
-                            'notion-04-failed.png',
-                            'notion-07-connected.png',
-                            'notion-09-disconnected.png',
-                            'notion-provisioned.json',
-                            'captures.json'
-                        ]
-                      : [
-                            'doctor.json',
-                            'actions.jsonl',
-                            '01-choose-folder.png',
-                            '08-complete.png',
-                            '10-error-details.png',
-                            'persisted-repositories.json'
-                        ]
+                    : disclosureMode
+                      ? ['doctor.json', 'actions.jsonl', 'disclosure-motion.json', 'disclosure.png', 'journey.json']
+                      : onboardingMode
+                        ? [
+                              'doctor.json',
+                              'actions.jsonl',
+                              '01-first-launch.png',
+                              '01c-collapsed.png',
+                              '01e-dismiss-tooltip.png',
+                              'header-actions.json',
+                              'header-geometry.json',
+                              process.env.WEEKLY_J_VERIFY_ONBOARDING_INLINE === '1'
+                                  ? 'completion-motion.json'
+                                  : 'dismiss-motion.json',
+                              process.env.WEEKLY_J_VERIFY_ONBOARDING_INLINE === '1'
+                                  ? '05-inline-setup.png'
+                                  : '05-resume-popover.png',
+                              '09-complete-stats.png',
+                              'preferences.json',
+                              'persisted-repositories.json'
+                          ]
+                        : mode === 'notion'
+                          ? [
+                                'doctor.json',
+                                'actions.jsonl',
+                                'http-requests.json',
+                                'persisted-settings.json',
+                                'notion-01-ready.png',
+                                'notion-07-connected.png',
+                                'notion-09-disconnected.png',
+                                'notion-provisioned.json',
+                                'captures.json'
+                            ]
+                          : mode === 'connections'
+                            ? [
+                                  'doctor.json',
+                                  'actions.jsonl',
+                                  '01-idle.png',
+                                  '05-narrow-dark-code.png',
+                                  '08-disconnected.png',
+                                  'http-requests.json',
+                                  'persisted-settings.json',
+                                  'notion-04-failed.png',
+                                  'notion-07-connected.png',
+                                  'notion-09-disconnected.png',
+                                  'notion-provisioned.json',
+                                  'captures.json'
+                              ]
+                            : [
+                                  'doctor.json',
+                                  'actions.jsonl',
+                                  '01-choose-folder.png',
+                                  '08-complete.png',
+                                  '10-error-details.png',
+                                  'persisted-repositories.json'
+                              ]
         ).every((file) => existsSync(join(output, file)))
         report.passed &&= report.cleanup.removed && report.evidenceRetained
         report.finishedAt = new Date().toISOString()
