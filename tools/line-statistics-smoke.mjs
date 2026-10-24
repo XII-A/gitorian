@@ -74,6 +74,33 @@ app.on('browser-window-created', (_, window) => {
             record({ screenshot: `${name}.png`, text: await js('document.body.innerText') })
         }
         const totalSelector = '.activity-files-heading .line-counts[aria-label="647 lines added, 45 lines deleted"]'
+        const checkHierarchy = async (surface) => {
+            const hierarchy = await js(`(() => {
+                const scope=document.querySelector(${JSON.stringify(surface.startsWith('hub') ? '.hub-detail-dialog' : '.ws-inspector')})
+                const style=selector=>{const node=scope.querySelector(selector);return node ? {color:getComputedStyle(node).color,weight:getComputedStyle(node).fontWeight} : undefined}
+                const repository=style('.hub-detail-repository dd')
+                const branch=style('.hub-detail-primary-branch'),author=style('.hub-detail-author-value'),date=style('.hub-detail-meta time')
+                const headings=Array.from(scope.querySelectorAll('.hub-detail-section > h3,.activity-files-heading > h3')).map(node=>({text:node.textContent,color:getComputedStyle(node).color,weight:getComputedStyle(node).fontWeight}))
+                const title=scope.querySelector('.ws-inspector-header h2')
+                return {repository,branch,author,date,headings,
+                    singleTitle:${surface.startsWith('hub')} || (!!title && scope.getAttribute('aria-labelledby')===title.id && !scope.querySelector('.ws-details-content h2'))}
+            })()`)
+            writeFileSync(join(output, `hierarchy-${surface}.json`), JSON.stringify(hierarchy, null, 2))
+            if (
+                !hierarchy.singleTitle ||
+                hierarchy.headings.length < 2 ||
+                hierarchy.headings.some(
+                    (heading) => heading.color !== hierarchy.repository.color || heading.weight !== '500'
+                ) ||
+                hierarchy.branch?.color !== hierarchy.repository.color ||
+                hierarchy.author?.color !== hierarchy.repository.color ||
+                hierarchy.author?.weight !== '400' ||
+                hierarchy.repository.weight !== '500' ||
+                hierarchy.date?.color === hierarchy.repository.color
+            )
+                throw new Error(`${surface} hierarchy does not match the shared heading/value rules`)
+            record({ assert: `${surface} headings and metadata use the agreed hierarchy`, passed: true })
+        }
         const checkAlignment = async (surface) => {
             const alignment = await js(`(() => {
                 const baseline = selector => {
@@ -183,6 +210,8 @@ app.on('browser-window-created', (_, window) => {
             writeFileSync(join(output, 'doctor.json'), JSON.stringify(doctor, null, 2))
             await click('.hub-activity', 'Add reliable retry scheduling')
             await wait(`!!document.querySelector(${JSON.stringify(totalSelector)})`)
+            await checkHierarchy('hub-commit')
+            await shot('hub-commit-hierarchy')
             await checkAlignment('hub')
             await breakdown()
             await assert(
@@ -224,6 +253,21 @@ app.on('browser-window-created', (_, window) => {
                 `document.querySelector('.hub-detail-viewport').scrollTop = document.querySelector('.hub-detail-viewport').scrollHeight`
             )
             await shot('hub-pr-counts')
+            await checkHierarchy('hub-pr')
+            await js(
+                `Array.from(document.querySelectorAll('.hub-detail-dialog button')).find(button=>button.textContent.includes('Open in workspace')).click()`
+            )
+            await wait(`!!document.querySelector('.ws-details-content')`)
+            await checkHierarchy('workspace-pr')
+            await assert(
+                `!!document.querySelector('.ws-inspector-header [aria-label="Current status: Open"]')`,
+                'PR status remains in the persistent header'
+            )
+            await shot('workspace-pr-hierarchy')
+            await window.loadURL(window.webContents.getURL().split('?')[0])
+            await wait(`!!document.querySelector('.hub-activity')`)
+            await click('.hub-activity', 'Keep queued uploads safe')
+            await wait(`!!document.querySelector(${JSON.stringify(totalSelector)})`)
             nativeTheme.themeSource = 'light'
             await breakdown()
             await shot('hub-pr-light')
@@ -285,6 +329,12 @@ app.on('browser-window-created', (_, window) => {
             )
             record({ click: 'Open in workspace' })
             await wait(`!!document.querySelector('.ws-details-content')`)
+            await checkHierarchy('workspace-commit')
+            await assert(
+                `document.querySelector('.hub-detail-commit-message').textContent.includes(document.querySelector('.ws-inspector-title').textContent)`,
+                'The source commit message is preserved even when it repeats the subject'
+            )
+            await shot('workspace-commit-hierarchy')
             await checkAlignment('workspace')
             await assert(
                 `!!document.querySelector(${JSON.stringify(totalSelector)})`,

@@ -383,7 +383,16 @@
     text-overflow: ellipsis;
     white-space: normal;
     overflow-wrap: anywhere;
+    margin: 0;
+    font: inherit;
     font-weight: 500;
+    color: var(--foreground);
+}
+.ws-inspector-identity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
 }
 .ws-inspector-tabs {
     display: flex;
@@ -566,13 +575,6 @@
     overflow-wrap: anywhere;
     user-select: text;
     padding-top: var(--space-3);
-}
-.ws-details-heading {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-    margin-bottom: var(--space-6);
 }
 .ws-details-content > button:last-child {
     margin-top: var(--space-6);

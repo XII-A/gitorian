@@ -63,7 +63,9 @@ export function ActivityDetails({
                         <UserRound size={16} strokeWidth={1.5} aria-hidden="true" />
                         Author
                     </dt>
-                    <dd>{activity.author || 'Unknown author'}</dd>
+                    <dd className={activity.author ? 'hub-detail-author-value' : undefined}>
+                        {activity.author || 'Unknown author'}
+                    </dd>
                 </div>
                 <div>
                     <dt>

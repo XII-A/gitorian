@@ -99,7 +99,11 @@ it('previews GitHub Markdown, file changes, and PR history in the details tab', 
         'Merged pull request'
     )
     expect(container.querySelector('.hub-detail-meta time')?.getAttribute('datetime')).toBe(activity.date)
-    expect(container.querySelector('[aria-label="Current status: Merged"]')).not.toBeNull()
+    const heading = container.querySelector('.ws-inspector-header h2')!
+    expect(heading?.textContent).toBe(activity.title)
+    expect(container.querySelector('.ws-inspector')?.getAttribute('aria-labelledby')).toBe(heading?.id)
+    expect(container.querySelector('.ws-details-content h2')).toBeNull()
+    expect(container.querySelector('.ws-inspector-header [aria-label="Current status: Merged"]')).not.toBeNull()
 })
 
 it('mounts a bounded initial window of 3,000 activities with their full list positions', () => {

@@ -1,7 +1,7 @@
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
 import { readableError } from './background-work'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/arc/tabs/tabs'
@@ -49,6 +49,7 @@ export function WorkspaceInspector({
     onInspect
 }: Props) {
     const [tab, setTab] = useState<string>(initialTab)
+    const titleId = useId()
     useEffect(() => setTab(initialTab), [activity.id, initialTab])
     const repository = state.repositories.find((repo) => repo.id === activity.repositoryId)
     const related = useMemo(
@@ -68,7 +69,7 @@ export function WorkspaceInspector({
     return (
         <section
             className={`ws-inspector ${reference ? 'ws-inspector-detached' : ''}`}
-            aria-label="Activity inspector"
+            aria-labelledby={titleId}
             aria-busy={loading}
         >
             <Tabs
@@ -85,18 +86,27 @@ export function WorkspaceInspector({
                 <header className="ws-inspector-header">
                     <div className="ws-inspector-heading">
                         <div className="ws-inspector-summary">
-                            <span className="ws-inspector-title" title={activity.title}>
+                            <h2 id={titleId} className="ws-inspector-title" title={activity.title}>
                                 {activity.title}
-                            </span>
-                            {activity.sha && (
-                                <Badge
-                                    className="ws-inspector-commit ws-header-chip"
-                                    animateChanges={false}
-                                    size="sm"
-                                    title={activity.sha}
-                                >
-                                    <code>{activity.sha.slice(0, 7)}</code>
-                                </Badge>
+                            </h2>
+                            {(activity.sha || isPullRequest(activity) || activity.kind === 'review') && (
+                                <div className="ws-inspector-identity">
+                                    {isPullRequest(activity) ? (
+                                        <PullRequestStatus activity={activity} activities={state.activities} />
+                                    ) : activity.kind === 'review' ? (
+                                        <Badge animateChanges={false}>Review</Badge>
+                                    ) : null}
+                                    {activity.sha && (
+                                        <Badge
+                                            className="ws-inspector-commit ws-header-chip"
+                                            animateChanges={false}
+                                            size="sm"
+                                            title={activity.sha}
+                                        >
+                                            <code>{activity.sha.slice(0, 7)}</code>
+                                        </Badge>
+                                    )}
+                                </div>
                             )}
                         </div>
                         <div>
@@ -219,14 +229,6 @@ export function WorkspaceInspector({
                 <TabsContent value="details">
                     <ScrollArea className="ws-inspector-scroll" label="Activity details" fade={16}>
                         <div className="ws-details-content">
-                            <div className="ws-details-heading">
-                                <h2>{activity.title}</h2>
-                                {isPullRequest(activity) ? (
-                                    <PullRequestStatus activity={activity} activities={state.activities} />
-                                ) : activity.kind === 'review' ? (
-                                    <Badge animateChanges={false}>Review</Badge>
-                                ) : null}
-                            </div>
                             <ActivityDetails
                                 activity={activity}
                                 state={state}
