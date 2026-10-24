@@ -16,6 +16,8 @@ import { ToastStack, ToastStackProvider } from './components/arc/toast-stack/toa
 import { reconcileReply } from './activity-cache'
 import { expandReply, stateCursor } from '../shared/state-updates'
 import { WindowTitleBar } from './WindowTitleBar'
+import { useOnboarding } from './use-onboarding'
+import type { SetupSection } from './GettingStarted'
 
 export function App() {
     return (
@@ -33,6 +35,8 @@ function JournalApp() {
     const [remotes, setRemotes] = useState<Record<string, string[]>>({})
     const [error, setError] = useState('')
     const [settingsOpen, setSettingsOpen] = useState(false)
+    const [settingsSection, setSettingsSection] = useState<SetupSection>('repositories')
+    const onboarding = useOnboarding(reply)
     const [commandsOpen, setCommandsOpen] = useState(false)
     const [workspaceWeek, setWorkspaceWeek] = useState('')
     const [workspaceActivity, setWorkspaceActivity] = useState<string>()
@@ -202,6 +206,12 @@ function JournalApp() {
                     onSettings={() => setSettingsOpen(true)}
                     onWrite={(date) => openWorkspace(date, true)}
                     onActivity={openActivity}
+                    onboarding={onboarding}
+                    settingsOpen={settingsOpen}
+                    onSetup={(section) => {
+                        setSettingsSection(section)
+                        setSettingsOpen(true)
+                    }}
                 />
             ) : (
                 <main className="loading">
@@ -214,6 +224,7 @@ function JournalApp() {
                     key={reply.state.restoreId ?? 'local'}
                     state={reply.state}
                     connections={reply.connections}
+                    initialSection={settingsSection}
                     remotes={remotes}
                     run={run}
                     close={() => setSettingsOpen(false)}

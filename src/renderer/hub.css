@@ -104,6 +104,11 @@
     width: var(--control-height-sm);
     padding: 0;
 }
+.hub-utilities .hub-setup-trigger {
+    width: auto;
+    min-height: 44px;
+    padding-inline: var(--space-3);
+}
 .hub-content {
     width: min(1080px, calc(100% - 80px));
     margin-inline: auto;
@@ -284,12 +289,51 @@
     border-bottom: 1px solid var(--border);
     align-items: center;
 }
+.hub-onboarding-stage {
+    display: grid;
+    align-items: start;
+}
+.hub-onboarding-panel,
+.hub-overview-panel {
+    grid-area: 1 / 1;
+    min-width: 0;
+}
+.hub-onboarding-panel {
+    position: relative;
+    z-index: 1;
+}
 .hub-thread-summary .hub-stats {
     flex: 1;
     padding-bottom: 0;
 }
 .hub-thread-summary .hub-chart {
     width: 260px;
+}
+.hub-summary-content {
+    display: flex;
+    align-items: center;
+    gap: var(--space-12);
+    width: 100%;
+    min-width: 0;
+}
+.hub-setup-popover {
+    width: min(420px, calc(100vw - 24px));
+    max-width: min(420px, calc(100vw - 24px));
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: var(--radius-surface);
+}
+@media (max-width: 780px) {
+    .hub-summary-content {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-6);
+    }
+    .hub-setup-trigger {
+        min-height: 44px;
+    }
 }
 .hub-thread-layout {
     display: grid;

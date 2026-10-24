@@ -58,6 +58,8 @@ Inspect the printed `run.json` after every run, including failures. Require `cle
 
 ## Helpers
 
+- `pnpm verify onboarding` drives the [onboarding journey](features/onboarding.md), sharing simulated provider boundaries with the connection fixture and importing one real disposable Git repository.
+
 - `pnpm verify doctor` runs the read-only build check in `tools/verify.mjs`.
 - `pnpm verify repository-import` runs launch, live doctor, drive, evidence, persistence check, and cleanup in one command.
 - `pnpm verify connections` drives the [connections journey](features/connections.md) using a journal-only disposable profile and simulated GitHub HTTP/browser boundaries.

@@ -2,8 +2,15 @@ import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
 import { sourceProblems } from './background-work'
-import { useRef, useState } from 'react'
-import { BookOpen, Check, GitBranch, GitCommitHorizontal, RefreshCw, Settings2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
+import { BookOpen, Check, GitBranch, GitCommitHorizontal, ListChecks, RefreshCw, Settings2 } from 'lucide-react'
+import { AnimatePresence, motion, stagger, useIsPresent, usePresenceData } from 'motion/react'
+import type { Variants } from 'motion/react'
+import { motionTokens } from './components/arc/motion-tokens'
+import { Popover, PopoverContent, PopoverTrigger } from './components/arc/popover/popover'
+import { GettingStarted, type SetupSection } from './GettingStarted'
+import type { useOnboarding } from './use-onboarding'
 import { localDate, shiftWeek, weekOf } from '../shared/model'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
@@ -21,6 +28,38 @@ import { EntryHistory } from './EntryHistory'
 import { useActivityRefresh } from './use-activity-refresh'
 import { useWeekHistory } from './use-week-history'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
+import { Skeleton } from './components/arc/skeleton/skeleton'
+
+const overviewReveal = (reduced: boolean, instant: boolean): Variants => ({
+    hidden: { opacity: 0, transform: reduced || instant ? 'none' : 'translateY(8px)' },
+    visible: {
+        opacity: 1,
+        transform: 'none',
+        transition: {
+            duration: instant ? 0 : reduced ? motionTokens.duration.fast : motionTokens.duration.standard,
+            ease: [...motionTokens.ease.enter]
+        }
+    }
+})
+
+function SetupPanel({ children, reduced }: { children: ReactNode; reduced: boolean }) {
+    const present = useIsPresent()
+    // Presence data reaches an exiting child after the dismissing render removes its props.
+    const instant = usePresenceData() === true
+    return (
+        <motion.div
+            className="hub-onboarding-panel"
+            inert={!present}
+            aria-hidden={!present || undefined}
+            initial={false}
+            animate={{ opacity: 1, transform: 'none' }}
+            exit={{ opacity: 0, transform: reduced || instant ? 'none' : 'translateY(-4px)' }}
+            transition={{ duration: instant ? 0 : motionTokens.duration.instant, ease: [...motionTokens.ease.enter] }}
+        >
+            {children}
+        </motion.div>
+    )
+}
 
 const dateValue = (value: string) => new Date(`${value}T12:00:00`)
 const dateKey = (date: Date) =>
@@ -37,9 +76,64 @@ interface Props {
     onSources: () => void
     onSettings: () => void
     onActivity: (activity: Activity) => void
+    onboarding: ReturnType<typeof useOnboarding>
+    onSetup: (section: SetupSection) => void
+    settingsOpen: boolean
 }
 
-export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, onActivity, initialWeek }: Props) {
+export function WeeklyHub({
+    state,
+    run,
+    error,
+    onWrite,
+    onSettings,
+    onSources,
+    onActivity,
+    initialWeek,
+    onboarding,
+    onSetup,
+    settingsOpen
+}: Props) {
+    const [setupOpen, setSetupOpen] = useState(false)
+    const [reduced, setReduced] = useState(false)
+    useEffect(() => {
+        const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
+        const sync = () => setReduced(preference.matches)
+        sync()
+        preference.addEventListener('change', sync)
+        return () => preference.removeEventListener('change', sync)
+    }, [])
+    const [retainSetup, setRetainSetup] = useState(false)
+    const hasShownSetup = useRef(false)
+    const skipReveal = useRef(false)
+    const showSetup = onboarding.visibility === 'active' || retainSetup
+    useEffect(() => {
+        if (onboarding.visibility === 'active') {
+            hasShownSetup.current = true
+            setRetainSetup(true)
+        } else if (!settingsOpen) setRetainSetup(false)
+    }, [onboarding.visibility, settingsOpen])
+    const animateReveal = hasShownSetup.current && !skipReveal.current
+    const setupTrigger = useRef<HTMLButtonElement>(null)
+    const openingSettings = useRef(false)
+    const dismissSetup = (event: MouseEvent<HTMLButtonElement>) => {
+        skipReveal.current = event.detail === 0
+        setRetainSetup(false)
+        onboarding.dismiss()
+        setSetupOpen(false)
+        requestAnimationFrame(() => setupTrigger.current?.focus())
+    }
+    const setup = (dismissible = false) => (
+        <GettingStarted
+            completed={onboarding.completed}
+            onSettings={(section) => {
+                openingSettings.current = true
+                setSetupOpen(false)
+                onSetup(section)
+            }}
+            onDismiss={dismissible ? dismissSetup : undefined}
+        />
+    )
     const currentWeek = weekOf(new Date(), state.settings)
     const [start, setStart] = useState(initialWeek || currentWeek)
     const end = offsetDay(start, 6)
@@ -194,6 +288,39 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                         />
                     </div>
                     <div className="hub-utilities">
+                        {onboarding.visibility === 'dismissed' && (
+                            <Popover
+                                open={setupOpen}
+                                onOpenChange={(open) => {
+                                    openingSettings.current = false
+                                    setSetupOpen(open)
+                                }}
+                            >
+                                <PopoverTrigger asChild>
+                                    <Button ref={setupTrigger} variant="ghost" size="sm" className="hub-setup-trigger">
+                                        <ListChecks size={17} aria-hidden="true" />
+                                        Continue setup
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent
+                                    align="end"
+                                    className="hub-setup-popover"
+                                    aria-label="Journal setup"
+                                    onCloseAutoFocus={(event) => {
+                                        if (openingSettings.current) event.preventDefault()
+                                    }}
+                                >
+                                    <ScrollArea
+                                        label="Journal setup checklist"
+                                        maxHeight="min(var(--radix-popover-content-available-height), calc(100dvh - 24px))"
+                                        scrollbars="always"
+                                        fade={12}
+                                    >
+                                        {setup()}
+                                    </ScrollArea>
+                                </PopoverContent>
+                            </Popover>
+                        )}
                         <Tooltip content="Open journal" side="bottom">
                             <Button variant="ghost" size="sm" onClick={() => onWrite(start)} aria-label="Open journal">
                                 <BookOpen size={17} aria-hidden="true" />
@@ -257,84 +384,141 @@ export function WeeklyHub({ state, run, error, onWrite, onSettings, onSources, o
                         </div>
                     </header>
 
-                    <>
-                        <div className="hub-thread-summary">
-                            {stats}
-                            {chart}
-                        </div>
-                        <div className="hub-thread-layout">
-                            <section id="hub-activity" className="hub-timeline">
-                                <div className="hub-section-heading">
-                                    <h2>Activity this week</h2>
+                    <div className="hub-onboarding-stage">
+                        <AnimatePresence initial={false} custom={skipReveal.current}>
+                            {!onboarding.visibility ? (
+                                <div key="loading">
+                                    <Skeleton label="Loading journal setup" lines={3} />
                                 </div>
-                                {filters}
-                                {visible.length ? (
-                                    <ActivityHover>
-                                        {[
-                                            ...new Set(
-                                                visible.map((item) =>
-                                                    localDate(new Date(item.date), state.settings.timezone)
+                            ) : showSetup ? (
+                                <SetupPanel key="setup" reduced={!!reduced}>
+                                    {setup(true)}
+                                </SetupPanel>
+                            ) : (
+                                <motion.div
+                                    key="overview"
+                                    className="hub-overview-panel"
+                                    initial={animateReveal ? 'hidden' : false}
+                                    animate="visible"
+                                    variants={{
+                                        visible: {
+                                            transition: {
+                                                delayChildren: stagger(
+                                                    reduced || !animateReveal ? 0 : motionTokens.stagger.item,
+                                                    {
+                                                        startDelay: animateReveal ? motionTokens.duration.instant : 0
+                                                    }
                                                 )
-                                            )
-                                        ].map((day) => (
-                                            <section className="hub-day" key={day}>
-                                                <div className="hub-day-date">
-                                                    <strong>{formatDate(day, { weekday: 'long' })}</strong>
-                                                    <span>{formatDate(day)}</span>
+                                            }
+                                        }
+                                    }}
+                                >
+                                    <motion.div
+                                        className="hub-thread-summary"
+                                        data-overview-region="stats"
+                                        variants={overviewReveal(!!reduced, !animateReveal)}
+                                    >
+                                        <div className="hub-summary-content">
+                                            {stats}
+                                            {chart}
+                                        </div>
+                                    </motion.div>
+                                    <motion.div
+                                        data-overview-region="activity"
+                                        variants={overviewReveal(!!reduced, !animateReveal)}
+                                    >
+                                        <div className="hub-thread-layout">
+                                            <section id="hub-activity" className="hub-timeline">
+                                                <div className="hub-section-heading">
+                                                    <h2>Activity this week</h2>
                                                 </div>
-                                                <div className="hub-day-work activity-row-list">
-                                                    {visible
-                                                        .filter(
-                                                            (item) =>
-                                                                localDate(
-                                                                    new Date(item.date),
-                                                                    state.settings.timezone
-                                                                ) === day
-                                                        )
-                                                        .map(row)}
-                                                </div>
+                                                {filters}
+                                                {visible.length ? (
+                                                    <ActivityHover>
+                                                        {[
+                                                            ...new Set(
+                                                                visible.map((item) =>
+                                                                    localDate(
+                                                                        new Date(item.date),
+                                                                        state.settings.timezone
+                                                                    )
+                                                                )
+                                                            )
+                                                        ].map((day) => (
+                                                            <section className="hub-day" key={day}>
+                                                                <div className="hub-day-date">
+                                                                    <strong>
+                                                                        {formatDate(day, { weekday: 'long' })}
+                                                                    </strong>
+                                                                    <span>{formatDate(day)}</span>
+                                                                </div>
+                                                                <div className="hub-day-work activity-row-list">
+                                                                    {visible
+                                                                        .filter(
+                                                                            (item) =>
+                                                                                localDate(
+                                                                                    new Date(item.date),
+                                                                                    state.settings.timezone
+                                                                                ) === day
+                                                                        )
+                                                                        .map(row)}
+                                                                </div>
+                                                            </section>
+                                                        ))}
+                                                    </ActivityHover>
+                                                ) : (
+                                                    empty
+                                                )}
                                             </section>
-                                        ))}
-                                    </ActivityHover>
-                                ) : (
-                                    empty
-                                )}
-                            </section>
-                            <aside>
-                                <section className="hub-project-summary">
-                                    <h2>Activity by repository</h2>
-                                    {repos.length ? (
-                                        repos.map((repo) => (
-                                            <div className="hub-project-line" key={repo.id}>
-                                                <GitBranch size={15} aria-hidden="true" />
-                                                <span>{repo.name}</span>
-                                                <strong>
-                                                    {items.filter((item) => item.repositoryId === repo.id).length}
-                                                </strong>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <p>
-                                            {state.repositories.some((repo) => !repo.removed)
-                                                ? 'No repository activity loaded for this week.'
-                                                : 'Connect a repository to load its activity.'}
-                                        </p>
-                                    )}
-                                </section>
-                            </aside>
-                        </div>
-                    </>
-                    <footer className="hub-footer">
-                        <span>
-                            <Check size={13} aria-hidden="true" />
-                            {state.lastRefreshed
-                                ? `Updated ${new Date(state.lastRefreshed).toLocaleTimeString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
-                                : 'Your local journal'}
-                        </span>
-                    </footer>
+                                            <aside>
+                                                <section className="hub-project-summary">
+                                                    <h2>Activity by repository</h2>
+                                                    {repos.length ? (
+                                                        repos.map((repo) => (
+                                                            <div className="hub-project-line" key={repo.id}>
+                                                                <GitBranch size={15} aria-hidden="true" />
+                                                                <span>{repo.name}</span>
+                                                                <strong>
+                                                                    {
+                                                                        items.filter(
+                                                                            (item) => item.repositoryId === repo.id
+                                                                        ).length
+                                                                    }
+                                                                </strong>
+                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <p>
+                                                            {state.repositories.some((repo) => !repo.removed)
+                                                                ? 'No repository activity loaded for this week.'
+                                                                : 'Connect a repository to load its activity.'}
+                                                        </p>
+                                                    )}
+                                                </section>
+                                            </aside>
+                                        </div>
+
+                                        <footer className="hub-footer">
+                                            <span>
+                                                <Check size={13} aria-hidden="true" />
+                                                {state.lastRefreshed
+                                                    ? `Updated ${new Date(state.lastRefreshed).toLocaleTimeString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                                                    : 'Your local journal'}
+                                            </span>
+                                        </footer>
+                                    </motion.div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
                 </div>
                 <div className="hub-sr-only" role="status">
                     {visible.length} activities from {period}
+                </div>
+                <div className="hub-sr-only" role="status">
+                    {onboarding.visibility === 'complete' && !showSetup
+                        ? 'Setup complete. Your weekly stats are now available.'
+                        : ''}
                 </div>
                 <HubActivityDialog ref={detailDialog} state={state} onActivity={onActivity} />
             </main>

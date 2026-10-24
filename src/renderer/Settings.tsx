@@ -34,13 +34,15 @@ export function Settings({
     connections,
     remotes,
     run,
-    close
+    close,
+    initialSection = 'repositories'
 }: {
     state: State
     connections: Reply['connections']
     remotes: Record<string, string[]>
     run: (command: Command) => Promise<Reply | undefined>
     close: () => void
+    initialSection?: 'repositories' | 'connections'
 }) {
     const [settings, setSettings] = useState(state.settings)
     const [compact, setCompact] = useState(false)
@@ -63,7 +65,7 @@ export function Settings({
     const [error, setError] = useState('')
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState('')
-    const [section, setSection] = useState('repositories')
+    const [section, setSection] = useState<string>(initialSection)
     const [confirmClose, setConfirmClose] = useState(false)
     const [repositorySearch, setRepositorySearch] = useState('')
     const [importProgress, setImportProgress] = useState<RepositoryImportProgress>()
@@ -347,7 +349,12 @@ export function Settings({
                 }}
                 onCloseAutoFocus={(event) => {
                     event.preventDefault()
-                    if (previousFocus.current instanceof HTMLElement) previousFocus.current.focus()
+                    if (previousFocus.current instanceof HTMLElement && previousFocus.current.isConnected)
+                        previousFocus.current.focus()
+                    else
+                        document
+                            .querySelector<HTMLButtonElement>('.hub-setup-trigger, [aria-label="Open settings"]')
+                            ?.focus()
                 }}
             >
                 {importFlow ? (

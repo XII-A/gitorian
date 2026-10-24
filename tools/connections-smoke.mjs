@@ -1,3 +1,4 @@
+import { onboardingJourney } from './onboarding-journey.mjs'
 import { app, shell, clipboard, nativeTheme, ipcMain } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import fs from 'node:fs'
@@ -581,6 +582,18 @@ app.on('browser-window-created', (_, window) => {
                     { name: 'prefers-reduced-motion', value: stressMotion ? 'reduce' : 'no-preference' }
                 ]
             })
+            if (process.env.WEEKLY_J_VERIFY_ONBOARDING === '1') {
+                attempt = 4
+                authorize = true
+                notionAllowed = true
+                notionStarts = 1
+                failPageSearch = false
+                failPageSelection = false
+                await onboardingJourney({ window, directory, output, js, wait, assert, click, approveNotion, record })
+                writeFileSync(join(output, 'http-requests.json'), JSON.stringify(requests, null, 2))
+                app.exit(0)
+                return
+            }
             await openConnections()
             if (!notionOnly) {
                 await assert(
