@@ -17,6 +17,17 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         await wait(`!!document.querySelector('section[data-controlled]')`)
     }
     const pause = (ms) => new Promise((done) => setTimeout(done, ms))
+    const headerGeometry = []
+    const checkHeaderShape = async (stage) => {
+        const geometry =
+            await js(`(() => ({width:innerWidth,buttons:Array.from(document.querySelectorAll('.hub-utilities button:not(.hub-setup-trigger)')).map(node=>{
+            const r=node.getBoundingClientRect();return {name:node.getAttribute('aria-label'),width:r.width,height:r.height};
+        })}))()`)
+        headerGeometry.push({ stage, ...geometry })
+        writeFileSync(join(output, 'header-geometry.json'), JSON.stringify(headerGeometry, null, 2))
+        if (!geometry.buttons.length || geometry.buttons.some((button) => Math.abs(button.width - button.height) > 0.5))
+            throw new Error(`Header icon buttons are not square: ${JSON.stringify({ stage, ...geometry })}`)
+    }
     const startRevealTrace = async () => {
         await js(`(() => {
             const frames=[]; const started=performance.now();
@@ -135,6 +146,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         return preview?.textContent.includes('Your commits, pull requests, and reviews will appear here.') && illustration && !preview.querySelector('button,a,input,[tabindex], [aria-busy="true"]') && illustration.getAnimations({subtree:true}).length===0;
     })()`)
     await shot('01-first-launch')
+    await checkHeaderShape('first-launch')
     const originalHeight = await js(`${setupCard}.getBoundingClientRect().height`)
     await click('Hide checklist')
     await wait(`${setupCard}.dataset.hidden==='true' && ${setupCard}.querySelector('[inert]') !== null`)
@@ -317,6 +329,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         await finishRevealTrace('dismiss')
         await wait(`!!document.querySelector('.hub-stats') && !!document.querySelector('.hub-setup-trigger')`)
         await shot('04-dismissed')
+        await checkHeaderShape('continue-setup')
         await reload()
         await assert(`!${setupCard} && !!document.querySelector('.hub-setup-trigger')`)
         await click('Continue setup')
@@ -330,7 +343,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         await assert(`!document.querySelector('.hub-activity-preview')`)
         await shot('05-resume-popover')
         await assert(
-            `(() => {const nodes=Array.from(document.querySelectorAll('.hub-utilities > button')); const trigger=document.querySelector('.hub-setup-trigger').getBoundingClientRect(); return nodes.filter(n=>!n.classList.contains('hub-setup-trigger')).every(n=>n.getBoundingClientRect().left >= trigger.right - 1)})()`
+            `(() => {const nodes=Array.from(document.querySelectorAll('.hub-utility-icons button')); const trigger=document.querySelector('.hub-setup-trigger').getBoundingClientRect(); return nodes.length===4 && nodes.every(n=>n.getBoundingClientRect().left >= trigger.right - 1)})()`
         )
         window.setContentSize(320, 900)
         await pause(200)
@@ -338,6 +351,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
             `(() => {const r=document.querySelector('.hub-setup-popover').getBoundingClientRect(); return r.left>=0 && r.right<=innerWidth+1})()`
         )
         await shot('05b-narrow-popover')
+        await checkHeaderShape('narrow-continue-setup')
         window.setContentSize(1280, 900)
         await pause(200)
         window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })

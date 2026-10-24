@@ -322,41 +322,48 @@ export function WeeklyHub({
                                 </PopoverContent>
                             </Popover>
                         )}
-                        <Tooltip content="Open journal" side="bottom">
-                            <Button variant="ghost" size="sm" onClick={() => onWrite(start)} aria-label="Open journal">
-                                <BookOpen size={17} aria-hidden="true" />
-                            </Button>
-                        </Tooltip>
-                        <EntryHistory state={state} onWrite={(week) => onWrite(week || currentWeek)} />
-                        <Tooltip content="Refresh activity" side="bottom">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                loading={busy || loadingWeek}
-                                onClick={() => void refresh()}
-                                aria-label="Refresh activity"
-                            >
-                                <RefreshCw size={16} aria-hidden="true" />
-                            </Button>
-                        </Tooltip>
-                        {sourceProblems(state).length > 0 && (
-                            <Tooltip content="Activity sources" side="bottom">
+                        <div className="hub-utility-icons">
+                            <Tooltip content="Open journal" side="bottom">
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    data-source-status
-                                    onClick={onSources}
-                                    aria-label="Activity sources"
+                                    onClick={() => onWrite(start)}
+                                    aria-label="Open journal"
                                 >
-                                    <StackIcon size={18} weight="bold" aria-hidden="true" />
+                                    <BookOpen size={17} aria-hidden="true" />
                                 </Button>
                             </Tooltip>
-                        )}
-                        <Tooltip content="Open settings" side="bottom">
-                            <Button variant="ghost" size="sm" onClick={onSettings} aria-label="Open settings">
-                                <Settings2 size={17} aria-hidden="true" />
-                            </Button>
-                        </Tooltip>
+                            <EntryHistory state={state} onWrite={(week) => onWrite(week || currentWeek)} />
+                            <Tooltip content="Refresh activity" side="bottom">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    loading={busy || loadingWeek}
+                                    onClick={() => void refresh()}
+                                    aria-label="Refresh activity"
+                                >
+                                    <RefreshCw size={16} aria-hidden="true" />
+                                </Button>
+                            </Tooltip>
+                            {sourceProblems(state).length > 0 && (
+                                <Tooltip content="Activity sources" side="bottom">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        data-source-status
+                                        onClick={onSources}
+                                        aria-label="Activity sources"
+                                    >
+                                        <StackIcon size={18} weight="bold" aria-hidden="true" />
+                                    </Button>
+                                </Tooltip>
+                            )}
+                            <Tooltip content="Open settings" side="bottom">
+                                <Button variant="ghost" size="sm" onClick={onSettings} aria-label="Open settings">
+                                    <Settings2 size={17} aria-hidden="true" />
+                                </Button>
+                            </Tooltip>
+                        </div>
                     </div>
                 </nav>
                 <div className="hub-content" id="hub-content">

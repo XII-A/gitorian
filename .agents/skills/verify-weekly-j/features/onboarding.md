@@ -21,6 +21,8 @@ Require `run.json` with zero exit, `passed: true`, `cleanup.removed: true`, and 
 
 Layout captures cover real 320, 390, 768, 1024 and 1440px viewports in both themes, reduced motion, 200% zoom, and the narrow popover. Windows scaling may round 390px to 391px; fail if the renderer differs by more than 2px. The preview fits every viewport, omits its decorative sidebar at narrow widths and stays visible when the checklist body collapses. It is absent from the header popover and is removed on dismissal/completion. Wide active steps must place their action to the right of their copy; narrow cards must stack the action below the description. Header measurements must prove a separate 32px dismissal target. Rendered checklist text/background pairs must meet 4.5:1 in both themes.
 
+`header-geometry.json` measures icon button width and height on first launch, after Continue setup appears, and in the 320px resumed popover. The default journey requires square icon controls within 0.5px at each entry point; the taller text trigger must not stretch its siblings. The inline variant checks the initial header only.
+
 For a dirty revision, apply `source.patch`, copy `source-files/` onto the checkout, restore `onboarding-smoke.mjs` to `tools/connections-smoke.mjs`, `onboarding-journey.mjs` to `tools/`, and `verify-runner.mjs` to `tools/verify.mjs`. Then install, build, and repeat the recorded command. Evidence stays under `.ai-docs/verification/onboarding-*` after scratch cleanup.
 
 

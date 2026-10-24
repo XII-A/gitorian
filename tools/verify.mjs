@@ -240,6 +240,7 @@ if (mode === 'doctor') {
                         '01c-collapsed.png',
                         '01e-dismiss-tooltip.png',
                         'header-actions.json',
+                        'header-geometry.json',
                         process.env.WEEKLY_J_VERIFY_ONBOARDING_INLINE === '1'
                             ? 'completion-motion.json'
                             : 'dismiss-motion.json',
