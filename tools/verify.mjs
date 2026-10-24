@@ -144,7 +144,14 @@ if (mode === 'doctor') {
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
         report.evidenceRetained = (
             mode === 'window-chrome'
-                ? ['actions.jsonl', '01-frame-hidden.png', '02-controls-revealed.png', '03-reduced-motion.png']
+                ? [
+                      'actions.jsonl',
+                      '01-frame-hidden.png',
+                      '02-controls-revealed.png',
+                      '03-reduced-motion.png',
+                      '04-reference-header-dark.png',
+                      '04-reference-header-light.png'
+                  ]
                 : [
                       'doctor.json',
                       'actions.jsonl',

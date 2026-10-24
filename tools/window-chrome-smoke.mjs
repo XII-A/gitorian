@@ -277,12 +277,42 @@ app.on('browser-window-created', (_, window) => {
             await move(300, 200)
             await pause(650)
             await expectBar(false, 'Reduced motion hide failed')
-            await evaluate(`window.journal.invoke({ type: 'popout', kind: 'activity', id: 'smoke' })`)
+            await evaluate(`window.journal.invoke({ type: 'popout', kind: 'activity', id: 'sample:2026-10-12:0' })`)
             const { BrowserWindow } = await import('electron')
             const popout = BrowserWindow.getAllWindows().find((item) => item !== window)
             assert.ok(popout, 'Reference window did not open')
             for (let attempt = 0; attempt < 50 && popout.webContents.isLoading(); attempt++) await pause(100)
             assert.equal(popout.isMenuBarVisible(), false, 'Pop-out menu is visible')
+            for (let attempt = 0; attempt < 50; attempt++) {
+                if (
+                    await popout.webContents.executeJavaScript(
+                        `!!document.querySelector('.ws-reference .ws-inspector-header')`
+                    )
+                )
+                    break
+                await pause(100)
+            }
+            popout.webContents.debugger.attach('1.3')
+            for (const theme of ['dark', 'light']) {
+                record(`Inspect detached activity header contrast in ${theme} theme`)
+                await popout.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+                    features: [{ name: 'prefers-color-scheme', value: theme }]
+                })
+                await pause(200)
+                assert.ok(
+                    await popout.webContents.executeJavaScript(`(() => {
+                    const header = document.querySelector('.ws-reference .ws-inspector-header')
+                    const frame = document.querySelector('.window-frame-cap')
+                    return header && frame && getComputedStyle(header).backgroundColor !== getComputedStyle(frame).backgroundColor
+                })()`),
+                    `Detached header blends into the frame in ${theme} theme`
+                )
+                if (output)
+                    writeFileSync(
+                        join(output, `04-reference-header-${theme}.png`),
+                        (await popout.webContents.capturePage()).toPNG()
+                    )
+            }
             await popout.webContents.executeJavaScript(`window.journal.windowControls.action('close')`)
             await pause(100)
             assert.ok(popout.isDestroyed(), 'Close affected the wrong window')
