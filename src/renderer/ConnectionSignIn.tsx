@@ -118,7 +118,7 @@ export function ConnectionSignIn({
                 phase === 'selection'
                     ? '[data-face="confirming"]:not([inert]) [role="combobox"]'
                     : phase === 'device'
-                      ? '[data-face="confirming"]:not([role="group"]):not([inert]) [data-copy-state]'
+                      ? `[data-face="confirming"]:not([role="group"]):not([inert]) ${device?.code ? '[data-copy-state]' : '[aria-label^="Open "]'}`
                       : phase === 'error' || phase === 'expired'
                         ? '[data-face="error"]:not([role="group"]):not([inert]) [data-autofocus]'
                         : changed && (phase === 'idle' || phase === 'connected')
@@ -127,7 +127,7 @@ export function ConnectionSignIn({
             if (selector) control.current?.querySelector<HTMLButtonElement>(selector)?.focus({ preventScroll: true })
         }, 0)
         return () => clearTimeout(frame)
-    }, [phase])
+    }, [phase, device?.code])
 
     return (
         <div className="github-signin-track">
@@ -185,13 +185,15 @@ export function ConnectionSignIn({
                                             Approve<span className="github-device-label"> in {provider}</span>
                                         </span>
                                     )}
-                                    <CopyButton
-                                        value={device.code ?? device.url}
-                                        label={device.code ? 'Copy code' : 'Copy connection link'}
-                                        iconOnly
-                                        variant="plain"
-                                        className="github-signin-copy"
-                                    />
+                                    {device.code && (
+                                        <CopyButton
+                                            value={device.code}
+                                            label="Copy code"
+                                            iconOnly
+                                            variant="plain"
+                                            className="github-signin-copy"
+                                        />
+                                    )}
                                 </span>
                                 <Button size="sm" className="github-device-action" variant="ghost" onClick={cancel}>
                                     Cancel
@@ -207,7 +209,7 @@ export function ConnectionSignIn({
                                         notice
                                             ? provider === 'GitHub'
                                                 ? 'Browser unavailable. Visit github.com/login/device to enter the code.'
-                                                : 'Browser unavailable. Copy the connection link or try again.'
+                                                : 'Browser unavailable. Try opening Notion again.'
                                             : undefined
                                     }
                                 >

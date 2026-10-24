@@ -362,7 +362,7 @@ void app.whenReady().then(() => {
                 } catch {
                     return service.reply({
                         notionAuthorization,
-                        message: 'Could not open your browser. Copy the connection link or try Open Notion.'
+                        message: 'Could not open your browser. Try Open Notion again.'
                     })
                 }
                 return service.reply({ notionAuthorization })
@@ -426,7 +426,7 @@ void app.whenReady().then(() => {
                 try {
                     await openExternal(notionAuthorization.url)
                 } catch {
-                    /* The morph retains the browser link. */
+                    /* The morph keeps Open Notion available. */
                 }
                 return service.reply({ notionAuthorization })
             }

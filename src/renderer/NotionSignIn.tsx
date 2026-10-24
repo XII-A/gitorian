@@ -355,7 +355,7 @@ export function NotionSignIn({
                             if (attempt.current === generation) setNotice('')
                         } catch {
                             if (attempt.current === generation)
-                                setNotice('Copy the connection link or try opening Notion again.')
+                                setNotice('Could not open your browser. Try Open Notion again.')
                         } finally {
                             if (attempt.current === generation) setOpening(false)
                         }

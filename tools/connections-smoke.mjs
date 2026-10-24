@@ -797,6 +797,10 @@ app.on('browser-window-created', (_, window) => {
             await click('Retry', notionScope)
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='device'`)
             await shot('notion-browser-recovery', 350, 'notion')
+            await assert(
+                `!${notionScope}.querySelector('[data-copy-state]') && !${notionScope}.textContent.includes('Copy the connection link')`
+            )
+            await assert(`document.activeElement?.getAttribute('aria-label') === 'Open Notion'`)
             await assertActionsFit('Notion')
             await click('Cancel', notionScope)
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='idle'`)
