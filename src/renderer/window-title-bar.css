@@ -1,4 +1,66 @@
-/* Caption controls use square native-window geometry rather than in-app buttons. */
+/* A quiet native-window frame, kept outside the scrolling application. */
+body:has(.window-chrome) {
+    --window-frame-background: var(--surface-muted);
+    background: var(--window-frame-background);
+}
+/* Detached references keep their inspector colors; only their chrome changes. */
+body:has(.window-chrome):has(.ws-reference .ws-inspector-header) {
+    --window-frame-background: var(--surface);
+}
+#root:has(.window-chrome),
+#root:has(.window-chrome):has(> .writing-workspace) {
+    --window-content-height: calc(100dvh - 12px);
+    margin: 6px;
+    height: var(--window-content-height);
+    overflow: clip;
+    border-radius: var(--radius-inset);
+    background: var(--window-frame-background);
+}
+#root:has(.window-chrome) > :is(.hub-scroll, .app, .loading, .reference, .ws-reference) {
+    height: var(--window-content-height);
+}
+/* Only this small mask moves; the page keeps its static rounded clip.
+   The circular cutouts continue the content corners below the growing frame. */
+.window-frame-cap {
+    position: fixed;
+    inset: 6px 6px auto;
+    height: 32px;
+    background: var(--window-frame-background);
+    transform: translateY(-32px);
+    transition: transform var(--duration-fast) var(--ease-standard);
+    pointer-events: none;
+}
+.window-frame-cap::before,
+.window-frame-cap::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    width: var(--radius-inset);
+    height: var(--radius-inset);
+}
+.window-frame-cap::before {
+    left: 0;
+    background: radial-gradient(
+        circle at bottom right,
+        transparent calc(var(--radius-inset) - 0.5px),
+        var(--window-frame-background) var(--radius-inset)
+    );
+}
+.window-frame-cap::after {
+    right: 0;
+    background: radial-gradient(
+        circle at bottom left,
+        transparent calc(var(--radius-inset) - 0.5px),
+        var(--window-frame-background) var(--radius-inset)
+    );
+}
+.window-chrome[data-revealed='true'] .window-frame-cap {
+    transform: translateY(0);
+}
+.window-chrome[data-keyboard='true'] .window-frame-cap {
+    transition: none;
+}
+/* Caption controls live in the same surface as the surrounding frame. */
 .window-chrome {
     position: fixed;
     inset: 0 0 auto;
@@ -8,17 +70,20 @@
 }
 .window-title-bar {
     display: flex;
-    height: 44px;
-    background: var(--surface);
+    height: 38px;
+    background: transparent;
     color: var(--foreground);
-    border-bottom: 1px solid var(--border);
     transform: translateY(-100%);
-    transition: transform var(--duration-fast) var(--ease-standard);
+    opacity: 0;
+    transition:
+        transform var(--duration-fast) var(--ease-standard),
+        opacity var(--duration-fast) var(--ease-standard);
     pointer-events: none;
     user-select: none;
 }
 .window-chrome[data-revealed='true'] .window-title-bar {
     transform: translateY(0);
+    opacity: 1;
     pointer-events: auto;
 }
 .window-title-bar-drag {
@@ -47,15 +112,24 @@
     color: inherit;
     -webkit-app-region: no-drag;
 }
-.window-title-bar button:hover {
-    background: var(--surface-muted);
+@media (hover: hover) and (pointer: fine) {
+    .window-title-bar button:hover {
+        background: var(--border);
+    }
+    .window-title-bar .window-title-bar-close:hover {
+        background: var(--danger);
+        color: var(--background);
+    }
 }
-.window-title-bar .window-title-bar-close:hover {
-    background: var(--danger);
-    color: var(--background);
+.window-chrome[data-keyboard='true'] .window-title-bar {
+    transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
-    .window-title-bar {
+    .window-frame-cap {
         transition: none;
+    }
+    .window-title-bar {
+        transform: none;
+        transition: opacity var(--duration-fast) var(--ease-standard) !important;
     }
 }

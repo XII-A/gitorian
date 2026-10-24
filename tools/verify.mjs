@@ -13,11 +13,13 @@ const electron = require('electron')
 const mode = process.argv[2]
 const runner = mode === 'inspector-tabs' ? 'desktop' : mode
 if (
-    !['doctor', 'repository-import', 'connections', 'inspector-tabs', 'line-statistics'].includes(mode) ||
+    !['doctor', 'repository-import', 'connections', 'inspector-tabs', 'line-statistics', 'window-chrome'].includes(
+        mode
+    ) ||
     process.argv.length !== 3
 ) {
     console.error(
-        'Usage: pnpm verify doctor | pnpm verify repository-import | pnpm verify connections | inspector-tabs | line-statistics (run pnpm build first)'
+        'Usage: pnpm verify doctor | pnpm verify repository-import | pnpm verify connections | inspector-tabs | line-statistics | window-chrome (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -193,48 +195,57 @@ if (mode === 'doctor') {
         }
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
         report.evidenceRetained = (
-            mode === 'line-statistics'
+            mode === 'window-chrome'
                 ? [
-                      'doctor.json',
                       'actions.jsonl',
-                      'hub-commit-breakdown.png',
-                      'hub-pr-breakdown.png',
-                      'workspace-details.png',
-                      'selected-file-diff.png',
-                      'persisted-activities.json',
-                      'journey.json'
+                      '01-frame-hidden.png',
+                      '02-controls-revealed.png',
+                      '03-reduced-motion.png',
+                      '04-reference-frame-dark.png',
+                      '04-reference-frame-light.png'
                   ]
-                : mode === 'inspector-tabs'
+                : mode === 'line-statistics'
                   ? [
                         'doctor.json',
-                        'actions.json',
-                        'docked-dark-details.png',
-                        'reference-dark-details.png',
-                        'reference-light-related.png',
+                        'actions.jsonl',
+                        'hub-commit-breakdown.png',
+                        'hub-pr-breakdown.png',
+                        'workspace-details.png',
+                        'selected-file-diff.png',
+                        'persisted-activities.json',
                         'journey.json'
                     ]
-                  : mode === 'connections'
+                  : mode === 'inspector-tabs'
                     ? [
                           'doctor.json',
-                          'actions.jsonl',
-                          '01-idle.png',
-                          '05-narrow-dark-code.png',
-                          '08-disconnected.png',
-                          'http-requests.json',
-                          'persisted-settings.json',
-                          'notion-04-failed.png',
-                          'notion-07-connected.png',
-                          'notion-09-disconnected.png',
-                          'captures.json'
+                          'actions.json',
+                          'docked-dark-details.png',
+                          'reference-dark-details.png',
+                          'reference-light-related.png',
+                          'journey.json'
                       ]
-                    : [
-                          'doctor.json',
-                          'actions.jsonl',
-                          '01-choose-folder.png',
-                          '08-complete.png',
-                          '10-error-details.png',
-                          'persisted-repositories.json'
-                      ]
+                    : mode === 'connections'
+                      ? [
+                            'doctor.json',
+                            'actions.jsonl',
+                            '01-idle.png',
+                            '05-narrow-dark-code.png',
+                            '08-disconnected.png',
+                            'http-requests.json',
+                            'persisted-settings.json',
+                            'notion-04-failed.png',
+                            'notion-07-connected.png',
+                            'notion-09-disconnected.png',
+                            'captures.json'
+                        ]
+                      : [
+                            'doctor.json',
+                            'actions.jsonl',
+                            '01-choose-folder.png',
+                            '08-complete.png',
+                            '10-error-details.png',
+                            'persisted-repositories.json'
+                        ]
         ).every((file) => existsSync(join(output, file)))
         report.passed &&= report.cleanup.removed && report.evidenceRetained
         report.finishedAt = new Date().toISOString()
