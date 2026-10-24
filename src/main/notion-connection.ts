@@ -166,7 +166,7 @@ export class NotionConnection {
                 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'"
             })
             outgoing.end(
-                '<!doctype html><html lang="en"><meta charset="utf-8"><title>weekly-j</title><p>Return to weekly-j to finish connecting Notion.</p></html>'
+                '<!doctype html><html lang="en"><meta charset="utf-8"><title>Gitorian</title><p>Return to Gitorian to finish connecting Notion.</p></html>'
             )
             server.close()
         })

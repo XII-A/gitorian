@@ -20,7 +20,7 @@ const gitAt =
 
 async function removeFixture(directory: string) {
     const target = resolve(directory)
-    if (dirname(target) !== resolve(tmpdir()) || !target.startsWith(resolve(tmpdir()) + sep + 'weekly-j-'))
+    if (dirname(target) !== resolve(tmpdir()) || !target.startsWith(resolve(tmpdir()) + sep + 'gitorian-'))
         throw new Error(`Unexpected fixture directory: ${target}`)
     await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 }
@@ -28,7 +28,7 @@ async function removeFixture(directory: string) {
 let gitTemplate: Promise<string> | undefined
 let templateDirectory: string | undefined
 async function createGitTemplate() {
-    templateDirectory = await mkdtemp(join(tmpdir(), 'weekly-j-git-template-'))
+    templateDirectory = await mkdtemp(join(tmpdir(), 'gitorian-git-template-'))
     const git = gitAt(templateDirectory)
     await git('init', '-b', 'development')
     await git('config', 'user.name', 'Journal author')
@@ -46,7 +46,7 @@ afterAll(async () => {
 export const patch =
     'diff --git a/a.ts b/a.ts\nindex 1111111..2222222 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n'
 export async function journal() {
-    const directory = await mkdtemp(join(tmpdir(), 'weekly-j-test-'))
+    const directory = await mkdtemp(join(tmpdir(), 'gitorian-test-'))
     const store = new Store(join(directory, 'tracking.sqlite'))
     const remote = transport()
     const http = new Http(remote.fetch)

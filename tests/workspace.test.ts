@@ -42,7 +42,7 @@ describe('weekly activity and sample references', () => {
     })
     it('generates a commit citation only from a web GitHub remote and preserves explicit PR links', () => {
         expect(activityLink(state.activities[0], state)).toBe(
-            'https://github.com/weekly-j-example/mobile-app/commit/a3f9c218912ab0'
+            'https://github.com/gitorian-example/mobile-app/commit/a3f9c218912ab0'
         )
         expect(activityLink(state.activities[1], state)).toBe(state.activities[1].url)
         const local = structuredClone(state)

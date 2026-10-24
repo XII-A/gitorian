@@ -66,7 +66,7 @@ jobs:
               run: |
                   $ErrorActionPreference = 'Stop'
                   $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-                  $name = "weekly-j-$version-windows-x64-setup.exe"
+                  $name = "gitorian-$version-windows-x64-setup.exe"
                   $source = Join-Path release $name
                   if (-not (Test-Path -LiteralPath $source)) { throw "Installer missing: $name" }
                   New-Item -ItemType Directory -Path release-assets | Out-Null
@@ -112,5 +112,5 @@ jobs:
                     exit 1
                   fi
                   gh release create "$RELEASE_TAG" release-assets/* \
-                    --verify-tag --draft --title "weekly-j $RELEASE_TAG" \
+                    --verify-tag --draft --title "Gitorian $RELEASE_TAG" \
                     --notes-file .github/release-notes.md

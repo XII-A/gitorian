@@ -28,7 +28,7 @@ const finish = (code) => {
     // handlers have closed the store, and diagnostics should return their recorded status.
     app.exit(code)
 }
-const directory = mkdtempSync(join(tmpdir(), 'weekly-j-writing-profile-'))
+const directory = mkdtempSync(join(tmpdir(), 'gitorian-writing-profile-'))
 app.setPath('userData', directory)
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 const fixture = JSON.parse(readFileSync('.ai-docs/workspace-writing-profile-fixture.json', 'utf8'))
@@ -37,7 +37,7 @@ fixture.repositories.forEach((repo) => {
     repo.path = ''
     repo.remote = ''
 })
-const db = new DatabaseSync(join(directory, 'weekly-j.sqlite'))
+const db = new DatabaseSync(join(directory, 'gitorian.sqlite'))
 db.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)')
 db.prepare('INSERT INTO state VALUES(1, ?)').run(JSON.stringify(fixture))
 db.close()

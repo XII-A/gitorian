@@ -751,7 +751,7 @@ export class JournalService {
             id: randomUUID(),
             draftId,
             status: 'pending',
-            marker: `weekly-j-operation:${randomUUID()}`,
+            marker: `gitorian-operation:${randomUUID()}`,
             title: draft.title,
             body: structuredClone(draft.body),
             selections: structuredClone(draft.selections),

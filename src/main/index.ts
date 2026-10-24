@@ -22,7 +22,7 @@ import { inspectRepository } from './git'
 import { watchWindowTitleBar } from './window-title-bar'
 import { imageLimits, imageIdPattern, imageExtension } from '../shared/images'
 
-if (!app.isPackaged && process.env.WEEKLY_J_DEV_PROFILE) app.setPath('userData', process.env.WEEKLY_J_DEV_PROFILE)
+if (!app.isPackaged && process.env.GITORIAN_DEV_PROFILE) app.setPath('userData', process.env.GITORIAN_DEV_PROFILE)
 
 // Chromium 152 hides the thread's native cursor, including inside file dialogs.
 // Remove after Electron includes chromium/chromium@a2be9eeac1d506dae63b2994cd605d83bb7622ea.
@@ -61,7 +61,7 @@ function track<T>(promise: Promise<T>): Promise<T> {
 }
 function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
     const window = new BrowserWindow({
-        title: 'weekly-j',
+        title: 'Gitorian',
         width: reference ? 1400 : 1560,
         height: 1000,
         minWidth: reference ? 600 : 1000,
@@ -135,7 +135,7 @@ void app.whenReady().then(() => {
         }
         return { maximized: window.isMaximized() }
     })
-    store = new Store(join(app.getPath('userData'), 'weekly-j.sqlite'))
+    store = new Store(join(app.getPath('userData'), 'gitorian.sqlite'))
     store.enableBackgroundWrites()
     ipcMain.handle('journal:image-save', async (event, input: unknown) => {
         const window = BrowserWindow.fromWebContents(event.sender)
@@ -231,7 +231,7 @@ void app.whenReady().then(() => {
     )
     notionConnection = new NotionConnection(
         vault,
-        (!app.isPackaged && process.env.WEEKLY_J_NOTION_OAUTH_ORIGIN) ||
+        (!app.isPackaged && process.env.GITORIAN_NOTION_OAUTH_ORIGIN) ||
             import.meta.env.MAIN_VITE_NOTION_OAUTH_ORIGIN ||
             '',
         fetch,
@@ -539,7 +539,7 @@ void app.whenReady().then(() => {
                 break
             case 'export': {
                 const result = await dialog.showSaveDialog(mainWindow, {
-                    defaultPath: 'weekly-j-backup.json',
+                    defaultPath: 'gitorian-backup.json',
                     filters: [{ name: 'Tracking backup', extensions: ['json'] }]
                 })
                 if (result.filePath) {

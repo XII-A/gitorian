@@ -11,8 +11,8 @@ import { syncBuiltinESMExports } from 'node:module'
 
 // Uses the real Electron renderer, IPC, repository discovery and Git inspection.
 // The native picker is automated against an isolated fixture folder.
-const managed = process.env.WEEKLY_J_VERIFY_STATE
-const directory = managed ? resolve(managed) : mkdtempSync(join(tmpdir(), 'weekly-j-import-'))
+const managed = process.env.GITORIAN_VERIFY_STATE
+const directory = managed ? resolve(managed) : mkdtempSync(join(tmpdir(), 'gitorian-import-'))
 app.setPath('userData', join(directory, 'profile'))
 // Verify dark-only startup even when the platform requests light colors.
 nativeTheme.themeSource = 'light'
@@ -25,7 +25,7 @@ for (const name of names) {
 }
 // Real directories make discovery long enough to capture its transient state.
 for (let i = 0; i < 300; i++) mkdirSync(join(folder, 'scan-fixture', String(i)), { recursive: true })
-const output = resolve(process.env.WEEKLY_J_VERIFY_OUTPUT || '.ai-docs/screenshots/repository-import')
+const output = resolve(process.env.GITORIAN_VERIFY_OUTPUT || '.ai-docs/screenshots/repository-import')
 mkdirSync(output, { recursive: true })
 const record = (event) =>
     appendFileSync(join(output, 'actions.jsonl'), JSON.stringify({ time: new Date().toISOString(), ...event }) + '\n')
@@ -114,10 +114,14 @@ app.on('browser-window-created', (_, window) => {
                 url: window.webContents.getURL(),
                 profile: app.getPath('userData'),
                 version: app.getVersion(),
+                title: await js('document.title'),
+                visibleTitle: await js("document.querySelector('.window-title-bar-drag')?.textContent"),
                 electron: process.versions.electron,
                 state: await js(`window.journal.invoke({type:'state'})`)
             }
             if (
+                doctor.title !== 'Gitorian' ||
+                doctor.visibleTitle !== 'Gitorian' ||
                 doctor.profile !== join(directory, 'profile') ||
                 !doctor.url.startsWith(pathToFileURL(resolve('out/renderer/index.html')).href) ||
                 doctor.state.state.repositories.length !== 0 ||
@@ -312,7 +316,7 @@ app.on('browser-window-created', (_, window) => {
 app.on('will-quit', () => {
     if (managed) return // The runner cleans up after Electron releases all profile locks.
     const target = resolve(directory)
-    if (!target.startsWith(resolve(tmpdir()) + sep) || !target.includes('weekly-j-import-')) return
+    if (!target.startsWith(resolve(tmpdir()) + sep) || !target.includes('gitorian-import-')) return
     try {
         rmSync(target, { recursive: true, force: true })
     } catch {

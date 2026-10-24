@@ -1,5 +1,5 @@
 {
-    "name": "@weekly-j/notion-oauth",
+    "name": "@gitorian/notion-oauth",
     "version": "0.1.0",
     "private": true,
     "type": "module",

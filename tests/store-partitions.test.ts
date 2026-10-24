@@ -8,7 +8,7 @@ import { sampleState } from '../src/renderer/workspace-sample'
 import { stateSchema } from '../src/shared/model'
 
 it('migrates the legacy row atomically, writes only changed draft sections, and reopens without losing content', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'weekly-j-partitions-'))
+    const directory = mkdtempSync(join(tmpdir(), 'gitorian-partitions-'))
     const path = join(directory, 'journal.sqlite')
     const original = sampleState('2026-10-12')
     const db = new DatabaseSync(path)
@@ -73,7 +73,7 @@ it('migrates the legacy row atomically, writes only changed draft sections, and 
 })
 
 it('rolls back legacy migration on failure and retries failed saves without accepting a partial revision', () => {
-    const directory = mkdtempSync(join(tmpdir(), 'weekly-j-partitions-'))
+    const directory = mkdtempSync(join(tmpdir(), 'gitorian-partitions-'))
     const path = join(directory, 'journal.sqlite')
     const state = sampleState('2026-10-12')
     const raw = JSON.stringify(state)

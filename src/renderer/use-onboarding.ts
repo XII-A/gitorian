@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Reply } from '../shared/model'
 
 type Visibility = 'active' | 'dismissed' | 'complete' | 'existing'
-const storageKey = 'weekly-j:onboarding:v1'
+const storageKey = 'gitorian:onboarding:v1'
 
 /** A profile-local UI preference. Integration credentials and journal content stay in their own stores. */
 export function useOnboarding(reply: Reply | undefined) {

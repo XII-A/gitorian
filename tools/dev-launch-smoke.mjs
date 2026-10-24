@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const root = resolve('.')
-const scratch = mkdtempSync(join(tmpdir(), 'weekly-j-dev-'))
+const scratch = mkdtempSync(join(tmpdir(), 'gitorian-dev-'))
 const evidenceRoot = join(root, '.ai-docs', 'verification')
 mkdirSync(evidenceRoot, { recursive: true })
 const output = mkdtempSync(join(evidenceRoot, 'dev-launch-'))
@@ -24,7 +24,7 @@ const env = {
     NOTION_CLIENT_ID: 'fixture-development-app',
     NOTION_CLIENT_SECRET: 'fixture-development-secret',
     NOTION_STATE_SECRET: 'fixture-development-state-secret-at-least-32-characters',
-    WEEKLY_J_DEV_PROFILE: join(scratch, 'profile')
+    GITORIAN_DEV_PROFILE: join(scratch, 'profile')
 }
 delete env.ELECTRON_RUN_AS_NODE
 delete env.NOTION_OAUTH_ORIGIN
@@ -45,7 +45,7 @@ child.stderr.on('data', (chunk) => {
 const exited = new Promise((done) => child.once('exit', (code, signal) => done({ code, signal })))
 try {
     const started = Date.now()
-    while (!existsSync(join(scratch, 'profile', 'weekly-j.sqlite'))) {
+    while (!existsSync(join(scratch, 'profile', 'gitorian.sqlite'))) {
         if (Date.now() - started > 45000 || child.exitCode !== null)
             throw new Error('The isolated development desktop did not start.')
         await delay(100)
@@ -100,7 +100,7 @@ try {
     }
     writeFileSync(join(output, 'output.log'), logs)
     const target = resolve(scratch)
-    if (dirname(target) !== resolve(tmpdir()) || !target.startsWith(resolve(tmpdir()) + sep + 'weekly-j-dev-')) {
+    if (dirname(target) !== resolve(tmpdir()) || !target.startsWith(resolve(tmpdir()) + sep + 'gitorian-dev-')) {
         report.cleanupError = 'Refusing cleanup outside owned development fixture'
     } else {
         try {

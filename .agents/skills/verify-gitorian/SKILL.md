@@ -1,9 +1,9 @@
 ---
-name: verify-weekly-j
-description: Verify weekly-j Electron features through real desktop journeys. Use after feature changes, for behavioral bug reproduction, or when collecting reproducible UI and persistence evidence.
+name: verify-gitorian
+description: Verify Gitorian Electron features through real desktop journeys. Use after feature changes, for behavioral bug reproduction, or when collecting reproducible UI and persistence evidence.
 ---
 
-# Verify weekly-j
+# Verify Gitorian
 
 Read [the feature map](features/README.md), select the affected entry points, and define their observable outcomes before changing code. The primary surface is the Electron desktop app; Git, SQLite, and integration HTTP adapters support it. A renderer-only browser preview cannot prove desktop IPC or persistence.
 

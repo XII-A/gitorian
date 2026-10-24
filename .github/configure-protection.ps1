@@ -1,7 +1,7 @@
 # Run after the repository is public. Without -Apply this only previews the payloads.
 param([switch]$Apply)
 $ErrorActionPreference = 'Stop'
-$repository = 'XII-A/weekly-j'
+$repository = 'XII-A/gitorian'
 $repoJson = gh api "repos/$repository"
 if ($LASTEXITCODE -ne 0) { throw 'Could not inspect repository.' }
 $repo = $repoJson | ConvertFrom-Json

@@ -17,4 +17,4 @@
 *.sqlite-*
 *.pem
 *.key
-weekly-j-backup*.json
+gitorian-backup*.json

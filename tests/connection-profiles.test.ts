@@ -12,7 +12,7 @@ afterEach(() => {
     for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true })
 })
 async function fixture() {
-    const directory = mkdtempSync(join(tmpdir(), 'weekly-j-profiles-'))
+    const directory = mkdtempSync(join(tmpdir(), 'gitorian-profiles-'))
     directories.push(directory)
     const path = join(directory, 'profiles.json')
     let token = 'private-fixture-token',

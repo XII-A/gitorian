@@ -81,7 +81,7 @@ export function sampleState(week: string): State {
         id: `sample-repo-${index}`,
         name,
         path: '',
-        remote: `https://github.com/weekly-j-example/${name}`,
+        remote: `https://github.com/gitorian-example/${name}`,
         base: 'main',
         trackingStart: week,
         emails: ['alex@example.com'],
@@ -103,7 +103,7 @@ export function sampleState(week: string): State {
         ...(index === 1 || [8, 15, 22].includes(index)
             ? {
                   prId: `sample/pr/${142 - index}`,
-                  url: `https://github.com/weekly-j-example/mobile-app/pull/${142 - index}`
+                  url: `https://github.com/gitorian-example/mobile-app/pull/${142 - index}`
               }
             : {}),
         description:
@@ -151,7 +151,7 @@ export function sampleState(week: string): State {
                                     {
                                         type: 'link',
                                         attrs: {
-                                            href: 'https://github.com/weekly-j-example/mobile-app/commit/a3f9c218912ab0'
+                                            href: 'https://github.com/gitorian-example/mobile-app/commit/a3f9c218912ab0'
                                         }
                                     }
                                 ]

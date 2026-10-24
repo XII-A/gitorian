@@ -105,7 +105,7 @@ export function Workspace({
         if (!value) {
             value = sampleState(sampleWeek)
             try {
-                const raw = localStorage.getItem(`weekly-j:sample-state:${sampleWeek}`)
+                const raw = localStorage.getItem(`gitorian:sample-state:${sampleWeek}`)
                 const cached = raw ? stateSchema.safeParse(JSON.parse(raw)) : undefined
                 if (
                     cached?.success &&
@@ -180,7 +180,7 @@ export function Workspace({
             }
             examples.current.set(week, next)
             try {
-                localStorage.setItem(`weekly-j:sample-state:${week}`, JSON.stringify(next))
+                localStorage.setItem(`gitorian:sample-state:${week}`, JSON.stringify(next))
             } catch {
                 setNotice('Sample changes are kept for this session. Local storage is unavailable.')
             }
@@ -267,7 +267,7 @@ export function Workspace({
         [canCite, state]
     )
     useEffect(() => {
-        const bus = new BroadcastChannel('weekly-j-workspace-reference')
+        const bus = new BroadcastChannel('gitorian-workspace-reference')
         channel.current = bus
         bus.onmessage = (event: MessageEvent<unknown>) => {
             const data = event.data
@@ -313,7 +313,7 @@ export function Workspace({
             url.search = ''
             url.searchParams.set('reference', 'activity')
             url.searchParams.set('id', selected.id)
-            const popup = window.open(url, `weekly-j-${selected.id}`, 'popup,width=1400,height=900')
+            const popup = window.open(url, `gitorian-${selected.id}`, 'popup,width=1400,height=900')
             if (popup) setDetached(selected.id)
             else setNotice('The browser blocked the window. Allow pop-ups for this app and try again.')
         }
@@ -594,12 +594,12 @@ export function Workspace({
                 <div
                     className="ws-draft-host"
                     onDragOver={(event) => {
-                        if (canCite && event.dataTransfer.types.includes('application/x-weekly-j-activity'))
+                        if (canCite && event.dataTransfer.types.includes('application/x-gitorian-activity'))
                             event.preventDefault()
                     }}
                     onDrop={(event) => {
                         const item = state.activities.find(
-                            (activity) => activity.id === event.dataTransfer.getData('application/x-weekly-j-activity')
+                            (activity) => activity.id === event.dataTransfer.getData('application/x-gitorian-activity')
                         )
                         if (item && canCite) {
                             event.preventDefault()

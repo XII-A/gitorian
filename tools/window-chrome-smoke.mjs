@@ -12,11 +12,11 @@ const run = promisify(execFile)
 // Exercise the real main/preload bridge against disposable journal data.
 app.setPath(
     'userData',
-    process.env.WEEKLY_J_VERIFY_STATE
-        ? join(process.env.WEEKLY_J_VERIFY_STATE, 'profile')
-        : mkdtempSync(join(tmpdir(), 'weekly-j-window-chrome-'))
+    process.env.GITORIAN_VERIFY_STATE
+        ? join(process.env.GITORIAN_VERIFY_STATE, 'profile')
+        : mkdtempSync(join(tmpdir(), 'gitorian-window-chrome-'))
 )
-const output = process.env.WEEKLY_J_VERIFY_OUTPUT
+const output = process.env.GITORIAN_VERIFY_OUTPUT
 if (output) mkdirSync(output, { recursive: true })
 const record = (action) => {
     if (output)
@@ -145,7 +145,7 @@ app.on('browser-window-created', (_, window) => {
             await pause(650)
             window.webContents.setZoomFactor(1)
 
-            if (process.env.WEEKLY_J_CHROME_TRACE) {
+            if (process.env.GITORIAN_CHROME_TRACE) {
                 await window.webContents.debugger.sendCommand('Tracing.start', {
                     categories: 'devtools.timeline,blink.animations,cc',
                     transferMode: 'ReturnAsStream'
@@ -162,7 +162,7 @@ app.on('browser-window-created', (_, window) => {
                 await pause(650)
                 assert.ok(await hidden())
             }
-            if (process.env.WEEKLY_J_CHROME_TRACE) {
+            if (process.env.GITORIAN_CHROME_TRACE) {
                 const completed = new Promise((done) => {
                     const receive = (_event, method, params) => {
                         if (method === 'Tracing.tracingComplete') {

@@ -19,8 +19,8 @@ const { Vault } = await tsImport('../src/main/vault.ts', import.meta.url)
 const nativeFetch = globalThis.fetch
 
 // Real renderer, preload, IPC, vault, profile cache and store. Provider HTTP, avatar transport and explicit failures are fixtures.
-const directory = process.env.WEEKLY_J_VERIFY_STATE
-const output = process.env.WEEKLY_J_VERIFY_OUTPUT
+const directory = process.env.GITORIAN_VERIFY_STATE
+const output = process.env.GITORIAN_VERIFY_OUTPUT
 if (!directory || !output) throw new Error('Use pnpm verify connections for managed isolation and cleanup')
 app.setPath('userData', join(directory, 'profile'))
 nativeTheme.themeSource = 'dark'
@@ -52,10 +52,10 @@ writeFileSync(
 const record = (event) =>
     appendFileSync(join(output, 'actions.jsonl'), JSON.stringify({ time: new Date().toISOString(), ...event }) + '\n')
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
-const notionOnly = process.env.WEEKLY_J_VERIFY_SERVICE === 'notion'
-const stressMotion = process.env.WEEKLY_J_VERIFY_MOTION === 'stress'
-const narrowViewport = stressMotion || process.env.WEEKLY_J_VERIFY_VIEWPORT === 'narrow'
-const githubLogin = stressMotion ? 'weekly-j-fixture-with-a-long-github-name' : 'weekly-j-fixture'
+const notionOnly = process.env.GITORIAN_VERIFY_SERVICE === 'notion'
+const stressMotion = process.env.GITORIAN_VERIFY_MOTION === 'stress'
+const narrowViewport = stressMotion || process.env.GITORIAN_VERIFY_VIEWPORT === 'narrow'
+const githubLogin = stressMotion ? 'gitorian-fixture-with-a-long-github-name' : 'gitorian-fixture'
 let notionName = stressMotion ? 'Weekly journal with an exceptionally long integration name' : 'Weekly journal'
 let attempt = 0
 let authorize = false
@@ -79,7 +79,7 @@ let credentialSaveFailures = 0
 const hasNotionCredentials = () =>
     ['notion', 'notion-a', 'notion-b'].some((key) => existsSync(join(directory, 'profile', `${key}.secret`)))
 const assertRestartPair = async (id, access) => {
-    const db = new DatabaseSync(join(directory, 'profile', 'weekly-j.sqlite'), { readOnly: true })
+    const db = new DatabaseSync(join(directory, 'profile', 'gitorian.sqlite'), { readOnly: true })
     const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
     const destination = row ? JSON.parse(row.json).destination : undefined
     db.close()
@@ -139,7 +139,7 @@ fs.renameSync = (source, destination) => {
     renameFile(source, destination)
 }
 const oauthOrigin = 'https://oauth.fixture.test'
-process.env.WEEKLY_J_NOTION_OAUTH_ORIGIN = oauthOrigin
+process.env.GITORIAN_NOTION_OAUTH_ORIGIN = oauthOrigin
 const oauth = createOAuthHandler(
     {
         origin: oauthOrigin,
@@ -332,7 +332,7 @@ globalThis.fetch = (input, init) =>
         if (url === 'https://api.notion.com/v1/users/me') {
             await pause(1000)
             return notionAllowed
-                ? json({ name: notionName, avatar_url: 'https://github.com/weekly-j-fixture/notion-avatar.png' })
+                ? json({ name: notionName, avatar_url: 'https://github.com/gitorian-fixture/notion-avatar.png' })
                 : new Response(JSON.stringify({ message: 'Fixture invalid token' }), { status: 401 })
         }
         throw new Error(`Unexpected external request: ${url}`)
@@ -651,7 +651,7 @@ app.on('browser-window-created', (_, window) => {
                     { name: 'prefers-reduced-motion', value: stressMotion ? 'reduce' : 'no-preference' }
                 ]
             })
-            if (process.env.WEEKLY_J_VERIFY_ONBOARDING === '1') {
+            if (process.env.GITORIAN_VERIFY_ONBOARDING === '1') {
                 attempt = 4
                 authorize = true
                 notionAllowed = true

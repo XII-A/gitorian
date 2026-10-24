@@ -76,7 +76,7 @@ it('compares against the latest saved settings and ignores refreshed metadata an
 const execute = promisify(execFile)
 it('imports nested repositories once, skips dependency folders, and resumes stopped tracking', async () => {
     const app = await workspace()
-    const parent = await mkdtemp(join(tmpdir(), 'weekly-j-discovery-'))
+    const parent = await mkdtemp(join(tmpdir(), 'gitorian-discovery-'))
     try {
         const paths = [join(parent, 'one'), join(parent, 'team', 'two'), join(parent, 'node_modules', 'ignored')]
         for (const path of paths) {
@@ -131,14 +131,14 @@ it('imports nested repositories once, skips dependency folders, and resumes stop
     } finally {
         await app.close()
         const target = resolve(parent)
-        if (target.startsWith(resolve(tmpdir()) + sep) && target.includes('weekly-j-discovery-'))
+        if (target.startsWith(resolve(tmpdir()) + sep) && target.includes('gitorian-discovery-'))
             await rm(target, { recursive: true, force: true })
     }
 })
 
 it('imports only checked repositories and rejects stale scans and paths outside the scan', async () => {
     const app = await workspace()
-    const parent = await mkdtemp(join(tmpdir(), 'weekly-j-selection-'))
+    const parent = await mkdtemp(join(tmpdir(), 'gitorian-selection-'))
     try {
         for (const name of ['include', 'exclude']) {
             const path = join(parent, name)
@@ -162,7 +162,7 @@ it('imports only checked repositories and rejects stale scans and paths outside 
     } finally {
         await app.close()
         const target = resolve(parent)
-        if (target.startsWith(resolve(tmpdir()) + sep) && target.includes('weekly-j-selection-'))
+        if (target.startsWith(resolve(tmpdir()) + sep) && target.includes('gitorian-selection-'))
             await rm(target, { recursive: true, force: true })
     }
 })
