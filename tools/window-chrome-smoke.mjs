@@ -49,6 +49,20 @@ app.on('browser-window-created', (_, window) => {
             if (output) writeFileSync(join(output, name + '.png'), (await window.webContents.capturePage()).toPNG())
         }
         try {
+            record('Compare the native Windows application icon with the approved artwork')
+            const { stdout: iconResult } = await run(
+                'powershell.exe',
+                [
+                    '-NoProfile',
+                    '-File',
+                    resolve('tools/windows-window-icon.ps1'),
+                    String(window.getNativeWindowHandle().readBigUInt64LE()),
+                    resolve('resources/icon.png'),
+                    join(output ?? app.getPath('userData'), 'native-app-icon.png')
+                ],
+                { windowsHide: true }
+            )
+            record(`Native application icon: ${iconResult.trim()}`)
             for (let attempt = 0; attempt < 50; attempt++) {
                 if (await evaluate(`!!document.querySelector('.window-title-bar')`)) break
                 await pause(100)
