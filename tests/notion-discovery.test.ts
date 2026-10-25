@@ -14,17 +14,17 @@ const page = (id: string, parent: object = { workspace: true }) => ({
 })
 
 it('finishes a large discovery after a rate-limit reset without repeating completed reads', async () => {
-    let windowStart = Date.now()
-    let budget = 0
+    let resetAt = 0
+    let throttles = 0
     const successes: string[] = []
     const transport = vi.fn<typeof fetch>((input, init) =>
         Promise.resolve().then(() => {
             const path = urlOf(input).replace('https://api.notion.com/v1/', '')
-            if (Date.now() - windowStart >= 1000) {
-                windowStart = Date.now()
-                budget = 0
+            if (!resetAt && successes.length === 180) resetAt = Date.now() + 1000
+            if (Date.now() < resetAt) {
+                throttles++
+                return new Response('{}', { status: 429, headers: { 'Retry-After': '1' } })
             }
-            if (++budget > 180) return new Response('{}', { status: 429, headers: { 'Retry-After': '1' } })
             successes.push(path)
             if (path === 'search') {
                 if (typeof init?.body !== 'string') throw new Error('Expected a search request body')
@@ -46,6 +46,7 @@ it('finishes a large discovery after a rate-limit reset without repeating comple
     const completed = await result
     expect(completed.error).toBeUndefined()
     expect(completed.nodes).toHaveLength(200)
+    expect(throttles).toBe(1)
     expect(successes.filter((path) => path === 'search')).toHaveLength(2)
     expect(successes.filter((path) => path.startsWith('blocks/'))).toHaveLength(200)
     expect(new Set(successes.filter((path) => path.startsWith('blocks/'))).size).toBe(200)
