@@ -572,6 +572,19 @@
     align-items: center;
     justify-content: flex-end;
 }
+.settings-section:has(.notion-connection) {
+    container: notion-settings / inline-size;
+}
+@container notion-settings (max-width: 520px) {
+    .settings-github-heading:has(.notion-destination-row),
+    .settings-github-heading:has(.notion-connection[data-connected='true']) {
+        flex-wrap: wrap;
+    }
+    .settings-github-heading:has(.notion-destination-row) > .settings-github-controls,
+    .settings-github-heading:has(.notion-connection[data-connected='true']) > .settings-github-controls {
+        flex-basis: 100%;
+    }
+}
 .notion-page-connection {
     min-width: 0;
     max-width: 100%;
@@ -584,6 +597,49 @@
     padding: var(--space-2);
     color: var(--text-secondary);
     font-size: var(--text-xs);
+}
+.notion-page-skeleton {
+    width: 100%;
+    min-width: 0;
+}
+.notion-picker-status > .notion-page-skeleton {
+    box-sizing: border-box;
+    padding-inline-start: var(--space-6);
+}
+.notion-loading-row {
+    display: flex;
+    min-height: var(--control-height-md);
+    align-items: center;
+    gap: var(--space-3);
+}
+.notion-loading-icon {
+    --skeleton-block-height: var(--space-4);
+    width: var(--space-4);
+}
+.notion-loading-title {
+    --skeleton-block-height: var(--space-3);
+    width: 64%;
+}
+.notion-loading-row:nth-child(2) .notion-loading-title {
+    width: 48%;
+}
+.notion-loading-row:nth-child(3) .notion-loading-title {
+    width: 72%;
+}
+.notion-spinner {
+    display: block;
+    color: var(--text-secondary);
+    animation: notion-spin calc(var(--duration-considered) * 2) linear infinite;
+}
+@keyframes notion-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .notion-spinner {
+        animation: none;
+    }
 }
 .notion-connection [hidden] {
     display: none;
@@ -606,6 +662,7 @@
 }
 .notion-destination-row {
     gap: var(--space-1);
+    max-width: calc(100cqw - var(--space-2));
 }
 .notion-page-field {
     width: 232px;

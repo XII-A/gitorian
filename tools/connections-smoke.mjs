@@ -1075,7 +1075,38 @@ app.on('browser-window-created', (_, window) => {
                 )
             }
             await wait(`!!document.querySelector('.notion-picker-status')`)
+            await assert(
+                `document.querySelector('.notion-picker-status [aria-label="Loading pages"]') && !document.querySelector('.notion-picker-status .notion-spinner') && !document.querySelector('.notion-picker-status').innerText.trim()`
+            )
             if (!initialSearchStarted) throw new Error('Initial search fixture was not held')
+            const loadingLayouts = []
+            for (const width of [320, 390, 768, 1024, 1440]) {
+                window.setContentSize(width, 900)
+                await pause(400)
+                const layout = await js(
+                    `(() => {const skeleton=document.querySelector('.notion-picker-status');const r=skeleton.getBoundingClientRect();return {width:innerWidth,left:r.left,right:r.right,overflow:document.documentElement.scrollWidth>innerWidth}})()`
+                )
+                if (layout.left < 0 || layout.right > Number(layout.width) + 1 || layout.overflow)
+                    throw new Error(`Loading rows overflow: ${JSON.stringify(layout)}`)
+                loadingLayouts.push(layout)
+                await assertActionsFit('Notion')
+                if (width === 320) await shot('notion-loading-320', 100, 'notion')
+            }
+            window.setContentSize(1280, 900)
+            window.webContents.setZoomFactor(2)
+            await pause(400)
+            await assertActionsFit('Notion')
+            await shot('notion-loading-zoom', 100, 'notion')
+            window.webContents.setZoomFactor(1)
+            window.setContentSize(narrowViewport ? 390 : 1280, 900)
+            await js(
+                `document.documentElement.dataset.theme='light';document.documentElement.dataset.accent='blue';true`
+            )
+            await shot('notion-loading-light-blue', 150, 'notion')
+            await js(
+                `document.documentElement.dataset.theme='dark';document.documentElement.dataset.accent='neutral';true`
+            )
+            writeFileSync(join(output, 'notion-loading-layouts.json'), JSON.stringify(loadingLayouts, null, 2))
             await shot('notion-immediate-search', 150, 'notion')
             await typePageQuery('Release plan')
             await wait(`!!document.querySelector('[role="treeitem"][title="Release plan"]')`)
@@ -1087,6 +1118,8 @@ app.on('browser-window-created', (_, window) => {
             })
             await shot('notion-remote-title-result', 150, 'notion')
             await typePageQuery('Old query')
+            await wait(`!!document.querySelector('.notion-picker-status [aria-label="Loading pages"]')`)
+            await shot('notion-search-loading', 100, 'notion')
             await pause(350)
             await typePageQuery('New query')
             await wait(`!!document.querySelector('[role="treeitem"][title="New query"]')`)
@@ -1115,10 +1148,50 @@ app.on('browser-window-created', (_, window) => {
             failDiscovery = true
             await click('Expand Personal')
             await wait(`!!document.querySelector('[role="treeitem"][title="Personal"] [role="status"]')`)
+            await assert(
+                `document.querySelector('[role="treeitem"][title="Personal"] .notion-spinner') && document.querySelector('[data-loading-branch="fixture-parent"]') && document.querySelector('[role="treeitem"][title="Personal"] .settings-sr-only').textContent==='Loading pages'`
+            )
+            await assert(`!document.querySelector('[data-loading-branch="fixture-parent"] [tabindex]')`)
+            const loadingContrast = []
+            for (const theme of ['dark', 'light']) {
+                await js(`document.documentElement.dataset.theme=${JSON.stringify(theme)};true`)
+                await pause(300)
+                const ratios = await js(`(() => {
+                    const ctx=document.createElement('canvas').getContext('2d',{willReadFrequently:true});ctx.canvas.width=ctx.canvas.height=1;
+                    const rgba=value=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=value;ctx.fillRect(0,0,1,1);return [...ctx.getImageData(0,0,1,1).data]};
+                    const over=(fg,bg)=>fg.slice(0,3).map((v,i)=>v*fg[3]/255+bg[i]*(1-fg[3]/255));
+                    const luminance=rgb=>rgb.map(v=>{const c=v/255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
+                    return ['[role="treeitem"][title="Personal"] .notion-spinner','[role="treeitem"][title="Personal"]'].map(selector=>{
+                        const node=document.querySelector(selector);const layers=[];for(let n=node;n;n=n.parentElement)layers.push(rgba(getComputedStyle(n).backgroundColor));
+                        const bg=layers.reverse().reduce((base,layer)=>over(layer,base),[255,255,255]);const fg=over(rgba(getComputedStyle(node).color),bg);
+                        const a=luminance(fg),b=luminance(bg);return {selector,foreground:fg,background:bg,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
+                    });
+                })()`)
+                if (ratios[0].ratio < 3 || ratios[1].ratio < 4.5)
+                    throw new Error(`Loading contrast failed: ${JSON.stringify({ theme, ratios })}`)
+                loadingContrast.push({ theme, ratios })
+            }
+            await js(`document.documentElement.dataset.theme='dark';true`)
+            writeFileSync(join(output, 'notion-loading-contrast.json'), JSON.stringify(loadingContrast, null, 2))
+            await assert(
+                `(getComputedStyle(document.querySelector('[data-loading-branch="fixture-parent"] [data-shimmer]'),'::after').animationName==='none')===${stressMotion}`
+            )
+            await assert(
+                `(getComputedStyle(document.querySelector('[role="treeitem"][title="Personal"] .notion-spinner')).animationName==='none')===${stressMotion}`
+            )
+            await assert(
+                `(() => {const rows=[...document.querySelectorAll('[aria-label="Notion pages"] [role="treeitem"]')];const index=rows.findIndex(n=>n.title==='Personal');let last=rows[index];for(let i=index+1;i<rows.length && Number(rows[i].getAttribute('aria-level'))>1;i++)last=rows[i];return document.querySelector('[data-loading-branch="fixture-parent"]').getBoundingClientRect().top>=last.getBoundingClientRect().bottom-1})()`
+            )
             await shot('notion-picker-during-scan', 150, 'notion')
+            await js(
+                `document.querySelector('[data-loading-branch="fixture-parent"]').scrollIntoView({block:'nearest'})`
+            )
+            await shot('notion-branch-skeleton-end', 100, 'notion')
+            await js(`document.querySelector('[role="treeitem"][title="Personal"]').scrollIntoView({block:'nearest'})`)
             holdDiscovery = false
             releaseDiscovery()
             await wait(`!!document.querySelector('[aria-label="Retry loading Personal"]')`)
+            await assert(`!document.querySelector('[data-loading-branch="fixture-parent"]')`)
             await shot('notion-background-scan-error', 100, 'notion')
             failDiscovery = false
             await click('Retry loading Personal')
@@ -1142,7 +1215,7 @@ app.on('browser-window-created', (_, window) => {
                 : 'Engineering notes'
             await click(`Expand ${engineering}`)
             await wait(
-                `Array.from(document.querySelectorAll('[role="treeitem"]')).find(node=>node.title===${JSON.stringify(engineering)})?.querySelector('[role="status"]')?.textContent==='Waiting'`
+                `Array.from(document.querySelectorAll('[role="treeitem"]')).find(node=>node.title===${JSON.stringify(engineering)})?.querySelector('[role="status"]')?.textContent==='Waiting for Notion'`
             )
             await shot('notion-waiting-with-picker', 100, 'notion')
             await wait(`!!document.querySelector('[role="treeitem"][title="Decisions"]')`)

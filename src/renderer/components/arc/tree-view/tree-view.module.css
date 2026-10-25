@@ -193,3 +193,8 @@
     color: var(--text-muted);
     font-size: var(--text-xs);
 }
+.placeholder {
+    padding-inline-start: calc(32px + (var(--tree-depth) - 1) * 18px);
+    padding-inline-end: var(--space-3);
+    pointer-events: none;
+}

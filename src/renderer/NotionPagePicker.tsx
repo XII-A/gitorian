@@ -5,7 +5,7 @@ import { Combobox, type ComboboxTreeContext } from './components/arc/combobox/co
 import { TreeView, type TreeNode } from './components/arc/tree-view/tree-view'
 import { Button } from './components/arc/button/button'
 import { notionPageTree, pageAncestors, type PageNode } from './notion-page-tree'
-import { NotionDiscoveryStatus } from './NotionDiscoveryStatus'
+import { NotionPageSkeleton, NotionPageSpinner } from './NotionPageLoading'
 
 export interface NotionPickerActivity {
     progress: NotionDiscoveryProgress
@@ -91,11 +91,11 @@ function PageTree({
                             Retry
                         </Button>
                     ) : (
-                        <span role="status">
-                            {branches[node.id].progress.stage === 'waiting' ? 'Waiting' : 'Loading'}
-                        </span>
+                        <NotionPageSpinner waiting={branches[node.id].progress.stage === 'waiting'} />
                     )
                 ) : undefined,
+                loadingPlaceholder:
+                    branches[node.id] && !branches[node.id].error ? <NotionPageSkeleton rows={1} /> : undefined,
                 children: node.children ? convert(node.children) : undefined
             }))
         const linked = /^https:\/\//i.test(context.query.trim())
@@ -135,20 +135,6 @@ function PageTree({
                 <Plus size={16} strokeWidth={1.5} />
                 Create a new page
             </Button>
-            {activity && (
-                <div className="notion-picker-status" role="status">
-                    {activity.error ? (
-                        <>
-                            <span>Could not load pages.</span>
-                            <Button variant="ghost" size="sm" onClick={onRetry}>
-                                Retry search
-                            </Button>
-                        </>
-                    ) : (
-                        <NotionDiscoveryStatus progress={activity.progress} />
-                    )}
-                </div>
-            )}
             <TreeView
                 id={context.id}
                 aria-label="Notion pages"
@@ -169,6 +155,20 @@ function PageTree({
                 onEscape={context.close}
                 onSelect={(node) => context.select(node.id)}
             />
+            {activity && (
+                <div className="notion-picker-status">
+                    {activity.error ? (
+                        <>
+                            <span role="status">Could not load pages.</span>
+                            <Button variant="ghost" size="sm" onClick={onRetry}>
+                                Retry search
+                            </Button>
+                        </>
+                    ) : (
+                        <NotionPageSkeleton />
+                    )}
+                </div>
+            )}
             {!nodes.length && !activity && (
                 <p className="notion-picker-empty" role="status">
                     {context.query.trim()

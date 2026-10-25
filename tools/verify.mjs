@@ -149,6 +149,7 @@ if (mode === 'doctor') {
             'src/renderer/OnboardingActivityPreview.tsx',
             'src/renderer/OnboardingSetupLayout.tsx',
             'src/renderer/use-onboarding.ts',
+            'src/renderer/NotionPageLoading.tsx',
             'src/renderer/components/arc/onboarding-checklist/onboarding-checklist.tsx',
             'src/renderer/components/arc/onboarding-checklist/onboarding-checklist.module.css'
         ]) {
@@ -482,6 +483,10 @@ if (mode === 'doctor') {
                                         'persisted-settings.json',
                                         'notion-01-ready.png',
                                         'notion-immediate-search.png',
+                                        'notion-search-loading.png',
+                                        'notion-loading-layouts.json',
+                                        'notion-loading-contrast.json',
+                                        'notion-branch-skeleton-end.png',
                                         'notion-remote-title-result.png',
                                         'notion-page-link-result.png',
                                         'notion-07-connected.png',

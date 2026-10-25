@@ -15,6 +15,8 @@ export interface TreeNode {
     hasChildren?: boolean
     /** Loading or recovery feedback alongside this row. */
     status?: ReactNode
+    /** A decorative placeholder after this branch's visible children while loading. */
+    loadingPlaceholder?: ReactNode
     icon?: ReactNode
     /** Full path or name when a compact label is used. */
     title?: string
@@ -143,6 +145,14 @@ export function TreeView({
     const refs = useRef(new Map<string, HTMLDivElement>())
     const expanded = expandedIds ? new Set(expandedIds) : internalExpanded
     const visible = flatten(nodes, expanded)
+    const branchEnds = new Map<string, VisibleNode[]>()
+    visible.forEach((item, index) => {
+        if (!expanded.has(item.node.id) || !item.node.loadingPlaceholder) return
+        let end = index
+        while (end + 1 < visible.length && visible[end + 1].depth > item.depth) end++
+        const id = visible[end].node.id
+        branchEnds.set(id, [item, ...(branchEnds.get(id) ?? [])])
+    })
     const focusableId = visible.some(({ node }) => node.id === focusedId) ? focusedId : (visible[0]?.node.id ?? null)
     const openedIndex = visible.findIndex(({ node }) => node.id === openedId)
 
@@ -249,7 +259,7 @@ export function TreeView({
                             layout={rowReduced ? false : 'position'}
                             initial={rowReduced ? false : { height: 0, opacity: 0, x: -6, overflow: 'hidden' }}
                             animate={{
-                                height: wrapLabels ? 'auto' : rowHeight,
+                                height: wrapLabels || branchEnds.has(item.node.id) ? 'auto' : rowHeight,
                                 opacity: 1,
                                 x: 0,
                                 pointerEvents: 'auto',
@@ -298,6 +308,7 @@ export function TreeView({
                                 aria-posinset={item.position}
                                 aria-setsize={item.setSize}
                                 aria-expanded={hasChildren ? isExpanded : undefined}
+                                aria-busy={item.node.loadingPlaceholder ? true : undefined}
                                 aria-selected={item.node.selectable === false ? undefined : isSelected}
                                 tabIndex={focusableId === item.node.id ? 0 : -1}
                                 style={{ '--tree-depth': item.depth } as CSSProperties}
@@ -377,6 +388,17 @@ export function TreeView({
                                 <span className={styles.label}>{item.node.label}</span>
                                 {item.node.status && <span className={styles.status}>{item.node.status}</span>}
                             </div>
+                            {branchEnds.get(item.node.id)?.map((branch) => (
+                                <div
+                                    key={branch.node.id}
+                                    className={styles.placeholder}
+                                    data-loading-branch={branch.node.id}
+                                    style={{ '--tree-depth': branch.depth + 1 } as CSSProperties}
+                                    aria-hidden="true"
+                                >
+                                    {branch.node.loadingPlaceholder}
+                                </div>
+                            ))}
                         </motion.div>
                     )
                 })}
