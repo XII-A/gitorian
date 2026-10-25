@@ -68,6 +68,7 @@ app.on('browser-window-created', (_, window) => {
                     window.unmaximize()
                     window.setSize(1000, 720)
                 }
+                await js(`document.querySelector('.hub-activity').scrollIntoView({block:'center'})`)
                 await pause(400)
                 const before = await measure()
                 const beforeImage = await window.webContents.capturePage()
