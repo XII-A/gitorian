@@ -136,7 +136,7 @@ const tab = async (label) => {
     await wait(`!!(${find})`)
     await js(`(${find}).focus()`)
     await evaluate(
-        `(()=>{const contents=__electron.BrowserWindow.getAllWindows()[0].webContents;contents.focus();contents.sendInputEvent({type:'keyDown',keyCode:'Return'});contents.sendInputEvent({type:'char',keyCode:'\\r'});contents.sendInputEvent({type:'keyUp',keyCode:'Return'});return true})()`
+        `(()=>{const contents=__electron.BrowserWindow.getAllWindows()[0].webContents;contents.focus();contents.sendInputEvent({type:'keyDown',keyCode:'Return'});contents.sendInputEvent({type:'keyUp',keyCode:'Return'});return true})()`
     )
     await wait(`(${find})?.getAttribute('aria-selected')==='true'`)
 }
