@@ -437,6 +437,9 @@ app.on('browser-window-created', (_, window) => {
             await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
                 features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
             })
+            // Opening writing schedules the editor's initial focus. Let that
+            // finish before starting a separate keyboard interaction.
+            await wait(`document.activeElement?.getAttribute('aria-label')==='Journal body'`)
             await js(`document.querySelector('[aria-label="Update ready"]').focus()`)
             window.webContents.focus()
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
@@ -451,6 +454,7 @@ app.on('browser-window-created', (_, window) => {
             )
             await shot('08-narrow-popover')
             await escape()
+            await wait(`document.activeElement?.getAttribute('aria-label')==='Update ready'`)
             assert(
                 await js(`document.activeElement?.getAttribute('aria-label')==='Update ready'`),
                 'Escape restores update-trigger focus'
