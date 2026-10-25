@@ -4,6 +4,8 @@ Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify connections`. The runn
 
 ## GitHub entry points
 
+- Import-before-connect and connect-before-import: `pnpm verify github-import` owns automatic PR/review acquisition for both orders, including with periodic refresh disabled. See [Automatic GitHub activity](repository-import.md#automatic-github-activity).
+
 - Settings > Connections: GitHub and Notion headings have their matching decorative brand logos and Connect actions instead of disconnected text. GitHub has no client-ID field or app-creation link.
 - GitHub Connect: the heading control shows its starting spinner, then expands to the code, icon-only Copy code action, Cancel, and primary Open GitHub action.
 - Offline start > retry: a simulated failure stays in one row (message, Cancel, Retry), without a description; retry obtains a code.

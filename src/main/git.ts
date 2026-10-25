@@ -32,9 +32,15 @@ export async function git(path: string, args: string[], background = false, maxB
     )
     return result.stdout
 }
-export async function inspectRepository(
+export async function inspectRepository(path: string): Promise<{
     path: string
-): Promise<{ path: string; name: string; remotes: string[]; base: string; email: string; branches: string[] }> {
+    name: string
+    remotes: string[]
+    githubRemote: string
+    base: string
+    email: string
+    branches: string[]
+}> {
     const root = await realpath((await git(path, ['rev-parse', '--show-toplevel'])).trim())
     const [remoteOutput, branchOutput, origin, email] = await Promise.all([
         git(root, ['remote', '-v'], true),
@@ -42,11 +48,19 @@ export async function inspectRepository(
         git(root, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], true).catch(() => ''),
         git(root, ['config', 'user.email'], true).catch(() => '')
     ])
-    const remotes = remoteOutput
+    const fetchRemotes = remoteOutput
         .split('\n')
         .filter((line) => line.endsWith('(fetch)'))
-        .map((line) => line.split(/\s+/)[1])
-        .filter(Boolean)
+        .map((line) => {
+            const [name, url] = line.split(/\s+/)
+            return { name, url }
+        })
+        .filter((remote) => remote.url)
+    const candidates = fetchRemotes.filter((remote) => githubRemote(remote.url))
+    const selected =
+        candidates.find((remote) => remote.name === 'upstream') ??
+        candidates.find((remote) => remote.name === 'origin') ??
+        candidates[0]
     const refs = branchOutput
         .trim()
         .split('\n')
@@ -68,7 +82,8 @@ export async function inspectRepository(
     return {
         path: root,
         name: basename(root),
-        remotes: [...new Set(remotes)],
+        remotes: [...new Set(fetchRemotes.map((remote) => remote.url))],
+        githubRemote: selected?.url ?? '',
         base,
         email: email.trim(),
         branches: branchNames
@@ -295,6 +310,9 @@ export function fingerprint(diff: string): string | undefined {
     return createHash('sha256').update(normalized).digest('hex')
 }
 export function githubRemote(remote: string): string | undefined {
-    const match = /^(?:https:\/\/github\.com\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(remote)
+    const match =
+        /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(
+            remote
+        )
     return match?.[1]
 }

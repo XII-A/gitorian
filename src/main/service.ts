@@ -62,7 +62,7 @@ export class JournalService {
             id: randomUUID(),
             name: inspected.name,
             path: inspected.path,
-            remote: '',
+            remote: inspected.githubRemote,
             base: inspected.base,
             emails: inspected.email ? [inspected.email] : [],
             trackingStart: weekOf(new Date(), this.store.state.settings),
