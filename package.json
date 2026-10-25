@@ -17,6 +17,7 @@
         "lint:fix": "oxlint --type-aware --fix",
         "format": "oxfmt --write .",
         "format:check": "oxfmt --check .",
+        "icons": "node tools/generate-icons.mjs",
         "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
         "package": "pnpm build && electron-builder",
         "package:dir": "pnpm build && electron-builder --dir",
@@ -47,20 +48,24 @@
         ],
         "files": [
             "out/**/*",
+            "resources/icon.png",
             "package.json",
             "LICENSE",
             "NOTICE",
             "src/renderer/components/arc/LICENSE"
         ],
         "win": {
+            "icon": "resources/icon.ico",
             "target": "nsis",
             "artifactName": "gitorian-${version}-windows-${arch}-setup.${ext}",
-            "signAndEditExecutable": false
+            "signExecutable": false
         },
         "mac": {
+            "icon": "resources/icon.icns",
             "target": "dmg"
         },
         "linux": {
+            "icon": "resources/icon.png",
             "target": "AppImage",
             "category": "Office"
         }

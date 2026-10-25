@@ -62,6 +62,7 @@ function track<T>(promise: Promise<T>): Promise<T> {
 function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
     const window = new BrowserWindow({
         title: 'Gitorian',
+        icon: join(directory, '../../resources/icon.png'),
         width: reference ? 1400 : 1560,
         height: 1000,
         minWidth: reference ? 600 : 1000,
