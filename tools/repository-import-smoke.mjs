@@ -190,6 +190,51 @@ app.on('browser-window-created', (_, window) => {
                 `document.querySelector('.repository-import-footer').textContent.includes('4 of 5')`,
                 'Search must preserve hidden selection'
             )
+            await wait(
+                `(() => {const b=document.querySelector('.repository-import-tools [aria-label="Clear search"]');return b && Number(getComputedStyle(b).opacity)>.99 && Math.abs(new DOMMatrixReadOnly(getComputedStyle(b).transform).a-1)<.001})()`
+            )
+            const clearAlignment = await js(`(() => {
+                const button=document.querySelector('.repository-import-tools [aria-label="Clear search"]');
+                const b=button.getBoundingClientRect(), icon=button.querySelector('svg').getBoundingClientRect(), style=getComputedStyle(button);
+                return {x:b.left+b.width/2,y:b.top+b.height/2,dx:icon.left+icon.width/2-b.left-b.width/2,dy:icon.top+icon.height/2-b.top-b.height/2,padding:style.padding};
+            })()`)
+            window.focus()
+            window.webContents.focus()
+            window.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 })
+            const clearPoint = {
+                x: Math.round(Number(clearAlignment.x) * window.webContents.getZoomFactor()),
+                y: Math.round(Number(clearAlignment.y) * window.webContents.getZoomFactor())
+            }
+            window.webContents.sendInputEvent({ type: 'mouseMove', ...clearPoint })
+            await wait(
+                `document.querySelector('.repository-import-tools [aria-label="Clear search"]').matches(':hover')`
+            )
+            await pause(200)
+            const hoveredAlignment = await js(
+                `(() => {const b=document.querySelector('.repository-import-tools [aria-label="Clear search"]').getBoundingClientRect(),i=document.querySelector('.repository-import-tools [aria-label="Clear search"] svg').getBoundingClientRect();return {dx:i.left+i.width/2-b.left-b.width/2,dy:i.top+i.height/2-b.top-b.height/2}})()`
+            )
+            writeFileSync(
+                join(output, 'search-clear-alignment.json'),
+                JSON.stringify({ rest: clearAlignment, hover: hoveredAlignment }, null, 2)
+            )
+            await shot('05b-search-clear-hover')
+            if (
+                [clearAlignment, hoveredAlignment].some(
+                    (m) => Math.abs(Number(m.dx)) > 0.5 || Math.abs(Number(m.dy)) > 0.5
+                )
+            )
+                throw new Error(
+                    `Search clear icon is not centered: ${JSON.stringify({ rest: clearAlignment, hover: hoveredAlignment })}`
+                )
+            window.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...clearPoint })
+            window.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...clearPoint })
+            await wait(
+                `document.querySelectorAll('.repository-import-row').length===6 && document.activeElement===document.querySelector('.repository-import-tools input')`
+            )
+            await assert(
+                `document.querySelector('.repository-import-footer').textContent.includes('4 of 5')`,
+                'Clearing search must preserve selection and return input focus'
+            )
             await click('Cancel')
             await wait(`!!document.querySelector('.settings-import-button')`)
             await assert(

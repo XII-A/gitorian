@@ -504,6 +504,8 @@ if (mode === 'doctor') {
                                           'doctor.json',
                                           'actions.jsonl',
                                           '01-choose-folder.png',
+                                          '05b-search-clear-hover.png',
+                                          'search-clear-alignment.json',
                                           '08-complete.png',
                                           '10-error-details.png',
                                           'persisted-repositories.json'
