@@ -1,7 +1,8 @@
 import { expect, it, vi } from 'vitest'
 import { Notion } from '../src/main/notion'
 import type { NotionDiscoveryProgress } from '../src/shared/model'
-import { Http } from '../src/main/http'
+import { Http, HttpError } from '../src/main/http'
+import { discoverNotionPages } from '../src/main/notion-discovery'
 
 const urlOf = (input: Parameters<typeof fetch>[0]) => (input instanceof Request ? input.url : input.toString())
 
@@ -10,6 +11,61 @@ const page = (id: string, parent: object = { workspace: true }) => ({
     url: `https://www.notion.so/${id}`,
     parent,
     properties: { Name: { title: [{ plain_text: id }] } }
+})
+
+it('finishes a large discovery after a rate-limit reset without repeating completed reads', async () => {
+    let windowStart = Date.now()
+    let budget = 0
+    const successes: string[] = []
+    const transport = vi.fn<typeof fetch>((input, init) =>
+        Promise.resolve().then(() => {
+            const path = urlOf(input).replace('https://api.notion.com/v1/', '')
+            if (Date.now() - windowStart >= 1000) {
+                windowStart = Date.now()
+                budget = 0
+            }
+            if (++budget > 180) return new Response('{}', { status: 429, headers: { 'Retry-After': '1' } })
+            successes.push(path)
+            if (path === 'search') {
+                if (typeof init?.body !== 'string') throw new Error('Expected a search request body')
+                const offset = JSON.parse(init.body).start_cursor ? 100 : 0
+                return Response.json({
+                    results: Array.from({ length: 100 }, (_, i) => page(`p${i + offset}`)),
+                    has_more: offset === 0,
+                    next_cursor: offset === 0 ? 'next' : null
+                })
+            }
+            return Response.json({ results: [], has_more: false })
+        })
+    )
+    const notion = new Notion(new Http(transport), () => 'fixture-token')
+    const result = notion.accessiblePages().then(
+        (nodes) => ({ nodes, error: undefined }),
+        (error: unknown) => ({ nodes: undefined, error })
+    )
+    const completed = await result
+    expect(completed.error).toBeUndefined()
+    expect(completed.nodes).toHaveLength(200)
+    expect(successes.filter((path) => path === 'search')).toHaveLength(2)
+    expect(successes.filter((path) => path.startsWith('blocks/'))).toHaveLength(200)
+    expect(new Set(successes.filter((path) => path.startsWith('blocks/'))).size).toBe(200)
+})
+
+it('cancels discovery while waiting for a search rate-limit reset', async () => {
+    const controller = new AbortController()
+    const request = vi.fn(() => Promise.reject(new HttpError(429, 'Wait', Date.now() + 60000)))
+    const result = discoverNotionPages(request, undefined, controller.signal).catch((error: unknown) => error)
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
+    controller.abort(new Error('Discovery cancelled'))
+    expect(await result).toMatchObject({ name: 'AbortError' })
+    expect(request).toHaveBeenCalledOnce()
+})
+
+it('stops after bounded rate-limit retries instead of waiting forever', async () => {
+    const request = vi.fn(() => Promise.reject(new HttpError(429, 'Still limited', Date.now())))
+    const result = discoverNotionPages(request).catch((error: unknown) => error)
+    expect(await result).toMatchObject({ status: 429 })
+    expect(request).toHaveBeenCalledTimes(4)
 })
 function fixture(pages: object[], ancestors: Record<string, object | number>) {
     const transport = vi.fn<typeof fetch>((input, init) => {

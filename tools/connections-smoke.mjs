@@ -66,6 +66,7 @@ let notionPagesCreated = 0
 let notionCreatedTitle = 'Weekly Journal'
 let refreshedNames = false
 let failPageSearch = true
+let discoveryRateLimit
 let failPageSelection = true
 let expireEditSearch = false
 let expireEditCreation = false
@@ -293,8 +294,21 @@ globalThis.fetch = (input, init) =>
                 results: [{ id: 'fixture-inner-toggle', type: 'toggle', has_children: true }],
                 has_more: false
             })
-        if (url === 'https://api.notion.com/v1/blocks/fixture-inner-toggle/children?page_size=100')
+        if (url === 'https://api.notion.com/v1/blocks/fixture-inner-toggle/children?page_size=100') {
+            const searches = requests.filter((request) => request.url === 'https://api.notion.com/v1/search').length
+            if (!discoveryRateLimit) {
+                discoveryRateLimit = { retryAt: Date.now() + 1000, searches, recovered: false }
+                record({ fixture: 'Rate-limit nested discovery after completed search and parent reads' })
+                return new Response('{}', { status: 429, headers: { 'Retry-After': '1' } })
+            }
+            if (!discoveryRateLimit.recovered) {
+                if (Date.now() < discoveryRateLimit.retryAt || searches !== discoveryRateLimit.searches)
+                    throw new Error('Rate-limited discovery retried too early or restarted completed search')
+                discoveryRateLimit.recovered = true
+                record({ assertion: 'Discovery respects Retry-After and resumes the failed child read', passed: true })
+            }
             return json({ results: [{ id: 'fixture-leaf', type: 'child_page' }], has_more: false })
+        }
         if (url === 'https://api.notion.com/v1/pages/fixture-leaf')
             return json({
                 id: 'fixture-leaf',
@@ -1029,6 +1043,7 @@ app.on('browser-window-created', (_, window) => {
             )
                 throw new Error('Discovery cache did not retain bounded metadata without credentials')
             writeFileSync(join(output, 'notion-cache-initial.json'), JSON.stringify(cachedPages, null, 2))
+            if (!discoveryRateLimit?.recovered) throw new Error('Notion discovery did not recover from the rate limit')
             await assert(
                 `!Array.from(${notionScope}.querySelectorAll('label')).some(l=>['Destination','Page ID'].includes(l.textContent))`
             )

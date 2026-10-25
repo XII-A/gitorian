@@ -38,6 +38,8 @@ Acceptance evidence for the Notion-only entry point is run.json, doctor.json, ac
 
 ## Evidence and scope
 
+The Notion journey injects a 429 while enumerating a nested block. Require the same pending discovery to respect Retry-After and retry that child read without repeating completed searches, then show the unindexed descendant in the picker and persist the selected destination. Focused discovery tests also cover 200-page completion, cancellation during the wait, and bounded retries.
+
 Require `run.json` with exit zero, `passed: true`, `cleanup.removed: true`, and `evidenceRetained: true`. Review `captures.json`, full PNGs, section-detail PNGs, `actions.jsonl`, `http-requests.json`, `connected-state.json`, and `persisted-settings.json`. GitHub OAuth POSTs must use its shared public ID without a client secret. Notion's provider exchange uses a fictional server-held secret through the hosted handler; the desktop sends only signed state, its verifier and a temporary code. Require real loopback traffic and no tokens in redirect URLs. Independent post-exit SQLite must retain the fixture GitHub login and omit the obsolete client-ID property.
 
 The runner targets desktop dark and narrow dark layouts (390px may round to 391px under Windows scaling). GitHub's transient loading/check states are captured before their timers complete. Every Notion credential and registration value is fictional. Both vault files must be removed by the end of the journey.
