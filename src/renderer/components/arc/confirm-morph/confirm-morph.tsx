@@ -52,6 +52,8 @@ export interface ConfirmMorphProps {
     cancelLabel?: string
     /** Shown beside the spinner while `onConfirm` resolves. */
     pendingLabel?: string
+    /** Visual progress content; pendingLabel remains the plain accessible announcement. */
+    pendingContent?: ReactNode
     doneLabel?: string
     errorLabel?: string
     retryLabel?: string
@@ -63,8 +65,8 @@ export interface ConfirmMorphProps {
      * accent, for important actions that can be reversed. The resting button is neutral either way.
      */
     tone?: 'danger' | 'neutral'
-    /** Surface treatment. Secondary matches form fields; ghost leaves the surface and border transparent. */
-    variant?: 'raised' | 'secondary' | 'ghost'
+    /** Surface treatment. Outline keeps the border on a transparent surface; ghost also hides the border. */
+    variant?: 'raised' | 'secondary' | 'outline' | 'ghost'
     /** `immediate` runs a safe action on the first press. `press` asks for confirmation. `hold` asks for a press held for `holdDuration`. `countdown` confirms, then counts down `countdown` seconds that Cancel or Escape can still stop. */
     confirmMode?: ConfirmMorphMode
     /** Milliseconds the confirm button must be held in `hold` mode. */
@@ -75,6 +77,14 @@ export interface ConfirmMorphProps {
     countdownLabel?: string
     /** Runs on confirm. Return a promise to show the pending face; a rejection shows the error face with Retry. */
     onConfirm?: () => unknown
+    /** Starts an externally controlled immediate workflow (for example, browser authorization). */
+    onActivate?: () => void
+    /** Device authorization content in the confirming face. Uses the same pill and width spring. */
+    confirmContent?: ReactNode
+    /** Accessible name when the resting action needs more context than its visible label. */
+    actionLabel?: string
+    /** Adds a Cancel action before Retry in the error face. */
+    errorCancelLabel?: string
     /** Offering it adds Undo to the result. Return a promise to show a pending face while it runs. */
     onUndo?: () => unknown
     onCancel?: () => void
@@ -83,6 +93,8 @@ export interface ConfirmMorphProps {
     /** Starting state when uncontrolled. */
     defaultState?: ConfirmMorphState
     onStateChange?: (state: ConfirmMorphState) => void
+    /** Reports the current face after its width has settled, for coordinating adjacent content. */
+    onWidthSettled?: (state: ConfirmMorphState) => void
     /** Milliseconds before an unanswered question returns to rest. Resting the pointer on the control pauses it. 0 turns it off. */
     confirmTimeout?: number
     /** Milliseconds a result stays before returning to rest. Resting the pointer on the control pauses it. 0 turns it off. */
@@ -106,9 +118,8 @@ const physical = ({ visualDuration, bounce }: { visualDuration: number; bounce: 
     const root = (2 * Math.PI) / (visualDuration * 1.2)
     return { type: 'spring', stiffness: root * root, damping: 2 * (1 - bounce) * root, mass: 1 }
 }
-/** Growing follows new content with a little life; shrinking settles without overshoot. */
-const GROW = physical(motionTokens.spring.morph),
-    SHRINK = physical(motionTokens.spring.smooth)
+/** A progress surface follows content without overshoot and retargets from its current velocity. */
+const RESIZE = physical({ ...motionTokens.spring.smooth, visualDuration: motionTokens.duration.standard })
 
 const subscribe = () => () => {
     /* Hydration has no external subscription to clean up. */
@@ -167,12 +178,14 @@ function Face({
     useLayoutEffect(() => {
         const node = ref.current
         if (!node || !present) return
-        // Fractional widths, so the spring lands exactly where the pill's natural width is and the hand back to auto is seamless.
-        const report = () => onSize(id, node.getBoundingClientRect().width)
+        // Measure layout size, not the dialog's animated entrance scale. ResizeObserver
+        // preserves fractional widths without including transforms on any ancestor.
+        const report = (entries?: ResizeObserverEntry[]) =>
+            onSize(id, entries?.[0]?.borderBoxSize?.[0]?.inlineSize ?? node.offsetWidth)
         report()
         if (typeof ResizeObserver === 'undefined') return
         const observer = new ResizeObserver(report)
-        observer.observe(node)
+        observer.observe(node, { box: 'border-box' })
         return () => observer.disconnect()
     }, [id, onSize, present])
     return (
@@ -277,6 +290,7 @@ export function ConfirmMorph({
     confirmLabel = 'Delete',
     cancelLabel = 'Cancel',
     pendingLabel = 'Deleting',
+    pendingContent,
     doneLabel = 'Deleted',
     errorLabel = 'Couldn’t finish',
     retryLabel = 'Retry',
@@ -290,10 +304,15 @@ export function ConfirmMorph({
     countdownLabel,
     onConfirm,
     onUndo,
+    onActivate,
+    confirmContent,
+    actionLabel,
+    errorCancelLabel,
     onCancel,
     state: stateProp,
     defaultState = 'idle',
     onStateChange,
+    onWidthSettled,
     confirmTimeout = 6000,
     resultTimeout = 5000,
     cancelOnOutsidePress = true,
@@ -315,9 +334,9 @@ export function ConfirmMorph({
     const [announcement, setAnnouncement] = useState('')
     const faceKey: FaceKey = state === 'confirming' && counting ? 'counting' : state
 
-    const live = useRef({ state, onStateChange, controlled: stateProp !== undefined })
+    const live = useRef({ state, onStateChange, onWidthSettled, controlled: stateProp !== undefined })
     useLayoutEffect(() => {
-        live.current = { state, onStateChange, controlled: stateProp !== undefined }
+        live.current = { state, onStateChange, onWidthSettled, controlled: stateProp !== undefined }
     })
     const pendingFocus = useRef(false)
     const run = useRef(0)
@@ -408,26 +427,42 @@ export function ConfirmMorph({
         }
     })
 
-    /* The shape: one pill whose width springs to whichever face is current. At rest it is auto, so it renders right before hydration. */
+    /* Auto is only for the initial render. Keeping the measured width numeric prevents content from resizing the surface before its next spring. */
     const width = useMotionValue<number | 'auto'>('auto')
     const target = useRef(0)
     const flight = useRef(0)
+    const measuredFace = useRef<FaceKey>('idle')
     // Only the present face reports (a leaving face stops observing), so every report is the current face's width.
     const onFaceSize = useCallback(
-        (_id: FaceKey, w: number) => {
-            if (Math.abs(w - target.current) < 0.25) return
+        (id: FaceKey, w: number) => {
+            measuredFace.current = id
+            const settled = () =>
+                queueMicrotask(() => {
+                    if (
+                        rootRef.current &&
+                        Math.abs(Number(width.get()) - target.current) < 0.25 &&
+                        measuredFace.current === live.current.state
+                    )
+                        live.current.onWidthSettled?.(live.current.state)
+                })
+            if (Math.abs(w - target.current) < 0.25) {
+                settled()
+                return
+            }
             const from = target.current
             target.current = w
             if (!from || reduced) {
                 flight.current++
-                width.jump('auto')
+                width.jump(w)
+                settled()
                 return
             }
-            const now = width.get()
-            if (now === 'auto') width.jump(from)
             const token = ++flight.current
-            animate(width, w, w > (typeof now === 'number' ? now : from) ? GROW : SHRINK).then(() => {
-                if (token === flight.current) width.jump('auto')
+            animate(width, w, RESIZE).then(() => {
+                if (token === flight.current) {
+                    width.jump(w)
+                    settled()
+                }
             })
         },
         [reduced, width]
@@ -543,13 +578,13 @@ export function ConfirmMorph({
         return () => document.removeEventListener('pointerdown', down)
     }, [cancel, cancelOnOutsidePress, state])
 
-    // Focus moves with the morph: Confirm while asking, the root while counting or working, Undo or Retry on a result, the trigger at rest.
+    // Focus follows the control after its own state changes.
     useLayoutEffect(() => {
         if (!pendingFocus.current) return
         pendingFocus.current = false
         const root = rootRef.current
         if (!root) return
-        const face = root.querySelector<HTMLElement>(`[data-face="${faceKey}"]`)
+        const face = root.querySelector<HTMLElement>(`[data-face="${faceKey}"]:not([inert])`)
         const autofocus = face?.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)')
         ;(autofocus ?? root).focus({ preventScroll: true })
     }, [faceKey])
@@ -557,6 +592,10 @@ export function ConfirmMorph({
     const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
         if (event.key === 'Escape') {
             if (state === 'confirming') {
+                event.preventDefault()
+                event.stopPropagation()
+                cancel()
+            } else if (state === 'error' && errorCancelLabel) {
                 event.preventDefault()
                 event.stopPropagation()
                 cancel()
@@ -571,6 +610,7 @@ export function ConfirmMorph({
         if (
             event.key === 'Enter' &&
             state === 'confirming' &&
+            !confirmContent &&
             !event.repeat &&
             !(event.target instanceof HTMLButtonElement)
         ) {
@@ -633,6 +673,7 @@ export function ConfirmMorph({
     const face = (() => {
         switch (faceKey) {
             case 'confirming':
+                if (confirmContent) return confirmContent
                 return (
                     <>
                         <Part reduced={reduced} className={styles.prompt}>
@@ -671,7 +712,9 @@ export function ConfirmMorph({
                 return (
                     <Part reduced={reduced} className={styles.status}>
                         <LoaderCircle className={styles.spinner} size={16} strokeWidth={1.75} aria-hidden="true" />
-                        <span className={styles.statusText}>{working === 'undo' ? undoingLabel : pendingLabel}</span>
+                        <span className={styles.statusText}>
+                            {working === 'undo' ? undoingLabel : (pendingContent ?? pendingLabel)}
+                        </span>
                     </Part>
                 )
             case 'done':
@@ -700,14 +743,23 @@ export function ConfirmMorph({
                     <>
                         <Part reduced={reduced} className={styles.status}>
                             <CircleAlert className={styles.alert} size={16} strokeWidth={1.75} aria-hidden="true" />
-                            <span className={styles.statusText}>{errorLabel}</span>
+                            <span className={styles.statusText} title={errorLabel}>
+                                {errorLabel}
+                            </span>
                         </Part>
+                        {errorCancelLabel && (
+                            <Part reduced={reduced}>
+                                <button type="button" className={styles.secondary} onClick={cancel}>
+                                    {errorCancelLabel}
+                                </button>
+                            </Part>
+                        )}
                         <Part reduced={reduced}>
                             <button
                                 type="button"
                                 className={styles.secondary}
                                 data-autofocus
-                                onClick={() => void perform(working)}
+                                onClick={() => (onActivate ? onActivate() : void perform(working))}
                             >
                                 {retryLabel}
                             </button>
@@ -722,7 +774,12 @@ export function ConfirmMorph({
                             className={styles.trigger}
                             data-autofocus
                             disabled={disabled}
+                            aria-label={actionLabel}
                             onClick={() => {
+                                if (onActivate) {
+                                    onActivate()
+                                    return
+                                }
                                 if (confirmMode === 'immediate') {
                                     void perform('confirm')
                                     return
@@ -778,7 +835,7 @@ export function ConfirmMorph({
                         id={faceKey}
                         reduced={reduced}
                         onSize={onFaceSize}
-                        labelledBy={faceKey === 'confirming' ? promptId : undefined}
+                        labelledBy={faceKey === 'confirming' && !confirmContent ? promptId : undefined}
                     >
                         {face}
                     </Face>

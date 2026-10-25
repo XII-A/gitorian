@@ -10,6 +10,8 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
     label: string
     description?: string
     error?: string
+    hideLabel?: boolean
+    variant?: 'surface' | 'inline'
 }
 
 /* Digits roll up when a number grows and down when it shrinks; `custom` hands the latest direction to digits already leaving. */
@@ -196,7 +198,7 @@ function MessageRow({ id, text, className, alert }: { id?: string; text: string;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-    { label, description, error, id, className, ...props },
+    { label, description, error, id, className, hideLabel = false, variant = 'surface', ...props },
     ref
 ) {
     const generatedId = useId()
@@ -206,14 +208,16 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     const describedBy = [props['aria-describedby'], hintId, errorId].filter(Boolean).join(' ') || undefined
     return (
         <div className={styles.field}>
-            <label className={styles.label} htmlFor={controlId}>
+            <label className={hideLabel ? styles.srOnly : styles.label} htmlFor={controlId}>
                 {label}
             </label>
             <input
                 {...props}
                 id={controlId}
                 ref={ref}
-                className={[styles.input, className].filter(Boolean).join(' ')}
+                className={[styles.input, variant === 'inline' ? styles.inline : '', className]
+                    .filter(Boolean)
+                    .join(' ')}
                 aria-invalid={error ? true : props['aria-invalid']}
                 aria-describedby={describedBy}
             />

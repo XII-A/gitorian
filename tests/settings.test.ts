@@ -6,10 +6,10 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { discoverRepositories } from '../src/main/repository-discovery'
 import { journal, workspace } from './fixtures'
-import { initialState, type Repository, type RepositoryImportProgress } from '../src/shared/model'
+import { stateSchema, initialState, type Repository, type RepositoryImportProgress } from '../src/shared/model'
 import { hasUnsavedSettings } from '../src/renderer/settings-model'
 
-it('warns for unsaved preferences, template, destination, repository edits and connection input', () => {
+it('warns for unsaved preferences, template and repository edits while destination changes apply independently', () => {
     const saved = initialState()
     const repository: Repository = {
         id: 'repo',
@@ -25,23 +25,26 @@ it('warns for unsaved preferences, template, destination, repository edits and c
         branches: ['main']
     }
     saved.repositories = [repository]
-    const dirty = (settings = saved.settings, repos = saved.repositories, token = '') =>
-        hasUnsavedSettings(settings, repos, saved, token)
+    const dirty = (settings = saved.settings, repos = saved.repositories) => hasUnsavedSettings(settings, repos, saved)
     expect(dirty()).toBe(false)
     for (const patch of [
         { timezone: 'UTC' === saved.settings.timezone ? 'Europe/Istanbul' : 'UTC' },
         { refreshMinutes: saved.settings.refreshMinutes + 1 },
         { weekStart: (saved.settings.weekStart + 1) % 7 },
-        { githubClientId: 'new-client' },
         {
             template: {
                 type: 'doc',
                 content: [{ type: 'paragraph', content: [{ type: 'text', text: 'New template' }] }]
             }
-        },
-        { destination: { kind: 'page' as const, id: 'new-page', titleProperty: 'Name', dateProperty: '' } }
+        }
     ])
         expect(dirty({ ...saved.settings, ...patch })).toBe(true)
+    expect(
+        dirty({
+            ...saved.settings,
+            destination: { kind: 'page', id: 'confirmed-page', titleProperty: 'Name', dateProperty: '' }
+        })
+    ).toBe(false)
     for (const patch of [
         { base: 'develop' },
         { remote: 'https://github.com/example/project' },
@@ -50,7 +53,6 @@ it('warns for unsaved preferences, template, destination, repository edits and c
         { removed: true }
     ])
         expect(dirty(saved.settings, [{ ...repository, ...patch }])).toBe(true)
-    expect(dirty(saved.settings, saved.repositories, 'unsubmitted-token')).toBe(true)
     expect(dirty()).toBe(false)
 })
 
@@ -59,15 +61,14 @@ it('compares against the latest saved settings and ignores refreshed metadata an
     const template = { type: 'doc', content: [{ type: 'heading', attrs: { level: 2, id: 'heading' } }] }
     saved.settings.template = template
     const local = { ...saved.settings, refreshMinutes: saved.settings.refreshMinutes + 1 }
-    expect(hasUnsavedSettings(local, [], saved, '')).toBe(true)
+    expect(hasUnsavedSettings(local, [], saved)).toBe(true)
     saved.settings = { ...local, githubLogin: 'signed-in', layout: { ...local.layout, hidden: ['details'] } }
-    expect(hasUnsavedSettings(local, [], saved, '')).toBe(false)
+    expect(hasUnsavedSettings(local, [], saved)).toBe(false)
     expect(
         hasUnsavedSettings(
             { ...local, template: { content: [{ attrs: { id: 'heading', level: 2 }, type: 'heading' }], type: 'doc' } },
             [],
-            saved,
-            ''
+            saved
         )
     ).toBe(false)
 })
@@ -75,7 +76,7 @@ it('compares against the latest saved settings and ignores refreshed metadata an
 const execute = promisify(execFile)
 it('imports nested repositories once, skips dependency folders, and resumes stopped tracking', async () => {
     const app = await workspace()
-    const parent = await mkdtemp(join(tmpdir(), 'weekly-j-discovery-'))
+    const parent = await mkdtemp(join(tmpdir(), 'gitorian-discovery-'))
     try {
         const paths = [join(parent, 'one'), join(parent, 'team', 'two'), join(parent, 'node_modules', 'ignored')]
         for (const path of paths) {
@@ -130,14 +131,14 @@ it('imports nested repositories once, skips dependency folders, and resumes stop
     } finally {
         await app.close()
         const target = resolve(parent)
-        if (target.startsWith(resolve(tmpdir()) + sep) && target.includes('weekly-j-discovery-'))
+        if (target.startsWith(resolve(tmpdir()) + sep) && target.includes('gitorian-discovery-'))
             await rm(target, { recursive: true, force: true })
     }
 })
 
 it('imports only checked repositories and rejects stale scans and paths outside the scan', async () => {
     const app = await workspace()
-    const parent = await mkdtemp(join(tmpdir(), 'weekly-j-selection-'))
+    const parent = await mkdtemp(join(tmpdir(), 'gitorian-selection-'))
     try {
         for (const name of ['include', 'exclude']) {
             const path = join(parent, name)
@@ -161,7 +162,7 @@ it('imports only checked repositories and rejects stale scans and paths outside 
     } finally {
         await app.close()
         const target = resolve(parent)
-        if (target.startsWith(resolve(tmpdir()) + sep) && target.includes('weekly-j-selection-'))
+        if (target.startsWith(resolve(tmpdir()) + sep) && target.includes('gitorian-selection-'))
             await rm(target, { recursive: true, force: true })
     }
 })
@@ -178,7 +179,15 @@ it('uses a saved Arc template for new drafts without changing existing writing',
                 { type: 'paragraph', content: [{ type: 'text', text: 'Keep one lesson.', marks: [{ type: 'bold' }] }] }
             ]
         }
-        await app.service.handle({ type: 'settings', settings: { ...app.store.state.settings, template } })
+        const openSettings = structuredClone(app.store.state.settings)
+        app.store.state.settings.destination = {
+            kind: 'page',
+            id: 'newly-confirmed-page',
+            titleProperty: 'Name',
+            dateProperty: ''
+        }
+        await app.service.handle({ type: 'settings', settings: { ...openSettings, template } })
+        expect(app.store.state.settings.destination.id).toBe('newly-confirmed-page')
         await app.service.handle({ type: 'newDraft', week: '2026-10-12' })
         expect(app.store.state.drafts[1].body).toEqual(template)
         expect(app.store.state.drafts[0].body).toEqual(original)
@@ -187,4 +196,13 @@ it('uses a saved Arc template for new drafts without changing existing writing',
     } finally {
         await app.close()
     }
+})
+
+it('discards obsolete OAuth app settings from old journals without losing account or writing', () => {
+    const saved = initialState()
+    saved.settings.githubLogin = 'existing-author'
+    const restored = stateSchema.parse({ ...saved, settings: { ...saved.settings, githubClientId: 'old-user-app' } })
+    expect(restored.settings).not.toHaveProperty('githubClientId')
+    expect(restored.settings.githubLogin).toBe('existing-author')
+    expect(restored.settings.template).toEqual(saved.settings.template)
 })

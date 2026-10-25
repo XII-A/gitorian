@@ -1,9 +1,9 @@
 ---
-name: verify-weekly-j
-description: Verify weekly-j Electron features through real desktop journeys. Use after feature changes, for behavioral bug reproduction, or when collecting reproducible UI and persistence evidence.
+name: verify-gitorian
+description: Verify Gitorian Electron features through real desktop journeys. Use after feature changes, for behavioral bug reproduction, or when collecting reproducible UI and persistence evidence.
 ---
 
-# Verify weekly-j
+# Verify Gitorian
 
 Read [the feature map](features/README.md), select the affected entry points, and define their observable outcomes before changing code. The primary surface is the Electron desktop app; Git, SQLite, and integration HTTP adapters support it. A renderer-only browser preview cannot prove desktop IPC or persistence.
 
@@ -22,7 +22,7 @@ Require each command to exit zero before continuing. Build once per source revis
 
 The runner creates an empty temporary profile and six real Git repositories, including duplicate project names and a nested folder. The app creates/migrates SQLite itself. The harness establishes one tracked and one stopped repository using real application commands as explicit setup; the subsequent import journey uses UI controls. No credentials or external services are needed. It automates the OS folder picker at the Electron dialog boundary and slows real filesystem/Git operations to observe progress.
 
-Ready means the compiled renderer exposes `Open settings`, real IPC returns empty repository state, both integrations are disconnected, and Electron owns the expected isolated profile. The in-process doctor must pass before fixture setup or UI actions. This recipe has no server port. Separate runs use separate profiles, repositories, and evidence directories; compilation into `out/` is shared, so serialize builds and never rebuild during an active journey. Avoid `pnpm dev` for verification: it uses the personal application profile by default.
+Ready means the compiled renderer exposes `Open settings`, real IPC returns empty repository state, both integrations are disconnected, and Electron owns the expected isolated profile. The in-process doctor must pass before fixture setup or UI actions. This recipe has no server port. Separate runs use separate profiles, repositories, and evidence directories; compilation into `out/` is shared, so serialize builds and never rebuild during an active journey. Use the artifact-backed runners for feature verification. `pnpm dev` uses a separate persistent development profile by default; `pnpm smoke:dev-launch` owns a disposable profile to verify the OAuth/desktop startup and process cleanup.
 
 ## Doctor
 
@@ -58,8 +58,12 @@ Inspect the printed `run.json` after every run, including failures. Require `cle
 
 ## Helpers
 
+- `pnpm verify onboarding` drives the [onboarding journey](features/onboarding.md), sharing simulated provider boundaries with the connection fixture and importing one real disposable Git repository.
+- `pnpm verify onboarding-disclosure` checks [disclosure text stability](features/onboarding.md#disclosure-text-stability) in an empty journal-only profile.
+
 - `pnpm verify doctor` runs the read-only build check in `tools/verify.mjs`.
 - `pnpm verify repository-import` runs launch, live doctor, drive, evidence, persistence check, and cleanup in one command.
+- `pnpm verify connections` drives the [connections journey](features/connections.md) using a journal-only disposable profile and simulated GitHub HTTP/browser boundaries.
 - Other existing harness commands and concrete entry points are indexed in [features/README.md](features/README.md).
 
 Maintain the map with the app: update changed selectors, entry points, preconditions, and outcomes; rerun affected journeys and retain their evidence. A feature is verified only when every claimed entry point has an observed result.

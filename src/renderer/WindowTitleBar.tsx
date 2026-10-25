@@ -35,7 +35,8 @@ export function WindowTitleBar() {
         if (!desktop) return
         let active = true
         const unsubscribe = desktop.onState((state) => setMaximized(state.maximized))
-        const unsubscribeHover = desktop.onHover(setHovered)
+        const pointer = window.matchMedia('(hover: hover) and (pointer: fine)')
+        const unsubscribeHover = desktop.onHover((value) => setHovered(value && pointer.matches))
         const blur = () => setKeyboardFocus(false)
         window.addEventListener('blur', blur)
         void desktop.action('state').then((state) => {
@@ -54,14 +55,16 @@ export function WindowTitleBar() {
             className="window-chrome"
             data-revealed={revealed}
             data-draggable={revealed && dragReady}
+            data-keyboard={keyboardFocus}
             onPointerDownCapture={() => setKeyboardFocus(false)}
             onFocusCapture={(event) => setKeyboardFocus(event.target.matches(':focus-visible'))}
             onBlurCapture={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget)) setKeyboardFocus(false)
             }}
         >
+            <div className="window-frame-cap" aria-hidden="true" />
             <div ref={bar} className="window-title-bar" role="toolbar" aria-label="Window controls">
-                <div className="window-title-bar-drag">weekly-j</div>
+                <div className="window-title-bar-drag">Gitorian</div>
                 <button
                     type="button"
                     aria-label="Minimize window"

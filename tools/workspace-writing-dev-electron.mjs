@@ -39,7 +39,7 @@ if (branchCount)
         if (i >= 600) activity.date = '2026-09-01T12:00:00Z'
     })
 const fixtureBytes = Buffer.byteLength(JSON.stringify(fixture))
-const db = new DatabaseSync(join(directory, 'weekly-j.sqlite'))
+const db = new DatabaseSync(join(directory, 'gitorian.sqlite'))
 db.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)')
 db.prepare('INSERT INTO state VALUES(1,?)').run(JSON.stringify(fixture))
 if (Number(process.env.WRITING_IMAGES_COUNT ?? 0) > 0) {
@@ -269,7 +269,7 @@ app.on('browser-window-created', (_, initial) => {
             for (const task of classifiedTasks)
                 if (task.totalSampleMs > 0 && task.gcMs / task.totalSampleMs >= 0.8) task.classification = 'gc'
             const editorJSON = await js(`JSON.stringify(document.querySelector('.tiptap').editor.getJSON())`)
-            const verifyDb = new DatabaseSync(join(directory, 'weekly-j.sqlite'), { readOnly: true })
+            const verifyDb = new DatabaseSync(join(directory, 'gitorian.sqlite'), { readOnly: true })
             const saved = verifyDb
                 .prepare('SELECT json FROM state_records WHERE collection=? AND id=?')
                 .get('drafts', fixture.drafts[0].id)

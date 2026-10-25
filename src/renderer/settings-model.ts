@@ -8,19 +8,12 @@ export function timezoneOptions(current: string) {
 }
 
 /** Only compare editable fields; refreshes and immediately saved connection/folder actions are not form edits. */
-export function hasUnsavedSettings(
-    settings: State['settings'],
-    repositories: Repository[],
-    saved: State,
-    token: string
-) {
+export function hasUnsavedSettings(settings: State['settings'], repositories: Repository[], saved: State) {
     const editable = (preferences: State['settings'], repos: Repository[]) => ({
         weekStart: preferences.weekStart,
         timezone: preferences.timezone,
         refreshMinutes: preferences.refreshMinutes,
         template: preferences.template,
-        githubClientId: preferences.githubClientId,
-        destination: preferences.destination,
         repositories: repos
             .map(({ id, base, remote, trackingStart, emails, removed }) => ({
                 id,
@@ -38,8 +31,5 @@ export function hasUnsavedSettings(
                 ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)))
                 : item
         )
-    return (
-        !!token ||
-        serialize(editable(settings, repositories)) !== serialize(editable(saved.settings, saved.repositories))
-    )
+    return serialize(editable(settings, repositories)) !== serialize(editable(saved.settings, saved.repositories))
 }

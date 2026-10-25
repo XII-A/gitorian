@@ -1,4 +1,4 @@
-weekly-j includes Arc UI Free accordion, badge, button, calendar, checkbox, date-picker,
+Gitorian includes Arc UI Free accordion, badge, button, calendar, checkbox, date-picker,
 dialog, input, popover, select, tabs, textarea, tree-view, foundation, and motion token sources.
 Source: https://uiarc.dev and https://github.com/kuratlielia/arc-library
 Their MIT notice is retained at src/renderer/components/arc/LICENSE.
@@ -9,3 +9,7 @@ desktop window.
 
 Runtime dependency licenses are supplied with the packaged dependencies and
 Electron's LICENSES.chromium.html. No Arc Pro source is included.
+
+The GitHub circular mark is from GitHub's MIT-licensed Primer Octicons:
+https://github.com/primer/octicons/blob/main/icons/mark-github-24.svg
+Its full MIT notice is embedded in src/renderer/assets/github-mark.svg.

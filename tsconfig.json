@@ -15,5 +15,5 @@
             "@/*": ["./src/renderer/*"]
         }
     },
-    "include": ["src", "tests", "*.ts", "tools"]
+    "include": ["src", "services", "tests", "*.ts", "tools"]
 }

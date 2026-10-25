@@ -9,6 +9,7 @@ import { ActivityDetails } from './ActivityDetails'
 import { PullRequestStatus } from './PullRequestLifecycle'
 import { isPullRequest } from './pull-request'
 import './activity-details.css'
+import { hasFileStatistics } from '../shared/change-statistics'
 
 export interface HubActivityDialogHandle {
     open: (activity: Activity) => void
@@ -38,9 +39,10 @@ export function HubActivityDialog({
             open(activity) {
                 returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
                 const previous = loadedDetails.current.get(activity.id)
-                const cached = activity.filesLoaded
+                const cached = hasFileStatistics(activity)
                     ? activity
-                    : previous?.filesLoaded &&
+                    : previous &&
+                        hasFileStatistics(previous) &&
                         previous.sourceVersion === activity.sourceVersion &&
                         previous.sha === activity.sha
                       ? previous
@@ -56,7 +58,7 @@ export function HubActivityDialog({
     )
     useEffect(() => {
         if (!isOpen || !selected) return
-        if (selected.filesLoaded) {
+        if (hasFileStatistics(selected)) {
             setDetails(selected)
             setBusy(false)
             return
@@ -71,7 +73,7 @@ export function HubActivityDialog({
                 if (!cancelled) {
                     const activity = reply.state.activities.find((item) => item.id === selected.id)
                     setDetails(activity)
-                    if (activity?.filesLoaded && !reply.detailError) {
+                    if (activity && hasFileStatistics(activity) && !reply.detailError) {
                         if (loadedDetails.current.size >= 32)
                             loadedDetails.current.delete(loadedDetails.current.keys().next().value!)
                         loadedDetails.current.set(activity.id, activity)

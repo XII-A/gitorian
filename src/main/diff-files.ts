@@ -1,5 +1,7 @@
 import parser from 'gitdiff-parser'
 import type { Activity } from '../shared/model'
+import { diffLineStats } from '../shared/change-statistics'
+import { markBinaryDiffs } from '../shared/diff-format'
 
 /** Undefined means the patch cannot safely supply the file list. */
 export function filesFromDiff(diff: string): Activity['files'] | undefined {
@@ -10,7 +12,7 @@ export function filesFromDiff(diff: string): Activity['files'] | undefined {
     // the metadata endpoint for those paths rather than returning wrong names.
     if (headers.some((line) => !/^diff --git a\/\S+ b\/\S+$/.test(line))) return undefined
     try {
-        const files = parser.parse(diff)
+        const files = markBinaryDiffs(parser.parse(diff), diff)
         if (files.length !== headers.length) return undefined
         const statuses = { add: 'added', delete: 'removed', modify: 'modified', rename: 'renamed', copy: 'copied' }
         return files.map((file) => {
@@ -25,6 +27,7 @@ export function filesFromDiff(diff: string): Activity['files'] | undefined {
             return {
                 name: status === 'removed' ? file.oldPath : file.newPath,
                 status,
+                lineStats: diffLineStats(file),
                 ...(status === 'renamed' || status === 'copied' ? { previousName: file.oldPath } : {})
             }
         })

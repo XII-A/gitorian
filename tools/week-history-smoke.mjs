@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const directory = mkdtempSync(join(tmpdir(), 'weekly-j-week-history-'))
+const directory = mkdtempSync(join(tmpdir(), 'gitorian-week-history-'))
 const repositories = join(directory, 'repositories')
 app.setPath('userData', directory)
 const authored = new Date()
@@ -114,7 +114,7 @@ app.on('browser-window-created', (_, window) => {
 })
 app.on('will-quit', () => {
     const target = resolve(directory)
-    if (!target.startsWith(resolve(tmpdir()) + sep) || !target.includes('weekly-j-week-history-')) return
+    if (!target.startsWith(resolve(tmpdir()) + sep) || !target.includes('gitorian-week-history-')) return
     try {
         rmSync(target, { recursive: true, force: true })
     } catch {

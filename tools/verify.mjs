@@ -11,8 +11,31 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
-if (!['doctor', 'repository-import'].includes(mode) || process.argv.length !== 3) {
-    console.error('Usage: pnpm verify doctor | pnpm verify repository-import (run pnpm build first)')
+const runner = ['notion', 'onboarding', 'onboarding-disclosure'].includes(mode)
+    ? 'connections'
+    : mode === 'inspector-tabs'
+      ? 'desktop'
+      : mode
+const disclosureMode = mode === 'onboarding-disclosure'
+const onboardingMode = mode === 'onboarding' || disclosureMode
+const connectionMode = mode === 'connections' || mode === 'notion'
+if (
+    ![
+        'doctor',
+        'repository-import',
+        'connections',
+        'notion',
+        'onboarding',
+        'onboarding-disclosure',
+        'inspector-tabs',
+        'line-statistics',
+        'window-chrome'
+    ].includes(mode) ||
+    process.argv.length !== 3
+) {
+    console.error(
+        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome (run pnpm build first)'
+    )
     process.exit(1)
 }
 
@@ -43,32 +66,92 @@ if (mode === 'doctor') {
     const build = doctor()
     const evidenceRoot = join(root, '.ai-docs', 'verification')
     mkdirSync(evidenceRoot, { recursive: true })
-    const output = mkdtempSync(join(evidenceRoot, 'repository-import-'))
-    const scratch = mkdtempSync(join(tmpdir(), 'weekly-j-import-'))
-    const report = { feature: mode, command: 'pnpm verify repository-import', build, scratch, output, passed: false }
-    const env = { ...process.env, WEEKLY_J_VERIFY_STATE: scratch, WEEKLY_J_VERIFY_OUTPUT: output }
+    const output = mkdtempSync(join(evidenceRoot, `${mode}-`))
+    const scratch = mkdtempSync(join(tmpdir(), 'gitorian-import-'))
+    const report = {
+        feature: mode,
+        command: `${onboardingMode && process.env.GITORIAN_VERIFY_ONBOARDING_INLINE === '1' ? 'GITORIAN_VERIFY_ONBOARDING_INLINE=1 ' : ''}${onboardingMode && process.env.GITORIAN_VERIFY_ONBOARDING_REDUCED === '1' ? 'GITORIAN_VERIFY_ONBOARDING_REDUCED=1 ' : ''}pnpm verify ${mode}`,
+        build,
+        scratch,
+        output,
+        passed: false
+    }
+    const env = {
+        ...process.env,
+        GITORIAN_VERIFY_ONBOARDING: onboardingMode ? '1' : '0',
+        GITORIAN_VERIFY_ONBOARDING_DISCLOSURE: disclosureMode ? '1' : '0',
+        GITORIAN_VERIFY_STATE: scratch,
+        GITORIAN_VERIFY_OUTPUT: output,
+        GITORIAN_VERIFY_SERVICE: mode === 'notion' ? 'notion' : ''
+    }
     // The Codex host exports this flag for itself; Electron must launch as a desktop app.
     delete env.ELECTRON_RUN_AS_NODE
     delete env.ELECTRON_RENDERER_URL
+    if (mode === 'inspector-tabs') env.INSPECTOR_TABS_ONLY = '1'
     writeFileSync(join(output, 'run.json'), JSON.stringify(report, null, 2))
     console.info(`Evidence: ${output}`)
     let cleanupError
     try {
+        if (mode === 'line-statistics')
+            execFileSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'tools/line-statistics-fixture.ts'], {
+                cwd: root,
+                env,
+                windowsHide: true
+            })
+        if (mode === 'inspector-tabs') writeFileSync(join(output, 'doctor.json'), JSON.stringify(build, null, 2))
         writeFileSync(
             join(output, 'source.patch'),
             execFileSync(
                 'git',
-                ['diff', '--binary', 'HEAD', '--', 'src', 'tools', 'package.json', 'electron.vite.config.ts'],
+                [
+                    'diff',
+                    '--binary',
+                    'HEAD',
+                    '--',
+                    'src',
+                    'services',
+                    'tools',
+                    'tests',
+                    'package.json',
+                    'pnpm-lock.yaml',
+                    'pnpm-workspace.yaml',
+                    'electron.vite.config.ts',
+                    'tsconfig.json',
+                    'netlify.toml'
+                ],
                 {
                     cwd: root,
                     windowsHide: true
                 }
             )
         )
+        if (onboardingMode)
+            writeFileSync(
+                join(output, 'onboarding-journey.mjs'),
+                readFileSync(join(root, 'tools/onboarding-journey.mjs'))
+            )
+        if (onboardingMode)
+            writeFileSync(
+                join(output, 'onboarding-disclosure-journey.mjs'),
+                readFileSync(join(root, 'tools/onboarding-disclosure-journey.mjs'))
+            )
+        for (const file of [
+            'src/renderer/GettingStarted.tsx',
+            'src/renderer/OnboardingActivityPreview.tsx',
+            'src/renderer/OnboardingSetupLayout.tsx',
+            'src/renderer/use-onboarding.ts',
+            'src/renderer/components/arc/onboarding-checklist/onboarding-checklist.tsx',
+            'src/renderer/components/arc/onboarding-checklist/onboarding-checklist.module.css'
+        ]) {
+            const target = join(output, 'source-files', file)
+            mkdirSync(dirname(target), { recursive: true })
+            writeFileSync(target, readFileSync(join(root, file)))
+        }
         writeFileSync(join(output, 'verify-runner.mjs'), readFileSync(fileURLToPath(import.meta.url)))
+        writeFileSync(join(output, `${mode}-smoke.mjs`), readFileSync(join(root, `tools/${runner}-smoke.mjs`)))
         for (const log of ['stdout.log', 'stderr.log']) writeFileSync(join(output, log), '')
         const result = await new Promise((done, reject) => {
-            const child = spawn(electron, ['tools/repository-import-smoke.mjs'], {
+            const child = spawn(electron, [`tools/${runner}-smoke.mjs`], {
                 cwd: root,
                 env,
                 windowsHide: true,
@@ -102,21 +185,88 @@ if (mode === 'doctor') {
         if (result.code !== 0 || report.timedOut) throw new Error(`Electron journey failed: ${JSON.stringify(result)}`)
         const journey = JSON.parse(readFileSync(join(output, 'journey.json'), 'utf8'))
         if (!journey.passed) throw new Error('The journey did not report success')
-        const db = new DatabaseSync(join(scratch, 'profile', 'weekly-j.sqlite'), { readOnly: true })
-        try {
-            const repositories = db
-                .prepare("SELECT json FROM state_records WHERE collection='repositories'")
-                .all()
-                .map((row) => JSON.parse(String(row.json)))
-            writeFileSync(join(output, 'persisted-repositories.json'), JSON.stringify(repositories, null, 2))
-            const expected = ['api-server', 'archived-tools', 'design-system', 'website', 'website'].sort()
-            if (
-                JSON.stringify(repositories.map((item) => item.name).sort()) !== JSON.stringify(expected) ||
-                repositories.some((item) => item.removed)
-            )
-                throw new Error('Persisted import differs from the selected repositories')
-        } finally {
-            db.close()
+        if (mode === 'line-statistics') {
+            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
+            try {
+                const activities = db
+                    .prepare("SELECT json FROM state_records WHERE collection='activities'")
+                    .all()
+                    .map((row) => JSON.parse(String(row.json)))
+                writeFileSync(join(output, 'persisted-activities.json'), JSON.stringify(activities, null, 2))
+                const fixture = JSON.parse(readFileSync(join(output, 'fixture.json'), 'utf8'))
+                const inspected = activities.filter((activity) =>
+                    [fixture.commitId, fixture.prId].includes(activity.id)
+                )
+                for (const activity of inspected) {
+                    const stats = activity.files.map((file) => file.lineStats).filter(Boolean)
+                    if (
+                        !activity.filesLoaded ||
+                        activity.files.some((file) => file.lineStats === undefined) ||
+                        stats.reduce((sum, item) => Number(sum) + Number(item.additions), 0) !== 647 ||
+                        stats.reduce((sum, item) => Number(sum) + Number(item.deletions), 0) !== 45
+                    )
+                        throw new Error('Persisted line statistics differ from the fixture')
+                }
+                if (inspected.length !== 2) throw new Error('Expected commit and PR metadata to persist')
+            } finally {
+                db.close()
+            }
+        }
+        if (mode !== 'line-statistics' && mode !== 'inspector-tabs' && mode !== 'window-chrome') {
+            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
+            try {
+                if (disclosureMode) {
+                    const count = db
+                        .prepare("SELECT count(*) AS total FROM state_records WHERE collection='repositories'")
+                        .get()
+                    if (count.total !== 0) throw new Error('Disclosure fixture unexpectedly imported repositories')
+                } else if (onboardingMode) {
+                    const repositories = db
+                        .prepare("SELECT json FROM state_records WHERE collection='repositories'")
+                        .all()
+                        .map((row) => JSON.parse(String(row.json)))
+                    writeFileSync(join(output, 'persisted-repositories.json'), JSON.stringify(repositories, null, 2))
+                    if (
+                        repositories.length !== 1 ||
+                        repositories[0].name !== 'journal-project' ||
+                        repositories[0].removed
+                    )
+                        throw new Error('Onboarding import was not persisted')
+                    const preferences = JSON.parse(readFileSync(join(output, 'preferences.json'), 'utf8'))
+                    if (preferences['gitorian:onboarding:v1:local'] !== 'complete')
+                        throw new Error('Completion preference was not retained')
+                } else if (connectionMode) {
+                    const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
+                    const settings = JSON.parse(String(row?.json))
+                    writeFileSync(join(output, 'persisted-settings.json'), JSON.stringify(settings, null, 2))
+                    if (
+                        'githubClientId' in settings ||
+                        settings.destination?.id !== 'fixture-private-journal' ||
+                        settings.destination?.kind !== 'page' ||
+                        settings.githubLogin !==
+                            (mode === 'notion'
+                                ? ''
+                                : process.env.GITORIAN_VERIFY_MOTION === 'stress'
+                                  ? 'gitorian-fixture-with-a-long-github-name'
+                                  : 'gitorian-fixture')
+                    )
+                        throw new Error('Persisted account settings differ from the authorized identity')
+                } else {
+                    const repositories = db
+                        .prepare("SELECT json FROM state_records WHERE collection='repositories'")
+                        .all()
+                        .map((row) => JSON.parse(String(row.json)))
+                    writeFileSync(join(output, 'persisted-repositories.json'), JSON.stringify(repositories, null, 2))
+                    const expected = ['api-server', 'archived-tools', 'design-system', 'website', 'website'].sort()
+                    if (
+                        JSON.stringify(repositories.map((item) => item.name).sort()) !== JSON.stringify(expected) ||
+                        repositories.some((item) => item.removed)
+                    )
+                        throw new Error('Persisted import differs from the selected repositories')
+                }
+            } finally {
+                db.close()
+            }
         }
         report.passed = true
     } catch (error) {
@@ -126,7 +276,7 @@ if (mode === 'doctor') {
         try {
             if (
                 dirname(target) === resolve(tmpdir()) &&
-                target.startsWith(resolve(tmpdir()) + sep + 'weekly-j-import-')
+                target.startsWith(resolve(tmpdir()) + sep + 'gitorian-import-')
             )
                 rmSync(target, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
             else cleanupError = `Refusing cleanup outside the owned scratch directory: ${target}`
@@ -134,14 +284,93 @@ if (mode === 'doctor') {
             cleanupError = String(error)
         }
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
-        report.evidenceRetained = [
-            'doctor.json',
-            'actions.jsonl',
-            '01-choose-folder.png',
-            '08-complete.png',
-            '10-error-details.png',
-            'persisted-repositories.json'
-        ].every((file) => existsSync(join(output, file)))
+        report.evidenceRetained = (
+            mode === 'window-chrome'
+                ? [
+                      'actions.jsonl',
+                      '01-frame-hidden.png',
+                      '02-controls-revealed.png',
+                      '03-reduced-motion.png',
+                      '04-reference-frame-dark.png',
+                      '04-reference-frame-light.png'
+                  ]
+                : mode === 'line-statistics'
+                  ? [
+                        'doctor.json',
+                        'actions.jsonl',
+                        'hub-commit-breakdown.png',
+                        'hub-pr-breakdown.png',
+                        'workspace-details.png',
+                        'selected-file-diff.png',
+                        'persisted-activities.json',
+                        'journey.json'
+                    ]
+                  : mode === 'inspector-tabs'
+                    ? [
+                          'doctor.json',
+                          'actions.json',
+                          'docked-dark-details.png',
+                          'reference-dark-details.png',
+                          'reference-light-related.png',
+                          'journey.json'
+                      ]
+                    : disclosureMode
+                      ? ['doctor.json', 'actions.jsonl', 'disclosure-motion.json', 'disclosure.png', 'journey.json']
+                      : onboardingMode
+                        ? [
+                              'doctor.json',
+                              'actions.jsonl',
+                              '01-first-launch.png',
+                              '01c-collapsed.png',
+                              '01e-dismiss-tooltip.png',
+                              'header-actions.json',
+                              'header-geometry.json',
+                              process.env.GITORIAN_VERIFY_ONBOARDING_INLINE === '1'
+                                  ? 'completion-motion.json'
+                                  : 'dismiss-motion.json',
+                              process.env.GITORIAN_VERIFY_ONBOARDING_INLINE === '1'
+                                  ? '05-inline-setup.png'
+                                  : '05-resume-popover.png',
+                              '09-complete-stats.png',
+                              'preferences.json',
+                              'persisted-repositories.json'
+                          ]
+                        : mode === 'notion'
+                          ? [
+                                'doctor.json',
+                                'actions.jsonl',
+                                'http-requests.json',
+                                'persisted-settings.json',
+                                'notion-01-ready.png',
+                                'notion-07-connected.png',
+                                'notion-09-disconnected.png',
+                                'notion-provisioned.json',
+                                'captures.json'
+                            ]
+                          : mode === 'connections'
+                            ? [
+                                  'doctor.json',
+                                  'actions.jsonl',
+                                  '01-idle.png',
+                                  '05-narrow-dark-code.png',
+                                  '08-disconnected.png',
+                                  'http-requests.json',
+                                  'persisted-settings.json',
+                                  'notion-04-failed.png',
+                                  'notion-07-connected.png',
+                                  'notion-09-disconnected.png',
+                                  'notion-provisioned.json',
+                                  'captures.json'
+                              ]
+                            : [
+                                  'doctor.json',
+                                  'actions.jsonl',
+                                  '01-choose-folder.png',
+                                  '08-complete.png',
+                                  '10-error-details.png',
+                                  'persisted-repositories.json'
+                              ]
+        ).every((file) => existsSync(join(output, file)))
         report.passed &&= report.cleanup.removed && report.evidenceRetained
         report.finishedAt = new Date().toISOString()
         writeFileSync(join(output, 'run.json'), JSON.stringify(report, null, 2))

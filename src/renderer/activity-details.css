@@ -74,6 +74,10 @@
     color: var(--foreground);
     font-weight: 500;
 }
+.hub-detail-meta :is(.hub-detail-primary-branch, .hub-detail-author-value) {
+    color: var(--foreground);
+    font-weight: 400;
+}
 .hub-detail-branches dd {
     display: flex;
     align-items: center;
@@ -136,6 +140,7 @@
     border-top: 1px solid var(--border);
 }
 .hub-detail-section h3 {
+    color: var(--foreground);
     margin: 0 0 var(--space-4);
     font-size: var(--text-base);
     font-weight: 500;

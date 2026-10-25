@@ -23,7 +23,7 @@ export function WorkspaceReference({
     const example = useMemo(() => (sampleWeek ? sampleState(sampleWeek) : undefined), [sampleWeek])
     const source = example ?? state
     const [selectedId, setSelectedId] = useState(id)
-    const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('diff')
+    const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('details')
     const activity = source.activities.find((item) => item.id === selectedId)
     const entry = source.entries.find((item) => item.id === id)
     const [status, setStatus] = useState('')
@@ -33,7 +33,7 @@ export function WorkspaceReference({
     const channel = useRef<BroadcastChannel | undefined>(undefined)
     const citationTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     useEffect(() => {
-        const bus = new BroadcastChannel('weekly-j-workspace-reference')
+        const bus = new BroadcastChannel('gitorian-workspace-reference')
         channel.current = bus
         bus.onmessage = (event: MessageEvent<unknown>) => {
             const data = event.data
@@ -60,7 +60,7 @@ export function WorkspaceReference({
         }
     }, [id, selectedId])
     const inspect = useCallback(
-        async (item: Activity, tab: 'diff' | 'details' = 'diff') => {
+        async (item: Activity, tab: 'diff' | 'details' = 'details') => {
             const request = ++requestId.current
             setSelectedId(item.id)
             setInspectionTab(tab)

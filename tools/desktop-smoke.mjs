@@ -1,14 +1,16 @@
-import { app, BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow, dialog, nativeTheme } from 'electron'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const directory = mkdtempSync(join(tmpdir(), 'weekly-j-desktop-'))
+const directory = process.env.GITORIAN_VERIFY_STATE
+    ? join(process.env.GITORIAN_VERIFY_STATE, 'profile')
+    : mkdtempSync(join(tmpdir(), 'gitorian-desktop-'))
 app.setPath('userData', directory)
 const repositoryFolder = join(directory, 'repositories')
-for (const name of ['first-project', 'second-project']) {
+for (const name of process.env.INSPECTOR_TABS_ONLY === '1' ? [] : ['first-project', 'second-project']) {
     const path = join(repositoryFolder, name)
     mkdirSync(path, { recursive: true })
     for (const args of [
@@ -34,6 +36,54 @@ for (const name of ['first-project', 'second-project']) {
     }
 }
 const pause = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds))
+const tabEvidence =
+    process.env.GITORIAN_VERIFY_OUTPUT ?? resolve('.ai-docs/verification', `inspector-tabs-${Date.now()}`)
+mkdirSync(tabEvidence, { recursive: true })
+const tabObservations = []
+async function checkInspectorTabs(window, surface) {
+    let passed = true
+    for (const [value, keyboard] of [
+        ['diff', false],
+        ['related', true],
+        ['details', false]
+    ]) {
+        const selector = `.ws-inspector [role="tab"][data-value="${value}"]`
+        const point = await window.webContents.executeJavaScript(`(() => {
+            const rect = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect()
+            return {x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2)}
+        })()`)
+        if (keyboard) {
+            window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Right' })
+            window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Right' })
+        } else {
+            window.webContents.sendInputEvent({ type: 'mouseDown', ...point, button: 'left', clickCount: 1 })
+            window.webContents.sendInputEvent({ type: 'mouseUp', ...point, button: 'left', clickCount: 1 })
+        }
+        await pause(650)
+        const observation = await window.webContents.executeJavaScript(`(() => {
+            const tab = document.querySelector(${JSON.stringify(selector)})
+            const indicator = tab.querySelector('[aria-hidden="true"]')
+            const rect = indicator?.getBoundingClientRect()
+            const bounds = tab.getBoundingClientRect()
+            return {selected: tab.getAttribute('aria-selected'), height: rect?.height,
+                bottom: rect?.bottom, tabBottom: bounds.bottom, width: rect?.width,
+                tabWidth: bounds.width, focusVisible: tab.matches(':focus-visible'),
+                background: getComputedStyle(tab).backgroundColor,
+                indicatorStyle: indicator?.getAttribute('style')}
+        })()`)
+        tabObservations.push({ surface, value, keyboard, ...observation })
+        writeFileSync(join(tabEvidence, 'actions.json'), JSON.stringify(tabObservations, null, 2))
+        writeFileSync(join(tabEvidence, `${surface}-${value}.png`), (await window.webContents.capturePage()).toPNG())
+        passed &&=
+            observation.selected === 'true' &&
+            Math.abs(observation.height - 2) < 0.5 &&
+            Math.abs(observation.bottom - observation.tabBottom) < 1 &&
+            Math.abs(observation.width - observation.tabWidth) < 1 &&
+            observation.background === 'rgba(0, 0, 0, 0)'
+    }
+    console.info(JSON.stringify({ surface, underlineTabs: passed, evidence: tabEvidence }))
+    return passed
+}
 const waitForElement = async (window, selector) => {
     for (let attempt = 0; attempt < 50; attempt++) {
         if (await window.webContents.executeJavaScript(`!!document.querySelector(${JSON.stringify(selector)})`)) return
@@ -43,7 +93,7 @@ const waitForElement = async (window, selector) => {
 }
 let checking = false
 app.on('browser-window-created', (_, window) => {
-    window.show = () => window.hide()
+    if (process.env.INSPECTOR_TABS_ONLY !== '1') window.show = () => window.hide()
     window.webContents.setBackgroundThrottling(false)
     window.webContents.on('console-message', (event) => {
         if (event.level === 'error') console.error(event.message)
@@ -54,6 +104,71 @@ app.on('browser-window-created', (_, window) => {
         let passed = false
         try {
             await pause(600)
+            if (process.env.INSPECTOR_TABS_ONLY === '1') {
+                const base = window.webContents.getURL().split('?')[0]
+                await window.loadURL(base + '?workspace=true&data=sample&week=2026-10-05')
+                await waitForElement(window, '[aria-label="Pop out diff"]')
+                const detailsFirst = (target) =>
+                    target.webContents.executeJavaScript(`(() => {
+                    const tabs = Array.from(document.querySelectorAll('.ws-inspector [role="tab"]'))
+                    return tabs.map(tab => tab.dataset.value).join(',') === 'details,diff,related' &&
+                        tabs[0].getAttribute('aria-selected') === 'true' &&
+                        !!document.querySelector('.ws-details-content')
+                })()`)
+                const workspaceDefaultsToDetails = await detailsFirst(window)
+                writeFileSync(
+                    join(tabEvidence, 'workspace-initial-details.png'),
+                    (await window.webContents.capturePage()).toPNG()
+                )
+                nativeTheme.themeSource = 'dark'
+                const docked = await checkInspectorTabs(window, 'docked-dark')
+                await window.webContents.executeJavaScript(
+                    `document.querySelector('[aria-label="Pop out diff"]').click()`
+                )
+                await pause(600)
+                const reference = BrowserWindow.getAllWindows().find((candidate) =>
+                    candidate.webContents.getURL().includes('reference=activity')
+                )
+                if (!reference) throw new Error('The native diff window did not open')
+                await waitForElement(reference, '.ws-inspector-footer button')
+                const referenceDefaultsToDetails = await detailsFirst(reference)
+                writeFileSync(
+                    join(tabEvidence, 'reference-initial-details.png'),
+                    (await reference.webContents.capturePage()).toPNG()
+                )
+                let detached = await checkInspectorTabs(reference, 'reference-dark')
+                nativeTheme.themeSource = 'light'
+                // Exercise retained light tokens explicitly without changing startup policy.
+                await reference.webContents.executeJavaScript(`document.documentElement.dataset.theme='light'`)
+                detached = (await checkInspectorTabs(reference, 'reference-light')) && detached
+                await reference.webContents.executeJavaScript(
+                    `document.querySelector('[aria-label="Dock back to workspace"]').click()`
+                )
+                await pause(250)
+                passed =
+                    docked &&
+                    detached &&
+                    workspaceDefaultsToDetails &&
+                    referenceDefaultsToDetails &&
+                    reference.isDestroyed() &&
+                    (await window.webContents.executeJavaScript(
+                        `!!document.querySelector('[aria-label="Pop out diff"]')`
+                    ))
+                writeFileSync(
+                    join(tabEvidence, 'journey.json'),
+                    JSON.stringify({
+                        workspaceDefaultsToDetails,
+                        referenceDefaultsToDetails,
+                        docked,
+                        detached,
+                        passed,
+                        evidence: tabEvidence
+                    })
+                )
+                console.info(JSON.stringify({ docked, detached, passed, evidence: tabEvidence }))
+                app.exit(passed ? 0 : 1)
+                return
+            }
             const originalFolderPicker = dialog.showOpenDialog
             dialog.showOpenDialog = () =>
                 new Promise((resolve) =>
@@ -260,7 +375,7 @@ app.on('browser-window-created', (_, window) => {
             await window.webContents.executeJavaScript(`(async () => {
                 const state = (await window.journal.invoke({type:'state'})).state
                 const draft = {...state.drafts[0],updatedAt:new Date(Date.now()+1000).toISOString(),body:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Recovered an interrupted save.'}]}]}}
-                localStorage.setItem('weekly-j:recovery:'+(state.restoreId??'local')+':'+draft.week,JSON.stringify(draft))
+                localStorage.setItem('gitorian:recovery:'+(state.restoreId??'local')+':'+draft.week,JSON.stringify(draft))
             })()`)
             await window.loadURL(base + '?workspace=true')
             await waitForElement(window, '[aria-label="Journal body"]')
@@ -333,6 +448,10 @@ app.on('browser-window-created', (_, window) => {
             )
             if (!reference) throw new Error('The native diff window did not open')
             await waitForElement(reference, '.ws-inspector-footer button')
+            await reference.webContents.executeJavaScript(
+                `document.querySelector('.ws-inspector [role="tab"][data-value="diff"]').click()`
+            )
+            await waitForElement(reference, '.diff')
             result.nativeDiffWindow = await reference.webContents.executeJavaScript(
                 `!!document.querySelector('.ws-reference') && document.querySelector('.diff').textContent.includes('BASE_DELAY_MS')`
             )
@@ -402,7 +521,7 @@ app.on('browser-window-created', (_, window) => {
 app.on('will-quit', () => {
     // Check the absolute temporary target before removing smoke-test data on Windows.
     const target = resolve(directory)
-    if (!target.startsWith(resolve(tmpdir()) + '\\') || !target.includes('weekly-j-desktop-')) return
+    if (!target.startsWith(resolve(tmpdir()) + '\\') || !target.includes('gitorian-desktop-')) return
     try {
         rmSync(target, { recursive: true, force: true })
     } catch {

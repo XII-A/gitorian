@@ -51,8 +51,9 @@ export class Http {
         if (!(init.body instanceof FormData) && !headers.has('Content-Type'))
             headers.set('Content-Type', 'application/json')
         headers.set('Authorization', `Bearer ${token}`)
-        if (host === 'api.notion.com') headers.set('Notion-Version', '2025-09-03')
-        else {
+        if (host === 'api.notion.com') {
+            if (!headers.has('Notion-Version')) headers.set('Notion-Version', '2025-09-03')
+        } else {
             if (!headers.has('Accept')) headers.set('Accept', 'application/vnd.github+json')
             headers.set('X-GitHub-Api-Version', '2022-11-28')
         }

@@ -4,6 +4,9 @@ import type { Http } from './http'
 import { fingerprint, githubRemote } from './git'
 import { HttpError } from './http'
 
+// Public identifier for Gitorian's OAuth registration. Device flow needs no client secret.
+const githubClientId = 'Ov23li9PFMAWRrbZQ6Xy'
+
 interface User {
     login: string
 }
@@ -48,6 +51,18 @@ interface File {
     filename: string
     status: string
     previous_filename?: string
+    additions?: number
+    deletions?: number
+}
+function activityFile(file: File): Activity['files'][number] {
+    return {
+        name: file.filename,
+        status: file.status,
+        ...(file.previous_filename ? { previousName: file.previous_filename } : {}),
+        ...(file.additions !== undefined && file.deletions !== undefined
+            ? { lineStats: { additions: file.additions, deletions: file.deletions } }
+            : {})
+    }
 }
 interface Device {
     device_code: string
@@ -57,7 +72,7 @@ interface Device {
     expires_in: number
 }
 export class GitHub {
-    private device?: Device & { clientId: string; expires: number; nextPoll: number }
+    private device?: Device & { expires: number; nextPoll: number }
     constructor(
         private readonly http: Http,
         private readonly token: () => string,
@@ -78,27 +93,23 @@ export class GitHub {
         }
         throw new Error('This activity has more than 3,000 detail records. Open it in GitHub for the complete source.')
     }
-    async start(clientId: string): Promise<{ code: string; url: string; interval: number }> {
-        if (!clientId) throw new Error('Enter the public client ID of a GitHub OAuth app with device flow enabled')
+    async start(): Promise<{ code: string; url: string; interval: number }> {
         const response = await fetch('https://github.com/login/device/code', {
             method: 'POST',
             signal: AbortSignal.timeout(30000),
             headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ client_id: clientId, scope: 'repo read:user user:email' })
+            body: JSON.stringify({ client_id: githubClientId, scope: 'repo read:user user:email' })
         })
         if (!response.ok) throw new Error(`GitHub sign-in failed (${response.status})`)
         const device = (await response.json()) as Device & { error?: string }
         if (device.error || !device.device_code)
             throw new Error(
-                device.error === 'device_flow_disabled'
-                    ? 'Enable device flow in your GitHub OAuth application settings, then try again'
-                    : device.error === 'incorrect_client_credentials'
-                      ? 'GitHub rejected this OAuth client ID. Copy the client ID from your OAuth application settings'
-                      : (device.error ?? 'Invalid device authorization response')
+                device.error === 'device_flow_disabled' || device.error === 'incorrect_client_credentials'
+                    ? 'GitHub sign-in is unavailable in this version of Gitorian. Check for an app update or contact the maintainer.'
+                    : (device.error ?? 'Invalid device authorization response')
             )
         this.device = {
             ...device,
-            clientId,
             expires: Date.now() + device.expires_in * 1000,
             nextPoll: Date.now() + device.interval * 1000
         }
@@ -115,7 +126,7 @@ export class GitHub {
             signal: AbortSignal.timeout(30000),
             headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                client_id: device.clientId,
+                client_id: githubClientId,
                 device_code: device.device_code,
                 grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
             })
@@ -307,11 +318,7 @@ export class GitHub {
         const remote = githubRemote(repository.remote)
         const number = activity.prId?.split(':').at(-1)
         if (!remote || !number) return []
-        return (await this.list<File>(`repos/${remote}/pulls/${number}/files`)).map((file) => ({
-            name: file.filename,
-            status: file.status,
-            ...(file.previous_filename ? { previousName: file.previous_filename } : {})
-        }))
+        return (await this.list<File>(`repos/${remote}/pulls/${number}/files`)).map(activityFile)
     }
     async commitDetails(
         repository: Repository,
@@ -321,7 +328,14 @@ export class GitHub {
         const remote = githubRemote(repository.remote)
         if (!remote || !/^[a-f0-9]{40,64}$/.test(sha)) throw new Error('GitHub commit source is unavailable')
         const path = `repos/${remote}/commits/${sha}`
-        const metadata = await this.request<{ files: File[] }>(path)
+        const files: File[] = []
+        for (let page = 1; page <= 30; page++) {
+            const metadata = await this.request<{ files: File[] }>(`${path}?per_page=100&page=${page}`)
+            files.push(...metadata.files)
+            if (metadata.files.length < 100) break
+            if (page === 30)
+                throw new Error('This commit has too many changed files. Open it in GitHub for the complete source.')
+        }
         const diff = includeDiff
             ? await this.diff(`https://api.github.com/${path}`, this.token(), {
                   headers: { Accept: 'application/vnd.github.diff' }
@@ -329,11 +343,7 @@ export class GitHub {
             : ''
         return {
             diff: diff.length <= 2_000_000 ? diff : 'Diff is too large. Open in GitHub.',
-            files: metadata.files.map((file) => ({
-                name: file.filename,
-                status: file.status,
-                ...(file.previous_filename ? { previousName: file.previous_filename } : {})
-            }))
+            files: files.map(activityFile)
         }
     }
     private async diff(url: string, token: string, init: RequestInit, background = false): Promise<string> {

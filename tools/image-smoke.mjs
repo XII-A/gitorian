@@ -38,12 +38,11 @@ const state = {
         timezone: 'UTC',
         refreshMinutes: 0,
         template: empty,
-        githubClientId: '',
         githubLogin: '',
         layout: { order: ['activity', 'draft', 'details'], hidden: [], sizes: { activity: 24, draft: 46, details: 30 } }
     }
 }
-const database = new DatabaseSync(join(directory, 'weekly-j.sqlite'))
+const database = new DatabaseSync(join(directory, 'gitorian.sqlite'))
 database.exec('CREATE TABLE state (id INTEGER PRIMARY KEY, json TEXT NOT NULL)')
 database.prepare('INSERT INTO state VALUES(1,?)').run(JSON.stringify(state))
 database.close()

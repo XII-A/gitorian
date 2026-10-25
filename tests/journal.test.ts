@@ -258,7 +258,7 @@ it('reuses a weekly draft and republishes edits to the same Notion page', async 
         expect(app.store.state.entries).toHaveLength(1)
         expect(app.store.state.entries[0]).toMatchObject({ id: entryId, title: 'Revised week', body: reflection })
         expect(app.remote.pages[0].blocks).toHaveLength(reflection.content!.length)
-        expect(JSON.stringify(app.remote.pages[0].blocks)).not.toContain('Published with weekly-j')
+        expect(JSON.stringify(app.remote.pages[0].blocks)).not.toContain('Published with Gitorian')
         expect(toNotion((await app.notion.refreshEntry(entryId!)).body)).toEqual(toNotion(reflection))
         await app.service.handle({ type: 'newDraft', week: '2026-10-12' })
         expect(app.store.state.drafts.filter((item) => item.week === week)).toEqual([draft])

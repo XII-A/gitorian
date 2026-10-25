@@ -1,5 +1,5 @@
 import { safeStorage } from 'electron'
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 
 export class Vault {
@@ -22,13 +22,21 @@ export class Vault {
         }
     }
     set(service: string, token: string): void {
-        this.session.set(service, token)
         const path = join(this.directory, `${service}.secret`)
         if (!token) {
             if (existsSync(path)) unlinkSync(path)
+            this.session.set(service, '')
             return
         }
-        if (this.protected())
-            writeFileSync(join(this.directory, `${service}.secret`), safeStorage.encryptString(token), { mode: 0o600 })
+        if (this.protected()) {
+            const pending = `${path}.next`
+            try {
+                writeFileSync(pending, safeStorage.encryptString(token), { mode: 0o600 })
+                renameSync(pending, path)
+            } finally {
+                if (existsSync(pending)) unlinkSync(pending)
+            }
+        }
+        this.session.set(service, token)
     }
 }

@@ -1,3 +1,4 @@
+import { NotionDiscoveryCache } from './notion-discovery-cache'
 import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
@@ -7,16 +8,21 @@ import { fileURLToPath } from 'node:url'
 import { readFile, writeFile, stat } from 'node:fs/promises'
 import { Effect } from 'effect'
 import { commandSchema } from '../shared/model'
-import type { RepositoryImportProgress } from '../shared/model'
+import type { RepositoryImportProgress, NotionDiscoveryProgress } from '../shared/model'
 import { Store } from './store'
+import { ConnectionProfileCache } from './connection-profiles'
 import { Vault } from './vault'
 import { Http } from './http'
 import { GitHub } from './github'
 import { Notion } from './notion'
+import { NotionConnection } from './notion-connection'
+import { NotionSetupStore } from './notion-setup'
 import { JournalService } from './service'
 import { inspectRepository } from './git'
 import { watchWindowTitleBar } from './window-title-bar'
 import { imageLimits, imageIdPattern, imageExtension } from '../shared/images'
+
+if (!app.isPackaged && process.env.GITORIAN_DEV_PROFILE) app.setPath('userData', process.env.GITORIAN_DEV_PROFILE)
 
 // Chromium 152 hides the thread's native cursor, including inside file dialogs.
 // Remove after Electron includes chromium/chromium@a2be9eeac1d506dae63b2994cd605d83bb7622ea.
@@ -41,6 +47,7 @@ let mainWindow: BrowserWindow
 let store: Store
 let service: JournalService
 let restoring = false
+let notionConnection: NotionConnection | undefined
 const referenceWindows = new Set<number>()
 const work = new Set<Promise<unknown>>()
 function track<T>(promise: Promise<T>): Promise<T> {
@@ -54,7 +61,8 @@ function track<T>(promise: Promise<T>): Promise<T> {
 }
 function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
     const window = new BrowserWindow({
-        title: 'weekly-j',
+        title: 'Gitorian',
+        icon: join(directory, '../../resources/icon.png'),
         width: reference ? 1400 : 1560,
         height: 1000,
         minWidth: reference ? 600 : 1000,
@@ -128,7 +136,7 @@ void app.whenReady().then(() => {
         }
         return { maximized: window.isMaximized() }
     })
-    store = new Store(join(app.getPath('userData'), 'weekly-j.sqlite'))
+    store = new Store(join(app.getPath('userData'), 'gitorian.sqlite'))
     store.enableBackgroundWrites()
     ipcMain.handle('journal:image-save', async (event, input: unknown) => {
         const window = BrowserWindow.fromWebContents(event.sender)
@@ -222,10 +230,35 @@ void app.whenReady().then(() => {
             vault.set('github', token)
         }
     )
-    const notion = new Notion(http, () => vault.get('notion'), store)
+    notionConnection = new NotionConnection(
+        vault,
+        (!app.isPackaged && process.env.GITORIAN_NOTION_OAUTH_ORIGIN) ||
+            import.meta.env.MAIN_VITE_NOTION_OAUTH_ORIGIN ||
+            '',
+        fetch,
+        new NotionSetupStore(join(app.getPath('userData'), 'notion-setup.json')),
+        store.state.settings.destination
+    )
+    const connection = notionConnection
+    const notion = new Notion(http, (refresh, rejected) => connection.token(refresh, rejected), store)
+    const pendingNotion = new Notion(http, (refresh, rejected) => connection.pendingToken(refresh, rejected))
+    const notionDiscovery = new NotionDiscoveryCache(join(app.getPath('userData'), 'notion-pages.json'))
+    let notionPickerGeneration = 0
+    let availableNotionPages: Awaited<ReturnType<Notion['accessiblePages']>> = []
+    const profiles = new ConnectionProfileCache(
+        join(app.getPath('userData'), 'connection-profiles.json'),
+        (service) => (service === 'notion' ? connection.profileKey() : vault.get(service)),
+        (service) =>
+            service === 'notion'
+                ? notion.profile()
+                : Promise.resolve({
+                      name: store.state.settings.githubLogin,
+                      avatarUrl: `https://github.com/${encodeURIComponent(store.state.settings.githubLogin)}.png?size=64`
+                  })
+    )
     service = new JournalService(store, github, notion, () => ({
         github: !!vault.get('github'),
-        notion: !!vault.get('notion'),
+        notion: connection.connected(),
         protectedStorage: vault.protected()
     }))
     mainWindow = windowFor()
@@ -321,17 +354,160 @@ void app.whenReady().then(() => {
                 }
                 break
             }
-            case 'notionConnect':
-                await new Notion(http, () => command.token).verify()
-                vault.set('notion', command.token)
+            case 'notionStart': {
+                notionPickerGeneration++
+                notionDiscovery.cancel()
+                availableNotionPages = []
+                const notionAuthorization = await connection.start()
+                try {
+                    await openExternal(notionAuthorization.url)
+                } catch {
+                    return service.reply({
+                        notionAuthorization,
+                        message: 'Could not open your browser. Try Open Notion again.'
+                    })
+                }
+                return service.reply({ notionAuthorization })
+            }
+            case 'notionCancel':
+                connection.cancel()
+                notionPickerGeneration++
+                notionDiscovery.cancel()
+                availableNotionPages = []
                 break
-            case 'notionTestDestination':
-                await notion.verifyDestination(command.destination)
-                return service.reply({ message: 'Destination is reachable.' })
-            case 'notionProfile':
-                return service.reply({ notionIdentity: await notion.profile() })
+            case 'notionPoll': {
+                const result = await connection.poll()
+                if ('pending' in result) return service.reply({ notionPending: { interval: result.interval } })
+                return service.reply()
+            }
+            case 'notionPages': {
+                const generation = notionPickerGeneration
+                const token = await connection.pendingToken()
+                if (generation !== notionPickerGeneration) throw new Error('Notion page discovery cancelled.')
+                const discovery = new Notion(http, (refresh, rejected) => connection.pendingToken(refresh, rejected))
+                let lastStage = ''
+                let latest: NotionDiscoveryProgress | undefined
+                let progressTimer: ReturnType<typeof setTimeout> | undefined
+                const flushProgress = () => {
+                    const progress = latest
+                    latest = undefined
+                    if (progress && generation === notionPickerGeneration && !event.sender.isDestroyed())
+                        event.sender.send('journal:notion-discovery', { requestId: command.requestId, progress })
+                }
+                const pages = await notionDiscovery
+                    .pages(
+                        token,
+                        (signal, progress) => discovery.accessiblePages(progress, signal),
+                        (progress) => {
+                            latest = progress
+                            const final = progress.stage === 'grouping' && progress.completed === progress.total
+                            if (progress.stage !== lastStage || final) {
+                                lastStage = progress.stage
+                                clearTimeout(progressTimer)
+                                progressTimer = undefined
+                                flushProgress()
+                            } else {
+                                progressTimer ??= setTimeout(() => {
+                                    progressTimer = undefined
+                                    flushProgress()
+                                }, 100)
+                            }
+                        }
+                    )
+                    .finally(() => clearTimeout(progressTimer))
+                if (generation !== notionPickerGeneration) throw new Error('Notion page discovery cancelled.')
+                availableNotionPages = pages
+                return service.reply({ notionPages: pages })
+            }
+            case 'notionChoose': {
+                notionPickerGeneration++
+                notionDiscovery.cancel()
+                availableNotionPages = []
+                if (connection.choose()) return service.reply()
+                const notionAuthorization = await connection.start()
+                try {
+                    await openExternal(notionAuthorization.url)
+                } catch {
+                    /* The morph keeps Open Notion available. */
+                }
+                return service.reply({ notionAuthorization })
+            }
+            case 'notionConfirm': {
+                const previousIdentity = connection.profileKey()
+                const selection = command.selection
+                const page =
+                    selection.kind === 'existing'
+                        ? availableNotionPages.find((page) => page.kind === 'page' && page.id === selection.pageId)
+                        : undefined
+                if (selection.kind === 'existing' && !page) throw new Error('Refresh pages and choose a destination.')
+                const destination = await connection.completeJournal(
+                    async (setup, checkpoint) =>
+                        pendingNotion.prepareJournal(
+                            setup,
+                            checkpoint,
+                            page
+                                ? {
+                                      kind: 'page',
+                                      id: page.id,
+                                      title: page.title,
+                                      icon: (await pendingNotion.destinationIcon(page.icon)) ?? '',
+                                      url: page.url,
+                                      titleProperty: 'Name',
+                                      dateProperty: ''
+                                  }
+                                : undefined
+                        ),
+                    selection.kind === 'new' ? selection.title : undefined,
+                    async (destination) => {
+                        const previous = store.state.settings.destination
+                        store.state.settings.destination = destination
+                        try {
+                            store.persist()
+                            await store.flush()
+                        } catch (error) {
+                            store.state.settings.destination = previous
+                            throw error
+                        }
+                    }
+                )
+                connection.destinationSaved()
+                notionDiscovery.remember(await connection.token(), {
+                    ...page,
+                    kind: 'page',
+                    id: destination.id,
+                    title: destination.title || page?.title || 'Untitled',
+                    url: destination.url || page?.url || '',
+                    icon: destination.icon
+                })
+                if (previousIdentity !== connection.profileKey()) profiles.clear('notion')
+                connection.cancel()
+                break
+            }
+            case 'notionDestination': {
+                const saved = store.state.settings.destination
+                if (!connection.connected() || !saved) break
+                try {
+                    const destination = await notion.describeDestination(saved)
+                    if (
+                        store.state.settings.destination?.id === saved.id &&
+                        connection.connected() &&
+                        JSON.stringify(saved) !== JSON.stringify(destination)
+                    ) {
+                        store.state.settings.destination = destination
+                        store.persist()
+                    }
+                } catch {
+                    /* Metadata failure never blocks an existing connection. */
+                }
+                break
+            }
+            case 'connectionProfiles':
+                return service.reply({ connectionProfiles: profiles.snapshot() })
+            case 'refreshConnectionProfile':
+                await profiles.refresh(command.service)
+                return service.reply({ connectionProfiles: profiles.snapshot() })
             case 'githubStart': {
-                const device = await github.start(store.state.settings.githubClientId)
+                const device = await github.start()
                 try {
                     await openExternal(device.url)
                 } catch {
@@ -345,18 +521,26 @@ void app.whenReady().then(() => {
             case 'githubPoll': {
                 const account = await github.poll()
                 if ('pending' in account) return service.reply({ devicePending: { interval: account.interval } })
+                profiles.clear('github')
                 store.state.settings.githubLogin = account.login
                 for (const repository of store.state.repositories)
                     repository.emails = [...new Set([...repository.emails, ...account.emails])]
                 store.persist()
+                void profiles.refresh('github')
                 break
             }
             case 'disconnect':
-                vault.set(command.service, '')
+                if (command.service === 'notion') {
+                    notionPickerGeneration++
+                    notionDiscovery.clear()
+                    availableNotionPages = []
+                    connection.disconnect()
+                } else vault.set(command.service, '')
+                profiles.clear(command.service)
                 break
             case 'export': {
                 const result = await dialog.showSaveDialog(mainWindow, {
-                    defaultPath: 'weekly-j-backup.json',
+                    defaultPath: 'gitorian-backup.json',
                     filters: [{ name: 'Tracking backup', extensions: ['json'] }]
                 })
                 if (result.filePath) {
@@ -390,7 +574,10 @@ void app.whenReady().then(() => {
                             await store.restore(await readFile(result.filePaths[0], 'utf8'))
                             await store.flush()
                             vault.set('github', '')
-                            vault.set('notion', '')
+                            notionPickerGeneration++
+                            notionDiscovery.clear()
+                            availableNotionPages = []
+                            connection.disconnect()
                             return service.reply({ message: 'Backup imported.' })
                         }
                     }
@@ -472,6 +659,7 @@ app.on('window-all-closed', () => {
 let closed = false
 let closing = false
 app.on('before-quit', (event) => {
+    notionConnection?.cancel()
     if (!store || closed) return
     event.preventDefault()
     if (closing) return

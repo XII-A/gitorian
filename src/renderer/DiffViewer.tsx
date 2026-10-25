@@ -11,6 +11,8 @@ import { FileDiff, SlidersHorizontal } from 'lucide-react'
 import { Switch } from './components/arc/switch/switch'
 import { Popover, PopoverContent, PopoverTrigger } from './components/arc/popover/popover'
 import { presentationTokens, selectedSource } from './diff-presentation'
+import { ChangeCounts } from './ChangeStatistics'
+import { diffLineStats } from '../shared/change-statistics'
 
 function DiffEmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
     return (
@@ -173,14 +175,22 @@ export function DiffViewer({
             >
                 <div className="ws-file-heading">
                     <code>{path}</code>
-                    <span>
-                        {files.length} {files.length === 1 ? 'file' : 'files'}
-                    </span>
+                    <ChangeCounts stats={diffLineStats(active)} />
                 </div>
                 {lineCount > 4000 ? (
                     <DiffEmptyState
                         title="This file is too large to display"
                         description="This file has more than 4,000 diff lines. View the full changes at the source."
+                        action={sourceAction}
+                    />
+                ) : !active.hunks.length ? (
+                    <DiffEmptyState
+                        title={active.isBinary ? 'Binary file' : 'No text changes'}
+                        description={
+                            active.isBinary
+                                ? 'Binary files do not have a text diff.'
+                                : 'This file contains only a rename or metadata changes.'
+                        }
                         action={sourceAction}
                     />
                 ) : (
@@ -190,32 +200,28 @@ export function DiffViewer({
                         label={`Scrollable diff for ${path}`}
                         fade={0}
                     >
-                        {active.hunks.length ? (
-                            <Diff
-                                viewType={mode === 'split' ? 'split' : 'unified'}
-                                diffType={active.type}
-                                hunks={active.hunks}
-                                tokens={displayTokens}
-                                renderToken={(token, renderDefault, index) =>
-                                    token.type === 'source-line' ? (
-                                        <span
-                                            key={index}
-                                            className="ws-diff-source-line"
-                                            data-indent-characters={token.indentCharacters}
-                                            style={{ '--diff-indent': `${token.indentColumns}ch` } as CSSProperties}
-                                        >
-                                            {token.children?.map(renderDefault)}
-                                        </span>
-                                    ) : (
-                                        renderDefault(token, index)
-                                    )
-                                }
-                            >
-                                {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
-                            </Diff>
-                        ) : (
-                            <p>Binary file or metadata change. No text diff.</p>
-                        )}
+                        <Diff
+                            viewType={mode === 'split' ? 'split' : 'unified'}
+                            diffType={active.type}
+                            hunks={active.hunks}
+                            tokens={displayTokens}
+                            renderToken={(token, renderDefault, index) =>
+                                token.type === 'source-line' ? (
+                                    <span
+                                        key={index}
+                                        className="ws-diff-source-line"
+                                        data-indent-characters={token.indentCharacters}
+                                        style={{ '--diff-indent': `${token.indentColumns}ch` } as CSSProperties}
+                                    >
+                                        {token.children?.map(renderDefault)}
+                                    </span>
+                                ) : (
+                                    renderDefault(token, index)
+                                )
+                            }
+                        >
+                            {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
+                        </Diff>
                     </ScrollArea>
                 )}
             </section>

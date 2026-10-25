@@ -53,7 +53,17 @@ export const activitySchema = z.object({
         .optional(),
     url: z.string().optional(),
     description: z.string(),
-    files: z.array(z.object({ name: z.string(), status: z.string(), previousName: z.string().optional() })),
+    files: z.array(
+        z.object({
+            name: z.string(),
+            status: z.string(),
+            previousName: z.string().optional(),
+            lineStats: z
+                .object({ additions: z.number().int().nonnegative(), deletions: z.number().int().nonnegative() })
+                .nullable()
+                .optional()
+        })
+    ),
     revision: z.string().optional(),
     diffRevision: z.string().optional(),
     base: z.string().optional(),
@@ -90,7 +100,11 @@ export const destinationSchema = z.object({
     kind: z.enum(['page', 'database']),
     id: z.string(),
     titleProperty: z.string(),
-    dateProperty: z.string()
+    dateProperty: z.string(),
+    title: z.string().optional(),
+    url: z.string().optional(),
+    icon: z.string().optional(),
+    credentialSlot: z.enum(['a', 'b']).optional()
 })
 export const stateSchema = z.object({
     version: z.literal(1),
@@ -137,7 +151,6 @@ export const stateSchema = z.object({
         timezone: z.string(),
         refreshMinutes: z.number().min(0).max(1440),
         template: documentSchema,
-        githubClientId: z.string(),
         githubLogin: z.string(),
         destination: destinationSchema.optional(),
         layout: z.object({
@@ -212,7 +225,6 @@ export function initialState(): State {
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             refreshMinutes: 10,
             template: emptyDocument,
-            githubClientId: '',
             githubLogin: '',
             layout: structuredClone(defaultLayout)
         }
@@ -317,13 +329,25 @@ export const commandSchema = z.discriminatedUnion('type', [
         until: z.string().optional(),
         reason: z.string().optional()
     }),
-    z.object({ type: z.literal('settings'), settings: stateSchema.shape.settings }),
+    z.object({ type: z.literal('settings'), settings: stateSchema.shape.settings.omit({ destination: true }) }),
     z.object({ type: z.literal('publish'), draftId: z.string() }),
     z.object({ type: z.literal('reconcile'), saveId: z.string() }),
     z.object({ type: z.literal('coverage'), activityId: z.string(), entryId: z.string(), linked: z.boolean() }),
-    z.object({ type: z.literal('notionConnect'), token: z.string() }),
-    z.object({ type: z.literal('notionProfile') }),
-    z.object({ type: z.literal('notionTestDestination'), destination: destinationSchema }),
+    z.object({ type: z.literal('notionStart') }),
+    z.object({ type: z.literal('notionPoll') }),
+    z.object({ type: z.literal('notionCancel') }),
+    z.object({ type: z.literal('notionPages'), requestId: z.string().min(1).max(100) }),
+    z.object({ type: z.literal('notionChoose') }),
+    z.object({ type: z.literal('notionDestination') }),
+    z.object({
+        type: z.literal('notionConfirm'),
+        selection: z.discriminatedUnion('kind', [
+            z.object({ kind: z.literal('existing'), pageId: z.string().min(1) }),
+            z.object({ kind: z.literal('new'), title: z.string().trim().min(1).max(200) })
+        ])
+    }),
+    z.object({ type: z.literal('connectionProfiles') }),
+    z.object({ type: z.literal('refreshConnectionProfile'), service: z.enum(['github', 'notion']) }),
     z.object({ type: z.literal('githubStart') }),
     z.object({ type: z.literal('githubPoll') }),
     z.object({ type: z.literal('disconnect'), service: z.enum(['github', 'notion']) }),
@@ -333,9 +357,28 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('popout'), kind: z.enum(['entry', 'activity']), id: z.string() })
 ])
 export type Command = z.infer<typeof commandSchema>
-export interface NotionIdentity {
+export type ConnectionService = 'github' | 'notion'
+export type ConnectionProfiles = Partial<Record<ConnectionService, ConnectionProfile>>
+export interface ConnectionProfile {
     name: string
     avatarUrl?: string
+}
+export type NotionDiscoveryProgress =
+    | { stage: 'discovering'; found: number }
+    | { stage: 'grouping'; completed: number; total: number }
+
+export interface NotionDiscoveryEvent {
+    requestId: string
+    progress: NotionDiscoveryProgress
+}
+
+export interface NotionPage {
+    kind: 'page' | 'data_source'
+    id: string
+    title: string
+    url: string
+    icon?: string
+    parentId?: string
 }
 export interface Reply {
     repositoryScan?: {
@@ -344,12 +387,15 @@ export interface Reply {
         repositories: { path: string; name: string; relativePath: string; status: 'new' | 'tracked' | 'stopped' }[]
         unreadable: string[]
     }
-    notionIdentity?: NotionIdentity
+    connectionProfiles?: ConnectionProfiles
     state: State
     diff?: string
     activityIds?: string[]
     device?: { code: string; url: string; interval: number }
     devicePending?: { interval: number }
+    notionAuthorization?: { url: string; interval: number }
+    notionPending?: { interval: number }
+    notionPages?: NotionPage[]
     connections: { github: boolean; notion: boolean; protectedStorage: boolean }
     message?: string
     detailError?: string
@@ -370,6 +416,7 @@ export interface DesktopBridge {
     }
     invoke: (command: Command) => Promise<Reply>
     updates?: (command: Command, base?: StateCursor) => Promise<UpdateReply>
+    onNotionDiscoveryProgress?: (listener: (event: NotionDiscoveryEvent) => void) => () => void
     onRepositoryImportProgress?: (listener: (progress: RepositoryImportProgress) => void) => () => void
 }
 export type RepositoryImportProgress =

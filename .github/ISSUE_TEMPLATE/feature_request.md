@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an improvement to weekly-j
+about: Suggest an improvement to Gitorian
 title: ''
 labels: ''
 assignees: ''

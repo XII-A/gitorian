@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Badge, type BadgeTone } from './components/arc/badge/badge'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { changeKind, changeKinds, changeLabels, orderedFiles, type ChangeKind } from './activity-details'
+import { ChangeCounts } from './ChangeStatistics'
 
 const tones: Record<ChangeKind, BadgeTone> = {
     deleted: 'danger',
@@ -79,6 +80,7 @@ export function ActivityFiles({ files }: { files: Activity['files'] }) {
                                     <span className="hub-detail-file-directory">{name.slice(0, slash + 1)}</span>
                                 ) : null}
                             </div>
+                            <ChangeCounts stats={file.lineStats} />
                         </li>
                     )
                 })}

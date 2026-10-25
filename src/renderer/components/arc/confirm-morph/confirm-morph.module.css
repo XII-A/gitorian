@@ -50,6 +50,7 @@
     background: var(--surface);
     box-shadow: none;
 }
+.root[data-variant='outline'] .surface,
 .root[data-variant='ghost'] .surface {
     background: transparent;
     box-shadow: none;
@@ -350,5 +351,28 @@
     }
     .confirm {
         background: color-mix(in oklab, var(--danger) 22%, transparent);
+    }
+}
+
+/* A compact single row keeps recovery actions reachable in narrow settings columns. */
+@media (max-width: 600px) {
+    .face[data-face='error'] {
+        font-size: var(--text-xs);
+    }
+    .face[data-face='error'] .status {
+        gap: var(--space-1);
+        padding-inline: var(--space-1);
+    }
+    .face[data-face='error'] .statusText {
+        display: block;
+        max-width: 14ch;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .face[data-face='error'] .alert {
+        display: none;
+    }
+    .face[data-face='error'] .secondary {
+        padding-inline: 6px;
     }
 }

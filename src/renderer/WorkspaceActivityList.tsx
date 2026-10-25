@@ -30,7 +30,7 @@ const WorkspaceActivityRow = memo(function WorkspaceActivityRow({
             aria-pressed={selected}
             draggable={canCite}
             onDragStart={(event) => {
-                event.dataTransfer.setData('application/x-weekly-j-activity', activity.id)
+                event.dataTransfer.setData('application/x-gitorian-activity', activity.id)
                 event.dataTransfer.effectAllowed = 'copy'
             }}
             onClick={() => onInspect(activity)}

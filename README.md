@@ -1,10 +1,10 @@
-# weekly-j
+# Gitorian
 
 A desktop journal for developers. Review your week’s Git commits, GitHub pull requests and reviews, then write a journal entry with links back to the work. Keep drafts locally and optionally publish to Notion.
 
 ## Downloads
 
-Download installers from [GitHub Releases](https://github.com/XII-A/weekly-j/releases). Windows x64 installers and checksums are available for published releases. GitHub’s automatically generated source archives are source code, not installers.
+Download installers from [GitHub Releases](https://github.com/XII-A/gitorian/releases). Windows x64 installers and checksums are available for published releases. GitHub’s automatically generated source archives are source code, not installers.
 
 The release workflow builds **Windows 10/11 x64** NSIS installers and attaches `SHA256SUMS` to a draft release. Initial Windows installers are **unsigned**, which may cause browser or SmartScreen warnings. Verify the downloaded checksum before installing. macOS and Linux packaging remains available for development but is not included in the release workflow. This is an early app; back up your journal before trying an update.
 
@@ -22,11 +22,11 @@ Add screenshots and diagrams with `/image`, clipboard paste, or file drop. PNG, 
 
 ## Data storage and privacy
 
-The app stores journal state in `weekly-j.sqlite` in Electron’s per-user application data directory (`app.getPath('userData')`). Default locations are `%APPDATA%/weekly-j` on Windows, `~/Library/Application Support/weekly-j` on macOS, and `$XDG_CONFIG_HOME/weekly-j` or `~/.config/weekly-j` on Linux. SQLite may also create `-wal` and `-shm` files.
+The app stores journal state in `gitorian.sqlite` in Electron’s per-user application data directory (`app.getPath('userData')`). Default locations are `%APPDATA%/Gitorian` on Windows, `~/Library/Application Support/Gitorian` on macOS, and `$XDG_CONFIG_HOME/Gitorian` or `~/.config/Gitorian` on Linux. SQLite may also create `-wal` and `-shm` files.
 
-This database is **not encrypted**. It includes image bytes, drafts, repository paths and remotes, author emails, imported activity, cached diffs and revision evidence, and cached Notion entries. Treat it as private source and writing data. There is no app-operated cloud account or analytics service in the current implementation. Connected integrations make requests to GitHub and Notion; external links and Notion avatars can also access the network. Publishing sends the entry content, images, and citations to the chosen Notion destination.
+This database is **not encrypted**. It includes image bytes, drafts, repository paths and remotes, author emails, imported activity, cached diffs and revision evidence, and cached Notion entries. Treat it as private source and writing data. There is no app-operated journal storage or analytics service. A small OAuth helper handles Notion credential exchange and refresh. Connected integrations make requests to GitHub and Notion; external links and Notion avatars can also access the network. Publishing sends the entry content, images, and citations to the chosen Notion destination.
 
-Integration tokens live separately in `github.secret` and `notion.secret`, encrypted using Electron `safeStorage` when a supported operating-system credential backend is available. Without one (including Linux’s `basic_text` backend), new tokens remain in memory for the session and must be entered again after restart. Disconnecting removes the local token; revoke access in GitHub or Notion too if you want to invalidate it remotely. Disconnecting does not erase cached journal data.
+Integration tokens live separately in `github.secret` and `notion.secret`, encrypted using Electron `safeStorage` when a supported operating-system credential backend is available. Without one (including Linux’s `basic_text` backend), new tokens remain in memory for the session and require sign-in again after restart. Disconnecting removes the local token; revoke access in GitHub or Notion too if you want to invalidate it remotely. Disconnecting does not erase cached journal data.
 
 Use Settings → Backup to export or import journal state. Exports omit repository folder paths, cached diffs, and revision diff bodies; they do **not** include integration tokens. They still contain writing, all imported images (including removed images), activity, account metadata, repository remotes, and author emails, so keep them private. Import replaces this device’s journal and requires locating repositories again. JSON backups support up to 512 MiB. Existing text-only backups remain importable; new image-bearing backups require this app version or newer. Removed image bytes are retained for undo and recovery; there is no automatic image cleanup yet. For a full local backup, close the app and copy its entire data directory; encrypted tokens may not be portable to another machine or account.
 
@@ -34,19 +34,21 @@ Use Settings → Backup to export or import journal state. Exports omit reposito
 
 ### GitHub (optional)
 
-In Settings → Connections, use **Set up OAuth app** to create a GitHub OAuth application and enable its device flow. Enter its public **client ID**, then follow the browser sign-in and device-code prompts. No OAuth client secret is needed or requested by weekly-j. The client ID is an identifier, not a credential. The app currently requires you to supply one; it does not ship a shared OAuth registration.
+In Settings > Connections, choose **Sign in with GitHub**, then follow the browser sign-in and device-code prompts. Everyone authorizes Gitorian's shared OAuth app using their own GitHub account. No app registration, client ID entry, or client secret is needed. Authentication runs directly between your device and GitHub; no Gitorian authentication server is involved.
 
 Sign-in requests `repo`, `read:user`, and `user:email`. These allow private repository access, reading your profile, and reading your account email addresses to match authored activity. **The `repo` scope also grants write access**, even though the current GitHub integration only reads repository activity and diffs. Review this broad grant before authorizing, particularly for work repositories. Organization policies may restrict access. The integration supports GitHub.com remotes; GitHub Enterprise and other Git hosts are not supported for PR/review imports.
 
 ### Notion (optional)
 
-Create a Notion internal integration, enter its integration token in Settings → Connections, and share the intended destination with that integration. Enable **Read content**, **Insert content**, and **Update content** capabilities: weekly-j reads saved entries, creates pages, and can replace page content when publishing. Only share pages needed for your journal.
+In Settings ? Connections, choose **Connect** beside Notion and approve Gitorian in your browser. The app prepares a private **Weekly Journal** parent page automatically. Read content, Insert content and Update content permissions support reading saved entries, creating pages and updating published writing. Local writing remains available without connecting.
 
-Choose either a parent page or a database data source as the destination. Supply its page/data source ID; for a database, also configure the exact title-property name. Use the destination test before publishing. A database’s data source ID is distinct from its database ID. Review a test entry in Notion before using an important destination.
+The connection uses a small hosted OAuth module to protect the app's client secret and exchange/refresh your credentials. Your journal content and images travel directly from the desktop to Notion. Credentials stay on your device; the helper does not permanently store them. Existing installed integration tokens remain usable until disconnected.
+
+You can change the destination to an existing parent page or database data source in Settings. Database destinations require the data source ID and exact title-property name. Test a custom destination before publishing. See [Notion development and release deployment](docs/notion-oauth.md) for running the local OAuth module, configuring Netlify, and automatic deployment on published releases.
 
 ## Known limitations
 
-- This is version 0.1.2. Cross-platform packaging is configured, but that is not a claim that all platforms have been validated or that installers are signed/notarized.
+- This is version 0.1.4. Cross-platform packaging is configured, but that is not a claim that all platforms have been validated or that installers are signed/notarized.
 - Imports depend on accessible local repositories, matching author emails, the configured history range, and available refs. Remote activity needs network access and sufficient GitHub permissions; API limits can delay collection.
 - Large diffs are limited (approximately 2 MB); individual GitHub detail lists above 3,000 records are rejected. Use the original repository or GitHub for complete evidence.
 - Notion conversion supports a subset of its content model; complex blocks may not round-trip exactly. Publishing can modify remote page content. Review uncertain publish results in Notion before retrying.
@@ -58,8 +60,8 @@ Choose either a parent page or a database data source as the destination. Supply
 Requirements: Node.js **22.19 or newer**, **pnpm 10.24.0** (pinned in `package.json`), and Git.
 
 ```sh
-git clone https://github.com/XII-A/weekly-j.git
-cd weekly-j
+git clone https://github.com/XII-A/gitorian.git
+cd gitorian
 pnpm install --frozen-lockfile
 pnpm dev
 ```
@@ -76,6 +78,8 @@ pnpm package      # Build an installer for the current platform into release/
 
 Build on the target operating system for the most predictable installer results. Packaging alone does not publish a GitHub Release. Review build output, signing, and installer behavior before uploading release assets.
 
+The app icon's editable source is `resources/icon.svg`, exported from [Paper](https://app.paper.design/file/01M5S7QJ9BJRNKDCTRHEA0E1CF). After replacing it, run `pnpm icons` and commit the generated PNG, Windows ICO, and macOS ICNS files. The runtime window icon and Linux package use the PNG; Windows and macOS packages use their native formats. Windows resource editing stays enabled to embed the icon while signing remains disabled.
+
 ## Releasing and repository protection
 
 PRs and pushes to `main` run **CI checks** (typecheck, lint, formatting, tests, and production compilation) on Windows. The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, computes SHA-256, and uploads both to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
@@ -85,8 +89,8 @@ After the release changes are merged into `main`, a maintainer creates a release
 ```sh
 git switch main
 git pull --ff-only
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 When creating or updating a release description, use the [release description template](docs/release-notes.md) and save the finished copy in `.github/release-notes.md`.
@@ -110,6 +114,6 @@ The app uses Electron, React, TypeScript, SQLite, and electron-vite. `src/main` 
 
 ## Feedback and license
 
-Use [GitHub Issues](https://github.com/XII-A/weekly-j/issues) for bugs and feature requests. Remove tokens, private repository names, paths, journal content, and personal information from reports and screenshots. Do not attach your application data directory or journal backup.
+Use [GitHub Issues](https://github.com/XII-A/gitorian/issues) for bugs and feature requests. Remove tokens, private repository names, paths, journal content, and personal information from reports and screenshots. Do not attach your application data directory or journal backup.
 
 MIT licensed; see [LICENSE](LICENSE) and [NOTICE](NOTICE) for bundled component attribution.
