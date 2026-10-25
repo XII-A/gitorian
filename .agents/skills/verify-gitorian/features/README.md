@@ -9,7 +9,7 @@ The artifact-backed baseline is `pnpm build`, `pnpm verify doctor`, then `pnpm v
 
 - [Connections](connections.md): `pnpm verify notion` isolates the Notion journey; `pnpm verify connections` runs both providers. heading connect controls, GitHub code morph, Notion browser OAuth, page selection, explicit creation and cancellation, simulated success/failure, retry, persistence, hold-to-disconnect, and measured account handoffs with delayed avatars and reduced motion.
 - [Window chrome](window-chrome.md): thin Windows frame, hover/focus reveal, native drag bounds, window actions, reduced motion, and workspace navigation.
-- [Repository import](repository-import.md): fully automated real desktop journey, cancellation, search, selection, stopped tracking, single-folder entry, scan failure, and persisted side effects.
+- [Repository import](repository-import.md): fully automated real desktop journey, cancellation, search, selection, stopped tracking, single-folder entry, scan failure, and persisted side effects. `pnpm verify github-import` covers automatic GitHub sources and PR/review acquisition in both setup orders.
 - [Weekly activity](weekly-activity.md): current and earlier weeks, empty refresh, unavailable sources, and retry. `pnpm verify activity-filters` covers grouped project/history wrapping and clearing workspace history filters.
 - [Writing](writing.md): hub/workspace entry, template, autosave, reload recovery, and citation.
 - [Inspecting changes](inspecting-changes.md): hub details, workspace inspector, file filtering, pop-out, and docking.

@@ -36,12 +36,13 @@ if (
         'publishing',
         'activity-counts',
         'hub-dialog',
+        'github-import',
         'activity-filters'
     ].includes(mode) ||
     process.argv.length !== 3
 ) {
     console.error(
-        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | activity-filters (run pnpm build first)'
+        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | github-import | activity-filters (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -219,6 +220,38 @@ if (mode === 'doctor') {
                 db.close()
             }
         }
+        if (mode === 'github-import') {
+            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
+            try {
+                const records = (collection) =>
+                    db
+                        .prepare('SELECT json FROM state_records WHERE collection=?')
+                        .all(collection)
+                        .map((row) => JSON.parse(String(row.json)))
+                const repositories = records('repositories')
+                const activities = records('activities')
+                const settings = JSON.parse(
+                    String(db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()?.json)
+                )
+                writeFileSync(
+                    join(output, 'persisted-github-activity.json'),
+                    JSON.stringify({ repositories, activities, refreshMinutes: settings.refreshMinutes }, null, 2)
+                )
+                if (
+                    repositories.length !== 2 ||
+                    repositories.find((repo) => repo.name === 'before')?.remote !==
+                        'https://github.com/fixture/before.git' ||
+                    repositories.find((repo) => repo.name === 'after')?.remote !== '' ||
+                    settings.refreshMinutes !== 0 ||
+                    activities.filter((a) => a.kind === 'pr').length !== 2 ||
+                    activities.filter((a) => a.kind === 'review').length !== 2 ||
+                    activities.filter((a) => a.kind === 'commit' && a.title.startsWith('Local work')).length !== 2
+                )
+                    throw new Error('Imported sources and GitHub activity were not persisted')
+            } finally {
+                db.close()
+            }
+        }
         if (mode === 'publishing') {
             const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
             try {
@@ -244,6 +277,7 @@ if (mode === 'doctor') {
             mode !== 'publishing' &&
             mode !== 'activity-counts' &&
             mode !== 'hub-dialog' &&
+            mode !== 'github-import' &&
             mode !== 'activity-filters'
         ) {
             const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
@@ -318,11 +352,24 @@ if (mode === 'doctor') {
         }
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
         report.evidenceRetained = (
-            mode === 'activity-counts' || mode === 'activity-filters'
+            mode === 'activity-counts' || mode === 'github-import' || mode === 'activity-filters'
                 ? [
                       'actions.jsonl',
-                      mode === 'activity-counts' ? 'activity-counts.png' : 'grouped-filters.png',
-                      'journey.json'
+                      mode === 'activity-counts'
+                          ? 'activity-counts.png'
+                          : mode === 'github-import'
+                            ? 'automatic-prs.png'
+                            : 'grouped-filters.png',
+                      'journey.json',
+                      ...(mode === 'github-import'
+                          ? [
+                                'connected-with-activity.png',
+                                'source-failure.png',
+                                'persisted-prs.png',
+                                'persisted-github-activity.json',
+                                'http-requests.json'
+                            ]
+                          : [])
                   ]
                 : mode === 'hub-dialog'
                   ? [
