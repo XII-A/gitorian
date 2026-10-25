@@ -11,11 +11,14 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
-const runner = ['notion', 'onboarding', 'onboarding-disclosure'].includes(mode)
-    ? 'connections'
-    : mode === 'inspector-tabs'
-      ? 'desktop'
-      : mode
+const runner =
+    mode === 'activity-filters'
+        ? 'activity-filter'
+        : ['notion', 'onboarding', 'onboarding-disclosure'].includes(mode)
+          ? 'connections'
+          : mode === 'inspector-tabs'
+            ? 'desktop'
+            : mode
 const disclosureMode = mode === 'onboarding-disclosure'
 const onboardingMode = mode === 'onboarding' || disclosureMode
 const connectionMode = mode === 'connections' || mode === 'notion'
@@ -33,12 +36,13 @@ if (
         'publishing',
         'activity-counts',
         'hub-dialog',
-        'github-import'
+        'github-import',
+        'activity-filters'
     ].includes(mode) ||
     process.argv.length !== 3
 ) {
     console.error(
-        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | github-import (run pnpm build first)'
+        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | github-import | activity-filters (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -273,7 +277,8 @@ if (mode === 'doctor') {
             mode !== 'publishing' &&
             mode !== 'activity-counts' &&
             mode !== 'hub-dialog' &&
-            mode !== 'github-import'
+            mode !== 'github-import' &&
+            mode !== 'activity-filters'
         ) {
             const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
             try {
@@ -347,10 +352,14 @@ if (mode === 'doctor') {
         }
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
         report.evidenceRetained = (
-            mode === 'activity-counts' || mode === 'github-import'
+            mode === 'activity-counts' || mode === 'github-import' || mode === 'activity-filters'
                 ? [
                       'actions.jsonl',
-                      mode === 'activity-counts' ? 'activity-counts.png' : 'automatic-prs.png',
+                      mode === 'activity-counts'
+                          ? 'activity-counts.png'
+                          : mode === 'github-import'
+                            ? 'automatic-prs.png'
+                            : 'grouped-filters.png',
                       'journey.json',
                       ...(mode === 'github-import'
                           ? [

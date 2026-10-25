@@ -251,6 +251,7 @@ export function WorkspaceDraft({
     }, [initialWrite, drafts.length, create])
     const publish = async () => {
         if (!imagesReady) return
+        const updating = !!latest.current?.publishedEntryId
         setBusy(true)
         clearTimeout(timer.current)
         clearTimeout(checkpoint.current)
@@ -266,10 +267,23 @@ export function WorkspaceDraft({
         }
         const result = await run({ type: 'publish', draftId: latest.current.id })
         const saved = result?.state.drafts.find((item) => item.id === latest.current?.id)
-        if (saved?.publishedEntryId) {
+        const save = result?.state.saves.filter((item) => item.draftId === latest.current?.id).at(-1)
+        if (saved?.publishedEntryId && (sample || save?.status === 'confirmed')) {
             latest.current = saved
             setDraft(saved)
-            setStatus(sample ? 'Sample published. Nothing was sent to Notion.' : 'Published to Notion')
+            setStatus(
+                sample
+                    ? 'Sample published. Nothing was sent to Notion.'
+                    : updating
+                      ? 'Updated in Notion'
+                      : 'Published to Notion'
+            )
+            toast({
+                id: 'workspace-publish-success',
+                type: 'success',
+                title: sample ? 'Sample published' : updating ? 'Updated in Notion' : 'Published to Notion',
+                ...(sample ? { description: 'Nothing was sent to Notion.' } : {})
+            })
         } else if (!result || !result.state.saves.some((save) => save.draftId === latest.current?.id))
             toast({
                 id: 'workspace-publish',
@@ -359,7 +373,7 @@ export function WorkspaceDraft({
                         }
                         onClick={publish}
                     >
-                        {sample ? 'Publish sample' : 'Publish to Notion'}
+                        {sample ? 'Publish sample' : draft?.publishedEntryId ? 'Update in Notion' : 'Publish to Notion'}
                     </Button>,
                     publishTarget
                 )}
