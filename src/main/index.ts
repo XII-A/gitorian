@@ -21,7 +21,7 @@ import { JournalService } from './service'
 import { inspectRepository } from './git'
 import { watchWindowTitleBar } from './window-title-bar'
 import { imageLimits, imageIdPattern, imageExtension } from '../shared/images'
-import electronUpdater from 'electron-updater'
+import { WindowsUpdater } from './windows-updater'
 import { AppUpdates } from './app-updates'
 
 if (!app.isPackaged && process.env.GITORIAN_DEV_PROFILE) app.setPath('userData', process.env.GITORIAN_DEV_PROFILE)
@@ -267,7 +267,7 @@ void app.whenReady().then(() => {
         protectedStorage: vault.protected()
     }))
     mainWindow = windowFor()
-    const updater = electronUpdater.autoUpdater
+    const updater = new WindowsUpdater()
     const appUpdates = new AppUpdates(
         process.platform === 'win32' && (app.isPackaged || updater.forceDevUpdateConfig) ? updater : undefined,
         async () => {
