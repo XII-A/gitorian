@@ -20,6 +20,17 @@ process.env.LOCALAPPDATA = join(directory, 'cache')
 const record = (event) =>
     appendFileSync(join(output, 'actions.jsonl'), JSON.stringify({ time: new Date().toISOString(), ...event }) + '\n')
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
+// Capture the real startup check at the timer seam. Fixtures can advance that
+// callback without adding a test-only manual-check command to the application.
+let scheduledCheck
+const scheduleTimeout = globalThis.setTimeout
+globalThis.setTimeout = (callback, delay, ...args) => {
+    if (delay === 15000) {
+        scheduledCheck = callback
+        globalThis.setTimeout = scheduleTimeout
+    }
+    return scheduleTimeout(callback, delay, ...args)
+}
 let feed = 'offline'
 let failSave = false
 let failLaunch = false
@@ -152,6 +163,15 @@ app.on('browser-window-created', (_, window) => {
             record({ screenshot: `${name}.png`, text: await js('document.body.innerText') })
         }
         const status = () => js('window.journal.appUpdates.state()')
+        const waitStatus = (value) =>
+            wait(`(async()=>(await window.journal.appUpdates.state()).status===${JSON.stringify(value)})()`)
+        const check = () => {
+            record({ fixture: 'Advance the real automatic startup-check callback at the timer seam' })
+            if (!scheduledCheck) throw new Error('Automatic update check was not scheduled')
+            scheduledCheck()
+        }
+        const hidden = async (description) =>
+            assert(await js(`!document.querySelector('.app-update-trigger')`), description)
         try {
             await wait(`!!document.querySelector('[aria-label="Open settings"]') && !!window.journal.appUpdates`)
             const initial = await js(`window.journal.invoke({type:'state'})`)
@@ -174,27 +194,30 @@ app.on('browser-window-created', (_, window) => {
                     2
                 )
             )
-            await click('[aria-label="App updates"]')
-            await button('Check for updates')
-            await wait(`document.querySelector('.app-update-popover')?.textContent.includes('Could not check')`)
+            await hidden('Hub has no update button before an update is ready')
+            check()
+            await hidden('Checking for updates does not reveal a header button')
+            await waitStatus('error')
+            await hidden('A check failure leaves the update button hidden')
             await shot('01-check-failed')
             feed = 'current'
-            await button('Try again')
-            await wait(`document.querySelector('.app-update-popover')?.textContent.includes('latest version')`)
+            check()
+            await waitStatus('current')
+            await hidden('Current versions have no update button')
             await shot('02-current')
             feed = 'older'
-            await button('Check for updates')
-            await wait(`document.querySelector('.app-update-popover')?.textContent.includes('latest version')`)
+            check()
+            await waitStatus('current')
             assert((await status()).status === 'current', 'An older feed never offers a downgrade')
             feed = 'corrupt'
-            await button('Check for updates')
-            await wait(`document.querySelector('.app-update-popover')?.textContent.includes('Could not download')`)
+            check()
+            await waitStatus('error')
+            await hidden('A corrupt download never reveals an update button')
             assert(
                 (await status()).status === 'error' && !handoffs.length,
                 'Corrupt installer rejected without installation or ready notification'
             )
             await shot('03-download-rejected')
-            await escape()
 
             // Explicit setup: 200 paragraphs exercise snapshot/save cost without repositories.
             const created = await js(
@@ -228,18 +251,18 @@ app.on('browser-window-created', (_, window) => {
             await js(
                 `window.__editor=document.querySelector('[aria-label="Journal body"]'); window.__inputLatencies=[]; window.__frameGaps=[]; window.__editor.addEventListener('beforeinput',()=>{const start=performance.now(); requestAnimationFrame(()=>window.__inputLatencies.push(performance.now()-start))})`
             )
-            await click('[aria-label="App updates"]')
+            await hidden('Workspace has no button before a ready update')
             feed = 'valid'
-            await button('Try again')
-            await wait(`document.querySelector('.app-update-popover')?.textContent.includes('downloaded')`)
+            check()
+            await waitStatus('downloading')
+            await hidden('Background downloading leaves the workspace header clear')
             const checks = requests.filter((request) => request.path.startsWith('/latest.yml')).length
-            await js(`Promise.all(Array.from({length:5},()=>window.journal.appUpdates.action('check')))`)
+            for (let i = 0; i < 5; i++) check()
             assert(
                 requests.filter((request) => request.path.startsWith('/latest.yml')).length === checks,
                 'Repeated checks share one in-flight download'
             )
             await shot('04-background-download')
-            await escape()
             await js(
                 `window.__editor.focus();const selection=getSelection();const range=document.createRange();range.selectNodeContents(window.__editor);range.collapse(false);selection.removeAllRanges();selection.addRange(range)`
             )
@@ -414,6 +437,7 @@ app.on('browser-window-created', (_, window) => {
             window.webContents.insertText(' Final keystroke before updating.')
             await click('[aria-label="Update ready"]')
             await button('Update now')
+            await hidden('The ready button disappears once installation starts')
             assert(
                 handoffs.length === 1 &&
                     JSON.stringify(handoffs[0].drafts).includes('Final keystroke before updating.'),

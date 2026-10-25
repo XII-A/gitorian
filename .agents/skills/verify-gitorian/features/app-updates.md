@@ -4,7 +4,7 @@ Windows NSIS installs check stable GitHub Releases shortly after startup and eve
 
 ## Entry points and outcomes
 
-- **Header:** The icon-only App updates control in both the hub and writing workspace opens the shared Arc popover. A green dot marks a downloaded update, with Update ready as its accessible name and tooltip. Check for updates reports current/check failure, and Try again retries. A downloading state shows the version and percentage without disabling writing. The desktop journey opens the ready popover from both headers and captures `06-hub-update-popover.png` alongside the workspace screenshot.
+- **Header:** The icon-only update control appears in the hub and writing workspace only after an update is downloaded and ready to install. Its green dot, accessible name and tooltip announce Update ready. Idle, checking, current, downloading, failed download and installing states have no header control. The desktop journey verifies these hidden states, then opens the ready popover from both headers and captures `06-hub-update-popover.png` alongside the workspace screenshot.
 - **Ready toast:** appears once per version on the device, without focus transfer. Update now uses the same checkpoint and installation path as the header. Dismissal leaves Update ready in the header; navigation/reload does not repeat the prompt.
 - **Ready popover:** Update ready opens Ready to update and Update now. Escape returns focus. Narrow/reduced-motion presentation must fit.
 - **Checkpoint:** the active draft uses its existing recovery cache and durable save, including in-flight writes and the final keystroke. Pending images or failed saves block installation. Settings must be saved/closed first. Editing resumes after preparation/launch failure.
@@ -14,11 +14,11 @@ Windows NSIS installs check stable GitHub Releases shortly after startup and eve
 
 Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify app-updates` on Windows.
 
-`tools/app-updates-smoke.mjs` drives the real compiled app, preload, IPC, NSIS updater, loopback HTTP download/hash validation, native editor input, background store writer and SQLite. It sets an isolated update configuration through electron-updater's documented development fixture seam. Provider responses and final installer launch are simulated. Save/launch faults are injected explicitly at existing IPC/installer seams. No live releases, personal credentials or repositories are used.
+`tools/app-updates-smoke.mjs` drives the real compiled app, preload, IPC, NSIS updater, loopback HTTP download/hash validation, native editor input, background store writer and SQLite. It sets an isolated update configuration through electron-updater's documented development fixture seam. The harness advances the real scheduled startup-check callback at the timer seam instead of waiting for each automatic interval. The production preload has only state, subscription and install operations. Provider responses and final installer launch are simulated. Save/launch faults are injected explicitly at existing IPC/installer seams. No live releases, personal credentials or repositories are used.
 
 The fixture contains a 200-paragraph journal and a throttled 12 MB update. Sustained typing must cross an autosave checkpoint during download, preserve editor identity/focus/text, and keep input-to-paint p95 below 100 ms, worst input below 350 ms and maximum frame gap below 500 ms. Retain `writing-performance.json`; these measurements characterize this fixture/machine, not all supported machines.
 
-Evidence includes screenshots of checking failure, current version, rejected download, background download, ready toast, ready popover, save-blocked restart and narrow reduced-motion UI; `installer-handoff.json` records simulated handoff with an independent SQLite read before launch. The runner independently reads `persisted-drafts.json` after normal shutdown and checks cleanup. Read `run.json` for the exact source/build identity, outcomes and cleanup result.
+Evidence includes screenshots showing no header button for checking failure, current version, rejected download and background download, followed by the ready toast, ready popovers, save-blocked restart and narrow reduced-motion UI; `installer-handoff.json` records simulated handoff with an independent SQLite read before launch. The runner independently reads `persisted-drafts.json` after normal shutdown and checks cleanup. Read `run.json` for the exact source/build identity, outcomes and cleanup result.
 
 ## Actual unsigned installation and restart
 

@@ -5,7 +5,7 @@ import type { AppUpdateState } from '../shared/app-updates'
 const bridge: DesktopBridge = {
     appUpdates: {
         state: () => ipcRenderer.invoke('journal:app-update-state'),
-        action: (action) => ipcRenderer.invoke('journal:app-update-action', action),
+        install: () => ipcRenderer.invoke('journal:app-update-install'),
         onState: (listener) => {
             const receive = (_event: Electron.IpcRendererEvent, state: AppUpdateState) => listener(state)
             ipcRenderer.on('journal:app-update-state', receive)

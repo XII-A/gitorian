@@ -1,5 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
-import { Download, RefreshCw } from 'lucide-react'
+import { Download } from 'lucide-react'
 import type { AppUpdateState } from '../shared/app-updates'
 import { checkpointBeforeUpdate } from './update-checkpoint'
 import { Button } from './components/arc/button/button'
@@ -64,7 +64,7 @@ async function installUpdate() {
         if (document.querySelector('.settings')) throw new Error('Save or close Settings, then try updating again.')
         resumeWriting = await checkpointBeforeUpdate()
         receive({ status: 'installing', version: state.version })
-        const result = await window.journal.appUpdates.action('install')
+        const result = await window.journal.appUpdates.install()
         receive(result)
     } catch (error) {
         const version = 'version' in state ? state.version : ''
@@ -113,72 +113,30 @@ export function AppUpdateNotifications() {
 
 export function AppUpdateButton() {
     const update = useAppUpdateState()
-    if (update.status === 'unavailable') return null
-    const ready = update.status === 'ready'
-    const busy = ['checking', 'downloading', 'installing'].includes(update.status)
-    const title = ready ? 'Update ready' : update.status === 'downloading' ? 'Downloading update' : 'App updates'
+    if (update.status !== 'ready') return null
     return (
         <Popover>
             <PopoverTrigger asChild>
                 <Button
                     variant="ghost"
                     size="sm"
-                    aria-label={title}
-                    title={title}
+                    aria-label="Update ready"
+                    title="Update ready"
                     className="app-update-trigger"
                     animateContent={false}
                 >
                     <span className="app-update-icon" aria-hidden="true">
                         <Download size={16} />
-                        {ready && <span className="app-update-dot" />}
+                        <span className="app-update-dot" />
                     </span>
                 </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="app-update-popover" aria-label="App updates">
-                <h2>
-                    {ready
-                        ? 'Ready to update'
-                        : update.status === 'downloading'
-                          ? 'Downloading update'
-                          : update.status === 'installing'
-                            ? 'Restarting Gitorian'
-                            : 'App updates'}
-                </h2>
-                <div role="status" aria-live="polite">
-                    {update.status === 'ready' && (
-                        <p>Gitorian {update.version} is ready. Your writing will be saved before the app restarts.</p>
-                    )}
-                    {update.status === 'downloading' && (
-                        <>
-                            <p>Keep writing. Gitorian {update.version} is downloading in the background.</p>
-                            <p className="app-update-progress" aria-label={`Update download: ${update.percent}%`}>
-                                {update.percent}% downloaded
-                            </p>
-                        </>
-                    )}
-                    {update.status === 'checking' && <p>Checking for updates…</p>}
-                    {update.status === 'installing' && <p>Saving your journal and opening the installer…</p>}
-                    {update.status === 'current' && <p>You’re using the latest version of Gitorian.</p>}
-                    {update.status === 'idle' && <p>Updates download in the background. You choose when to restart.</p>}
-                    {update.status === 'error' && <p>{update.message}</p>}
-                </div>
-                {ready && update.error && <p role="alert">{update.error}</p>}
-                <Button
-                    size="sm"
-                    animateContent={false}
-                    disabled={busy}
-                    onClick={() => (ready ? void installUpdate() : void window.journal.appUpdates?.action('check'))}
-                >
-                    {!ready && <RefreshCw size={14} aria-hidden="true" />}
-                    {ready
-                        ? 'Update now'
-                        : update.status === 'error'
-                          ? 'Try again'
-                          : update.status === 'downloading'
-                            ? 'Downloading…'
-                            : update.status === 'installing'
-                              ? 'Restarting…'
-                              : 'Check for updates'}
+                <h2>Ready to update</h2>
+                <p>Gitorian {update.version} is ready. Your writing will be saved before the app restarts.</p>
+                {update.error && <p role="alert">{update.error}</p>}
+                <Button size="sm" animateContent={false} onClick={() => void installUpdate()}>
+                    Update now
                 </Button>
             </PopoverContent>
         </Popover>

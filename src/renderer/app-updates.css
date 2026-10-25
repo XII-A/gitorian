@@ -17,12 +17,6 @@
     line-height: 1.5;
 }
 
-.app-update-popover .app-update-progress {
-    margin-top: 12px;
-    color: var(--foreground);
-    font-variant-numeric: tabular-nums;
-}
-
 .app-update-popover > button {
     justify-self: start;
 }

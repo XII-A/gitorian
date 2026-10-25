@@ -296,11 +296,9 @@ void app.whenReady().then(() => {
         updateOwner(event)
         return appUpdates.snapshot()
     })
-    ipcMain.handle('journal:app-update-action', async (event, input: unknown) => {
+    ipcMain.handle('journal:app-update-install', async (event) => {
         updateOwner(event)
-        const action = z.enum(['check', 'install']).parse(input)
-        if (action === 'install') await appUpdates.install()
-        else void appUpdates.check()
+        await appUpdates.install()
         return appUpdates.snapshot()
     })
     appUpdates.subscribe((state) => {

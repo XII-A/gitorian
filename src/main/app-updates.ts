@@ -54,7 +54,7 @@ export class AppUpdates {
         setInterval(() => void this.check(), 6 * 60 * 60 * 1000).unref()
     }
 
-    async check(): Promise<void> {
+    private async check(): Promise<void> {
         const updater = this.updater
         if (!updater || this.checking || ['ready', 'installing'].includes(this.state.status)) return
         this.checking = true

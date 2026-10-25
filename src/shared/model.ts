@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { AppUpdateState } from './app-updates'
 import type { StateCursor, UpdateReply } from './state-updates'
 
 export const documentSchema: z.ZodType<JournalNode> = z.lazy(() =>
@@ -403,7 +404,7 @@ export interface Reply {
 export interface DesktopBridge {
     appUpdates?: {
         state: () => Promise<AppUpdateState>
-        action: (action: AppUpdateAction) => Promise<AppUpdateState>
+        install: () => Promise<AppUpdateState>
         onState: (listener: (state: AppUpdateState) => void) => () => void
     }
     images?: {
@@ -428,4 +429,3 @@ export type RepositoryImportProgress =
     | { stage: 'selecting' }
     | { stage: 'discovering'; scanned: number; found: number }
     | { stage: 'processing'; completed: number; total: number }
-import type { AppUpdateState, AppUpdateAction } from './app-updates'

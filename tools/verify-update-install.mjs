@@ -281,11 +281,8 @@ try {
     await wait(
         `document.querySelector('[aria-label="Journal body"]').innerText.includes('Writing before the installed update.')`
     )
-    await js(`document.querySelector('[aria-label="App updates"]').click()`)
-    await js(
-        `Array.from(document.querySelectorAll('.app-update-popover button')).find(b=>b.textContent==='Check for updates').click()`
-    )
     await wait(`!!document.querySelector('[aria-label="Update ready"]')`)
+    await js(`document.querySelector('[aria-label="Update ready"]').click()`)
     await screenshot('installed-update-ready')
     await evaluate(`setTimeout(()=>__electron.app.quit(),100); true`)
     socket.close()
@@ -302,11 +299,8 @@ try {
     await wait(`!!document.querySelector('[aria-label="Open journal"]')`)
     await js(`document.querySelector('[aria-label="Open journal"]').click()`)
     await wait(`!!document.querySelector('[aria-label="Journal body"]')`)
-    await js(`document.querySelector('[aria-label="App updates"]').click()`)
-    await js(
-        `Array.from(document.querySelectorAll('.app-update-popover button')).find(b=>b.textContent==='Check for updates').click()`
-    )
     await wait(`!!document.querySelector('[aria-label="Update ready"]')`)
+    await js(`document.querySelector('[aria-label="Update ready"]').click()`)
     assert(
         !(await js(`document.querySelector('.journal-notifications')?.innerText.includes('Gitorian 0.1.5 is ready')`)),
         'Ready notification stays dismissed across a full process restart'
