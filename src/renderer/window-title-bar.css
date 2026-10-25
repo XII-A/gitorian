@@ -19,6 +19,10 @@ body:has(.window-chrome):has(.ws-reference .ws-inspector-header) {
 #root:has(.window-chrome) > :is(.hub-scroll, .app, .loading, .reference, .ws-reference) {
     height: var(--window-content-height);
 }
+/* Portaled modal backdrops dim the content, preserving the native frame on both sides. */
+body:has(.window-chrome) [data-arc-dialog-overlay] {
+    clip-path: inset(6px round var(--radius-inset));
+}
 /* Only this small mask moves; the page keeps its static rounded clip.
    The circular cutouts continue the content corners below the growing frame. */
 .window-frame-cap {
