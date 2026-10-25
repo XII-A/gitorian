@@ -24,7 +24,7 @@ Preconditions: `pnpm build`; for the existing diagnostic journey use `pnpm smoke
 
 ## Gotchas
 
-Run `pnpm verify activity-counts` after a build to verify hub count updates through real Git refresh and IPC. It imports a disposable one-commit repository, adds nine commits, refreshes, requires 10 rows and counts, and checks that the chip label stays mounted. Only the inline Arc counter animates. The evidence directory retains actions, a screenshot, exit status, and cleanup results.
+Run `pnpm verify activity-counts` after a build to verify hub count updates through real Git refresh and IPC. It imports a disposable one-commit repository, adds nine commits, refreshes, requires 10 rows and counts, and checks that chip and summary labels stay mounted. The summary uses the same inline Arc counter as the chips. Require `summary-counter-motion.json` to show moving digits in both regions, stationary labels and inherited summary typography, plus final summary values 10 commits, 0 PRs/reviews, 1 repository and 1 active day. Repeat with `GITORIAN_VERIFY_MOTION=stress` and require no moving digit frames in either region. The evidence directory retains actions, a screenshot, exit status, and cleanup results.
 
 Fixture dates are relative to the run date. Import is setup, not UI-import proof. This diagnostic does not retain screenshots or independently reopen SQLite today. Timezone/DST cases are protected by existing behavior tests; preserve those until equivalent real journeys exist. An unavailable fixture is an intentional failure, not permission to point at a personal repository.
 

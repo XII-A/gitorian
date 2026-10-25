@@ -388,6 +388,7 @@ if (mode === 'doctor') {
                               ? 'automatic-prs.png'
                               : 'grouped-filters.png',
                         'journey.json',
+                        ...(mode === 'activity-counts' ? ['summary-counter-motion.json'] : []),
                         ...(mode === 'github-import'
                             ? [
                                   'connected-with-activity.png',

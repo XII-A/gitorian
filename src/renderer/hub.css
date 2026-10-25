@@ -175,7 +175,7 @@
     letter-spacing: var(--tracking-display);
     font-variant-numeric: tabular-nums;
 }
-.hub-stats span {
+.hub-stats > div > span {
     font-size: var(--text-xs);
     color: var(--text-secondary);
 }
@@ -653,7 +653,7 @@
     .hub-stats strong {
         font-size: var(--text-xl);
     }
-    .hub-stats span {
+    .hub-stats > div > span {
         font-size: 0.6875rem;
     }
     .hub-filters > button {
