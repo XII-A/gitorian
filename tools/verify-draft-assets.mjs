@@ -12,7 +12,11 @@ if (process.platform !== 'win32' || process.env.GITHUB_ACTIONS !== 'true')
     throw new Error('Run the Verify exact draft assets workflow on a fresh hosted Windows runner.')
 const assets = resolve(process.argv[2])
 const output = resolve(process.argv[3])
-const version = JSON.parse(readFileSync('package.json', 'utf8')).version
+const tag = process.env.RELEASE_TAG
+if (!/^v\d+\.\d+\.\d+$/.test(tag ?? '')) throw new Error('Expected a version tag.')
+const version = JSON.parse(
+    execFileSync('git', ['show', `${tag}:package.json`], { encoding: 'utf8', windowsHide: true })
+).version
 if (process.env.RELEASE_TAG !== `v${version}`) throw new Error('Tag and package version differ.')
 mkdirSync(output, { recursive: true })
 const scratch = mkdtempSync(join(tmpdir(), 'gitorian-exact-draft-'))
@@ -29,6 +33,8 @@ const report = {
     scratch,
     output,
     passed: false,
+    sourceCommit: execFileSync('git', ['rev-parse', `${tag}^{commit}`], { encoding: 'utf8', windowsHide: true }).trim(),
+    verificationCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', windowsHide: true }).trim(),
     integrationVerification: 'Not tested: no live provider credentials or publishing.'
 }
 const save = () => writeFileSync(join(output, 'run.json'), JSON.stringify(report, null, 2))
