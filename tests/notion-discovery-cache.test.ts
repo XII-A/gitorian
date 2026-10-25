@@ -130,3 +130,15 @@ it('adds a newly confirmed page without mutating the picker snapshot', async () 
         created
     ])
 })
+
+it('merges a completed branch without changing existing picker snapshots or another account', async () => {
+    const f = fixture(),
+        cache = f.create()
+    const snapshot = await cache.pages('token', () => Promise.resolve(pages))
+    const child: NotionPage = { kind: 'page', id: 'child', title: 'Child', url: '', parentId: 'journal' }
+    cache.rememberAll('other-token', [child])
+    expect(await cache.pages('token', () => Promise.reject(new Error('No read')))).toEqual(pages)
+    cache.rememberAll('token', [child])
+    expect(snapshot).toEqual(pages)
+    expect(await f.create().pages('token', () => Promise.reject(new Error('No read')))).toEqual([...pages, child])
+})

@@ -66,10 +66,13 @@ export class NotionDiscoveryCache {
         }
     }
     remember(token: string, page: NotionPage) {
+        this.rememberAll(token, [page])
+    }
+    rememberAll(token: string, pages: NotionPage[]) {
         if (this.entry?.scope !== scopeOf(token)) return
-        this.cancel()
-        const pages = this.entry.pages.filter((item) => item.id !== page.id)
-        this.entry = { ...this.entry, pages: [...pages, page] }
+        const merged = new Map(this.entry.pages.map((page) => [page.id, page]))
+        for (const page of pages) merged.set(page.id, page)
+        this.entry = { ...this.entry, pages: [...merged.values()] }
         this.persist()
     }
     async pages(

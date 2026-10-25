@@ -343,19 +343,15 @@ it('discovers a new review on an old PR without importing its old milestones', a
 it('indexes only new commit bodies after ref changes and updates known branch membership', async () => {
     const app = await workspace()
     try {
-        const first = await gitModule.indexCommits(app.repository, {}, app.repository.trackingStart)
+        // This scenario owns ref deltas, not week filtering. Local midnight
+        // must not exclude a fixture commit whose author date is still yesterday in UTC.
+        const since = '2000-01-01'
+        const first = await gitModule.indexCommits(app.repository, {}, since)
         await app.git('commit', '--allow-empty', '-m', 'Incremental work')
-        const incremental = await gitModule.indexCommits(app.repository, first.refs, app.repository.trackingStart)
+        const incremental = await gitModule.indexCommits(app.repository, first.refs, since)
         expect(incremental.items.map((item) => item.title)).toEqual(['Incremental work'])
         await app.git('branch', 'new-branch')
-        const branch = await gitModule.indexCommits(
-            app.repository,
-            incremental.refs,
-            app.repository.trackingStart,
-            0,
-            [],
-            incremental.items
-        )
+        const branch = await gitModule.indexCommits(app.repository, incremental.refs, since, 0, [], incremental.items)
         expect(branch.items[0].branches).toContain('new-branch')
     } finally {
         await app.close()

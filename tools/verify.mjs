@@ -149,6 +149,7 @@ if (mode === 'doctor') {
             'src/renderer/OnboardingActivityPreview.tsx',
             'src/renderer/OnboardingSetupLayout.tsx',
             'src/renderer/use-onboarding.ts',
+            'src/renderer/NotionPageLoading.tsx',
             'src/renderer/components/arc/onboarding-checklist/onboarding-checklist.tsx',
             'src/renderer/components/arc/onboarding-checklist/onboarding-checklist.module.css'
         ]) {
@@ -388,6 +389,7 @@ if (mode === 'doctor') {
                               ? 'automatic-prs.png'
                               : 'grouped-filters.png',
                         'journey.json',
+                        ...(mode === 'activity-counts' ? ['summary-counter-motion.json'] : []),
                         ...(mode === 'github-import'
                             ? [
                                   'connected-with-activity.png',
@@ -480,6 +482,13 @@ if (mode === 'doctor') {
                                         'http-requests.json',
                                         'persisted-settings.json',
                                         'notion-01-ready.png',
+                                        'notion-immediate-search.png',
+                                        'notion-search-loading.png',
+                                        'notion-loading-layouts.json',
+                                        'notion-loading-contrast.json',
+                                        'notion-branch-skeleton-end.png',
+                                        'notion-remote-title-result.png',
+                                        'notion-page-link-result.png',
                                         'notion-07-connected.png',
                                         'notion-09-disconnected.png',
                                         'notion-provisioned.json',
@@ -495,6 +504,9 @@ if (mode === 'doctor') {
                                           'http-requests.json',
                                           'persisted-settings.json',
                                           'notion-04-failed.png',
+                                          'notion-immediate-search.png',
+                                          'notion-remote-title-result.png',
+                                          'notion-page-link-result.png',
                                           'notion-07-connected.png',
                                           'notion-09-disconnected.png',
                                           'notion-provisioned.json',
@@ -504,6 +516,8 @@ if (mode === 'doctor') {
                                           'doctor.json',
                                           'actions.jsonl',
                                           '01-choose-folder.png',
+                                          '05b-search-clear-hover.png',
+                                          'search-clear-alignment.json',
                                           '08-complete.png',
                                           '10-error-details.png',
                                           'persisted-repositories.json'

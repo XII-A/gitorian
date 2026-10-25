@@ -51,6 +51,7 @@ let service: JournalService
 let restoring = false
 let updating = false
 let notionConnection: NotionConnection | undefined
+let stopNotionPages: (() => void) | undefined
 const referenceWindows = new Set<number>()
 const work = new Set<Promise<unknown>>()
 function track<T>(promise: Promise<T>): Promise<T> {
@@ -248,6 +249,12 @@ void app.whenReady().then(() => {
     const notion = new Notion(http, (refresh, rejected) => connection.token(refresh, rejected), store)
     const pendingNotion = new Notion(http, (refresh, rejected) => connection.pendingToken(refresh, rejected))
     const notionDiscovery = new NotionDiscoveryCache(join(app.getPath('userData'), 'notion-pages.json'))
+    const notionReads = new Map<string, AbortController>()
+    stopNotionPages = () => {
+        for (const read of notionReads.values()) read.abort(new Error('Notion page read cancelled.'))
+        notionReads.clear()
+        notionDiscovery.cancel()
+    }
     let notionPickerGeneration = 0
     let availableNotionPages: Awaited<ReturnType<Notion['accessiblePages']>> = []
     const profiles = new ConnectionProfileCache(
@@ -399,7 +406,7 @@ void app.whenReady().then(() => {
             }
             case 'notionStart': {
                 notionPickerGeneration++
-                notionDiscovery.cancel()
+                stopNotionPages?.()
                 availableNotionPages = []
                 const notionAuthorization = await connection.start()
                 try {
@@ -415,7 +422,7 @@ void app.whenReady().then(() => {
             case 'notionCancel':
                 connection.cancel()
                 notionPickerGeneration++
-                notionDiscovery.cancel()
+                stopNotionPages?.()
                 availableNotionPages = []
                 break
             case 'notionPoll': {
@@ -424,47 +431,56 @@ void app.whenReady().then(() => {
                 return service.reply()
             }
             case 'notionPages': {
+                if (command.query && command.parentId) throw new Error('Choose a page to expand or enter a search.')
+                if (!command.parentId) stopNotionPages?.()
+                const controller = new AbortController()
+                notionReads.set(command.requestId, controller)
                 const generation = notionPickerGeneration
-                const token = await connection.pendingToken()
-                if (generation !== notionPickerGeneration) throw new Error('Notion page discovery cancelled.')
-                const discovery = new Notion(http, (refresh, rejected) => connection.pendingToken(refresh, rejected))
-                let lastStage = ''
-                let latest: NotionDiscoveryProgress | undefined
-                let progressTimer: ReturnType<typeof setTimeout> | undefined
-                const flushProgress = () => {
-                    const progress = latest
-                    latest = undefined
-                    if (progress && generation === notionPickerGeneration && !event.sender.isDestroyed())
-                        event.sender.send('journal:notion-discovery', { requestId: command.requestId, progress })
-                }
-                const pages = await notionDiscovery
-                    .pages(
-                        token,
-                        (signal, progress) => discovery.accessiblePages(progress, signal),
-                        (progress) => {
-                            latest = progress
-                            const final = progress.stage === 'grouping' && progress.completed === progress.total
-                            if (progress.stage !== lastStage || final) {
-                                lastStage = progress.stage
-                                clearTimeout(progressTimer)
-                                progressTimer = undefined
-                                flushProgress()
-                            } else {
-                                progressTimer ??= setTimeout(() => {
-                                    progressTimer = undefined
-                                    flushProgress()
-                                }, 100)
-                            }
-                        }
+                try {
+                    const token = await connection.pendingToken()
+                    controller.signal.throwIfAborted()
+                    if (generation !== notionPickerGeneration) throw new Error('Notion page read cancelled.')
+                    const parent = command.parentId
+                        ? availableNotionPages.find((page) => page.id === command.parentId)
+                        : undefined
+                    if (command.parentId && !parent) throw new Error('Choose an available page to expand.')
+                    const discovery = new Notion(http, (refresh, rejected) =>
+                        connection.pendingToken(refresh, rejected)
                     )
-                    .finally(() => clearTimeout(progressTimer))
-                if (generation !== notionPickerGeneration) throw new Error('Notion page discovery cancelled.')
-                availableNotionPages = pages
-                return service.reply({ notionPages: pages })
+                    const progress = (progress: NotionDiscoveryProgress) => {
+                        if (
+                            !controller.signal.aborted &&
+                            generation === notionPickerGeneration &&
+                            !event.sender.isDestroyed()
+                        )
+                            event.sender.send('journal:notion-discovery', { requestId: command.requestId, progress })
+                    }
+                    const pages =
+                        command.query || parent
+                            ? await discovery.accessiblePages(progress, controller.signal, {
+                                  query: command.query,
+                                  parent
+                              })
+                            : await notionDiscovery.pages(
+                                  token,
+                                  (signal, notify) =>
+                                      discovery.accessiblePages(notify, AbortSignal.any([signal, controller.signal])),
+                                  progress
+                              )
+                    controller.signal.throwIfAborted()
+                    if (generation !== notionPickerGeneration) throw new Error('Notion page read cancelled.')
+                    const known = new Map(availableNotionPages.map((page) => [page.id, page]))
+                    for (const page of pages) known.set(page.id, page)
+                    availableNotionPages = [...known.values()]
+                    if (parent || command.query) notionDiscovery.rememberAll(token, pages)
+                    return service.reply({ notionPages: pages })
+                } finally {
+                    if (notionReads.get(command.requestId) === controller) notionReads.delete(command.requestId)
+                }
             }
             case 'notionChoose': {
                 notionPickerGeneration++
-                notionDiscovery.cancel()
+                stopNotionPages?.()
                 availableNotionPages = []
                 if (connection.choose()) return service.reply()
                 const notionAuthorization = await connection.start()
@@ -483,6 +499,10 @@ void app.whenReady().then(() => {
                         ? availableNotionPages.find((page) => page.kind === 'page' && page.id === selection.pageId)
                         : undefined
                 if (selection.kind === 'existing' && !page) throw new Error('Refresh pages and choose a destination.')
+                // Selection no longer waits for the full content crawl. Cancel
+                // that read before saving so its late result cannot change the picker.
+                notionPickerGeneration++
+                stopNotionPages?.()
                 const destination = await connection.completeJournal(
                     async (setup, checkpoint) =>
                         pendingNotion.prepareJournal(
@@ -575,6 +595,7 @@ void app.whenReady().then(() => {
             case 'disconnect':
                 if (command.service === 'notion') {
                     notionPickerGeneration++
+                    stopNotionPages?.()
                     notionDiscovery.clear()
                     availableNotionPages = []
                     connection.disconnect()
@@ -618,6 +639,7 @@ void app.whenReady().then(() => {
                             await store.flush()
                             vault.set('github', '')
                             notionPickerGeneration++
+                            stopNotionPages?.()
                             notionDiscovery.clear()
                             availableNotionPages = []
                             connection.disconnect()
@@ -704,6 +726,7 @@ let closed = false
 let closing = false
 app.on('before-quit', (event) => {
     notionConnection?.cancel()
+    stopNotionPages?.()
     if (!store || closed) return
     event.preventDefault()
     if (closing) return

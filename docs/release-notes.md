@@ -48,3 +48,5 @@ Before publishing, download and test the exact draft assets on a disposable acco
 - Verify uninstall behavior.
 
 Publish the same verified draft manually. Keep verification evidence separate from the release description. Do not rebuild or replace tested assets. Draft downloads require repository write access; do not grant write access merely to share an installer.
+
+The manual **Verify exact draft assets** workflow performs the installer, packaged-app, local Git/diff, writing restart, backup round-trip, and uninstall checks on a fresh hosted Windows runner. Run it from `main` with the unpublished tag after draft upload. It downloads that draft's attached assets and checks SHA256SUMS and the update-feed SHA512 before installing. Review the retained `exact-draft-verification` artifact, including `run.json`, Windows version, screenshots, persisted writing and unchanged installer hash, before publishing. The workflow never publishes and does not verify live provider integrations. Its driver refuses personal desktops and runners with an existing Gitorian installation or profile.

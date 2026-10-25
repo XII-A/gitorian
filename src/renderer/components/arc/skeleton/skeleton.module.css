@@ -18,7 +18,7 @@
 /* Media skeletons pulse as one surface; the caller reserves their size. */
 .block {
     width: 100%;
-    min-height: var(--control-height-md);
+    min-height: var(--skeleton-block-height, var(--control-height-md));
 }
 .avatar {
     width: var(--control-height-md);
@@ -55,10 +55,40 @@
         opacity: 0.52;
     }
 }
+.shimmer:is(.block, .avatar, .line),
+.shimmer :is(.avatar, .line) {
+    position: relative;
+    overflow: hidden;
+    animation: none;
+}
+.shimmer:is(.block, .avatar, .line)::after,
+.shimmer :is(.avatar, .line)::after {
+    position: absolute;
+    inset: 0;
+    content: '';
+    background: linear-gradient(
+        90deg,
+        transparent,
+        color-mix(in oklab, var(--border-strong) 45%, transparent),
+        transparent
+    );
+    transform: translateX(-100%);
+    animation: skeleton-shimmer calc(var(--duration-considered) * 3) linear infinite;
+}
+@keyframes skeleton-shimmer {
+    to {
+        transform: translateX(100%);
+    }
+}
 @media (prefers-reduced-motion: reduce) {
     .avatar,
     .line,
     .block {
+        animation: none;
+    }
+    .shimmer:is(.block, .avatar, .line)::after,
+    .shimmer :is(.avatar, .line)::after {
+        display: none;
         animation: none;
     }
 }

@@ -67,6 +67,14 @@ let notionCreatedTitle = 'Weekly Journal'
 let refreshedNames = false
 let failPageSearch = true
 let discoveryRateLimit
+let holdDiscovery = false
+let releaseDiscovery
+let failDiscovery = false
+let earlyScanAborted = false
+let holdInitialSearch = false
+let initialSearchStarted = false
+let initialSearchAborted = false
+let failTargetSearch = true
 let failPageSelection = true
 let expireEditSearch = false
 let expireEditCreation = false
@@ -238,6 +246,49 @@ globalThis.fetch = (input, init) =>
             })
         }
         if (url === 'https://api.notion.com/v1/search') {
+            if (holdInitialSearch && !body.query && !body.start_cursor) {
+                initialSearchStarted = true
+                await new Promise((resolve, reject) => {
+                    init.signal.addEventListener(
+                        'abort',
+                        () => {
+                            initialSearchAborted = true
+                            reject(new Error('Held initial search canceled'))
+                        },
+                        { once: true }
+                    )
+                })
+            }
+            if (body.query) {
+                const result = (id, title, parent) =>
+                    json({
+                        results: [
+                            {
+                                id,
+                                url: `https://www.notion.so/${id}`,
+                                parent: parent ? { page_id: parent } : { workspace: true },
+                                properties: { Name: { title: [{ plain_text: title }] } }
+                            }
+                        ],
+                        has_more: false
+                    })
+                if (body.query === 'Old query') {
+                    await pause(700)
+                    return result('fixture-old-result', 'Old query')
+                }
+                if (body.query === 'New query') return result('fixture-new-result', 'New query')
+                if (body.query === 'Release plan')
+                    return result('fixture-remote-result', 'Release plan', 'fixture-parent')
+                if (body.query === 'Retry me') {
+                    if (failTargetSearch) {
+                        failTargetSearch = false
+                        return new Response('{}', { status: 500 })
+                    }
+                    return result('fixture-retry-result', 'Retry me')
+                }
+                return json({ results: [], has_more: false })
+            }
+
             if (expireEditSearch) {
                 expireEditSearch = false
                 return new Response('{}', { status: 401 })
@@ -284,6 +335,27 @@ globalThis.fetch = (input, init) =>
             })
         }
         // Decisions is readable immediately but deliberately absent from search's index.
+        if (url === 'https://api.notion.com/v1/blocks/fixture-parent/children?page_size=100') {
+            if (holdDiscovery) {
+                await new Promise((resolve, reject) => {
+                    const abort = () => {
+                        earlyScanAborted = true
+                        reject(
+                            init.signal.reason instanceof Error
+                                ? init.signal.reason
+                                : new Error('Fixture scan cancelled')
+                        )
+                    }
+                    init.signal.addEventListener('abort', abort, { once: true })
+                    releaseDiscovery = () => {
+                        init.signal.removeEventListener('abort', abort)
+                        resolve()
+                    }
+                })
+            }
+            if (failDiscovery) return new Response('{}', { status: 500 })
+            return json({ results: [], has_more: false })
+        }
         if (url === 'https://api.notion.com/v1/blocks/fixture-existing/children?page_size=100')
             return json({
                 results: [{ id: 'fixture-outer-toggle', type: 'toggle', has_children: true }],
@@ -309,6 +381,19 @@ globalThis.fetch = (input, init) =>
             }
             return json({ results: [{ id: 'fixture-leaf', type: 'child_page' }], has_more: false })
         }
+        if (url === 'https://api.notion.com/v1/pages/fixture-parent')
+            return json({
+                id: 'fixture-parent',
+                parent: { workspace: true },
+                properties: { Name: { title: [{ plain_text: 'Personal' }] } }
+            })
+        if (url === 'https://api.notion.com/v1/pages/not-shared') return new Response('{}', { status: 404 })
+        if (url === 'https://api.notion.com/v1/pages/12345678-1234-1234-1234-123456789abc')
+            return json({
+                id: '12345678-1234-1234-1234-123456789abc',
+                parent: { page_id: 'fixture-parent' },
+                properties: { Name: { title: [{ plain_text: 'Direct link notes' }] } }
+            })
         if (url === 'https://api.notion.com/v1/pages/fixture-leaf')
             return json({
                 id: 'fixture-leaf',
@@ -327,6 +412,22 @@ globalThis.fetch = (input, init) =>
         if (url === 'https://api.notion.com/v1/blocks/fixture-database-toggle')
             return json({ parent: { page_id: 'fixture-parent' } })
         if (url === 'https://api.notion.com/v1/blocks/fixture-hidden-toggle') return new Response('{}', { status: 404 })
+        if (
+            url === 'https://api.notion.com/v1/data_sources/fixture-projects/query' ||
+            url === 'https://api.notion.com/v1/data_sources/fixture-archive/query'
+        ) {
+            const project = url.includes('fixture-projects')
+            return json({
+                results: [
+                    {
+                        id: project ? 'fixture-board-entry' : 'fixture-archive-entry',
+                        parent: { data_source_id: project ? 'fixture-projects' : 'fixture-archive' },
+                        properties: { Name: { title: [{ plain_text: project ? 'Board entry' : 'Archived entry' }] } }
+                    }
+                ],
+                has_more: false
+            })
+        }
         if (url === 'https://api.notion.com/v1/data_sources/fixture-projects')
             return json({
                 id: 'fixture-projects',
@@ -955,104 +1056,194 @@ app.on('browser-window-created', (_, window) => {
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='device'`)
             await shot('notion-05-retrying', 250, 'notion')
             await click('Open Notion', notionScope)
+            failPageSearch = false
+            holdInitialSearch = true
             await approveNotion()
-            await wait(`${notionScope}.textContent.includes('Could not load pages')`)
-            await shot('notion-pages-load-error', 250, 'notion')
-            await js(`(() => {
-                window.__notionLoadingMotion={frames:[]};
-                const sample=()=>{
-                    const section=${notionScope};
-                    const root=section?.querySelector('.github-signin-surface > [role="group"]');
-                    const surface=root?.firstElementChild;
-                    if(root && surface) {
-                        const bounds=surface.getBoundingClientRect();
-                        const counters=Array.from(section.querySelectorAll('[data-variant="inline"]')).map(counter=>Array.from(counter.querySelectorAll('span')).filter(node=>!node.childElementCount && /^[0-9]$/.test(node.textContent) && getComputedStyle(node).position==='absolute' && node.getBoundingClientRect().width>2).map(node=>({digit:node.textContent,opacity:Number(getComputedStyle(node).opacity),offset:new DOMMatrixReadOnly(getComputedStyle(node).transform).m42,visibility:getComputedStyle(node).visibility})));
-                        window.__notionLoadingMotion.frames.push({time:performance.now(),state:root.dataset.state,width:bounds.width,left:bounds.left,right:bounds.right,top:bounds.top,text:surface.textContent,counters});
-                    }
-                    window.__notionLoadingMotion.frame=requestAnimationFrame(sample);
-                }; sample();
-            })()`)
-            await click('Retry', notionScope)
-            await wait(
-                `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.querySelector('[aria-label="Found 9 pages"]') != null`
-            )
-            await shot('notion-discovery-count', 100, 'notion')
-            await assertActionsFit('Notion')
-            await wait(
-                `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.querySelector('[aria-label="Grouped 15 of 16 pages"]') != null`
-            )
-            await shot('notion-grouping-count', 100, 'notion')
-            await wait(`(() => {
-                const values=Array.from(${notionScope}.querySelectorAll('[data-variant="inline"]')).map(counter=>Array.from(counter.querySelectorAll('span')).filter(node=>{
-                    if(node.childElementCount || !/^[0-9]$/.test(node.textContent) || node.getBoundingClientRect().width<=2) return false;
-                    const style=getComputedStyle(node);
-                    const column=getComputedStyle(node.offsetParent);
-                    return style.position==='absolute' && style.visibility==='visible' && Number(style.opacity)>.99 && Math.abs(new DOMMatrixReadOnly(style.transform).m42)<.05 && Number(column.opacity)>.99 && (column.transform==='none' || Math.abs(new DOMMatrixReadOnly(column.transform).m42)<.05);
-                }).map(node=>node.textContent).join(''));
-                return values.join('/')==='15/16';
-            })()`)
-            await shot('notion-counter-settled', 50, 'notion')
-            await assertActionsFit('Notion')
             await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
-            const loadingFrames = await js(
-                `(() => {cancelAnimationFrame(window.__notionLoadingMotion.frame);return window.__notionLoadingMotion.frames})()`
-            )
-            const pendingSteps = loadingFrames.slice(1).flatMap((frame, index) => {
-                const previous = loadingFrames[index]
-                return frame.state === 'pending' && previous.state === 'pending' && frame.time - previous.time >= 4
-                    ? [
-                          {
-                              delta: Math.abs(frame.width - previous.width),
-                              perFrame: (Math.abs(frame.width - previous.width) * 16.667) / (frame.time - previous.time)
-                          }
-                      ]
-                    : []
-            })
-            const loadingMetrics = {
-                samples: loadingFrames.length,
-                maxPendingStep: Math.max(0, ...pendingSteps.map((step) => step.delta)),
-                maxPendingStepPerFrame: Math.max(0, ...pendingSteps.map((step) => step.perFrame)),
-                reducedMotion: stressMotion,
-                movingDigitFrames: loadingFrames.filter((frame) =>
-                    frame.counters?.some((counter) =>
-                        counter.some(
-                            (glyph) =>
-                                glyph.opacity > 0.01 && glyph.visibility === 'visible' && Math.abs(glyph.offset) > 0.05
-                        )
-                    )
-                ).length,
-                maxTopStep: Math.max(
-                    0,
-                    ...loadingFrames.slice(1).map((frame, index) => Math.abs(frame.top - loadingFrames[index].top))
+            await wait(`!!document.querySelector('[aria-label="Notion pages"]')`)
+            const typePageQuery = async (text) => {
+                await js(
+                    `(()=>{const input=${notionScope}.querySelector('[role="combobox"]:not([inert] *)');window.__sameNotionPicker??=input;input.focus();input.click();input.select()})()`
+                )
+                if (text) window.webContents.insertText(text)
+                else {
+                    window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' })
+                    window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' })
+                }
+                await wait(
+                    `${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value===${JSON.stringify(text)}`
                 )
             }
-            writeFileSync(
-                join(output, 'notion-loading-motion.json'),
-                JSON.stringify({ metrics: loadingMetrics, frames: loadingFrames }, null, 2)
+            await wait(`!!document.querySelector('.notion-picker-status')`)
+            await assert(
+                `document.querySelector('.notion-picker-status [aria-label="Loading pages"]') && !document.querySelector('.notion-picker-status .notion-spinner') && !document.querySelector('.notion-picker-status').innerText.trim()`
             )
-            if (stressMotion ? loadingMetrics.movingDigitFrames !== 0 : loadingMetrics.movingDigitFrames < 3)
-                throw new Error(`Counter motion did not match the motion preference: ${JSON.stringify(loadingMetrics)}`)
-            if (loadingMetrics.maxTopStep > 1) throw new Error(`Loading row jumped: ${JSON.stringify(loadingMetrics)}`)
-            if (!stressMotion && loadingMetrics.maxPendingStepPerFrame > 24)
-                throw new Error(`Loading width jumped: ${JSON.stringify(loadingMetrics)}`)
+            if (!initialSearchStarted) throw new Error('Initial search fixture was not held')
+            const loadingLayouts = []
+            for (const width of [320, 390, 768, 1024, 1440]) {
+                window.setContentSize(width, 900)
+                await pause(400)
+                const layout = await js(
+                    `(() => {const skeleton=document.querySelector('.notion-picker-status');const r=skeleton.getBoundingClientRect();return {width:innerWidth,left:r.left,right:r.right,overflow:document.documentElement.scrollWidth>innerWidth}})()`
+                )
+                if (layout.left < 0 || layout.right > Number(layout.width) + 1 || layout.overflow)
+                    throw new Error(`Loading rows overflow: ${JSON.stringify(layout)}`)
+                loadingLayouts.push(layout)
+                await assertActionsFit('Notion')
+                if (width === 320) await shot('notion-loading-320', 100, 'notion')
+            }
+            window.setContentSize(1280, 900)
+            window.webContents.setZoomFactor(2)
+            await pause(400)
+            await assertActionsFit('Notion')
+            await shot('notion-loading-zoom', 100, 'notion')
+            window.webContents.setZoomFactor(1)
+            window.setContentSize(narrowViewport ? 390 : 1280, 900)
+            await js(
+                `document.documentElement.dataset.theme='light';document.documentElement.dataset.accent='blue';true`
+            )
+            await shot('notion-loading-light-blue', 150, 'notion')
+            await js(
+                `document.documentElement.dataset.theme='dark';document.documentElement.dataset.accent='neutral';true`
+            )
+            writeFileSync(join(output, 'notion-loading-layouts.json'), JSON.stringify(loadingLayouts, null, 2))
+            await shot('notion-immediate-search', 150, 'notion')
+            await typePageQuery('Release plan')
+            await wait(`!!document.querySelector('[role="treeitem"][title="Release plan"]')`)
+            if (!initialSearchAborted) throw new Error('Typing a title did not cancel the held initial read')
+            await assert(`window.__sameNotionPicker===${notionScope}.querySelector('[role="combobox"]:not([inert] *)')`)
+            record({
+                assertion: 'One picker accepts immediate title search while initial loading is blocked',
+                passed: true
+            })
+            await shot('notion-remote-title-result', 150, 'notion')
+            await typePageQuery('Old query')
+            await wait(`!!document.querySelector('.notion-picker-status [aria-label="Loading pages"]')`)
+            await shot('notion-search-loading', 100, 'notion')
+            await pause(350)
+            await typePageQuery('New query')
+            await wait(`!!document.querySelector('[role="treeitem"][title="New query"]')`)
+            await pause(800)
+            await assert(
+                `!document.querySelector('[role="treeitem"][title="Old query"]') && ${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value==='New query'`
+            )
+            await typePageQuery('Retry me')
+            await wait(`document.body.innerText.includes('Could not load pages')`)
+            await shot('notion-pages-load-error', 100, 'notion')
+            await click('Retry search')
+            await wait(`!!document.querySelector('[role="treeitem"][title="Retry me"]')`)
+            await typePageQuery('Decisions')
+            await wait(`document.body.innerText.includes('No matching pages')`)
+            await typePageQuery('https://www.notion.so/Notes-12345678123412341234123456789abc')
+            await wait(`!!document.querySelector('[role="treeitem"][title="Direct link notes"]')`)
+            await shot('notion-page-link-result', 100, 'notion')
+            holdInitialSearch = false
+            await typePageQuery('')
+            await wait(
+                `!!document.querySelector('[role="treeitem"][title="Personal"]') && !document.querySelector('.notion-picker-status')`
+            )
+            const contentReads = requests.filter((r) => /\/blocks\/[^/]+\/children/.test(r.url)).length
+            if (contentReads !== 0) throw new Error('Initial discovery or title search crawled page contents')
+            holdDiscovery = true
+            failDiscovery = true
+            await click('Expand Personal')
+            await wait(`!!document.querySelector('[role="treeitem"][title="Personal"] [role="status"]')`)
+            await assert(
+                `document.querySelector('[role="treeitem"][title="Personal"] .notion-spinner') && document.querySelector('[data-loading-branch="fixture-parent"]') && document.querySelector('[role="treeitem"][title="Personal"] .settings-sr-only').textContent==='Loading pages'`
+            )
+            await assert(`!document.querySelector('[data-loading-branch="fixture-parent"] [tabindex]')`)
+            const loadingContrast = []
+            for (const theme of ['dark', 'light']) {
+                await js(`document.documentElement.dataset.theme=${JSON.stringify(theme)};true`)
+                await pause(300)
+                const ratios = await js(`(() => {
+                    const ctx=document.createElement('canvas').getContext('2d',{willReadFrequently:true});ctx.canvas.width=ctx.canvas.height=1;
+                    const rgba=value=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=value;ctx.fillRect(0,0,1,1);return [...ctx.getImageData(0,0,1,1).data]};
+                    const over=(fg,bg)=>fg.slice(0,3).map((v,i)=>v*fg[3]/255+bg[i]*(1-fg[3]/255));
+                    const luminance=rgb=>rgb.map(v=>{const c=v/255;return c<=.04045?c/12.92:((c+.055)/1.055)**2.4}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
+                    return ['[role="treeitem"][title="Personal"] .notion-spinner','[role="treeitem"][title="Personal"]'].map(selector=>{
+                        const node=document.querySelector(selector);const layers=[];for(let n=node;n;n=n.parentElement)layers.push(rgba(getComputedStyle(n).backgroundColor));
+                        const bg=layers.reverse().reduce((base,layer)=>over(layer,base),[255,255,255]);const fg=over(rgba(getComputedStyle(node).color),bg);
+                        const a=luminance(fg),b=luminance(bg);return {selector,foreground:fg,background:bg,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
+                    });
+                })()`)
+                if (ratios[0].ratio < 3 || ratios[1].ratio < 4.5)
+                    throw new Error(`Loading contrast failed: ${JSON.stringify({ theme, ratios })}`)
+                loadingContrast.push({ theme, ratios })
+            }
+            await js(`document.documentElement.dataset.theme='dark';true`)
+            writeFileSync(join(output, 'notion-loading-contrast.json'), JSON.stringify(loadingContrast, null, 2))
+            await assert(
+                `(getComputedStyle(document.querySelector('[data-loading-branch="fixture-parent"] [data-shimmer]'),'::after').animationName==='none')===${stressMotion}`
+            )
+            await assert(
+                `(getComputedStyle(document.querySelector('[role="treeitem"][title="Personal"] .notion-spinner')).animationName==='none')===${stressMotion}`
+            )
+            await assert(
+                `(() => {const rows=[...document.querySelectorAll('[aria-label="Notion pages"] [role="treeitem"]')];const index=rows.findIndex(n=>n.title==='Personal');let last=rows[index];for(let i=index+1;i<rows.length && Number(rows[i].getAttribute('aria-level'))>1;i++)last=rows[i];return document.querySelector('[data-loading-branch="fixture-parent"]').getBoundingClientRect().top>=last.getBoundingClientRect().bottom-1})()`
+            )
+            await shot('notion-picker-during-scan', 150, 'notion')
+            await js(
+                `document.querySelector('[data-loading-branch="fixture-parent"]').scrollIntoView({block:'nearest'})`
+            )
+            await shot('notion-branch-skeleton-end', 100, 'notion')
+            await js(`document.querySelector('[role="treeitem"][title="Personal"]').scrollIntoView({block:'nearest'})`)
+            holdDiscovery = false
+            releaseDiscovery()
+            await wait(`!!document.querySelector('[aria-label="Retry loading Personal"]')`)
+            await assert(`!document.querySelector('[data-loading-branch="fixture-parent"]')`)
+            await shot('notion-background-scan-error', 100, 'notion')
+            failDiscovery = false
+            await click('Retry loading Personal')
+            await wait(
+                `!document.querySelector('[role="treeitem"][title="Personal"] [role="status"]') && !document.querySelector('[aria-label="Retry loading Personal"]')`
+            )
+            const expandedReads = requests.filter(
+                (r) => r.url === 'https://api.notion.com/v1/blocks/fixture-parent/children?page_size=100'
+            ).length
+            await click('Collapse Personal')
+            await click('Expand Personal')
+            await pause(300)
+            if (
+                requests.filter(
+                    (r) => r.url === 'https://api.notion.com/v1/blocks/fixture-parent/children?page_size=100'
+                ).length !== expandedReads
+            )
+                throw new Error('Re-expanding a loaded branch fetched it again')
+            const engineering = stressMotion
+                ? 'Journal with an exceptionally long name و—¥وœ¬èھ‍ ًں“ڑ'
+                : 'Engineering notes'
+            await click(`Expand ${engineering}`)
+            await wait(
+                `Array.from(document.querySelectorAll('[role="treeitem"]')).find(node=>node.title===${JSON.stringify(engineering)})?.querySelector('[role="status"]')?.textContent==='Waiting for Notion'`
+            )
+            await shot('notion-waiting-with-picker', 100, 'notion')
+            await wait(`!!document.querySelector('[role="treeitem"][title="Decisions"]')`)
+            await assert(
+                `window.__sameNotionPicker===${notionScope}.querySelector('[role="combobox"]:not([inert] *)') && !${notionScope}.querySelector('.notion-discovery-note')`
+            )
+            record({
+                assertion:
+                    'Nested pages appear on first connection by expanding only their branch, with in-picker retry and rate-limit recovery',
+                passed: true
+            })
+            await shot('notion-grouping-count', 50, 'notion')
+            await shot('notion-counter-settled', 50, 'notion')
             const cachePath = join(directory, 'profile', 'notion-pages.json')
             const cachedPages = JSON.parse(readFileSync(cachePath, 'utf8'))
             if (
-                cachedPages.pages.filter((page) => page.kind === 'page').length !== 16 ||
+                !cachedPages.pages.some((page) => page.id === 'fixture-leaf') ||
                 /fixture-notion-token|access_token|refresh_token/.test(readFileSync(cachePath, 'utf8'))
             )
-                throw new Error('Discovery cache did not retain bounded metadata without credentials')
+                throw new Error('Scoped discovery cache lost completed branch metadata or retained credentials')
             writeFileSync(join(output, 'notion-cache-initial.json'), JSON.stringify(cachedPages, null, 2))
-            if (!discoveryRateLimit?.recovered) throw new Error('Notion discovery did not recover from the rate limit')
-            await assert(
-                `!Array.from(${notionScope}.querySelectorAll('label')).some(l=>['Destination','Page ID'].includes(l.textContent))`
-            )
+            if (!discoveryRateLimit?.recovered) throw new Error('Expanded branch did not recover from rate limit')
             if (
                 (await js(`window.journal.invoke({type:'state'})`)).connections.notion ||
                 notionPagesCreated ||
                 hasNotionCredentials()
             )
-                throw new Error('Authorization completed or created a page before confirmation')
+                throw new Error('Browsing or searching confirmed authorization')
             const choosePage = async (id, keyboard = false) => {
                 const wasConnected = (await js(`window.journal.invoke({type:'state'})`)).connections.notion
                 await js(
@@ -1093,8 +1284,11 @@ app.on('browser-window-created', (_, window) => {
                 `(() => {const field=${notionScope}.querySelector('.notion-page-field').getBoundingClientRect(); const surface=${notionScope}.querySelector('[data-state="confirming"] > div').getBoundingClientRect(); return Math.abs(field.left-surface.left-4)<1 && Math.abs(surface.height-field.height-8)<1})()`
             )
             await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').click()`)
-            await wait(`!!document.querySelector('button[aria-label="Expand Personal"]')`)
-            await click('Expand Personal')
+            await wait(`!!document.querySelector('[role="treeitem"][title="Personal"]')`)
+            if (await js(`!!document.querySelector('button[aria-label="Expand Personal"]')`))
+                await click('Expand Personal')
+            if (await js(`!!document.querySelector('button[aria-label=${JSON.stringify(`Collapse ${engineering}`)}]')`))
+                await click(`Collapse ${engineering}`)
             await assert(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value===''`)
             await assert(`!document.querySelector('[role="treeitem"][title="Decisions"]')`)
             await shot('notion-page-tree', 250, 'notion')
@@ -1484,6 +1678,8 @@ app.on('browser-window-created', (_, window) => {
                 throw new Error('Notion disconnect retained credentials')
             await shot('notion-09-disconnected', 350, 'notion')
             notionName = 'Second integration'
+            holdDiscovery = true
+            earlyScanAborted = false
             await click('Connect', notionScope)
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='device'`)
             await approveNotion()
@@ -1491,6 +1687,13 @@ app.on('browser-window-created', (_, window) => {
             await choosePage('fixture-private-journal')
             await click('Confirm', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)
+            if (!earlyScanAborted)
+                throw new Error('Confirming an indexed destination did not cancel background discovery')
+            holdDiscovery = false
+            record({
+                assertion: 'Confirmation succeeds during a blocked scan and cancels it without late picker changes',
+                passed: true
+            })
             await shot('notion-reconnect-success', 100, 'notion')
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
             await wait(`${notionScope}.textContent.includes('Team journal')`)

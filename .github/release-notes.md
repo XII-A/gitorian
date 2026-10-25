@@ -5,13 +5,13 @@
 ## Updates
 
 - Connect GitHub to collect pull requests and reviews without configuring each repository.
-- Project and branch-history controls stay together when the toolbar wraps.
+- Search Notion pages by name or link immediately, and load nested pages as you browse.
 
 ## Fixes
 
-- Find nested Notion pages on the first connection, and get confirmation after publishing with an **Update in Notion** action.
-- Activity filter counts update smoothly while their labels stay still.
-- Activity dialogs keep their backdrop inside the window frame.
+- Get confirmation after publishing with an **Update in Notion** action.
+- Activity filter and summary counts update smoothly while their labels stay still.
+- Header and search controls stay aligned, and activity dialogs keep their backdrop inside the window frame.
 
 ## Supported machines and installation
 

@@ -6,6 +6,9 @@ import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
+import { tsImport } from 'tsx/esm/api'
+
+const { weekOf } = await tsImport('../src/shared/model.ts', import.meta.url)
 
 // Real Electron, NSIS updater, loopback HTTP, editor, IPC and SQLite. Only the
 // final installer launch is intercepted: these bytes must never be executed.
@@ -242,10 +245,18 @@ app.on('browser-window-created', (_, window) => {
             await shot('03-download-rejected')
 
             // Explicit setup: 200 paragraphs exercise snapshot/save cost without repositories.
-            const created = await js(
-                `(async()=>{const s=await window.journal.invoke({type:'state'});return window.journal.invoke({type:'newDraft',week:s.state.settings.weekStart===1?'2026-10-19':'2026-10-18'})})()`
-            )
-            const draft = created.state.drafts.at(-1)
+            const fixtureState = await js(`window.journal.invoke({type:'state'})`)
+            const week = weekOf(new Date(), fixtureState.state.settings)
+            const created = await js(`window.journal.invoke(${JSON.stringify({ type: 'newDraft', week })})`)
+            const draft = created.state.drafts.find((item) => item.week === week)
+            assert(draft, 'Fixture creates a draft for the current journal week')
+            record({
+                fixture: 'Current-week writing draft',
+                week,
+                draftId: draft.id,
+                timezone: fixtureState.state.settings.timezone,
+                weekStart: fixtureState.state.settings.weekStart
+            })
             draft.body = {
                 type: 'doc',
                 content: Array.from({ length: 200 }, (_, i) => ({
@@ -270,6 +281,12 @@ app.on('browser-window-created', (_, window) => {
             await wait(`!!document.querySelector('[aria-label="Open journal"]')`)
             await click('[aria-label="Open journal"]')
             await wait(`!!document.querySelector('[aria-label="Journal body"]')`)
+            assert(
+                await js(
+                    `(()=>{const text=document.querySelector('[aria-label="Journal body"]').innerText;return text.includes('Journal note 1:') && text.includes('This week I shipped a quieter writing experience.')})()`
+                ),
+                'Writing opens the seeded 200-paragraph draft before measuring download responsiveness'
+            )
             await js(
                 `window.__editor=document.querySelector('[aria-label="Journal body"]'); window.__inputLatencies=[]; window.__frameGaps=[]; window.__editor.addEventListener('beforeinput',()=>{const start=performance.now(); requestAnimationFrame(()=>window.__inputLatencies.push(performance.now()-start))})`
             )
@@ -315,8 +332,9 @@ app.on('browser-window-created', (_, window) => {
                 'Progress preserves editor identity, keyboard focus and all typed text'
             )
             const savedDuringDownload = await js(`window.journal.invoke({type:'state'})`)
+            const savedDraft = savedDuringDownload.state.drafts.find((item) => item.id === draft.id)
             assert(
-                JSON.stringify(savedDuringDownload.state.drafts[0].body).includes('word'),
+                savedDraft && JSON.stringify(savedDraft.body).includes('word0'),
                 'Continuous typing crosses a durable autosave checkpoint during download'
             )
             await wait(`!!document.querySelector('[aria-label="Update ready"]')`)

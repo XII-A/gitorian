@@ -101,6 +101,39 @@ it('never creates a page when a selected existing destination becomes inaccessib
     expect(transport.mock.calls.map(([, init]) => init?.method ?? 'GET')).toEqual(['GET'])
 })
 
+it.each(['existing', 'new'])(
+    'saves a %s destination after the canceled scan has paused the shared provider budget',
+    async (kind) => {
+        const transport = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(new Response('{}', { status: 429, headers: { 'Retry-After': '1' } }))
+            .mockImplementation(() => Promise.resolve(Response.json({ id: 'parent' })))
+        const http = new Http(transport)
+        await expect(http.request('https://api.notion.com/v1/blocks/parent/children', 'token')).rejects.toMatchObject({
+            status: 429
+        })
+        const notion = new Notion(http, () => 'token')
+        await expect(
+            notion.prepareJournal(
+                { id: 'setup', started: false },
+                vi.fn(),
+                kind === 'existing'
+                    ? {
+                          kind: 'page',
+                          id: 'parent',
+                          titleProperty: 'Name',
+                          dateProperty: ''
+                      }
+                    : undefined
+            )
+        ).resolves.toMatchObject({ id: 'parent' })
+        expect(transport.mock.calls.map(([, init]) => init?.method ?? 'GET')).toEqual([
+            'GET',
+            kind === 'existing' ? 'GET' : 'POST'
+        ])
+    }
+)
+
 it('checkpoints private journal creation before writing, then reuses the confirmed destination', async () => {
     const events: string[] = []
     const transport = vi.fn<typeof fetch>((url, init) => {

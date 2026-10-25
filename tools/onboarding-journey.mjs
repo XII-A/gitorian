@@ -27,6 +27,35 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         writeFileSync(join(output, 'header-geometry.json'), JSON.stringify(headerGeometry, null, 2))
         if (!geometry.buttons.length || geometry.buttons.some((button) => Math.abs(button.width - button.height) > 0.5))
             throw new Error(`Header icon buttons are not square: ${JSON.stringify({ stage, ...geometry })}`)
+        const setup = await js(`(() => {
+            const button=document.querySelector('.hub-setup-trigger');if(!button)return null;
+            const r=button.getBoundingClientRect(), style=getComputedStyle(button);
+            const canvas=document.createElement('canvas'),context=canvas.getContext('2d');context.font=style.font;
+            const required=context.measureText('Continue setup').width+17+parseFloat(style.paddingLeft)+parseFloat(style.paddingRight);
+            const icons=Array.from(document.querySelectorAll('.hub-utility-icons button')).map(node=>node.getBoundingClientRect());
+            return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,required,overlaps:icons.some(i=>Math.min(r.right,i.right)-Math.max(r.left,i.left)>.5&&Math.min(r.bottom,i.bottom)-Math.max(r.top,i.top)>.5),hit:document.elementFromPoint(r.right-8,r.top+r.height/2)?.closest('button')===button};
+        })()`)
+        if (setup) {
+            headerGeometry.push({ stage, setup })
+            writeFileSync(join(output, 'header-geometry.json'), JSON.stringify(headerGeometry, null, 2))
+            if (setup.width < setup.required || setup.overlaps || !setup.hit)
+                throw new Error(
+                    `Continue setup label or hover target overlaps header controls: ${JSON.stringify(setup)}`
+                )
+            window.focus()
+            window.webContents.focus()
+            window.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 })
+            window.webContents.sendInputEvent({
+                type: 'mouseMove',
+                x: Math.round(Number(setup.right) - 8),
+                y: Math.round((Number(setup.top) + Number(setup.bottom)) / 2)
+            })
+            await wait(
+                `document.querySelector('.hub-setup-trigger').matches(':hover') && !document.querySelector('.hub-utility-icons button:hover')`
+            )
+            await pause(200)
+            writeFileSync(join(output, `header-${stage}-hover.png`), (await window.webContents.capturePage()).toPNG())
+        }
     }
     const startRevealTrace = async () => {
         await js(`(() => {

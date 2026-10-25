@@ -11,6 +11,12 @@ export interface TreeNode {
     id: string
     label: string
     children?: TreeNode[]
+    /** An unloaded branch may expand before its children are available. */
+    hasChildren?: boolean
+    /** Loading or recovery feedback alongside this row. */
+    status?: ReactNode
+    /** A decorative placeholder after this branch's visible children while loading. */
+    loadingPlaceholder?: ReactNode
     icon?: ReactNode
     /** Full path or name when a compact label is used. */
     title?: string
@@ -53,6 +59,8 @@ const still = { duration: 0 } as const
 const fadeIn = { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] } as const
 const fadeOut = { duration: motionTokens.duration.instant, ease: [...motionTokens.ease.standard] } as const
 const blur = (px: number) => `blur(${px}px)`
+
+const expandable = (node: TreeNode) => Boolean(node.hasChildren || node.children?.length)
 
 function flatten(nodes: TreeNode[], expanded: ReadonlySet<string>, depth = 1, parentId?: string): VisibleNode[] {
     return nodes.flatMap((node, index) => [
@@ -137,6 +145,14 @@ export function TreeView({
     const refs = useRef(new Map<string, HTMLDivElement>())
     const expanded = expandedIds ? new Set(expandedIds) : internalExpanded
     const visible = flatten(nodes, expanded)
+    const branchEnds = new Map<string, VisibleNode[]>()
+    visible.forEach((item, index) => {
+        if (!expanded.has(item.node.id) || !item.node.loadingPlaceholder) return
+        let end = index
+        while (end + 1 < visible.length && visible[end + 1].depth > item.depth) end++
+        const id = visible[end].node.id
+        branchEnds.set(id, [item, ...(branchEnds.get(id) ?? [])])
+    })
     const focusableId = visible.some(({ node }) => node.id === focusedId) ? focusedId : (visible[0]?.node.id ?? null)
     const openedIndex = visible.findIndex(({ node }) => node.id === openedId)
 
@@ -146,7 +162,7 @@ export function TreeView({
     }
 
     function toggle(node: TreeNode) {
-        if (!node.children?.length) return
+        if (!expandable(node)) return
         const next = new Set(expanded)
         if (next.has(node.id)) next.delete(node.id)
         else {
@@ -197,7 +213,7 @@ export function TreeView({
             focus(visible[visible.length - 1].node.id)
             return
         }
-        if (event.key === 'ArrowRight' && node.children?.length) {
+        if (event.key === 'ArrowRight' && expandable(node)) {
             event.preventDefault()
             if (!expanded.has(node.id)) toggle(node)
             else if (visible[index + 1]?.parentId === node.id) focus(visible[index + 1].node.id)
@@ -205,14 +221,14 @@ export function TreeView({
         }
         if (event.key === 'ArrowLeft') {
             event.preventDefault()
-            if (node.children?.length && expanded.has(node.id)) toggle(node)
+            if (expandable(node) && expanded.has(node.id)) toggle(node)
             else if (item.parentId) focus(item.parentId)
             return
         }
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
             select(node)
-            if (node.children?.length && (!selectBranches || node.selectable === false)) toggle(node)
+            if (expandable(node) && (!selectBranches || node.selectable === false)) toggle(node)
         }
     }
 
@@ -228,7 +244,7 @@ export function TreeView({
         >
             <AnimatePresence initial={false} mode="sync">
                 {visible.map((item, index) => {
-                    const hasChildren = Boolean(item.node.children?.length)
+                    const hasChildren = expandable(item.node)
                     const isExpanded = hasChildren && expanded.has(item.node.id)
                     const isSelected = selectedId === item.node.id
                     // Only rows that mount use this delay: the space opens in one motion and the new children follow in order.
@@ -243,7 +259,7 @@ export function TreeView({
                             layout={rowReduced ? false : 'position'}
                             initial={rowReduced ? false : { height: 0, opacity: 0, x: -6, overflow: 'hidden' }}
                             animate={{
-                                height: wrapLabels ? 'auto' : rowHeight,
+                                height: wrapLabels || branchEnds.has(item.node.id) ? 'auto' : rowHeight,
                                 opacity: 1,
                                 x: 0,
                                 pointerEvents: 'auto',
@@ -292,6 +308,7 @@ export function TreeView({
                                 aria-posinset={item.position}
                                 aria-setsize={item.setSize}
                                 aria-expanded={hasChildren ? isExpanded : undefined}
+                                aria-busy={item.node.loadingPlaceholder ? true : undefined}
                                 aria-selected={item.node.selectable === false ? undefined : isSelected}
                                 tabIndex={focusableId === item.node.id ? 0 : -1}
                                 style={{ '--tree-depth': item.depth } as CSSProperties}
@@ -369,7 +386,19 @@ export function TreeView({
                                         ))}
                                 </span>
                                 <span className={styles.label}>{item.node.label}</span>
+                                {item.node.status && <span className={styles.status}>{item.node.status}</span>}
                             </div>
+                            {branchEnds.get(item.node.id)?.map((branch) => (
+                                <div
+                                    key={branch.node.id}
+                                    className={styles.placeholder}
+                                    data-loading-branch={branch.node.id}
+                                    style={{ '--tree-depth': branch.depth + 1 } as CSSProperties}
+                                    aria-hidden="true"
+                                >
+                                    {branch.node.loadingPlaceholder}
+                                </div>
+                            ))}
                         </motion.div>
                     )
                 })}

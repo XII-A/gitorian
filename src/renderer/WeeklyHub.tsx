@@ -243,19 +243,27 @@ export function WeeklyHub({
     const stats = (
         <div className="hub-stats">
             <div>
-                <strong>{commits.length}</strong>
+                <strong>
+                    <AnimatedCounter variant="inline" value={commits.length} />
+                </strong>
                 <span>commits</span>
             </div>
             <div>
-                <strong>{prs.length}</strong>
+                <strong>
+                    <AnimatedCounter variant="inline" value={prs.length} />
+                </strong>
                 <span>PRs & reviews</span>
             </div>
             <div>
-                <strong>{repos.length}</strong>
+                <strong>
+                    <AnimatedCounter variant="inline" value={repos.length} />
+                </strong>
                 <span>repositories</span>
             </div>
             <div>
-                <strong>{days.length}</strong>
+                <strong>
+                    <AnimatedCounter variant="inline" value={days.length} />
+                </strong>
                 <span>active days</span>
             </div>
         </div>

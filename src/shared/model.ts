@@ -337,7 +337,12 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('notionStart') }),
     z.object({ type: z.literal('notionPoll') }),
     z.object({ type: z.literal('notionCancel') }),
-    z.object({ type: z.literal('notionPages'), requestId: z.string().min(1).max(100) }),
+    z.object({
+        type: z.literal('notionPages'),
+        requestId: z.string().min(1).max(100),
+        query: z.string().trim().max(2000).optional(),
+        parentId: z.string().min(1).max(256).optional()
+    }),
     z.object({ type: z.literal('notionChoose') }),
     z.object({ type: z.literal('notionDestination') }),
     z.object({
@@ -367,6 +372,7 @@ export interface ConnectionProfile {
 export type NotionDiscoveryProgress =
     | { stage: 'discovering'; found: number }
     | { stage: 'grouping'; completed: number; total: number }
+    | { stage: 'waiting'; found: number; retryAt: number }
 
 export interface NotionDiscoveryEvent {
     requestId: string

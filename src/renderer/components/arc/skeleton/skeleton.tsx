@@ -15,6 +15,8 @@ import styles from './skeleton.module.css'
 export interface SkeletonProps {
     /** A solid placeholder for media, or the default text lines. */
     shape?: 'text' | 'block'
+    /** Shimmer for rows waiting on a read; pulse remains the default. */
+    animation?: 'pulse' | 'shimmer'
     label?: string
     lines?: number
     avatar?: boolean
@@ -86,6 +88,7 @@ function HeightFrame({
 export function Skeleton({
     label = 'Loading content',
     shape = 'text',
+    animation = 'pulse',
     lines = 3,
     avatar = false,
     className,
@@ -97,7 +100,14 @@ export function Skeleton({
     // Each block pulses a beat after the one above it, so the wait reads as one calm wave.
     const placeholder = (extra?: string) => (
         <div
-            className={[shape === 'block' ? styles.block : styles.root, extra].filter(Boolean).join(' ')}
+            className={[
+                shape === 'block' ? styles.block : styles.root,
+                animation === 'shimmer' && styles.shimmer,
+                extra
+            ]
+                .filter(Boolean)
+                .join(' ')}
+            data-shimmer={animation === 'shimmer' || undefined}
             role="status"
             aria-label={label}
             aria-busy="true"
