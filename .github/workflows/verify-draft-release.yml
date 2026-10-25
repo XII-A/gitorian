@@ -17,6 +17,10 @@ jobs:
         name: Install exact draft on disposable Windows
         runs-on: windows-2022
         timeout-minutes: 20
+        permissions:
+            # GitHub hides unpublished releases from read-only tokens. The token
+            # is exposed only to the asset-download step, never the installed app.
+            contents: write
         steps:
             - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
               with:
@@ -54,4 +58,5 @@ jobs:
                       .ai-docs/verification/exact-draft/
                       draft-release.json
                   if-no-files-found: error
+                  include-hidden-files: true
                   retention-days: 14
