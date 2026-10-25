@@ -77,23 +77,45 @@ const require = createRequire(import.meta.url)
 const imageBytes = await require('sharp')({ create: { width: 32, height: 24, channels: 3, background: '#75816a' } })
     .png()
     .toBuffer()
-const updater = require('electron-updater').autoUpdater
-updater.forceDevUpdateConfig = true
-updater.updateConfigPath = config
-updater.disableDifferentialDownload = true
-updater.logger = console
+let updater
+const nsis = require('electron-updater').NsisUpdater.prototype
+const checkForUpdates = nsis.checkForUpdates
+nsis.checkForUpdates = function () {
+    updater = this
+    this.forceDevUpdateConfig = true
+    this.updateConfigPath = config
+    this.disableDifferentialDownload = true
+    this.logger = console
+    this.spawnLog = launchInstaller
+    return checkForUpdates.call(this)
+}
+// Enable only the isolated development fixture, before the first check.
+Object.defineProperty(nsis, 'forceDevUpdateConfig', {
+    get: () => true,
+    set() {
+        // Keep the production constructor's default from disabling this fixture.
+    },
+    configurable: true
+})
 const handoffs = []
-updater.quitAndInstall = (silent, restart) => {
-    if (failLaunch) throw new Error('Simulated installer launch failure')
+let quitAttempts = 0
+const quit = app.quit.bind(app)
+app.quit = () => {
+    quitAttempts++
+    if (!failLaunch) setTimeout(quit, 500)
+}
+const launchInstaller = async (_file, args) => {
+    await pause(10)
+    if (failLaunch) throw Object.assign(new Error('Simulated asynchronous installer launch failure'), { code: 'EPERM' })
     const db = new DatabaseSync(join(directory, 'profile', 'gitorian.sqlite'), { readOnly: true })
     const drafts = db
         .prepare("SELECT json FROM state_records WHERE collection='drafts'")
         .all()
         .map((row) => JSON.parse(row.json))
     db.close()
-    handoffs.push({ silent, restart, drafts })
+    handoffs.push({ silent: args.includes('/S'), restart: args.includes('--force-run'), drafts })
     writeFileSync(join(output, 'installer-handoff.json'), JSON.stringify({ simulated: true, handoffs }, null, 2))
-    setTimeout(() => app.quit(), 500)
+    return true
 }
 const handle = ipcMain.handle.bind(ipcMain)
 ipcMain.handle = (channel, listener) =>
@@ -179,6 +201,10 @@ app.on('browser-window-created', (_, window) => {
                 initial.state.repositories.length === 0 && !initial.connections.github && !initial.connections.notion,
                 'Empty journal-only fixture without personal accounts'
             )
+            await hidden('Hub has no update button before an update is ready')
+            check()
+            await hidden('Checking for updates does not reveal a header button')
+            await waitStatus('error')
             writeFileSync(
                 join(output, 'doctor.json'),
                 JSON.stringify(
@@ -194,10 +220,6 @@ app.on('browser-window-created', (_, window) => {
                     2
                 )
             )
-            await hidden('Hub has no update button before an update is ready')
-            check()
-            await hidden('Checking for updates does not reveal a header button')
-            await waitStatus('error')
             await hidden('A check failure leaves the update button hidden')
             await shot('01-check-failed')
             feed = 'current'
@@ -378,11 +400,17 @@ app.on('browser-window-created', (_, window) => {
             await shot('07-save-blocks-update')
             failSave = false
             failLaunch = true
+            const quitsBeforeFailure = quitAttempts
             await button('Update now')
             await wait(`document.body.innerText.includes('Could not start the installer')`)
             assert(
                 !handoffs.length && (await js(`window.__editor.getAttribute('contenteditable')==='true'`)),
                 'Installer preparation failure restores journal commands and editing'
+            )
+            await pause(200)
+            assert(
+                quitAttempts === quitsBeforeFailure,
+                'An asynchronous launch failure never schedules application quit'
             )
             failLaunch = false
             await escape()
@@ -409,6 +437,9 @@ app.on('browser-window-created', (_, window) => {
             await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
                 features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
             })
+            // Opening writing schedules the editor's initial focus. Let that
+            // finish before starting a separate keyboard interaction.
+            await wait(`document.activeElement?.getAttribute('aria-label')==='Journal body'`)
             await js(`document.querySelector('[aria-label="Update ready"]').focus()`)
             window.webContents.focus()
             window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
@@ -423,6 +454,7 @@ app.on('browser-window-created', (_, window) => {
             )
             await shot('08-narrow-popover')
             await escape()
+            await wait(`document.activeElement?.getAttribute('aria-label')==='Update ready'`)
             assert(
                 await js(`document.activeElement?.getAttribute('aria-label')==='Update ready'`),
                 'Escape restores update-trigger focus'
