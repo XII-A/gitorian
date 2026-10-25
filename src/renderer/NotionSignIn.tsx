@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Command, Reply, State, NotionPage, NotionDiscoveryProgress } from '../shared/model'
 import { ConnectionSignIn, connectionFailure, type ConnectionFeedback } from './ConnectionSignIn'
-import { NotionPagePicker, NotionPageIcon } from './NotionPagePicker'
+import { NotionPagePicker, NotionPageIcon, type NotionPickerActivity } from './NotionPagePicker'
 import { Input } from './components/arc/input/input'
 import { Button } from './components/arc/button/button'
 import { NotionDiscoveryStatus, notionDiscoveryLabel } from './NotionDiscoveryStatus'
@@ -30,8 +30,16 @@ export function NotionSignIn({
     const [progress, setProgress] = useState<NotionDiscoveryProgress>({ stage: 'discovering', found: 0 })
     const [discovering, setDiscovering] = useState(false)
     const [discoveryError, setDiscoveryError] = useState(false)
+    const [branches, setBranches] = useState<Record<string, NotionPickerActivity>>({})
+    const [loadedParents, setLoadedParents] = useState<string[]>([])
+    const [searchResults, setSearchResults] = useState<string[]>([])
+    const readSerial = useRef(0)
+    const branchReads = useRef(new Map<string, number>())
+    const queryRef = useRef('')
+    const queryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+    const lastQuery = useRef('')
     const [stage, setStage] = useState<'load' | 'choose' | 'confirm'>()
-    const [selectionError, setSelectionError] = useState<'load' | 'choose' | 'confirm'>()
+    const [selectionError, setSelectionError] = useState<'choose' | 'confirm'>()
     const [authorization, setAuthorization] = useState<Reply['notionAuthorization']>()
     const [feedback, setFeedback] = useState<ConnectionFeedback>()
     const [pending, setPending] = useState(false)
@@ -60,6 +68,13 @@ export function NotionSignIn({
     }, [connected, destination?.title, destination?.icon, run, onDestination])
     const cancel = () => {
         attempt.current++
+        readSerial.current++
+        clearTimeout(queryTimer.current)
+        queryRef.current = ''
+        branchReads.current.clear()
+        setBranches({})
+        setLoadedParents([])
+        setSearchResults([])
         setAuthorization(undefined)
         setPages(undefined)
         setStage(undefined)
@@ -79,56 +94,97 @@ export function NotionSignIn({
     useEffect(
         () => () => {
             attempt.current++
+            readSerial.current++
+            clearTimeout(queryTimer.current)
             void window.journal.invoke({ type: 'notionCancel' }).catch(() => {
                 /* Main-process shutdown also closes the listener. */
             })
         },
         []
     )
-    const loadPages = useCallback(
-        async (generation = attempt.current) => {
-            let usable = !!pages
-            setStage(usable ? 'choose' : 'load')
+    const loadPages = useCallback(async (generation = attempt.current, query = '', parentId?: string) => {
+        if (parentId && branchReads.current.has(parentId)) return
+        const serial = parentId ? readSerial.current : ++readSerial.current
+        if (parentId) {
+            branchReads.current.set(parentId, serial)
+            setBranches((previous) => ({
+                ...previous,
+                [parentId]: { progress: { stage: 'discovering', found: 0 }, error: false }
+            }))
+        } else {
+            lastQuery.current = query
             setDiscovering(true)
             setDiscoveryError(false)
             setProgress({ stage: 'discovering', found: 0 })
-            setSelectionError(undefined)
-            if (!usable) setFeedback({ kind: 'authorizing', login: 'Notion' })
-            const requestId = crypto.randomUUID()
-            const unsubscribe = window.journal.onNotionDiscoveryProgress?.((event) => {
-                if (event.requestId !== requestId || attempt.current !== generation) return
-                setProgress(event.progress)
-                if (event.pages) {
-                    usable = true
-                    setPending(false)
-                    setPages(event.pages)
-                    setStage('choose')
-                    setFeedback(undefined)
-                }
+        }
+        setStage('choose')
+        setPages((previous) => previous ?? [])
+        setPending(false)
+        setFeedback(undefined)
+        const current = () => attempt.current === generation && readSerial.current === serial
+        const requestId = crypto.randomUUID()
+        const unsubscribe = window.journal.onNotionDiscoveryProgress?.((event) => {
+            if (event.requestId !== requestId || !current()) return
+            if (parentId)
+                setBranches((previous) => ({ ...previous, [parentId]: { progress: event.progress, error: false } }))
+            else setProgress(event.progress)
+        })
+        try {
+            const reply = await window.journal.invoke({
+                type: 'notionPages',
+                requestId,
+                ...(parentId ? { parentId } : { query })
             })
-            try {
-                const reply = await window.journal.invoke({ type: 'notionPages', requestId })
-                if (attempt.current !== generation) return
-                setPages(reply.notionPages ?? [])
-                setStage('choose')
-                setFeedback(undefined)
-            } catch {
-                if (attempt.current === generation) {
-                    if (usable) setDiscoveryError(true)
-                    else {
-                        setSelectionError('load')
-                        setFeedback({ kind: 'error', message: 'Could not load pages' })
-                    }
-                }
-            } finally {
-                unsubscribe?.()
-                if (attempt.current === generation) setDiscovering(false)
-            }
+            if (!current()) return
+            const found = reply.notionPages ?? []
+            setPages((previous) => {
+                const merged = new Map((previous ?? []).map((page) => [page.id, page]))
+                for (const page of found) merged.set(page.id, page)
+                return [...merged.values()]
+            })
+            if (parentId) {
+                setLoadedParents((previous) => [...new Set([...previous, parentId])])
+                setBranches((previous) => {
+                    return Object.fromEntries(Object.entries(previous).filter(([id]) => id !== parentId))
+                })
+            } else setSearchResults(found.map((page) => page.id))
+        } catch {
+            if (!current()) return
+            if (parentId)
+                setBranches((previous) => ({
+                    ...previous,
+                    [parentId]: { progress: { stage: 'discovering', found: 0 }, error: true }
+                }))
+            else setDiscoveryError(true)
+        } finally {
+            unsubscribe?.()
+            if (parentId && branchReads.current.get(parentId) === serial) branchReads.current.delete(parentId)
+            else if (current()) setDiscovering(false)
+        }
+    }, [])
+    const changeQuery = useCallback(
+        (query: string) => {
+            const next = query.trim()
+            if (next === queryRef.current) return
+            queryRef.current = next
+            readSerial.current++
+            branchReads.current.clear()
+            setBranches({})
+            setDiscovering(true)
+            setDiscoveryError(false)
+            setProgress({ stage: 'discovering', found: 0 })
+            setSearchResults([])
+            clearTimeout(queryTimer.current)
+            const generation = attempt.current
+            queryTimer.current = setTimeout(() => void loadPages(generation, next), next ? 250 : 0)
         },
-        [pages]
+        [loadPages]
     )
     const confirm = async () => {
         const generation = ++attempt.current
+        readSerial.current++
+        clearTimeout(queryTimer.current)
+        setBranches({})
         setDiscovering(false)
         setDiscoveryError(false)
         setStage('confirm')
@@ -217,11 +273,22 @@ export function NotionSignIn({
     const choose = async () => {
         if (!destination) return
         const generation = ++attempt.current
+        readSerial.current++
+        clearTimeout(queryTimer.current)
+        queryRef.current = ''
+        branchReads.current.clear()
+        setBranches({})
+        setLoadedParents([])
+        setSearchResults([])
+        setPages([])
         setPending(true)
-        setStage('load')
+        setStage('choose')
+        setSelected(destination.id)
+        setDiscovering(true)
+        setDiscoveryError(false)
         setProgress({ stage: 'discovering', found: 0 })
         setSelectionError(undefined)
-        setFeedback({ kind: 'authorizing', login: 'Notion' })
+        setFeedback(undefined)
         setSuccessComplete(false)
         try {
             const reply = await window.journal.invoke({ type: 'notionChoose' })
@@ -286,7 +353,24 @@ export function NotionSignIn({
                                             autoFocus
                                         />
                                     ) : (
-                                        <NotionPagePicker pages={pages} value={selected} onChange={setSelected} />
+                                        <NotionPagePicker
+                                            pages={pages}
+                                            value={selected}
+                                            onChange={setSelected}
+                                            activity={
+                                                discovering || discoveryError
+                                                    ? { progress, error: discoveryError }
+                                                    : undefined
+                                            }
+                                            branches={branches}
+                                            loadedParents={loadedParents}
+                                            searchResults={searchResults}
+                                            onQueryChange={changeQuery}
+                                            onExpand={(id) => {
+                                                if (!loadedParents.includes(id)) void loadPages(attempt.current, '', id)
+                                            }}
+                                            onRetry={() => void loadPages(attempt.current, lastQuery.current)}
+                                        />
                                     )}
                                 </div>
                                 {selected === 'new' && (
@@ -306,7 +390,13 @@ export function NotionSignIn({
                                 <Button
                                     size="sm"
                                     className="github-device-action"
-                                    disabled={disabled || !selected || (selected === 'new' && !pageName.trim())}
+                                    disabled={
+                                        disabled ||
+                                        !selected ||
+                                        (selected === 'new'
+                                            ? !pageName.trim()
+                                            : !pages.some((page) => page.kind === 'page' && page.id === selected))
+                                    }
                                     onClick={confirm}
                                 >
                                     Confirm
@@ -336,9 +426,15 @@ export function NotionSignIn({
                     }
                     onStart={async () => {
                         if (selectionError === 'choose') return choose()
-                        if (selectionError === 'load') return loadPages()
                         if (selectionError === 'confirm') return confirm()
                         const generation = ++attempt.current
+                        readSerial.current++
+                        clearTimeout(queryTimer.current)
+                        queryRef.current = ''
+                        branchReads.current.clear()
+                        setBranches({})
+                        setLoadedParents([])
+                        setSearchResults([])
                         setPages(undefined)
                         setSelected('')
                         setStage(undefined)
@@ -386,20 +482,6 @@ export function NotionSignIn({
                     }}
                     onDisconnect={disconnectNotion}
                 />
-                {stage === 'choose' && (discovering || discoveryError) && (
-                    <div className="notion-discovery-note" role="status">
-                        {discoveryError ? (
-                            <>
-                                <span>Some pages could not load.</span>
-                                <Button variant="ghost" size="sm" onClick={() => void loadPages()}>
-                                    Retry discovery
-                                </Button>
-                            </>
-                        ) : (
-                            <NotionDiscoveryStatus progress={progress} />
-                        )}
-                    </div>
-                )}
             </div>
             <motion.div
                 data-notion-disconnect

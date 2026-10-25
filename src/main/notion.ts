@@ -1,6 +1,6 @@
 import { fromNotion, toNotion } from '../shared/notion-format'
 import type { NotionBlock } from '../shared/notion-format'
-import type { Destination, Entry, ConnectionProfile, State, NotionDiscoveryProgress, NotionPage } from '../shared/model'
+import type { Destination, Entry, ConnectionProfile, State, NotionDiscoveryProgress } from '../shared/model'
 import type { Http } from './http'
 import { HttpError } from './http'
 import type { Store } from './store'
@@ -8,7 +8,7 @@ import { downloadImage, UnsupportedImageError } from './images'
 import { imageIds, imageExtension } from '../shared/images'
 import type { JournalSetup } from './notion-connection'
 import sharp from 'sharp'
-import { discoverNotionPages } from './notion-discovery'
+import { discoverNotionPages, type NotionPageRead } from './notion-discovery'
 import { retryNotionRateLimit } from './notion-rate-limit'
 
 interface Page {
@@ -143,7 +143,7 @@ export class Notion {
     async accessiblePages(
         progress?: (update: NotionDiscoveryProgress) => void,
         signal?: AbortSignal,
-        onPages?: (pages: NotionPage[]) => void
+        options?: NotionPageRead
     ) {
         return discoverNotionPages(
             (path, init) => {
@@ -152,7 +152,7 @@ export class Notion {
             },
             progress,
             signal,
-            onPages
+            options
         )
     }
     async destinationIcon(icon?: string): Promise<string | undefined> {

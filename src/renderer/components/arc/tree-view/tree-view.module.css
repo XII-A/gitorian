@@ -182,3 +182,14 @@
         transition: none;
     }
 }
+
+.status {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    margin-inline-start: auto;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+}

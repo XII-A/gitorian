@@ -32,6 +32,8 @@ export interface ComboboxProps extends Omit<
     value?: string
     defaultValue?: string
     onValueChange?: (value: string) => void
+    /** Observe the search text for remote results in the same popup. */
+    onQueryChange?: (query: string) => void
     description?: string
     placeholder?: string
     emptyMessage?: string
@@ -72,6 +74,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         value: controlledValue,
         defaultValue = '',
         onValueChange,
+        onQueryChange,
         description,
         placeholder = 'Search or select…',
         emptyMessage = 'No matches found',
@@ -101,6 +104,10 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     const [keyboardMenu, setKeyboardMenu] = useState(true)
     const [query, setQuery] = useState('')
     const [activeIndex, setActiveIndex] = useState(-1)
+    const updateQuery = (next: string) => {
+        setQuery(next)
+        onQueryChange?.(next)
+    }
     const selectedValue = controlledValue ?? uncontrolledValue
     const selectedOption = options.find((option) => option.value === selectedValue)
 
@@ -161,7 +168,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         if (option.disabled) return
         setUncontrolledValue(option.value)
         onValueChange?.(option.value)
-        setQuery('')
+        updateQuery('')
         setOpen(false)
         restoringFocus.current = true
         inputRef.current?.focus()
@@ -172,20 +179,20 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         event.preventDefault()
         setUncontrolledValue('')
         onValueChange?.('')
-        setQuery('')
+        updateQuery('')
         setOpen(true)
         inputRef.current?.focus()
     }
 
     const openMenu = () => {
-        if (disabled) return
+        if (disabled || open) return
         setOpen(true)
-        setQuery('')
+        updateQuery('')
         setActiveIndex(-1)
     }
     const closeTree = () => {
         setOpen(false)
-        setQuery('')
+        updateQuery('')
         restoringFocus.current = true
         inputRef.current?.focus()
         restoringFocus.current = false
@@ -229,7 +236,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             event.preventDefault()
             event.stopPropagation()
             setOpen(false)
-            setQuery('')
+            updateQuery('')
             return
         }
     }
@@ -243,7 +250,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             open={open}
             onOpenChange={(next) => {
                 setOpen(next)
-                if (!next) setQuery('')
+                if (!next) updateQuery('')
             }}
         >
             <div ref={rootRef} className={styles.field}>
@@ -288,7 +295,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                             onClick={openMenu}
                             onPointerDown={() => setKeyboardMenu(false)}
                             onChange={(event) => {
-                                setQuery(event.target.value)
+                                updateQuery(event.target.value)
                                 setOpen(true)
                                 setActiveIndex(-1)
                             }}

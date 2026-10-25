@@ -131,50 +131,14 @@ it('adds a newly confirmed page without mutating the picker snapshot', async () 
     ])
 })
 
-it('shares usable cold previews without persisting them as a complete cache', async () => {
+it('merges a completed branch without changing existing picker snapshots or another account', async () => {
     const f = fixture(),
-        cache = f.create(),
-        completion = deferred<NotionPage[]>()
-    const preview = vi.fn(),
-        joinedPreview = vi.fn()
-    const load = vi.fn((_signal, _progress, publish) => {
-        publish(pages)
-        return completion.promise
-    })
-    const first = cache.pages('token', load, undefined, preview)
-    await vi.waitFor(() => expect(preview).toHaveBeenCalledWith(pages))
-    expect(() => readFileSync(f.path)).toThrow()
-    const second = cache.pages('token', load, undefined, joinedPreview)
-    expect(joinedPreview).toHaveBeenCalledWith(pages)
-    const complete: NotionPage[] = [...pages, { kind: 'page', id: 'nested', title: 'Nested', url: '' }]
-    completion.resolve(complete)
-    expect(await first).toEqual(complete)
-    expect(await second).toEqual(complete)
-    expect(JSON.parse(readFileSync(f.path, 'utf8')).pages).toEqual(complete)
-    expect(load).toHaveBeenCalledOnce()
-})
-
-it('does not turn a canceled preview into a complete cache or leak it to another account', async () => {
-    const f = fixture(),
-        cache = f.create(),
-        completion = deferred<NotionPage[]>()
-    const preview = vi.fn()
-    const first = cache.pages(
-        'token',
-        (_signal, _progress, publish) => {
-            publish(pages)
-            return completion.promise
-        },
-        undefined,
-        preview
-    )
-    await vi.waitFor(() => expect(preview).toHaveBeenCalledOnce())
-    cache.cancel()
-    const rejected = expect(first).rejects.toThrow()
-    completion.resolve(pages)
-    await rejected
-    expect(() => readFileSync(f.path)).toThrow()
-    const otherPreview = vi.fn()
-    expect(await cache.pages('other-token', () => Promise.resolve([]), undefined, otherPreview)).toEqual([])
-    expect(otherPreview).not.toHaveBeenCalled()
+        cache = f.create()
+    const snapshot = await cache.pages('token', () => Promise.resolve(pages))
+    const child: NotionPage = { kind: 'page', id: 'child', title: 'Child', url: '', parentId: 'journal' }
+    cache.rememberAll('other-token', [child])
+    expect(await cache.pages('token', () => Promise.reject(new Error('No read')))).toEqual(pages)
+    cache.rememberAll('token', [child])
+    expect(snapshot).toEqual(pages)
+    expect(await f.create().pages('token', () => Promise.reject(new Error('No read')))).toEqual([...pages, child])
 })

@@ -44,16 +44,22 @@ const icon = (entity: Entity) => {
     return url?.startsWith('https://') ? url : undefined
 }
 
-/** Search supplies shared roots; child lists and data-source queries enumerate descendants independently of indexing. */
+export interface NotionPageRead {
+    query?: string
+    parent?: NotionPage
+}
+
+/** Search reads the index; expansion reads one page's contents and stops at child pages. */
 export async function discoverNotionPages(
     request: <T>(path: string, init?: RequestInit) => Promise<T>,
     progress: (update: NotionDiscoveryProgress) => void = () => {
         /* Discovery also serves non-UI callers. */
     },
     signal?: AbortSignal,
-    onPages?: (pages: NotionPage[]) => void
+    options: NotionPageRead = {}
 ): Promise<NotionPage[]> {
     const pages = new Map<string, Entity>()
+    const groups = new Map<string, Entity>()
     // Retry the failed read in place: restarting a large tree spends the same
     // request budget again and can never reach the remaining descendants.
     function limited<T>(path: string, init?: RequestInit): Promise<T> {
@@ -61,7 +67,7 @@ export async function discoverNotionPages(
             () => request<T>(path, init),
             signal,
             (retryAt) => {
-                if (onPages) progress({ stage: 'waiting', found: pages.size, retryAt })
+                progress({ stage: 'waiting', found: pages.size, retryAt })
             }
         )
     }
@@ -84,47 +90,83 @@ export async function discoverNotionPages(
         }
         return pending
     }
-    let cursor: string | null | undefined
-    progress({ stage: 'discovering', found: 0 })
-    do {
-        const result = await limited<List>('search', {
-            method: 'POST',
-            body: JSON.stringify({
-                filter: { value: 'page', property: 'object' },
-                page_size: 100,
-                ...(cursor ? { start_cursor: cursor } : {})
-            })
-        })
-        for (const page of result.results) pages.set(page.id, page)
-        progress({ stage: 'discovering', found: pages.size })
-        cursor = result.has_more ? result.next_cursor : undefined
-    } while (cursor)
-
-    // Indexed destinations are usable before inspecting any page contents.
-    // This preview is grouped separately and never persisted as a full scan.
-    if (onPages) onPages(await grouped())
-    const queue: { kind: 'blocks' | 'databases' | 'data_sources'; id: string }[] = [...pages.keys()].map((id) => ({
-        kind: 'blocks',
-        id
-    }))
+    const queue: { kind: 'blocks' | 'databases' | 'data_sources'; id: string }[] = []
+    const parent = options.parent
+    if (parent) {
+        const entity: Entity = {
+            id: parent.id,
+            properties: { Name: { title: [{ plain_text: parent.title }] } },
+            title: [{ plain_text: parent.title }],
+            url: parent.url
+        }
+        if (parent.kind === 'page') pages.set(parent.id, entity)
+        else groups.set(parent.id, entity)
+        queue.push({ kind: parent.kind === 'page' ? 'blocks' : 'data_sources', id: parent.id })
+    } else {
+        const query = options.query?.trim()
+        let pageId: string | undefined
+        if (query) {
+            try {
+                const url = new URL(query)
+                if (url.protocol === 'https:' && /(^|\.)notion\.(so|site)$/.test(url.hostname)) {
+                    const match =
+                        /(?:^|[-/])([a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/i.exec(
+                            url.pathname
+                        )
+                    if (match) {
+                        const compact = match[1].replaceAll('-', '')
+                        pageId = `${compact.slice(0, 8)}-${compact.slice(8, 12)}-${compact.slice(12, 16)}-${compact.slice(16, 20)}-${compact.slice(20)}`
+                    }
+                }
+            } catch {
+                /* Ordinary title queries are not URLs. */
+            }
+        }
+        progress({ stage: 'discovering', found: 0 })
+        if (pageId) {
+            const page = await read(`pages/${encodeURIComponent(pageId)}`)
+            if (page && !page.archived && !page.in_trash) pages.set(page.id, page)
+        } else {
+            let cursor: string | null | undefined
+            const cursors = new Set<string>()
+            do {
+                const result = await limited<List>('search', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        filter: { value: 'page', property: 'object' },
+                        page_size: 100,
+                        ...(query ? { query } : {}),
+                        ...(cursor ? { start_cursor: cursor } : {})
+                    })
+                })
+                for (const page of result.results) if (!page.archived && !page.in_trash) pages.set(page.id, page)
+                progress({ stage: 'discovering', found: pages.size })
+                if (result.has_more && (!result.next_cursor || cursors.has(result.next_cursor)))
+                    throw new Error('Notion page search could not finish. Try again.')
+                cursor = result.has_more ? result.next_cursor : undefined
+                if (cursor) cursors.add(cursor)
+            } while (cursor)
+        }
+    }
     const visited = new Set<string>()
     const addPage = (page: Entity) => {
         if (page.archived || page.in_trash || pages.has(page.id)) return
         pages.set(page.id, page)
-        queue.push({ kind: 'blocks', id: page.id })
         progress({ stage: 'discovering', found: pages.size })
     }
     for (const { kind, id } of queue) {
         const key = `${kind}/${id}`
         if (visited.has(key)) continue
         visited.add(key)
-        if (onPages) progress({ stage: 'scanning', found: pages.size, checked: visited.size - 1 })
         // Fail rather than mark a truncated discovery as complete.
         if (visited.size > 100000)
             throw new Error('Notion page discovery is too large. Choose a smaller shared parent and try again.')
         if (kind === 'databases') {
             const database = await read(`databases/${encodeURIComponent(id)}`)
-            for (const source of database?.data_sources ?? []) queue.push({ kind: 'data_sources', id: source.id })
+            for (const source of database?.data_sources ?? []) {
+                const group = await read(`data_sources/${encodeURIComponent(source.id)}`)
+                if (group) groups.set(group.id, group)
+            }
             continue
         }
         let next: string | undefined
@@ -164,15 +206,16 @@ export async function discoverNotionPages(
 
     async function grouped(): Promise<NotionPage[]> {
         const nodes = new Map<string, NotionPage>(
-            [...pages.values()].map((page) => [
+            [...pages.values(), ...groups.values()].map((page) => [
                 page.id,
                 {
-                    kind: 'page',
+                    kind: groups.has(page.id) ? 'data_source' : 'page',
                     id: page.id,
                     url: page.url ?? '',
                     icon: icon(page),
                     title:
                         text(Object.values(page.properties ?? {}).find((property) => property.title)?.title) ||
+                        text(page.title) ||
                         'Untitled'
                 }
             ])
@@ -180,7 +223,26 @@ export async function discoverNotionPages(
         // Cache raw metadata, not recursive resolutions: a malformed cycle must never await itself.
         async function parentId(parent?: Parent, seen = new Set<string>()): Promise<string | undefined> {
             if (!parent || seen.size >= 32) return undefined
-            if (parent.page_id) return pages.has(parent.page_id) ? parent.page_id : undefined
+            if (parent.page_id) {
+                const id = parent.page_id
+                if (nodes.has(id)) return id
+                const key = `pages/${encodeURIComponent(id)}`
+                if (seen.has(key)) return undefined
+                seen.add(key)
+                const ancestor = await read(key)
+                if (!ancestor || ancestor.archived || ancestor.in_trash) return undefined
+                pages.set(id, ancestor)
+                const node: NotionPage = {
+                    kind: 'page',
+                    id,
+                    title: text(Object.values(ancestor.properties ?? {}).find((p) => p.title)?.title) || 'Untitled',
+                    url: ancestor.url ?? '',
+                    icon: icon(ancestor)
+                }
+                nodes.set(id, node)
+                node.parentId = await parentId(ancestor.parent, seen)
+                return id
+            }
             const path = parent.block_id
                 ? `blocks/${encodeURIComponent(parent.block_id)}`
                 : parent.data_source_id
@@ -214,11 +276,11 @@ export async function discoverNotionPages(
             return parentId(entity.parent, seen)
         }
         let completed = 0
-        progress({ stage: 'grouping', completed, total: pages.size })
-        for (const page of pages.values()) {
+        progress({ stage: 'grouping', completed, total: pages.size + groups.size })
+        for (const page of [...pages.values(), ...groups.values()]) {
             nodes.get(page.id)!.parentId = await parentId(page.parent)
-            progress({ stage: 'grouping', completed: ++completed, total: pages.size })
+            progress({ stage: 'grouping', completed: ++completed, total: pages.size + groups.size })
         }
-        return [...nodes.values()]
+        return [...nodes.values()].map((node) => (options.parent?.id === node.id ? options.parent : node))
     }
 }
