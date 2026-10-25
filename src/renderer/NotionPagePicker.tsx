@@ -172,7 +172,7 @@ function PageTree({
             {!nodes.length && !activity && (
                 <p className="notion-picker-empty" role="status">
                     {context.query.trim()
-                        ? 'No matching pages. Try a page link if it was just shared.'
+                        ? 'No matching pages'
                         : 'No pages found yet. Search by name or paste a page link.'}
                 </p>
             )}

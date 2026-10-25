@@ -715,6 +715,7 @@
     justify-content: flex-start;
 }
 .notion-picker-empty {
+    text-align: center;
     padding: var(--space-3);
     color: var(--text-muted);
     font-size: var(--text-sm);

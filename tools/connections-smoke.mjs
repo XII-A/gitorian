@@ -1133,7 +1133,7 @@ app.on('browser-window-created', (_, window) => {
             await click('Retry search')
             await wait(`!!document.querySelector('[role="treeitem"][title="Retry me"]')`)
             await typePageQuery('Decisions')
-            await wait(`document.body.innerText.includes('Try a page link')`)
+            await wait(`document.body.innerText.includes('No matching pages')`)
             await typePageQuery('https://www.notion.so/Notes-12345678123412341234123456789abc')
             await wait(`!!document.querySelector('[role="treeitem"][title="Direct link notes"]')`)
             await shot('notion-page-link-result', 100, 'notion')
@@ -1358,7 +1358,7 @@ app.on('browser-window-created', (_, window) => {
             )
             await window.webContents.insertText('No matching title')
             await wait(
-                `Array.from(document.querySelectorAll('[role="status"]')).some(n=>n.textContent.startsWith('No matching pages.'))`
+                `Array.from(document.querySelectorAll('[role="status"]')).some(n=>n.textContent==='No matching pages')`
             )
             await shot('notion-page-tree-empty', 150, 'notion')
             await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').select()`)
