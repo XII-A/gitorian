@@ -131,10 +131,14 @@ const button = async (label) => {
     await pause(150)
 }
 const tab = async (label) => {
-    await js(
-        `Array.from(document.querySelectorAll('[role="tab"]')).find(n=>n.textContent.trim()===${JSON.stringify(label)}).click()`
+    log({ tab: label })
+    const find = `Array.from(document.querySelectorAll('[role="tab"]')).find(n=>n.textContent.trim()===${JSON.stringify(label)})`
+    await wait(`!!(${find})`)
+    await js(`(${find}).focus()`)
+    await evaluate(
+        `(()=>{const contents=__electron.BrowserWindow.getAllWindows()[0].webContents;contents.focus();contents.sendInputEvent({type:'keyDown',keyCode:'Return'});contents.sendInputEvent({type:'keyUp',keyCode:'Return'});return true})()`
     )
-    await pause(150)
+    await wait(`(${find})?.getAttribute('aria-selected')==='true'`)
 }
 const screenshot = async (name) => {
     const data = await evaluate(
@@ -282,6 +286,7 @@ try {
     await wait(`document.body.innerText.includes('Exact draft asset diff marker')`)
     await screenshot('02-real-diff')
     const writing = 'Exact draft asset verification: writing survives a complete restart.'
+    await button('Start this week’s entry')
     await wait(`!!document.querySelector('[aria-label="Journal body"]')`)
     await js(`document.querySelector('[aria-label="Journal body"]').focus()`)
     await evaluate(
