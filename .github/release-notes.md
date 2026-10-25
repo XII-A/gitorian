@@ -17,6 +17,6 @@
 
 Windows 10 or 11, 64-bit Intel or AMD (x64).
 
-Download and run `gitorian-0.1.5-windows-x64-setup.exe` from **Assets** below to install Gitorian. This installation enables in-app updates for future releases.
+Download and run `gitorian-0.1.6-windows-x64-setup.exe` from **Assets** below to install Gitorian. This installation enables in-app updates for future releases.
 
 See the [installation details](https://github.com/XII-A/gitorian#downloads) for unsigned installer warnings and checksums.

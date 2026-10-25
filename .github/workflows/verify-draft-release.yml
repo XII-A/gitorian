@@ -6,7 +6,7 @@ on:
             tag:
                 description: Unpublished release tag to install and verify
                 required: true
-                default: v0.1.5
+                default: v0.1.6
                 type: string
 
 permissions:
