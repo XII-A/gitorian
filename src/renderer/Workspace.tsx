@@ -1,3 +1,4 @@
+import { AppUpdateButton } from './AppUpdates'
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
@@ -694,4 +695,3 @@ export function Workspace({
         </main>
     )
 }
-import { AppUpdateButton } from './AppUpdates'

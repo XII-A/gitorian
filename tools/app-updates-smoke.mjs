@@ -280,9 +280,9 @@ app.on('browser-window-created', (_, window) => {
             await shot('05-update-ready-toast')
             assert(
                 await js(
-                    `(()=>{const b=document.querySelector('[aria-label="Update ready"]');return b.scrollWidth<=b.clientWidth+1})()`
+                    `(()=>{const b=document.querySelector('[aria-label="Update ready"]');return !b.textContent.trim() && !!b.querySelector('svg') && !!b.querySelector('.app-update-dot') && b.scrollWidth<=b.clientWidth+1})()`
                 ),
-                'Header update label fits its button without overlapping neighboring controls'
+                'Workspace update control stays icon-only with a ready status dot'
             )
             const measurements = await js(
                 `window.__measuring=false;({latencies:window.__inputLatencies,gaps:window.__frameGaps})`
@@ -307,6 +307,21 @@ app.on('browser-window-created', (_, window) => {
             await click('[aria-label="Update ready"]')
             await shot('06-update-popover')
             await escape()
+            await js(`document.querySelector('[aria-label="Journal breadcrumb"] button').click()`)
+            await wait(`!!document.querySelector('.hub-utility-icons [aria-label="Update ready"]')`)
+            assert(
+                await js(
+                    `(()=>{const b=document.querySelector('.hub-utility-icons [aria-label="Update ready"]');return !b.textContent.trim() && !!b.querySelector('svg') && !!b.querySelector('.app-update-dot')})()`
+                ),
+                'Hub exposes the same icon-only ready control and status dot'
+            )
+            await click('.hub-utility-icons [aria-label="Update ready"]')
+            await wait(`document.querySelector('.app-update-popover')?.textContent.includes('Ready to update')`)
+            await shot('06-hub-update-popover')
+            await escape()
+            await click('[aria-label="Open journal"]')
+            await wait(`!!document.querySelector('[aria-label="Journal body"]')`)
+            await js(`window.__editor=document.querySelector('[aria-label="Journal body"]')`)
             await js(`window.__editor.focus()`)
 
             // A real pending image import must block restart, then recover.

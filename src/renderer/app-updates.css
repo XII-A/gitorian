@@ -28,4 +28,25 @@
 }
 .app-update-trigger {
     flex: none;
+    width: var(--control-height-sm);
+    padding: 0;
+}
+
+.app-update-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+}
+
+.app-update-dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: var(--success);
 }

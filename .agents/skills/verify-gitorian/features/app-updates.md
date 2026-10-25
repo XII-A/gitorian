@@ -4,7 +4,7 @@ Windows NSIS installs check stable GitHub Releases shortly after startup and eve
 
 ## Entry points and outcomes
 
-- **Header:** App updates in the hub and writing workspace opens the shared Arc popover. Check for updates reports current/check failure, and Try again retries. A downloading state shows the version and percentage without disabling writing.
+- **Header:** The icon-only App updates control in both the hub and writing workspace opens the shared Arc popover. A green dot marks a downloaded update, with Update ready as its accessible name and tooltip. Check for updates reports current/check failure, and Try again retries. A downloading state shows the version and percentage without disabling writing. The desktop journey opens the ready popover from both headers and captures `06-hub-update-popover.png` alongside the workspace screenshot.
 - **Ready toast:** appears once per version on the device, without focus transfer. Update now uses the same checkpoint and installation path as the header. Dismissal leaves Update ready in the header; navigation/reload does not repeat the prompt.
 - **Ready popover:** Update ready opens Ready to update and Update now. Escape returns focus. Narrow/reduced-motion presentation must fit.
 - **Checkpoint:** the active draft uses its existing recovery cache and durable save, including in-flight writes and the final keystroke. Pending images or failed saves block installation. Settings must be saved/closed first. Editing resumes after preparation/launch failure.

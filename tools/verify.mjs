@@ -334,6 +334,7 @@ if (mode === 'doctor') {
                       'actions.jsonl',
                       '05-update-ready-toast.png',
                       '06-update-popover.png',
+                      '06-hub-update-popover.png',
                       'writing-performance.json',
                       'installer-handoff.json',
                       'persisted-drafts.json',

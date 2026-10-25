@@ -121,15 +121,17 @@ export function AppUpdateButton() {
         <Popover>
             <PopoverTrigger asChild>
                 <Button
-                    variant={ready ? 'secondary' : 'ghost'}
+                    variant="ghost"
                     size="sm"
                     aria-label={title}
                     title={title}
                     className="app-update-trigger"
                     animateContent={false}
                 >
-                    <Download size={16} aria-hidden="true" />
-                    {ready && 'Update'}
+                    <span className="app-update-icon" aria-hidden="true">
+                        <Download size={16} />
+                        {ready && <span className="app-update-dot" />}
+                    </span>
                 </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="app-update-popover" aria-label="App updates">
