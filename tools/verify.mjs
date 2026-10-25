@@ -29,12 +29,15 @@ if (
         'onboarding-disclosure',
         'inspector-tabs',
         'line-statistics',
-        'window-chrome'
+        'window-chrome',
+        'publishing',
+        'activity-counts',
+        'hub-dialog'
     ].includes(mode) ||
     process.argv.length !== 3
 ) {
     console.error(
-        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome (run pnpm build first)'
+        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -212,7 +215,32 @@ if (mode === 'doctor') {
                 db.close()
             }
         }
-        if (mode !== 'line-statistics' && mode !== 'inspector-tabs' && mode !== 'window-chrome') {
+        if (mode === 'publishing') {
+            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
+            try {
+                const entries = db
+                    .prepare("SELECT json FROM state_records WHERE collection='entries'")
+                    .all()
+                    .map((row) => JSON.parse(String(row.json)))
+                writeFileSync(join(output, 'persisted-entries.json'), JSON.stringify(entries, null, 2))
+                if (
+                    entries.length !== 1 ||
+                    entries[0].id !== 'fixture-entry' ||
+                    !JSON.stringify(entries[0].body).includes('Followed up')
+                )
+                    throw new Error('Updated writing was not persisted')
+            } finally {
+                db.close()
+            }
+        }
+        if (
+            mode !== 'line-statistics' &&
+            mode !== 'inspector-tabs' &&
+            mode !== 'window-chrome' &&
+            mode !== 'publishing' &&
+            mode !== 'activity-counts' &&
+            mode !== 'hub-dialog'
+        ) {
             const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
             try {
                 if (disclosureMode) {
@@ -285,91 +313,118 @@ if (mode === 'doctor') {
         }
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
         report.evidenceRetained = (
-            mode === 'window-chrome'
-                ? [
-                      'actions.jsonl',
-                      '01-frame-hidden.png',
-                      '02-controls-revealed.png',
-                      '03-reduced-motion.png',
-                      '04-reference-frame-dark.png',
-                      '04-reference-frame-light.png'
-                  ]
-                : mode === 'line-statistics'
+            mode === 'activity-counts'
+                ? ['actions.jsonl', 'activity-counts.png', 'journey.json']
+                : mode === 'hub-dialog'
                   ? [
-                        'doctor.json',
                         'actions.jsonl',
-                        'hub-commit-breakdown.png',
-                        'hub-pr-breakdown.png',
-                        'workspace-details.png',
-                        'selected-file-diff.png',
-                        'persisted-activities.json',
+                        'hub-before-windowed.png',
+                        'hub-dialog-windowed.png',
+                        'hub-dialog-maximized.png',
+                        'hub-dialog-restored.png',
                         'journey.json'
                     ]
-                  : mode === 'inspector-tabs'
+                  : mode === 'publishing'
                     ? [
-                          'doctor.json',
-                          'actions.json',
-                          'docked-dark-details.png',
-                          'reference-dark-details.png',
-                          'reference-light-related.png',
+                          'actions.jsonl',
+                          'published-to-notion.png',
+                          'updated-in-notion.png',
+                          'publish-failed.png',
+                          'persisted-entries.json',
+                          'http-requests.json',
                           'journey.json'
                       ]
-                    : disclosureMode
-                      ? ['doctor.json', 'actions.jsonl', 'disclosure-motion.json', 'disclosure.png', 'journey.json']
-                      : onboardingMode
+                    : mode === 'window-chrome'
+                      ? [
+                            'actions.jsonl',
+                            '01-frame-hidden.png',
+                            '02-controls-revealed.png',
+                            '03-reduced-motion.png',
+                            '04-reference-frame-dark.png',
+                            '04-reference-frame-light.png'
+                        ]
+                      : mode === 'line-statistics'
                         ? [
                               'doctor.json',
                               'actions.jsonl',
-                              '01-first-launch.png',
-                              '01c-collapsed.png',
-                              '01e-dismiss-tooltip.png',
-                              'header-actions.json',
-                              'header-geometry.json',
-                              process.env.GITORIAN_VERIFY_ONBOARDING_INLINE === '1'
-                                  ? 'completion-motion.json'
-                                  : 'dismiss-motion.json',
-                              process.env.GITORIAN_VERIFY_ONBOARDING_INLINE === '1'
-                                  ? '05-inline-setup.png'
-                                  : '05-resume-popover.png',
-                              '09-complete-stats.png',
-                              'preferences.json',
-                              'persisted-repositories.json'
+                              'hub-commit-breakdown.png',
+                              'hub-pr-breakdown.png',
+                              'workspace-details.png',
+                              'selected-file-diff.png',
+                              'persisted-activities.json',
+                              'journey.json'
                           ]
-                        : mode === 'notion'
+                        : mode === 'inspector-tabs'
                           ? [
                                 'doctor.json',
-                                'actions.jsonl',
-                                'http-requests.json',
-                                'persisted-settings.json',
-                                'notion-01-ready.png',
-                                'notion-07-connected.png',
-                                'notion-09-disconnected.png',
-                                'notion-provisioned.json',
-                                'captures.json'
+                                'actions.json',
+                                'docked-dark-details.png',
+                                'reference-dark-details.png',
+                                'reference-light-related.png',
+                                'journey.json'
                             ]
-                          : mode === 'connections'
+                          : disclosureMode
                             ? [
                                   'doctor.json',
                                   'actions.jsonl',
-                                  '01-idle.png',
-                                  '05-narrow-dark-code.png',
-                                  '08-disconnected.png',
-                                  'http-requests.json',
-                                  'persisted-settings.json',
-                                  'notion-04-failed.png',
-                                  'notion-07-connected.png',
-                                  'notion-09-disconnected.png',
-                                  'notion-provisioned.json',
-                                  'captures.json'
+                                  'disclosure-motion.json',
+                                  'disclosure.png',
+                                  'journey.json'
                               ]
-                            : [
-                                  'doctor.json',
-                                  'actions.jsonl',
-                                  '01-choose-folder.png',
-                                  '08-complete.png',
-                                  '10-error-details.png',
-                                  'persisted-repositories.json'
-                              ]
+                            : onboardingMode
+                              ? [
+                                    'doctor.json',
+                                    'actions.jsonl',
+                                    '01-first-launch.png',
+                                    '01c-collapsed.png',
+                                    '01e-dismiss-tooltip.png',
+                                    'header-actions.json',
+                                    'header-geometry.json',
+                                    process.env.GITORIAN_VERIFY_ONBOARDING_INLINE === '1'
+                                        ? 'completion-motion.json'
+                                        : 'dismiss-motion.json',
+                                    process.env.GITORIAN_VERIFY_ONBOARDING_INLINE === '1'
+                                        ? '05-inline-setup.png'
+                                        : '05-resume-popover.png',
+                                    '09-complete-stats.png',
+                                    'preferences.json',
+                                    'persisted-repositories.json'
+                                ]
+                              : mode === 'notion'
+                                ? [
+                                      'doctor.json',
+                                      'actions.jsonl',
+                                      'http-requests.json',
+                                      'persisted-settings.json',
+                                      'notion-01-ready.png',
+                                      'notion-07-connected.png',
+                                      'notion-09-disconnected.png',
+                                      'notion-provisioned.json',
+                                      'captures.json'
+                                  ]
+                                : mode === 'connections'
+                                  ? [
+                                        'doctor.json',
+                                        'actions.jsonl',
+                                        '01-idle.png',
+                                        '05-narrow-dark-code.png',
+                                        '08-disconnected.png',
+                                        'http-requests.json',
+                                        'persisted-settings.json',
+                                        'notion-04-failed.png',
+                                        'notion-07-connected.png',
+                                        'notion-09-disconnected.png',
+                                        'notion-provisioned.json',
+                                        'captures.json'
+                                    ]
+                                  : [
+                                        'doctor.json',
+                                        'actions.jsonl',
+                                        '01-choose-folder.png',
+                                        '08-complete.png',
+                                        '10-error-details.png',
+                                        'persisted-repositories.json'
+                                    ]
         ).every((file) => existsSync(join(output, file)))
         report.passed &&= report.cleanup.removed && report.evidenceRetained
         report.finishedAt = new Date().toISOString()
