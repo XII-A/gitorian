@@ -13,6 +13,56 @@ const page = (id: string, parent: object = { workspace: true }) => ({
     properties: { Name: { title: [{ plain_text: id }] } }
 })
 
+it('offers indexed destinations before a slow content scan and later includes unindexed descendants', async () => {
+    let release!: () => void
+    const blocked = new Promise<void>((done) => (release = done))
+    const preview = vi.fn()
+    const request = vi.fn(async (path: string) => {
+        if (path === 'search') return { results: [page('parent')], has_more: false }
+        if (path === 'blocks/parent/children?page_size=100') {
+            await blocked
+            return { results: [{ id: 'child', type: 'child_page' }], has_more: false }
+        }
+        if (path === 'pages/child') return page('child', { page_id: 'parent' })
+        return { results: [], has_more: false }
+    })
+    const complete = discoverNotionPages(
+        async (path) => JSON.parse(JSON.stringify(await request(path))),
+        undefined,
+        undefined,
+        preview
+    )
+    await vi.waitFor(() => expect(preview).toHaveBeenCalledOnce())
+    expect(preview.mock.calls[0][0]).toEqual([expect.objectContaining({ id: 'parent', kind: 'page', title: 'parent' })])
+    expect(request.mock.calls.filter(([path]) => path === 'search')).toHaveLength(1)
+    release()
+    expect((await complete).find((node) => node.id === 'child')).toMatchObject({ parentId: 'parent' })
+})
+
+it('reports a provider wait while already discovered destinations remain usable', async () => {
+    const updates: NotionDiscoveryProgress[] = []
+    let throttled = false
+    const request = vi.fn((path: string) =>
+        Promise.resolve().then(() => {
+            if (path === 'search') return { results: [page('parent')], has_more: false }
+            if (!throttled) {
+                throttled = true
+                throw new HttpError(429, 'Limited', Date.now() + 10)
+            }
+            return { results: [], has_more: false }
+        })
+    )
+    const preview = vi.fn()
+    await discoverNotionPages(
+        async (path) => JSON.parse(JSON.stringify(await request(path))),
+        (update) => updates.push(update),
+        undefined,
+        preview
+    )
+    expect(preview).toHaveBeenCalledOnce()
+    expect(updates).toContainEqual(expect.objectContaining({ stage: 'waiting', found: 1 }))
+})
+
 it('finishes a large discovery after a rate-limit reset without repeating completed reads', async () => {
     let resetAt = 0
     let throttles = 0

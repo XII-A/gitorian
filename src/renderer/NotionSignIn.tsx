@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Command, Reply, State, NotionPage, NotionDiscoveryProgress } from '../shared/model'
 import { ConnectionSignIn, connectionFailure, type ConnectionFeedback } from './ConnectionSignIn'
 import { NotionPagePicker, NotionPageIcon } from './NotionPagePicker'
@@ -28,6 +28,8 @@ export function NotionSignIn({
     const [selected, setSelected] = useState('')
     const [pageName, setPageName] = useState('Weekly Journal')
     const [progress, setProgress] = useState<NotionDiscoveryProgress>({ stage: 'discovering', found: 0 })
+    const [discovering, setDiscovering] = useState(false)
+    const [discoveryError, setDiscoveryError] = useState(false)
     const [stage, setStage] = useState<'load' | 'choose' | 'confirm'>()
     const [selectionError, setSelectionError] = useState<'load' | 'choose' | 'confirm'>()
     const [authorization, setAuthorization] = useState<Reply['notionAuthorization']>()
@@ -68,6 +70,8 @@ export function NotionSignIn({
         setSuccessComplete(false)
         setPending(false)
         setOpening(false)
+        setDiscovering(false)
+        setDiscoveryError(false)
         void window.journal.invoke({ type: 'notionCancel' }).catch(() => {
             /* The next start also cancels the previous attempt. */
         })
@@ -81,32 +85,52 @@ export function NotionSignIn({
         },
         []
     )
-    const loadPages = async (generation = attempt.current) => {
-        setStage('load')
-        setProgress({ stage: 'discovering', found: 0 })
-        setSelectionError(undefined)
-        setFeedback({ kind: 'authorizing', login: 'Notion' })
-        const requestId = crypto.randomUUID()
-        const unsubscribe = window.journal.onNotionDiscoveryProgress?.((event) => {
-            if (event.requestId === requestId && attempt.current === generation) setProgress(event.progress)
-        })
-        try {
-            const reply = await window.journal.invoke({ type: 'notionPages', requestId })
-            if (attempt.current !== generation) return
-            setPages(reply.notionPages ?? [])
-            setStage('choose')
-            setFeedback(undefined)
-        } catch {
-            if (attempt.current === generation) {
-                setSelectionError('load')
-                setFeedback({ kind: 'error', message: 'Could not load pages' })
+    const loadPages = useCallback(
+        async (generation = attempt.current) => {
+            let usable = !!pages
+            setStage(usable ? 'choose' : 'load')
+            setDiscovering(true)
+            setDiscoveryError(false)
+            setProgress({ stage: 'discovering', found: 0 })
+            setSelectionError(undefined)
+            if (!usable) setFeedback({ kind: 'authorizing', login: 'Notion' })
+            const requestId = crypto.randomUUID()
+            const unsubscribe = window.journal.onNotionDiscoveryProgress?.((event) => {
+                if (event.requestId !== requestId || attempt.current !== generation) return
+                setProgress(event.progress)
+                if (event.pages) {
+                    usable = true
+                    setPending(false)
+                    setPages(event.pages)
+                    setStage('choose')
+                    setFeedback(undefined)
+                }
+            })
+            try {
+                const reply = await window.journal.invoke({ type: 'notionPages', requestId })
+                if (attempt.current !== generation) return
+                setPages(reply.notionPages ?? [])
+                setStage('choose')
+                setFeedback(undefined)
+            } catch {
+                if (attempt.current === generation) {
+                    if (usable) setDiscoveryError(true)
+                    else {
+                        setSelectionError('load')
+                        setFeedback({ kind: 'error', message: 'Could not load pages' })
+                    }
+                }
+            } finally {
+                unsubscribe?.()
+                if (attempt.current === generation) setDiscovering(false)
             }
-        } finally {
-            unsubscribe?.()
-        }
-    }
+        },
+        [pages]
+    )
     const confirm = async () => {
-        const generation = attempt.current
+        const generation = ++attempt.current
+        setDiscovering(false)
+        setDiscoveryError(false)
         setStage('confirm')
         setSelectionError(undefined)
         setFeedback({ kind: 'authorizing', login: 'Notion' })
@@ -159,7 +183,7 @@ export function NotionSignIn({
             cancelled = true
             clearTimeout(timer)
         }
-    }, [authorization])
+    }, [authorization, loadPages])
     useEffect(() => {
         if (stage) return
         if (feedback?.kind !== 'authorizing' && feedback?.kind !== 'success') return
@@ -362,6 +386,20 @@ export function NotionSignIn({
                     }}
                     onDisconnect={disconnectNotion}
                 />
+                {stage === 'choose' && (discovering || discoveryError) && (
+                    <div className="notion-discovery-note" role="status">
+                        {discoveryError ? (
+                            <>
+                                <span>Some pages could not load.</span>
+                                <Button variant="ghost" size="sm" onClick={() => void loadPages()}>
+                                    Retry discovery
+                                </Button>
+                            </>
+                        ) : (
+                            <NotionDiscoveryStatus progress={progress} />
+                        )}
+                    </div>
+                )}
             </div>
             <motion.div
                 data-notion-disconnect

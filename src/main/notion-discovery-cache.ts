@@ -20,7 +20,11 @@ const entrySchema = z.object({
     pages: z.array(pageSchema).max(100000)
 })
 type Entry = z.infer<typeof entrySchema>
-type Load = (signal: AbortSignal, progress: (update: NotionDiscoveryProgress) => void) => Promise<NotionPage[]>
+type Load = (
+    signal: AbortSignal,
+    progress: (update: NotionDiscoveryProgress) => void,
+    publish: (pages: NotionPage[]) => void
+) => Promise<NotionPage[]>
 const scopeOf = (token: string) => createHash('sha256').update(token).digest('hex')
 
 /** Disposable metadata only. Returns stable picker snapshots while refreshing stale data for the next open. */
@@ -30,6 +34,8 @@ export class NotionDiscoveryCache {
         scope: string
         controller: AbortController
         listeners: Set<(update: NotionDiscoveryProgress) => void>
+        previews: Set<(pages: NotionPage[]) => void>
+        preview?: NotionPage[]
         promise: Promise<NotionPage[]>
     }
     constructor(
@@ -77,7 +83,8 @@ export class NotionDiscoveryCache {
         load: Load,
         progress: (update: NotionDiscoveryProgress) => void = () => {
             /* Counts are optional for background callers. */
-        }
+        },
+        preview?: (pages: NotionPage[]) => void
     ) {
         const scope = scopeOf(token)
         const cached = this.entry?.scope === scope ? this.entry : undefined
@@ -87,13 +94,23 @@ export class NotionDiscoveryCache {
         if (!this.pending) {
             const controller = new AbortController()
             const listeners = new Set<(update: NotionDiscoveryProgress) => void>()
+            const previews = new Set<(pages: NotionPage[]) => void>()
             if (!cached) listeners.add(progress)
+            if (!cached && preview) previews.add(preview)
             const promise = Promise.resolve()
                 .then(() => {
                     controller.signal.throwIfAborted()
-                    return load(controller.signal, (update) => {
-                        if (!controller.signal.aborted) for (const listener of listeners) listener(update)
-                    })
+                    return load(
+                        controller.signal,
+                        (update) => {
+                            if (!controller.signal.aborted) for (const listener of listeners) listener(update)
+                        },
+                        (pages) => {
+                            if (controller.signal.aborted || this.pending?.controller !== controller) return
+                            this.pending.preview = pages
+                            for (const listener of previews) listener(pages)
+                        }
+                    )
                 })
                 .then((pages) => {
                     controller.signal.throwIfAborted()
@@ -104,8 +121,14 @@ export class NotionDiscoveryCache {
                 .finally(() => {
                     if (this.pending?.controller === controller) this.pending = undefined
                 })
-            this.pending = { scope, controller, listeners, promise }
-        } else if (!cached) this.pending.listeners.add(progress)
+            this.pending = { scope, controller, listeners, previews, promise }
+        } else if (!cached) {
+            this.pending.listeners.add(progress)
+            if (preview) {
+                this.pending.previews.add(preview)
+                if (this.pending.preview) preview(this.pending.preview)
+            }
+        }
         if (cached) {
             void this.pending.promise.catch(() => {
                 /* A failed refresh keeps the cached snapshot available. */

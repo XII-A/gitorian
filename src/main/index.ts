@@ -440,7 +440,7 @@ void app.whenReady().then(() => {
                 const pages = await notionDiscovery
                     .pages(
                         token,
-                        (signal, progress) => discovery.accessiblePages(progress, signal),
+                        (signal, progress, preview) => discovery.accessiblePages(progress, signal, preview),
                         (progress) => {
                             latest = progress
                             const final = progress.stage === 'grouping' && progress.completed === progress.total
@@ -455,6 +455,19 @@ void app.whenReady().then(() => {
                                     flushProgress()
                                 }, 100)
                             }
+                        },
+                        (pages) => {
+                            if (generation !== notionPickerGeneration || event.sender.isDestroyed()) return
+                            availableNotionPages = pages
+                            event.sender.send('journal:notion-discovery', {
+                                requestId: command.requestId,
+                                progress: {
+                                    stage: 'scanning',
+                                    found: pages.filter((page) => page.kind === 'page').length,
+                                    checked: 0
+                                },
+                                pages
+                            })
                         }
                     )
                     .finally(() => clearTimeout(progressTimer))
@@ -483,6 +496,10 @@ void app.whenReady().then(() => {
                         ? availableNotionPages.find((page) => page.kind === 'page' && page.id === selection.pageId)
                         : undefined
                 if (selection.kind === 'existing' && !page) throw new Error('Refresh pages and choose a destination.')
+                // Selection no longer waits for the full content crawl. Cancel
+                // that read before saving so its late result cannot change the picker.
+                notionPickerGeneration++
+                notionDiscovery.cancel()
                 const destination = await connection.completeJournal(
                     async (setup, checkpoint) =>
                         pendingNotion.prepareJournal(

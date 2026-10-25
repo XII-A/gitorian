@@ -367,10 +367,13 @@ export interface ConnectionProfile {
 export type NotionDiscoveryProgress =
     | { stage: 'discovering'; found: number }
     | { stage: 'grouping'; completed: number; total: number }
+    | { stage: 'scanning'; found: number; checked: number }
+    | { stage: 'waiting'; found: number; retryAt: number }
 
 export interface NotionDiscoveryEvent {
     requestId: string
     progress: NotionDiscoveryProgress
+    pages?: NotionPage[]
 }
 
 export interface NotionPage {

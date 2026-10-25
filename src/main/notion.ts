@@ -1,6 +1,6 @@
 import { fromNotion, toNotion } from '../shared/notion-format'
 import type { NotionBlock } from '../shared/notion-format'
-import type { Destination, Entry, ConnectionProfile, State, NotionDiscoveryProgress } from '../shared/model'
+import type { Destination, Entry, ConnectionProfile, State, NotionDiscoveryProgress, NotionPage } from '../shared/model'
 import type { Http } from './http'
 import { HttpError } from './http'
 import type { Store } from './store'
@@ -9,6 +9,7 @@ import { imageIds, imageExtension } from '../shared/images'
 import type { JournalSetup } from './notion-connection'
 import sharp from 'sharp'
 import { discoverNotionPages } from './notion-discovery'
+import { retryNotionRateLimit } from './notion-rate-limit'
 
 interface Page {
     id: string
@@ -54,6 +55,9 @@ export class Notion {
             return this.http.request<T>(`https://api.notion.com/v1/${path}`, refreshed, init)
         }
     }
+    private setupRequest<T>(path: string, init?: RequestInit): Promise<T> {
+        return retryNotionRateLimit(() => this.request<T>(path, init))
+    }
     async prepareJournal(
         setup: JournalSetup,
         checkpoint: (pageId?: string) => void,
@@ -73,7 +77,7 @@ export class Notion {
             const matches: string[] = []
             let cursor: string | null = null
             do {
-                const pages: List<Page> = await this.request('search', {
+                const pages: List<Page> = await this.setupRequest('search', {
                     method: 'POST',
                     body: JSON.stringify({
                         query: title,
@@ -87,7 +91,7 @@ export class Notion {
                         ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
                         .join('')
                     if (pageTitle !== title) continue
-                    const children = await this.request<{
+                    const children = await this.setupRequest<{
                         results: {
                             type: string
                             paragraph?: { rich_text: { plain_text?: string; text?: { content: string } }[] }
@@ -112,7 +116,7 @@ export class Notion {
             return { ...destination(matches[0]), ...(setup.title ? { title } : {}) }
         }
         checkpoint()
-        const page = await this.request<{ id: string; url?: string }>('pages', {
+        const page = await this.setupRequest<{ id: string; url?: string }>('pages', {
             method: 'POST',
             headers: { 'Notion-Version': '2026-03-11' },
             body: JSON.stringify({
@@ -136,14 +140,19 @@ export class Notion {
             ...(page.url ? { url: page.url } : {})
         }
     }
-    async accessiblePages(progress?: (update: NotionDiscoveryProgress) => void, signal?: AbortSignal) {
+    async accessiblePages(
+        progress?: (update: NotionDiscoveryProgress) => void,
+        signal?: AbortSignal,
+        onPages?: (pages: NotionPage[]) => void
+    ) {
         return discoverNotionPages(
             (path, init) => {
                 signal?.throwIfAborted()
                 return this.request(path, { ...init, ...(signal ? { signal } : {}) })
             },
             progress,
-            signal
+            signal,
+            onPages
         )
     }
     async destinationIcon(icon?: string): Promise<string | undefined> {
@@ -185,7 +194,7 @@ export class Notion {
         if (!destination.id.trim()) throw new Error('Enter a destination ID first.')
         const kind = destination.kind === 'page' ? 'Page' : 'Database data source'
         try {
-            await this.request(
+            await this.setupRequest(
                 `${destination.kind === 'page' ? 'pages' : 'data_sources'}/${encodeURIComponent(destination.id.trim())}`
             )
         } catch (error) {

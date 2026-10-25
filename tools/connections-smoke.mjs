@@ -67,6 +67,10 @@ let notionCreatedTitle = 'Weekly Journal'
 let refreshedNames = false
 let failPageSearch = true
 let discoveryRateLimit
+let holdDiscovery = false
+let releaseDiscovery
+let failDiscovery = false
+let earlyScanAborted = false
 let failPageSelection = true
 let expireEditSearch = false
 let expireEditCreation = false
@@ -284,6 +288,27 @@ globalThis.fetch = (input, init) =>
             })
         }
         // Decisions is readable immediately but deliberately absent from search's index.
+        if (url === 'https://api.notion.com/v1/blocks/fixture-parent/children?page_size=100') {
+            if (holdDiscovery) {
+                await new Promise((resolve, reject) => {
+                    const abort = () => {
+                        earlyScanAborted = true
+                        reject(
+                            init.signal.reason instanceof Error
+                                ? init.signal.reason
+                                : new Error('Fixture scan cancelled')
+                        )
+                    }
+                    init.signal.addEventListener('abort', abort, { once: true })
+                    releaseDiscovery = () => {
+                        init.signal.removeEventListener('abort', abort)
+                        resolve()
+                    }
+                })
+            }
+            if (failDiscovery) return new Response('{}', { status: 500 })
+            return json({ results: [], has_more: false })
+        }
         if (url === 'https://api.notion.com/v1/blocks/fixture-existing/children?page_size=100')
             return json({
                 results: [{ id: 'fixture-outer-toggle', type: 'toggle', has_children: true }],
@@ -960,39 +985,25 @@ app.on('browser-window-created', (_, window) => {
             await shot('notion-pages-load-error', 250, 'notion')
             await js(`(() => {
                 window.__notionLoadingMotion={frames:[]};
-                const sample=()=>{
+                const sample=(frameTime)=>{
                     const section=${notionScope};
                     const root=section?.querySelector('.github-signin-surface > [role="group"]');
                     const surface=root?.firstElementChild;
                     if(root && surface) {
                         const bounds=surface.getBoundingClientRect();
                         const counters=Array.from(section.querySelectorAll('[data-variant="inline"]')).map(counter=>Array.from(counter.querySelectorAll('span')).filter(node=>!node.childElementCount && /^[0-9]$/.test(node.textContent) && getComputedStyle(node).position==='absolute' && node.getBoundingClientRect().width>2).map(node=>({digit:node.textContent,opacity:Number(getComputedStyle(node).opacity),offset:new DOMMatrixReadOnly(getComputedStyle(node).transform).m42,visibility:getComputedStyle(node).visibility})));
-                        window.__notionLoadingMotion.frames.push({time:performance.now(),state:root.dataset.state,width:bounds.width,left:bounds.left,right:bounds.right,top:bounds.top,text:surface.textContent,counters});
+                        window.__notionLoadingMotion.frames.push({time:frameTime ?? performance.now(),state:root.dataset.state,width:bounds.width,left:bounds.left,right:bounds.right,top:bounds.top,text:surface.textContent,counters});
                     }
                     window.__notionLoadingMotion.frame=requestAnimationFrame(sample);
                 }; sample();
             })()`)
+            holdDiscovery = true
+            failDiscovery = true
             await click('Retry', notionScope)
             await wait(
                 `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.querySelector('[aria-label="Found 9 pages"]') != null`
             )
             await shot('notion-discovery-count', 100, 'notion')
-            await assertActionsFit('Notion')
-            await wait(
-                `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.querySelector('[aria-label="Grouped 15 of 16 pages"]') != null`
-            )
-            await shot('notion-grouping-count', 100, 'notion')
-            await wait(`(() => {
-                const values=Array.from(${notionScope}.querySelectorAll('[data-variant="inline"]')).map(counter=>Array.from(counter.querySelectorAll('span')).filter(node=>{
-                    if(node.childElementCount || !/^[0-9]$/.test(node.textContent) || node.getBoundingClientRect().width<=2) return false;
-                    const style=getComputedStyle(node);
-                    const column=getComputedStyle(node.offsetParent);
-                    return style.position==='absolute' && style.visibility==='visible' && Number(style.opacity)>.99 && Math.abs(new DOMMatrixReadOnly(style.transform).m42)<.05 && Number(column.opacity)>.99 && (column.transform==='none' || Math.abs(new DOMMatrixReadOnly(column.transform).m42)<.05);
-                }).map(node=>node.textContent).join(''));
-                return values.join('/')==='15/16';
-            })()`)
-            await shot('notion-counter-settled', 50, 'notion')
-            await assertActionsFit('Notion')
             await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
             const loadingFrames = await js(
                 `(() => {cancelAnimationFrame(window.__notionLoadingMotion.frame);return window.__notionLoadingMotion.frames})()`
@@ -1035,6 +1046,38 @@ app.on('browser-window-created', (_, window) => {
             if (loadingMetrics.maxTopStep > 1) throw new Error(`Loading row jumped: ${JSON.stringify(loadingMetrics)}`)
             if (!stressMotion && loadingMetrics.maxPendingStepPerFrame > 24)
                 throw new Error(`Loading width jumped: ${JSON.stringify(loadingMetrics)}`)
+            if (!releaseDiscovery || existsSync(join(directory, 'profile', 'notion-pages.json')))
+                throw new Error('Cold picker waited for the content scan or persisted incomplete results')
+            await shot('notion-picker-during-scan', 450, 'notion')
+            await assertActionsFit('Notion')
+            await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').click()`)
+            await wait(`!!document.querySelector('[role="treeitem"][title="Personal"]')`)
+            await js(`document.querySelector('[role="treeitem"][title="Personal"]').click()`)
+            await assert(
+                `Array.from(${notionScope}.querySelectorAll('button')).some(b=>b.textContent.trim()==='Confirm'&&!b.disabled)`
+            )
+            record({
+                assertion: 'Indexed destinations are selectable and confirmable while the content scan is blocked',
+                passed: true
+            })
+            holdDiscovery = false
+            releaseDiscovery()
+            await wait(`${notionScope}.textContent.includes('Some pages could not load')`)
+            await assert(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value==='Personal'`)
+            await shot('notion-background-scan-error', 100, 'notion')
+            failDiscovery = false
+            await click('Retry discovery', notionScope)
+            await wait(`${notionScope}.textContent.includes('Waiting for Notion')`)
+            await assert(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').value==='Personal'`)
+            await shot('notion-waiting-with-picker', 100, 'notion')
+            await wait(`!${notionScope}.querySelector('.notion-discovery-note')`)
+            // Reset selection through the existing create/back controls, without
+            // creating a page, before the unchanged hierarchy journey below.
+            await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').click()`)
+            await click('Create a new page')
+            await js(`${notionScope}.querySelector('[aria-label="Choose an existing page"]').click()`)
+            await shot('notion-grouping-count', 50, 'notion')
+            await shot('notion-counter-settled', 50, 'notion')
             const cachePath = join(directory, 'profile', 'notion-pages.json')
             const cachedPages = JSON.parse(readFileSync(cachePath, 'utf8'))
             if (
@@ -1484,6 +1527,8 @@ app.on('browser-window-created', (_, window) => {
                 throw new Error('Notion disconnect retained credentials')
             await shot('notion-09-disconnected', 350, 'notion')
             notionName = 'Second integration'
+            holdDiscovery = true
+            earlyScanAborted = false
             await click('Connect', notionScope)
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='device'`)
             await approveNotion()
@@ -1491,6 +1536,13 @@ app.on('browser-window-created', (_, window) => {
             await choosePage('fixture-private-journal')
             await click('Confirm', notionScope)
             await wait(`${notionScope}.querySelector('[data-state="done"]') !== null`)
+            if (!earlyScanAborted)
+                throw new Error('Confirming an indexed destination did not cancel background discovery')
+            holdDiscovery = false
+            record({
+                assertion: 'Confirmation succeeds during a blocked scan and cancels it without late picker changes',
+                passed: true
+            })
             await shot('notion-reconnect-success', 100, 'notion')
             await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='connected'`)
             await wait(`${notionScope}.textContent.includes('Team journal')`)
