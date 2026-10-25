@@ -1,0 +1,46 @@
+.app-update-popover {
+    width: 320px;
+    display: grid;
+    gap: 16px;
+}
+
+.app-update-popover h2 {
+    margin: 0;
+    font-size: var(--text-base);
+    font-weight: 500;
+}
+
+.app-update-popover p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+}
+
+.app-update-popover > button {
+    justify-self: start;
+}
+.app-update-trigger {
+    flex: none;
+    width: var(--control-height-sm);
+    padding: 0;
+}
+
+.app-update-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+}
+
+.app-update-dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: var(--foreground);
+}

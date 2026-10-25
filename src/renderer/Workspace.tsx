@@ -1,3 +1,4 @@
+import { AppUpdateButton } from './AppUpdates'
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
@@ -392,6 +393,7 @@ export function Workspace({
                     />
                 </div>
                 <div className="ws-utilities">
+                    <AppUpdateButton />
                     {sourceProblems(state).length > 0 && (
                         <Button
                             variant="ghost"

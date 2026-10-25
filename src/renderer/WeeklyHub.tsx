@@ -1,3 +1,4 @@
+import { AppUpdateButton } from './AppUpdates'
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
@@ -326,6 +327,7 @@ export function WeeklyHub({
                             </Popover>
                         )}
                         <div className="hub-utility-icons">
+                            <AppUpdateButton />
                             <Tooltip content="Open journal" side="bottom">
                                 <Button
                                     variant="ghost"

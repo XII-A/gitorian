@@ -61,7 +61,7 @@ jobs:
             - run: pnpm build
             - name: Package unsigned Windows x64 installer
               run: pnpm exec electron-builder --win nsis --x64 --publish never
-            - name: Prepare installer and SHA-256 checksum
+            - name: Prepare installer, update feed and SHA-256 checksums
               shell: pwsh
               run: |
                   $ErrorActionPreference = 'Stop'
@@ -71,8 +71,16 @@ jobs:
                   if (-not (Test-Path -LiteralPath $source)) { throw "Installer missing: $name" }
                   New-Item -ItemType Directory -Path release-assets | Out-Null
                   Copy-Item -LiteralPath $source -Destination release-assets
-                  $hash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
-                  [IO.File]::WriteAllText((Join-Path $PWD 'release-assets/SHA256SUMS'), "$hash  $name`n")
+                  foreach ($metadata in @('latest.yml', "$name.blockmap")) {
+                      $path = Join-Path release $metadata
+                      if (-not (Test-Path -LiteralPath $path)) { throw "Update asset missing: $metadata" }
+                      Copy-Item -LiteralPath $path -Destination release-assets
+                  }
+                  $checksums = Get-ChildItem -LiteralPath release-assets -File | Sort-Object Name | ForEach-Object {
+                      $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                      "$hash  $($_.Name)"
+                  }
+                  [IO.File]::WriteAllText((Join-Path $PWD 'release-assets/SHA256SUMS'), ($checksums -join "`n") + "`n")
             - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
               with:
                   name: windows-x64-release
