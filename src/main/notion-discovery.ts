@@ -1,5 +1,6 @@
 import type { NotionPage, NotionDiscoveryProgress } from '../shared/model'
 import { HttpError } from './http'
+import { setTimeout as delay } from 'node:timers/promises'
 
 interface Parent {
     page_id?: string
@@ -48,12 +49,26 @@ export async function discoverNotionPages(
     request: <T>(path: string, init?: RequestInit) => Promise<T>,
     progress: (update: NotionDiscoveryProgress) => void = () => {
         /* Discovery also serves non-UI callers. */
-    }
+    },
+    signal?: AbortSignal
 ): Promise<NotionPage[]> {
     const pages = new Map<string, Entity>()
+    // Retry the failed read in place: restarting a large tree spends the same
+    // request budget again and can never reach the remaining descendants.
+    async function limited<T>(path: string, init?: RequestInit): Promise<T> {
+        for (let attempt = 0; ; attempt++) {
+            signal?.throwIfAborted()
+            try {
+                return await request<T>(path, init)
+            } catch (error) {
+                if (!(error instanceof HttpError) || error.status !== 429 || !error.retryAt || attempt >= 3) throw error
+                await delay(Math.max(0, error.retryAt - Date.now()), undefined, { signal })
+            }
+        }
+    }
     async function accessible<T>(path: string, init?: RequestInit): Promise<T | undefined> {
         try {
-            return await request<T>(path, init)
+            return await limited<T>(path, init)
         } catch (error) {
             if (error instanceof HttpError && (error.status === 403 || error.status === 404) && !error.retryAt)
                 return undefined
@@ -73,7 +88,7 @@ export async function discoverNotionPages(
     let cursor: string | null | undefined
     progress({ stage: 'discovering', found: 0 })
     do {
-        const result = await request<List>('search', {
+        const result = await limited<List>('search', {
             method: 'POST',
             body: JSON.stringify({
                 filter: { value: 'page', property: 'object' },

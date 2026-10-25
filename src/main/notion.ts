@@ -137,10 +137,14 @@ export class Notion {
         }
     }
     async accessiblePages(progress?: (update: NotionDiscoveryProgress) => void, signal?: AbortSignal) {
-        return discoverNotionPages((path, init) => {
-            signal?.throwIfAborted()
-            return this.request(path, { ...init, ...(signal ? { signal } : {}) })
-        }, progress)
+        return discoverNotionPages(
+            (path, init) => {
+                signal?.throwIfAborted()
+                return this.request(path, { ...init, ...(signal ? { signal } : {}) })
+            },
+            progress,
+            signal
+        )
     }
     async destinationIcon(icon?: string): Promise<string | undefined> {
         if (!icon?.startsWith('https://')) return icon
