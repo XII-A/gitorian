@@ -11,11 +11,14 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
-const runner = ['notion', 'onboarding', 'onboarding-disclosure'].includes(mode)
-    ? 'connections'
-    : mode === 'inspector-tabs'
-      ? 'desktop'
-      : mode
+const runner =
+    mode === 'activity-filters'
+        ? 'activity-filter'
+        : ['notion', 'onboarding', 'onboarding-disclosure'].includes(mode)
+          ? 'connections'
+          : mode === 'inspector-tabs'
+            ? 'desktop'
+            : mode
 const disclosureMode = mode === 'onboarding-disclosure'
 const onboardingMode = mode === 'onboarding' || disclosureMode
 const connectionMode = mode === 'connections' || mode === 'notion'
@@ -32,12 +35,13 @@ if (
         'window-chrome',
         'publishing',
         'activity-counts',
-        'hub-dialog'
+        'hub-dialog',
+        'activity-filters'
     ].includes(mode) ||
     process.argv.length !== 3
 ) {
     console.error(
-        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog (run pnpm build first)'
+        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | activity-filters (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -239,7 +243,8 @@ if (mode === 'doctor') {
             mode !== 'window-chrome' &&
             mode !== 'publishing' &&
             mode !== 'activity-counts' &&
-            mode !== 'hub-dialog'
+            mode !== 'hub-dialog' &&
+            mode !== 'activity-filters'
         ) {
             const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
             try {
@@ -313,8 +318,12 @@ if (mode === 'doctor') {
         }
         report.cleanup = { removed: !existsSync(scratch), error: cleanupError }
         report.evidenceRetained = (
-            mode === 'activity-counts'
-                ? ['actions.jsonl', 'activity-counts.png', 'journey.json']
+            mode === 'activity-counts' || mode === 'activity-filters'
+                ? [
+                      'actions.jsonl',
+                      mode === 'activity-counts' ? 'activity-counts.png' : 'grouped-filters.png',
+                      'journey.json'
+                  ]
                 : mode === 'hub-dialog'
                   ? [
                         'actions.jsonl',

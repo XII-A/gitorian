@@ -25,3 +25,7 @@ Preconditions: `pnpm build`; for the existing diagnostic journey use `pnpm smoke
 ## Gotchas
 
 Fixture dates are relative to the run date. Import is setup, not UI-import proof. This diagnostic does not retain screenshots or independently reopen SQLite today. Timezone/DST cases are protected by existing behavior tests; preserve those until equivalent real journeys exist. An unavailable fixture is an intentional failure, not permission to point at a personal repository.
+
+## Workspace filter toolbar
+
+Run `pnpm verify activity-filters` (also `pnpm smoke:activity-filters`) after a build for workspace toolbar wrapping. This journal-only sample journey checks project/history alignment and bounds at 280px, 320px and either side of the full-row threshold, both idle and after loading `feat/offline-queue` through the history dialog. Clearing must preserve a stable first-row position with no delayed wrap. The active branch keeps its full accessible name and title while its visible label is bounded. The project menu must remain reachable beyond the group and support selection/reset. The artifact-backed runner retains the geometry observations, resulting screenshot, exit status and cleanup. Sample history proves layout and control behavior, not Git acquisition or persistence.
