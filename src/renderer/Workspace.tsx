@@ -392,6 +392,7 @@ export function Workspace({
                     />
                 </div>
                 <div className="ws-utilities">
+                    <AppUpdateButton />
                     {sourceProblems(state).length > 0 && (
                         <Button
                             variant="ghost"
@@ -693,3 +694,4 @@ export function Workspace({
         </main>
     )
 }
+import { AppUpdateButton } from './AppUpdates'

@@ -1,0 +1,31 @@
+.app-update-popover {
+    width: 320px;
+    display: grid;
+    gap: 16px;
+}
+
+.app-update-popover h2 {
+    margin: 0;
+    font-size: var(--text-base);
+    font-weight: 500;
+}
+
+.app-update-popover p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+}
+
+.app-update-popover .app-update-progress {
+    margin-top: 12px;
+    color: var(--foreground);
+    font-variant-numeric: tabular-nums;
+}
+
+.app-update-popover > button {
+    justify-self: start;
+}
+.app-update-trigger {
+    flex: none;
+}

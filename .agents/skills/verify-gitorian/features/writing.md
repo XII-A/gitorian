@@ -8,6 +8,7 @@ Start or resume a weekly entry, edit structured writing, cite work, and recover 
 - `writing.save`: typing autosaves and survives renderer reload.
 - `writing.template`: a new entry inherits the saved template without mutating it.
 - `writing.citation`: selected activity is inserted without losing surrounding writing; undo removes the insertion.
+- `writing.update`: background update download preserves input, focus and autosave; explicit installation checkpoints the final revision. Owned by the [app updates journey](app-updates.md).
 
 ## How to get to it (user POV)
 

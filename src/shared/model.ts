@@ -401,6 +401,11 @@ export interface Reply {
     detailError?: string
 }
 export interface DesktopBridge {
+    appUpdates?: {
+        state: () => Promise<AppUpdateState>
+        action: (action: AppUpdateAction) => Promise<AppUpdateState>
+        onState: (listener: (state: AppUpdateState) => void) => () => void
+    }
     images?: {
         choose: (restoreId?: string) => Promise<string[]>
         import: (bytes: Uint8Array, restoreId?: string) => Promise<string>
@@ -423,3 +428,4 @@ export type RepositoryImportProgress =
     | { stage: 'selecting' }
     | { stage: 'discovering'; scanned: number; found: number }
     | { stage: 'processing'; completed: number; total: number }
+import type { AppUpdateState, AppUpdateAction } from './app-updates'

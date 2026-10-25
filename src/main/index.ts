@@ -21,6 +21,8 @@ import { JournalService } from './service'
 import { inspectRepository } from './git'
 import { watchWindowTitleBar } from './window-title-bar'
 import { imageLimits, imageIdPattern, imageExtension } from '../shared/images'
+import electronUpdater from 'electron-updater'
+import { AppUpdates } from './app-updates'
 
 if (!app.isPackaged && process.env.GITORIAN_DEV_PROFILE) app.setPath('userData', process.env.GITORIAN_DEV_PROFILE)
 
@@ -47,6 +49,7 @@ let mainWindow: BrowserWindow
 let store: Store
 let service: JournalService
 let restoring = false
+let updating = false
 let notionConnection: NotionConnection | undefined
 const referenceWindows = new Set<number>()
 const work = new Set<Promise<unknown>>()
@@ -176,7 +179,8 @@ void app.whenReady().then(() => {
                     event.senderFrame !== window.webContents.mainFrame ||
                     referenceWindows.has(event.sender.id) ||
                     closing ||
-                    restoring
+                    restoring ||
+                    updating
                 )
                     throw new Error('Choose an editable journal window.')
                 const request = z.object({ restoreId: z.string().optional() }).parse(input)
@@ -208,7 +212,8 @@ void app.whenReady().then(() => {
             event.senderFrame !== window.webContents.mainFrame ||
             referenceWindows.has(event.sender.id) ||
             closing ||
-            restoring
+            restoring ||
+            updating
         )
             throw new Error('Choose an editable journal window.')
         const request = z
@@ -262,6 +267,46 @@ void app.whenReady().then(() => {
         protectedStorage: vault.protected()
     }))
     mainWindow = windowFor()
+    const updater = electronUpdater.autoUpdater
+    const appUpdates = new AppUpdates(
+        process.platform === 'win32' && (app.isPackaged || updater.forceDevUpdateConfig) ? updater : undefined,
+        async () => {
+            if (closing || restoring) throw new Error('Journal is busy')
+            updating = true
+            const resume = service.prepareToClose()
+            try {
+                while (work.size) await Promise.allSettled([...work])
+                await store.flush()
+            } catch (error) {
+                updating = false
+                resume()
+                throw error
+            }
+            return () => {
+                updating = false
+                resume()
+            }
+        }
+    )
+    const updateOwner = (event: IpcMainInvokeEvent) => {
+        if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame)
+            throw new Error('Use the main journal window to update Gitorian')
+    }
+    ipcMain.handle('journal:app-update-state', (event) => {
+        updateOwner(event)
+        return appUpdates.snapshot()
+    })
+    ipcMain.handle('journal:app-update-action', async (event, input: unknown) => {
+        updateOwner(event)
+        const action = z.enum(['check', 'install']).parse(input)
+        if (action === 'install') await appUpdates.install()
+        else void appUpdates.check()
+        return appUpdates.snapshot()
+    })
+    appUpdates.subscribe((state) => {
+        if (!mainWindow.isDestroyed()) mainWindow.webContents.send('journal:app-update-state', state)
+    })
+    appUpdates.start()
     const commandHandler = async (event: IpcMainInvokeEvent, input: unknown) => {
         const command = commandSchema.parse(input)
         const trusted = BrowserWindow.fromWebContents(event.sender)
@@ -604,7 +649,8 @@ void app.whenReady().then(() => {
         return service.reply()
     }
     const durableCommand: typeof commandHandler = async (event, input) => {
-        if (closing || restoring) throw new Error('Journal is busy; retry after it finishes saving or restoring')
+        if (closing || restoring || updating)
+            throw new Error('Journal is busy; retry after it finishes saving or restoring')
         return track(
             (async () => {
                 const reply = await commandHandler(event, input)
@@ -624,7 +670,7 @@ void app.whenReady().then(() => {
         return updates.pack(await durableCommand(event, request.command), request.base)
     })
     const refreshIfActive = () => {
-        if (closing || restoring) return
+        if (closing || restoring || updating) return
         const minutes = store.state.settings.refreshMinutes
         const elapsed =
             Date.now() - new Date(store.state.lastRefreshAttempt ?? store.state.lastRefreshed ?? 0).getTime()

@@ -323,6 +323,7 @@ export function WeeklyHub({
                             </Popover>
                         )}
                         <div className="hub-utility-icons">
+                            <AppUpdateButton />
                             <Tooltip content="Open journal" side="bottom">
                                 <Button
                                     variant="ghost"
@@ -533,3 +534,4 @@ export function WeeklyHub({
         </ScrollArea>
     )
 }
+import { AppUpdateButton } from './AppUpdates'
