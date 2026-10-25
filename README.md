@@ -8,7 +8,7 @@ Download installers from [GitHub Releases](https://github.com/XII-A/gitorian/rel
 
 The release workflow builds **Windows 10/11 x64** NSIS installers and attaches `SHA256SUMS` to a draft release. Initial Windows installers are **unsigned**, which may cause browser or SmartScreen warnings. Verify the downloaded checksum before installing. macOS and Linux packaging remains available for development but is not included in the release workflow. This is an early app; back up your journal before trying an update.
 
-Install version 0.1.5 manually to enable future in-app updates on Windows. Updates download in the background while you write. Once ready, a toast and an icon with a white dot appear in the hub and writing workspace. Choose **Update now** to save your writing, install and restart, or dismiss the toast and use the header icon later. Quitting normally does not install an update.
+Install version 0.1.6 manually to enable future in-app updates on Windows. Updates download in the background while you write. Once ready, a toast and an icon with a white dot appear in the hub and writing workspace. Choose **Update now** to save your writing, install and restart, or dismiss the toast and use the header icon later. Quitting normally does not install an update.
 
 ## Getting started
 
@@ -50,7 +50,7 @@ You can change the destination to an existing parent page or database data sourc
 
 ## Known limitations
 
-- This is version 0.1.5. Cross-platform packaging is configured, but that is not a claim that all platforms have been validated or that installers are signed/notarized.
+- This is version 0.1.6. Cross-platform packaging is configured, but that is not a claim that all platforms have been validated or that installers are signed/notarized.
 - Imports depend on accessible local repositories, matching author emails, the configured history range, and available refs. Remote activity needs network access and sufficient GitHub permissions; API limits can delay collection.
 - Large diffs are limited (approximately 2 MB); individual GitHub detail lists above 3,000 records are rejected. Use the original repository or GitHub for complete evidence.
 - Notion conversion supports a subset of its content model; complex blocks may not round-trip exactly. Publishing can modify remote page content. Review uncertain publish results in Notion before retrying.
@@ -91,8 +91,8 @@ After the release changes are merged into `main`, a maintainer creates a release
 ```sh
 git switch main
 git pull --ff-only
-git tag v0.1.5
-git push origin v0.1.5
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
 When creating or updating a release description, use the [release description template](docs/release-notes.md) and save the finished copy in `.github/release-notes.md`.
