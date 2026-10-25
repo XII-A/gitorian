@@ -17,6 +17,19 @@ const writer = vi.hoisted(() => ({
     edit: undefined as ((snapshot: EditorSnapshot) => void) | undefined
 }))
 vi.mock('../src/renderer/components/arc/toast-stack/toast-stack', () => ({ useToastStack: () => notifications }))
+vi.mock('../src/renderer/components/arc/button/button', () => ({
+    Button: ({
+        children,
+        onClick,
+        disabled,
+        loading
+    }: {
+        children: React.ReactNode
+        onClick: () => void
+        disabled?: boolean
+        loading?: boolean
+    }) => createElement('button', { onClick, disabled: disabled || loading }, children)
+}))
 vi.mock('../src/renderer/Editor', () => ({
     Editor: (props: { onEdit: (snapshot: EditorSnapshot) => void; template?: JournalNode }) => {
         writer.edit = props.onEdit
@@ -207,7 +220,7 @@ it('reopens published weekly writing as editable with a publish action', async (
     const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Entry title"]')
     expect(title?.value).toBe(state.drafts[0].title)
     expect(title?.readOnly).toBe(false)
-    expect(container.textContent).toContain('Publish to Notion')
+    expect(container.textContent).toContain('Update in Notion')
     await update(() => writer.change?.(body('Edited published week')))
     await update(() => vi.advanceTimersByTime(1000))
     expect(run).toHaveBeenCalledWith(
@@ -217,3 +230,53 @@ it('reopens published weekly writing as editable with a publish action', async (
         })
     )
 })
+
+it.each([false, true])(
+    'confirms a successful Notion write with a toast and update action (already published: %s)',
+    async (published) => {
+        const state = sampleState('2026-10-05')
+        state.settings.destination = { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' }
+        state.drafts[0].publishedEntryId = published ? 'published-page' : undefined
+        const saved = structuredClone(state)
+        saved.drafts[0].publishedEntryId = 'published-page'
+        saved.saves = [
+            {
+                id: 'confirmed-save',
+                draftId: state.drafts[0].id,
+                status: 'confirmed',
+                marker: 'fixture',
+                title: state.drafts[0].title,
+                body: state.drafts[0].body,
+                selections: [],
+                destination: state.settings.destination,
+                createdAt: new Date().toISOString()
+            }
+        ]
+        const run = vi.fn(() =>
+            Promise.resolve({ state: saved, connections: { github: false, notion: true, protectedStorage: false } })
+        )
+        await update(() =>
+            root.render(
+                createElement(WorkspaceDraft, {
+                    state,
+                    week: '2026-10-05',
+                    sample: false,
+                    notionConnected: true,
+                    run,
+                    publishTarget: container,
+                    onReady: vi.fn(),
+                    onSettings: vi.fn()
+                })
+            )
+        )
+        await update(() => container.querySelector<HTMLButtonElement>('button')!.click())
+        expect(run).toHaveBeenCalledWith({ type: 'publish', draftId: state.drafts[0].id })
+        expect(notifications.toast).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'success',
+                title: published ? 'Updated in Notion' : 'Published to Notion'
+            })
+        )
+        expect(container.textContent).toContain('Update in Notion')
+    }
+)
