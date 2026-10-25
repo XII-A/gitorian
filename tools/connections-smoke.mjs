@@ -271,7 +271,6 @@ globalThis.fetch = (input, init) =>
                         stressMotion ? 'Journal with an exceptionally long name و—¥وœ¬èھ‍ ًں“ڑ' : 'Engineering notes',
                         'fixture-parent'
                     ),
-                    page('fixture-leaf', 'Decisions', { block_id: 'fixture-inner-toggle' }),
                     page('fixture-board-entry', 'Board entry', { data_source_id: 'fixture-projects' }),
                     page('fixture-archive-entry', 'Archived entry', { data_source_id: 'fixture-archive' }),
                     page('fixture-hidden-ancestor', 'Shared toggle entry', { block_id: 'fixture-hidden-toggle' }),
@@ -283,6 +282,28 @@ globalThis.fetch = (input, init) =>
                 next_cursor: null
             })
         }
+        // Decisions is readable immediately but deliberately absent from search's index.
+        if (url === 'https://api.notion.com/v1/blocks/fixture-existing/children?page_size=100')
+            return json({
+                results: [{ id: 'fixture-outer-toggle', type: 'toggle', has_children: true }],
+                has_more: false
+            })
+        if (url === 'https://api.notion.com/v1/blocks/fixture-outer-toggle/children?page_size=100')
+            return json({
+                results: [{ id: 'fixture-inner-toggle', type: 'toggle', has_children: true }],
+                has_more: false
+            })
+        if (url === 'https://api.notion.com/v1/blocks/fixture-inner-toggle/children?page_size=100')
+            return json({ results: [{ id: 'fixture-leaf', type: 'child_page' }], has_more: false })
+        if (url === 'https://api.notion.com/v1/pages/fixture-leaf')
+            return json({
+                id: 'fixture-leaf',
+                url: 'https://www.notion.so/fixture-leaf',
+                parent: { block_id: 'fixture-inner-toggle' },
+                properties: { title: { title: [{ plain_text: 'Decisions' }] } }
+            })
+        if (/^https:\/\/api.notion.com\/v1\/blocks\/[^/]+\/children\?/.test(url))
+            return json({ results: [], has_more: false })
         if (url === 'https://api.notion.com/v1/blocks/fixture-inner-toggle') {
             await pause(1200)
             return json({ parent: { block_id: 'fixture-outer-toggle' } })
@@ -944,7 +965,7 @@ app.on('browser-window-created', (_, window) => {
             await shot('notion-discovery-count', 100, 'notion')
             await assertActionsFit('Notion')
             await wait(
-                `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.querySelector('[aria-label="Grouped 10 of 16 pages"]') != null`
+                `${notionScope}.querySelector('[data-face="pending"]:not([inert])')?.querySelector('[aria-label="Grouped 15 of 16 pages"]') != null`
             )
             await shot('notion-grouping-count', 100, 'notion')
             await wait(`(() => {
@@ -954,7 +975,7 @@ app.on('browser-window-created', (_, window) => {
                     const column=getComputedStyle(node.offsetParent);
                     return style.position==='absolute' && style.visibility==='visible' && Number(style.opacity)>.99 && Math.abs(new DOMMatrixReadOnly(style.transform).m42)<.05 && Number(column.opacity)>.99 && (column.transform==='none' || Math.abs(new DOMMatrixReadOnly(column.transform).m42)<.05);
                 }).map(node=>node.textContent).join(''));
-                return values.join('/')==='10/16';
+                return values.join('/')==='15/16';
             })()`)
             await shot('notion-counter-settled', 50, 'notion')
             await assertActionsFit('Notion')

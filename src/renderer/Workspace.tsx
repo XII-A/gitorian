@@ -505,57 +505,64 @@ export function Workspace({
                                 </span>
                             </Button>
                         ))}
-                        <ProjectFilter
-                            repositories={state.repositories}
-                            value={project}
-                            onValueChange={(value) => {
-                                setProject(value)
-                                setBranch('all')
-                            }}
-                        />
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="ws-filter-chip ws-history-chip"
-                            animateContent={false}
-                            ref={historyButton}
-                            onClick={() => {
-                                if (branch !== 'all' || authors.length > 0) {
-                                    setProject('all')
+                        <div className="ws-filter-scope">
+                            <ProjectFilter
+                                repositories={state.repositories}
+                                value={project}
+                                onValueChange={(value) => {
+                                    setProject(value)
                                     setBranch('all')
-                                    setAuthors([])
-                                    setHistoryMode('introduced')
-                                    setHistoryError('')
-                                } else {
-                                    setHistoryError('')
-                                    setHistoryOpen(true)
+                                }}
+                            />
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="ws-filter-chip ws-history-chip"
+                                animateContent={false}
+                                contentLayout="stack"
+                                ref={historyButton}
+                                onClick={() => {
+                                    if (branch !== 'all' || authors.length > 0) {
+                                        setProject('all')
+                                        setBranch('all')
+                                        setAuthors([])
+                                        setHistoryMode('introduced')
+                                        setHistoryError('')
+                                    } else {
+                                        setHistoryError('')
+                                        setHistoryOpen(true)
+                                    }
+                                }}
+                                aria-label={
+                                    branch !== 'all' || authors.length > 0
+                                        ? branch !== 'all'
+                                            ? `Clear ${branch} history filters`
+                                            : 'Clear branch history filters'
+                                        : 'Browse branch history'
                                 }
-                            }}
-                            aria-label={
-                                branch !== 'all' || authors.length > 0
-                                    ? branch !== 'all'
-                                        ? `Clear ${branch} history filters`
-                                        : 'Clear branch history filters'
-                                    : 'Browse branch history'
-                            }
-                            title={
-                                branch !== 'all' || authors.length > 0
-                                    ? branch !== 'all'
-                                        ? `Clear ${branch} history filters`
-                                        : 'Clear branch history filters'
-                                    : 'Browse branch history'
-                            }
-                            aria-pressed={branch !== 'all' || authors.length > 0}
-                        >
-                            {branch !== 'all' || authors.length > 0 ? (
-                                <>
-                                    {branch !== 'all' ? branch : 'History filters'}
-                                    <ClearHistoryIcon />
-                                </>
-                            ) : (
-                                <BrowseHistoryIcon />
-                            )}
-                        </Button>
+                                title={
+                                    branch !== 'all' || authors.length > 0
+                                        ? branch !== 'all'
+                                            ? `Clear ${branch} history filters`
+                                            : 'Clear branch history filters'
+                                        : 'Browse branch history'
+                                }
+                                aria-pressed={branch !== 'all' || authors.length > 0}
+                            >
+                                <span className="ws-history-content">
+                                    {branch !== 'all' || authors.length > 0 ? (
+                                        <>
+                                            <span className="ws-history-label">
+                                                {branch !== 'all' ? branch : 'History filters'}
+                                            </span>
+                                            <ClearHistoryIcon />
+                                        </>
+                                    ) : (
+                                        <BrowseHistoryIcon />
+                                    )}
+                                </span>
+                            </Button>
+                        </div>
                     </div>
                     <ScrollArea
                         className="ws-activity-scroll"

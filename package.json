@@ -28,7 +28,7 @@
         "smoke:history-reader": "electron tools/history-reader-smoke.mjs",
         "smoke:history-motion": "electron tools/history-motion-smoke.mjs",
         "smoke:date-range-motion": "electron tools/date-range-motion-smoke.mjs",
-        "smoke:activity-filters": "electron tools/activity-filter-smoke.mjs",
+        "smoke:activity-filters": "node tools/verify.mjs activity-filters",
         "smoke:acquisition": "electron tools/acquisition-smoke.mjs",
         "smoke:week-history": "electron tools/week-history-smoke.mjs",
         "smoke:dev-reload": "node tools/dev-reload-smoke.mjs",
