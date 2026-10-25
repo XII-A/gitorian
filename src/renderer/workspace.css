@@ -81,7 +81,7 @@
     justify-self: end;
     gap: var(--space-2);
 }
-.ws-utilities > button {
+.ws-utilities > button:not(.app-update-trigger) {
     width: var(--control-height-sm);
     padding: 0;
 }
@@ -986,7 +986,33 @@
     font-variant-numeric: tabular-nums;
 }
 .ws-history-chip {
+    flex: 0 1 auto;
+}
+.ws-filter-scope {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
     flex: none;
+    min-width: 0;
+    max-width: 100%;
+}
+.ws-filter-scope > .project-filter {
+    flex: none;
+    min-width: 0;
+}
+.ws-history-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-width: 0;
+}
+.ws-history-label {
+    max-width: 16ch;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .ws-history-chip:not([aria-pressed='true']) {
     width: var(--control-height-sm);

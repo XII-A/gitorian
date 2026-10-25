@@ -1,20 +1,17 @@
 import { app } from 'electron'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve, sep } from 'node:path'
+import { writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { checkActivityFilterReset } from './activity-filter-check.mjs'
 
-const temporaryRoot = resolve(tmpdir())
-const directory = mkdtempSync(join(temporaryRoot, 'gitorian-filter-check-'))
+const output = process.env.GITORIAN_VERIFY_OUTPUT
+if (!process.env.GITORIAN_VERIFY_STATE || !output) throw new Error('Run pnpm verify activity-filters')
+const directory = join(process.env.GITORIAN_VERIFY_STATE, 'profile')
 app.setPath('userData', directory)
-app.on('will-quit', () => {
-    if (!resolve(directory).startsWith(temporaryRoot + sep)) throw new Error('Unexpected smoke test directory')
-    rmSync(directory, { recursive: true, force: true })
-})
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 let started = false
 app.on('browser-window-created', (_, window) => {
-    window.show = () => window.hide()
+    window.show = () => window.showInactive()
     window.webContents.setBackgroundThrottling(false)
     window.webContents.once('did-finish-load', async () => {
         if (started) return
@@ -28,10 +25,19 @@ app.on('browser-window-created', (_, window) => {
                 await new Promise((resolve) => setTimeout(resolve, 25))
             }
             const result = await window.webContents.executeJavaScript(`(${checkActivityFilterReset.toString()})()`)
+            writeFileSync(join(output, 'actions.jsonl'), JSON.stringify(result) + '\n')
+            writeFileSync(join(output, 'journey.json'), JSON.stringify(result, null, 2))
+            await window.webContents.executeJavaScript(
+                `document.querySelector('.ws-frame').style.gridTemplateColumns='480px minmax(0, 1fr) 320px'`
+            )
+            await new Promise((done) => setTimeout(done, 500))
+            writeFileSync(join(output, 'grouped-filters.png'), (await window.webContents.capturePage()).toPNG())
             console.info(JSON.stringify(result))
-            app.exit(result.passed ? 0 : 1)
+            if (result.passed) window.close()
+            else app.exit(1)
         } catch (error) {
             console.error(error)
+            writeFileSync(join(output, 'failure.png'), (await window.webContents.capturePage()).toPNG())
             app.exit(1)
         }
     })

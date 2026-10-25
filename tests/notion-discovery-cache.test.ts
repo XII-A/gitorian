@@ -4,8 +4,21 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { NotionPage } from '../src/shared/model'
 import { NotionDiscoveryCache } from '../src/main/notion-discovery-cache'
+import { createHash } from 'node:crypto'
 
 const directories: string[] = []
+
+it('rebuilds an older search-only snapshot instead of reusing incomplete cached discovery', async () => {
+    const f = fixture()
+    writeFileSync(
+        f.path,
+        JSON.stringify({ scope: createHash('sha256').update('token').digest('hex'), updatedAt: 1000000, pages })
+    )
+    const complete = [...pages, { kind: 'page' as const, id: 'child', title: 'Child', url: '', parentId: 'journal' }]
+    const load = vi.fn(() => Promise.resolve(complete))
+    expect(await f.create().pages('token', load)).toEqual(complete)
+    expect(load).toHaveBeenCalledTimes(1)
+})
 afterEach(() => {
     for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })

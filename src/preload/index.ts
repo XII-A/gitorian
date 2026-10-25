@@ -1,7 +1,17 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { DesktopBridge, RepositoryImportProgress, NotionDiscoveryEvent } from '../shared/model'
+import type { AppUpdateState } from '../shared/app-updates'
 
 const bridge: DesktopBridge = {
+    appUpdates: {
+        state: () => ipcRenderer.invoke('journal:app-update-state'),
+        install: () => ipcRenderer.invoke('journal:app-update-install'),
+        onState: (listener) => {
+            const receive = (_event: Electron.IpcRendererEvent, state: AppUpdateState) => listener(state)
+            ipcRenderer.on('journal:app-update-state', receive)
+            return () => ipcRenderer.removeListener('journal:app-update-state', receive)
+        }
+    },
     images: {
         choose: (restoreId) => ipcRenderer.invoke('journal:image-choose', { restoreId }),
         import: (bytes, restoreId) => ipcRenderer.invoke('journal:image-import', { bytes, restoreId }),

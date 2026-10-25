@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
+import { registerUpdateCheckpoint } from './update-checkpoint'
 import type { Command, Draft, JournalNode, Reply, State } from '../shared/model'
 import { draftSchema } from '../shared/model'
 import { plainText } from '../shared/notion-format'
@@ -136,6 +137,29 @@ export function WorkspaceDraft({
         },
         [persist, storageKey, sample]
     )
+    useEffect(
+        () =>
+            registerUpdateCheckpoint(async () => {
+                if (busy) throw new Error('Finish the current journal action, then try updating again.')
+                if (!imagesReady) throw new Error('Finish or cancel image imports, then try updating again.')
+                flushSync(() => setBusy(true))
+                clearTimeout(timer.current)
+                clearTimeout(checkpoint.current)
+                checkpoint.current = undefined
+                cache()
+                try {
+                    do {
+                        if (!(await persist()))
+                            throw new Error('Could not save your writing. Retry saving before updating.')
+                    } while (dirty.current)
+                } catch (error) {
+                    setBusy(false)
+                    throw error
+                }
+                return () => setBusy(false)
+            }),
+        [busy, imagesReady, cache, persist]
+    )
     useEffect(() => {
         const first = drafts.at(-1)
         if (!latest.current && first) {
@@ -251,6 +275,7 @@ export function WorkspaceDraft({
     }, [initialWrite, drafts.length, create])
     const publish = async () => {
         if (!imagesReady) return
+        const updating = !!latest.current?.publishedEntryId
         setBusy(true)
         clearTimeout(timer.current)
         clearTimeout(checkpoint.current)
@@ -266,10 +291,23 @@ export function WorkspaceDraft({
         }
         const result = await run({ type: 'publish', draftId: latest.current.id })
         const saved = result?.state.drafts.find((item) => item.id === latest.current?.id)
-        if (saved?.publishedEntryId) {
+        const save = result?.state.saves.filter((item) => item.draftId === latest.current?.id).at(-1)
+        if (saved?.publishedEntryId && (sample || save?.status === 'confirmed')) {
             latest.current = saved
             setDraft(saved)
-            setStatus(sample ? 'Sample published. Nothing was sent to Notion.' : 'Published to Notion')
+            setStatus(
+                sample
+                    ? 'Sample published. Nothing was sent to Notion.'
+                    : updating
+                      ? 'Updated in Notion'
+                      : 'Published to Notion'
+            )
+            toast({
+                id: 'workspace-publish-success',
+                type: 'success',
+                title: sample ? 'Sample published' : updating ? 'Updated in Notion' : 'Published to Notion',
+                ...(sample ? { description: 'Nothing was sent to Notion.' } : {})
+            })
         } else if (!result || !result.state.saves.some((save) => save.draftId === latest.current?.id))
             toast({
                 id: 'workspace-publish',
@@ -359,7 +397,7 @@ export function WorkspaceDraft({
                         }
                         onClick={publish}
                     >
-                        {sample ? 'Publish sample' : 'Publish to Notion'}
+                        {sample ? 'Publish sample' : draft?.publishedEntryId ? 'Update in Notion' : 'Publish to Notion'}
                     </Button>,
                     publishTarget
                 )}

@@ -1,5 +1,6 @@
 import type { NotionPage, NotionDiscoveryProgress } from '../shared/model'
 import { HttpError } from './http'
+import { setTimeout as delay } from 'node:timers/promises'
 
 interface Parent {
     page_id?: string
@@ -10,6 +11,11 @@ interface Parent {
 type RichText = { plain_text?: string; text?: { content: string } }[]
 interface Entity {
     id: string
+    type?: string
+    has_children?: boolean
+    archived?: boolean
+    in_trash?: boolean
+    data_sources?: { id: string }[]
     url?: string
     parent?: Parent
     title?: RichText
@@ -38,18 +44,51 @@ const icon = (entity: Entity) => {
     return url?.startsWith('https://') ? url : undefined
 }
 
-/** Discovers selectable pages and the named source groups that own them. Blocks and databases only resolve ancestry. */
+/** Search supplies shared roots; child lists and data-source queries enumerate descendants independently of indexing. */
 export async function discoverNotionPages(
     request: <T>(path: string, init?: RequestInit) => Promise<T>,
     progress: (update: NotionDiscoveryProgress) => void = () => {
         /* Discovery also serves non-UI callers. */
-    }
+    },
+    signal?: AbortSignal
 ): Promise<NotionPage[]> {
     const pages = new Map<string, Entity>()
+    // Retry the failed read in place: restarting a large tree spends the same
+    // request budget again and can never reach the remaining descendants.
+    async function limited<T>(path: string, init?: RequestInit): Promise<T> {
+        for (let attempt = 0; ; attempt++) {
+            signal?.throwIfAborted()
+            try {
+                return await request<T>(path, init)
+            } catch (error) {
+                if (!(error instanceof HttpError) || error.status !== 429 || !error.retryAt || attempt >= 3) throw error
+                await delay(Math.max(0, error.retryAt - Date.now()), undefined, { signal })
+            }
+        }
+    }
+    async function accessible<T>(path: string, init?: RequestInit): Promise<T | undefined> {
+        try {
+            return await limited<T>(path, init)
+        } catch (error) {
+            if (error instanceof HttpError && (error.status === 403 || error.status === 404) && !error.retryAt)
+                return undefined
+            throw error
+        }
+    }
+    // Reuse metadata for descendant reads and later ancestry resolution.
+    const reads = new Map<string, Promise<Entity | undefined>>()
+    function read(path: string) {
+        let pending = reads.get(path)
+        if (!pending) {
+            pending = accessible<Entity>(path)
+            reads.set(path, pending)
+        }
+        return pending
+    }
     let cursor: string | null | undefined
     progress({ stage: 'discovering', found: 0 })
     do {
-        const result = await request<List>('search', {
+        const result = await limited<List>('search', {
             method: 'POST',
             body: JSON.stringify({
                 filter: { value: 'page', property: 'object' },
@@ -61,6 +100,62 @@ export async function discoverNotionPages(
         progress({ stage: 'discovering', found: pages.size })
         cursor = result.has_more ? result.next_cursor : undefined
     } while (cursor)
+
+    const queue: { kind: 'blocks' | 'databases' | 'data_sources'; id: string }[] = [...pages.keys()].map((id) => ({
+        kind: 'blocks',
+        id
+    }))
+    const visited = new Set<string>()
+    const addPage = (page: Entity) => {
+        if (page.archived || page.in_trash || pages.has(page.id)) return
+        pages.set(page.id, page)
+        queue.push({ kind: 'blocks', id: page.id })
+        progress({ stage: 'discovering', found: pages.size })
+    }
+    for (const { kind, id } of queue) {
+        const key = `${kind}/${id}`
+        if (visited.has(key)) continue
+        visited.add(key)
+        // Fail rather than mark a truncated discovery as complete.
+        if (visited.size > 100000)
+            throw new Error('Notion page discovery is too large. Choose a smaller shared parent and try again.')
+        if (kind === 'databases') {
+            const database = await read(`databases/${encodeURIComponent(id)}`)
+            for (const source of database?.data_sources ?? []) queue.push({ kind: 'data_sources', id: source.id })
+            continue
+        }
+        let next: string | undefined
+        const cursors = new Set<string>()
+        do {
+            const result = await accessible<List>(
+                kind === 'blocks'
+                    ? `blocks/${encodeURIComponent(id)}/children?page_size=100${next ? `&start_cursor=${encodeURIComponent(next)}` : ''}`
+                    : `data_sources/${encodeURIComponent(id)}/query`,
+                kind === 'data_sources'
+                    ? {
+                          method: 'POST',
+                          body: JSON.stringify({ page_size: 100, ...(next ? { start_cursor: next } : {}) })
+                      }
+                    : undefined
+            )
+            if (!result) break
+            for (const entity of result.results) {
+                if (entity.archived || entity.in_trash) continue
+                if (kind === 'data_sources') addPage(entity)
+                else if (entity.type === 'child_page') {
+                    if (!pages.has(entity.id)) {
+                        const page = await read(`pages/${encodeURIComponent(entity.id)}`)
+                        if (page) addPage(page)
+                    }
+                } else if (entity.type === 'child_database') queue.push({ kind: 'databases', id: entity.id })
+                else if (entity.has_children) queue.push({ kind: 'blocks', id: entity.id })
+            }
+            if (result.has_more && (!result.next_cursor || cursors.has(result.next_cursor)))
+                throw new Error('Notion page discovery could not finish. Try again.')
+            next = result.has_more ? (result.next_cursor ?? undefined) : undefined
+            if (next) cursors.add(next)
+        } while (next)
+    }
 
     const nodes = new Map<string, NotionPage>(
         [...pages.values()].map((page) => [
@@ -76,19 +171,6 @@ export async function discoverNotionPages(
         ])
     )
     // Cache raw metadata, not recursive resolutions: a malformed cycle must never await itself.
-    const reads = new Map<string, Promise<Entity | undefined>>()
-    function read(path: string) {
-        let pending = reads.get(path)
-        if (!pending) {
-            pending = request<Entity>(path).catch((error: unknown) => {
-                if (error instanceof HttpError && (error.status === 403 || error.status === 404) && !error.retryAt)
-                    return undefined
-                throw error
-            })
-            reads.set(path, pending)
-        }
-        return pending
-    }
     async function parentId(parent?: Parent, seen = new Set<string>()): Promise<string | undefined> {
         if (!parent || seen.size >= 32) return undefined
         if (parent.page_id) return pages.has(parent.page_id) ? parent.page_id : undefined

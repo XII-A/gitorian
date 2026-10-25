@@ -1,6 +1,6 @@
 {
     "name": "gitorian",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "private": true,
     "description": "A local developer journal with revision-aware Notion coverage",
     "main": "out/main/index.js",
@@ -28,7 +28,7 @@
         "smoke:history-reader": "electron tools/history-reader-smoke.mjs",
         "smoke:history-motion": "electron tools/history-motion-smoke.mjs",
         "smoke:date-range-motion": "electron tools/date-range-motion-smoke.mjs",
-        "smoke:activity-filters": "electron tools/activity-filter-smoke.mjs",
+        "smoke:activity-filters": "node tools/verify.mjs activity-filters",
         "smoke:acquisition": "electron tools/acquisition-smoke.mjs",
         "smoke:week-history": "electron tools/week-history-smoke.mjs",
         "smoke:dev-reload": "node tools/dev-reload-smoke.mjs",
@@ -58,7 +58,15 @@
             "icon": "resources/icon.ico",
             "target": "nsis",
             "artifactName": "gitorian-${version}-windows-${arch}-setup.${ext}",
-            "signExecutable": false
+            "signExecutable": false,
+            "verifyUpdateCodeSignature": false,
+            "publish": [
+                {
+                    "provider": "github",
+                    "owner": "XII-A",
+                    "repo": "gitorian"
+                }
+            ]
         },
         "mac": {
             "icon": "resources/icon.icns",
@@ -92,6 +100,7 @@
         "@tiptap/starter-kit": "3.31.4",
         "@xmldom/xmldom": "^0.9.12",
         "effect": "3.22.2",
+        "electron-updater": "6.8.9",
         "gitdiff-parser": "0.3.1",
         "lucide-react": "1.52.0",
         "motion": "14.0.0",

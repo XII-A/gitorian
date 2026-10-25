@@ -163,6 +163,7 @@ export function DialogContent({
             <DialogPrimitive.Portal>
                 {backdrop !== 'none' && (
                     <DialogPrimitive.Overlay
+                        data-arc-dialog-overlay
                         data-backdrop={backdrop}
                         className={`${styles.overlay} ${styles.keyframes}`}
                     />
@@ -196,6 +197,7 @@ export function DialogContent({
                     {backdrop !== 'none' && (
                         <DialogPrimitive.Overlay asChild forceMount>
                             <motion.div
+                                data-arc-dialog-overlay
                                 className={styles.overlay}
                                 data-backdrop={backdrop}
                                 initial={{ opacity: 0 }}

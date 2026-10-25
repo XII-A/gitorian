@@ -8,6 +8,8 @@ Download installers from [GitHub Releases](https://github.com/XII-A/gitorian/rel
 
 The release workflow builds **Windows 10/11 x64** NSIS installers and attaches `SHA256SUMS` to a draft release. Initial Windows installers are **unsigned**, which may cause browser or SmartScreen warnings. Verify the downloaded checksum before installing. macOS and Linux packaging remains available for development but is not included in the release workflow. This is an early app; back up your journal before trying an update.
 
+Install version 0.1.5 manually to enable future in-app updates on Windows. Updates download in the background while you write. Once ready, a toast and an icon with a white dot appear in the hub and writing workspace. Choose **Update now** to save your writing, install and restart, or dismiss the toast and use the header icon later. Quitting normally does not install an update.
+
 ## Getting started
 
 1. Install [Git](https://git-scm.com/downloads) and make sure `git` is available on your `PATH`.
@@ -48,12 +50,12 @@ You can change the destination to an existing parent page or database data sourc
 
 ## Known limitations
 
-- This is version 0.1.4. Cross-platform packaging is configured, but that is not a claim that all platforms have been validated or that installers are signed/notarized.
+- This is version 0.1.5. Cross-platform packaging is configured, but that is not a claim that all platforms have been validated or that installers are signed/notarized.
 - Imports depend on accessible local repositories, matching author emails, the configured history range, and available refs. Remote activity needs network access and sufficient GitHub permissions; API limits can delay collection.
 - Large diffs are limited (approximately 2 MB); individual GitHub detail lists above 3,000 records are rejected. Use the original repository or GitHub for complete evidence.
 - Notion conversion supports a subset of its content model; complex blocks may not round-trip exactly. Publishing can modify remote page content. Review uncertain publish results in Notion before retrying.
 - Backups are manual. There is no built-in synchronization of the local database across devices, and published entries are separate from unfinished local drafts.
-- Tagged releases are built into drafts for installation verification before manual publication. There is no automatic update mechanism; installing a newer release is a manual step.
+- Tagged releases are built into drafts for installation verification before manual publication. In-app updates are available for packaged Windows installs starting with 0.1.5; the first installation and other platforms use manual downloads.
 
 ## Development
 
@@ -82,15 +84,15 @@ The app icon's editable source is `resources/icon.svg`, exported from [Paper](ht
 
 ## Releasing and repository protection
 
-PRs and pushes to `main` run **CI checks** (typecheck, lint, formatting, tests, and production compilation) on Windows. The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, computes SHA-256, and uploads both to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
+PRs and pushes to `main` run **CI checks** (typecheck, lint, formatting, tests, and production compilation) on Windows. The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, the update feed (`latest.yml`) and installer blockmap, computes SHA-256 checksums for all three, and uploads them to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
 
 After the release changes are merged into `main`, a maintainer creates a release candidate with:
 
 ```sh
 git switch main
 git pull --ff-only
-git tag v0.1.4
-git push origin v0.1.4
+git tag v0.1.5
+git push origin v0.1.5
 ```
 
 When creating or updating a release description, use the [release description template](docs/release-notes.md) and save the finished copy in `.github/release-notes.md`.

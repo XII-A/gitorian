@@ -3,11 +3,34 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { execFile } from 'node:child_process'
-import { commits, commitDetails } from '../src/main/git'
+import { commits, commitDetails, inspectRepository, githubRemote } from '../src/main/git'
 import { workspace } from './fixtures'
 import { inbox, weekOf } from '../src/shared/model'
 import { parseDiff } from 'react-diff-view'
 import { hasCachedDetails } from '../src/renderer/activity-cache'
+
+it('chooses a GitHub fetch source using upstream, origin, then another named remote', async () => {
+    const app = await workspace()
+    try {
+        await app.git('remote', 'add', 'origin', 'https://example.com/local/project.git')
+        await app.git('remote', 'add', 'work', 'ssh://git@github.com/team/project.git')
+        expect((await inspectRepository(app.directory)).githubRemote).toBe('ssh://git@github.com/team/project.git')
+        await app.git('remote', 'set-url', 'origin', 'git@github.com:author/project.git')
+        expect((await inspectRepository(app.directory)).githubRemote).toBe('git@github.com:author/project.git')
+        await app.git('remote', 'add', 'upstream', 'https://github.com/team/project.git')
+        await app.git('remote', 'set-url', '--push', 'upstream', 'https://github.com/other/project.git')
+        expect((await inspectRepository(app.directory)).githubRemote).toBe('https://github.com/team/project.git')
+        for (const name of ['origin', 'work', 'upstream']) await app.git('remote', 'remove', name)
+        expect((await inspectRepository(app.directory)).githubRemote).toBe('')
+    } finally {
+        await app.close()
+    }
+})
+
+it('recognizes the GitHub SSH URL form used by automatic repository sources', () => {
+    expect(githubRemote('ssh://git@github.com/team/project.git')).toBe('team/project')
+    expect(githubRemote('ssh://git@example.com/team/project.git')).toBeUndefined()
+})
 
 it('loads first-parent merge changes and replaces cached combined patches', async () => {
     const app = await workspace()

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { AppUpdateState } from './app-updates'
 import type { StateCursor, UpdateReply } from './state-updates'
 
 export const documentSchema: z.ZodType<JournalNode> = z.lazy(() =>
@@ -401,6 +402,11 @@ export interface Reply {
     detailError?: string
 }
 export interface DesktopBridge {
+    appUpdates?: {
+        state: () => Promise<AppUpdateState>
+        install: () => Promise<AppUpdateState>
+        onState: (listener: (state: AppUpdateState) => void) => () => void
+    }
     images?: {
         choose: (restoreId?: string) => Promise<string[]>
         import: (bytes: Uint8Array, restoreId?: string) => Promise<string>

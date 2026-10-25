@@ -1,3 +1,4 @@
+import { AppUpdateButton } from './AppUpdates'
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
@@ -15,6 +16,7 @@ import type { useOnboarding } from './use-onboarding'
 import { localDate, shiftWeek, weekOf } from '../shared/model'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
+import { AnimatedCounter } from './components/arc/animated-counter/animated-counter'
 import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
 import { ProjectFilter } from './ProjectFilter'
 import { ActivityChart } from './ActivityChart'
@@ -170,20 +172,22 @@ export function WeeklyHub({
                     variant="ghost"
                     size="sm"
                     className="hub-filter-chip"
+                    animateContent={false}
                     key={value}
                     aria-pressed={tab === value}
                     onClick={() => setTab(value)}
                 >
                     {value === 'all' ? 'All activity' : value === 'commit' ? 'Commits' : 'Pull requests & reviews'}
-                    <span>
-                        {
+                    <AnimatedCounter
+                        variant="inline"
+                        value={
                             projectItems.filter(
                                 (item) =>
                                     value === 'all' ||
                                     (value === 'commit' ? item.kind === 'commit' : item.kind !== 'commit')
                             ).length
                         }
-                    </span>
+                    />
                 </Button>
             ))}
             <ProjectFilter repositories={state.repositories} value={project} onValueChange={setProject} />
@@ -323,6 +327,7 @@ export function WeeklyHub({
                             </Popover>
                         )}
                         <div className="hub-utility-icons">
+                            <AppUpdateButton />
                             <Tooltip content="Open journal" side="bottom">
                                 <Button
                                     variant="ghost"
