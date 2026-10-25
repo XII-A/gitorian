@@ -59,6 +59,7 @@ it('lists every accessible page by name across cursors, preserving duplicate tit
                 })
             )
         )
+        .mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ results: [], has_more: false }))))
     const notion = new Notion(new Http(transport), () => 'pending-token')
     expect(await notion.accessiblePages()).toEqual([
         {
@@ -79,9 +80,11 @@ it('lists every accessible page by name across cursors, preserving duplicate tit
         }
     ])
     expect(JSON.parse(transport.mock.calls[1][1]!.body as string).start_cursor).toBe('next-page')
-    expect(transport.mock.calls.every(([, init]) => JSON.parse(init!.body as string).filter.value === 'page')).toBe(
-        true
-    )
+    expect(
+        transport.mock.calls
+            .filter(([, init]) => init?.method === 'POST')
+            .every(([, init]) => JSON.parse(init!.body as string).filter.value === 'page')
+    ).toBe(true)
 })
 
 it('never creates a page when a selected existing destination becomes inaccessible', async () => {

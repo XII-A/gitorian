@@ -14,6 +14,7 @@ const pageSchema = z.object({
     parentId: z.string().max(256).optional()
 })
 const entrySchema = z.object({
+    version: z.literal(2),
     scope: z.string().regex(/^[a-f0-9]{64}$/),
     updatedAt: z.number(),
     pages: z.array(pageSchema).max(100000)
@@ -96,7 +97,7 @@ export class NotionDiscoveryCache {
                 })
                 .then((pages) => {
                     controller.signal.throwIfAborted()
-                    this.entry = entrySchema.parse({ scope, updatedAt: this.now(), pages })
+                    this.entry = entrySchema.parse({ version: 2, scope, updatedAt: this.now(), pages })
                     this.persist()
                     return this.entry.pages
                 })
