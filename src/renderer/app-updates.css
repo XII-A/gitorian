@@ -42,5 +42,5 @@
     width: 6px;
     height: 6px;
     border-radius: var(--radius-pill);
-    background: var(--success);
+    background: var(--foreground);
 }
