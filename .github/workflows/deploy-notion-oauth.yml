@@ -61,6 +61,6 @@ jobs:
                   set -euo pipefail
                   test -f "$GITHUB_WORKSPACE/services/notion-oauth/public/index.html"
                   test -f "$GITHUB_WORKSPACE/services/notion-oauth/dist/functions/oauth.mjs"
-                  pnpm --package=netlify-cli@27.14.1 dlx netlify deploy --prod --context production --no-build --dir "$GITHUB_WORKSPACE/services/notion-oauth/public" --functions "$GITHUB_WORKSPACE/services/notion-oauth/dist/functions" --message "Gitorian $RELEASE_TAG"
+                  pnpm --package=netlify-cli@27.14.1 dlx netlify deploy --prod --no-build --dir "$GITHUB_WORKSPACE/services/notion-oauth/public" --functions "$GITHUB_WORKSPACE/services/notion-oauth/dist/functions" --message "Gitorian $RELEASE_TAG"
             - name: Check deployed OAuth module
               run: curl --fail --retry 3 --retry-delay 2 "$NOTION_OAUTH_ORIGIN/health"
