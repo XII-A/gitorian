@@ -58,6 +58,8 @@ The existing tag workflow still builds and uploads a draft installer. Its build 
 
 ## Verification
 
+If a release deployment fails, fix its configuration or workflow, then use **Actions → Deploy Notion OAuth → Run workflow** on `main` with the existing published stable release tag. The retry validates the release and deploys that exact tagged source without replacing the installer or moving the tag. Deployment uses absolute artifact paths so Netlify's workspace selection cannot change which files are uploaded.
+
 `pnpm test` includes verifier/state tampering, expiry, denied authorization, refresh, loopback lifecycle, delayed-response cancellation, persisted credentials and uncertain page creation. Tests call the same hosted interface used in production.
 
 After `pnpm build`, run `pnpm verify doctor` and `pnpm verify notion`. The Notion-only Electron journey uses real renderer/preload/IPC/vault/store, a real loopback callback, and the actual hosted handler; it skips GitHub connection actions. Provider HTTP and browser launch are simulated. It checks the flush picker, nested pages, chevron expansion versus parent selection, keyboard selection, name-only labels, search/ancestor restoration, edit/cancel, browser errors, explicit creation, reload and repeated Notion disconnect/reconnect. The narrow/reduced-motion variant is selected with `GITORIAN_VERIFY_MOTION=stress`. Evidence is under `.ai-docs/verification/`. Live authorization and publishing require configured credentials and an explicitly authorized disposable destination; simulated evidence does not claim a live Notion test.
