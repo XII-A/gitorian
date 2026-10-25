@@ -48,7 +48,7 @@ You can change the destination to an existing parent page or database data sourc
 
 ## Known limitations
 
-- This is version 0.1.2. Cross-platform packaging is configured, but that is not a claim that all platforms have been validated or that installers are signed/notarized.
+- This is version 0.1.4. Cross-platform packaging is configured, but that is not a claim that all platforms have been validated or that installers are signed/notarized.
 - Imports depend on accessible local repositories, matching author emails, the configured history range, and available refs. Remote activity needs network access and sufficient GitHub permissions; API limits can delay collection.
 - Large diffs are limited (approximately 2 MB); individual GitHub detail lists above 3,000 records are rejected. Use the original repository or GitHub for complete evidence.
 - Notion conversion supports a subset of its content model; complex blocks may not round-trip exactly. Publishing can modify remote page content. Review uncertain publish results in Notion before retrying.
@@ -89,8 +89,8 @@ After the release changes are merged into `main`, a maintainer creates a release
 ```sh
 git switch main
 git pull --ff-only
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 When creating or updating a release description, use the [release description template](docs/release-notes.md) and save the finished copy in `.github/release-notes.md`.

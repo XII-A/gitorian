@@ -1,18 +1,22 @@
 ## New
 
-- Add images to entries and templates with the image picker, paste, or drag and drop.
-- Add captions and open images in a viewer with zoom, pan, and download controls.
-- Keep images in journal backups and include them when publishing to Notion.
+- Connect to Notion in your browser, then select an existing page or create a journal destination.
+- Follow a first-time setup guide to import repositories and start writing.
+
+## Updates
+
+- Meet Gitorian, with a new name and app icon.
+- Sign in to GitHub without registering your own OAuth app.
+- Review activity with line statistics, clearer details, and a compact dark window frame.
 
 ## Fixes
 
-- Nested bullet and numbered lists now cycle through three marker styles.
-- Fixed a Windows issue that could hide the mouse pointer.
+- Notion destination setup can recover from interrupted saves without creating duplicate journal pages.
 
 ## Supported machines and installation
 
 Windows 10 or 11, 64-bit Intel or AMD (x64).
 
-Download and run `gitorian-0.1.3-windows-x64-setup.exe` from **Assets** below to install Gitorian.
+Download and run `gitorian-0.1.4-windows-x64-setup.exe` from **Assets** below to install Gitorian.
 
 See the [installation details](https://github.com/XII-A/gitorian#downloads) for unsigned installer warnings and checksums.
