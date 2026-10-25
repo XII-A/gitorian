@@ -1,6 +1,6 @@
 # Release description template
 
-Use this guide when creating or updating a release description. Write the finished description in `.github/release-notes.md`; the release workflow copies that file into the draft release. That file also contains a filled example for v0.1.3.
+Use this guide when creating or updating a release description. Write the finished description in `.github/release-notes.md`; the release workflow copies that file into the draft release.
 
 ## Writing rules
 
