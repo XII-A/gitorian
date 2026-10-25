@@ -182,10 +182,11 @@ const start = async () => {
             await pause(100)
         }
     }
-    await evaluate(
-        `(async()=>{await __electron.app.whenReady();const w=__electron.BrowserWindow.getAllWindows()[0];w.webContents.setBackgroundThrottling(false);w.hide();return true})()`
-    )
+    await evaluate(`__electron.app.whenReady().then(()=>true)`)
     await wait(`!!document.querySelector('[aria-label="Open settings"]') && !!window.journal`)
+    await evaluate(
+        `(()=>{const w=__electron.BrowserWindow.getAllWindows()[0];w.webContents.setBackgroundThrottling(false);w.hide();return true})()`
+    )
     profile = await evaluate(`__electron.app.getPath('userData')`)
     assert(
         resolve(profile).toLowerCase() === resolve(expectedProfile).toLowerCase(),
@@ -312,8 +313,11 @@ try {
         existsSync(backup) && readFileSync(backup, 'utf8').includes(writing),
         'Exported backup contains the disposable writing'
     )
+    const beforeRestore = await js(`window.journal.invoke({type:'state'}).then(r=>r.state.restoreId??'')`)
     await button('Import backup')
-    await wait(`document.body.innerText.includes('Backup imported.')`)
+    await wait(
+        `window.journal.invoke({type:'state'}).then(r=>(r.state.restoreId??'')!==${JSON.stringify(beforeRestore)} && JSON.stringify(r.state.drafts).includes(${JSON.stringify(writing)}))`
+    )
     const restored = await js(`window.journal.invoke({type:'state'})`)
     assert(
         JSON.stringify(restored.state.drafts).includes(writing) && restored.state.repositories.length === 1,
