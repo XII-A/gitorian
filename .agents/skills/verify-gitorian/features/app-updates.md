@@ -2,6 +2,8 @@
 
 Windows NSIS installs check stable GitHub Releases shortly after startup and every six hours. Updates download without blocking writing. Installation requires an explicit Update now action; normal exit never installs. Development and unsupported platforms hide the control.
 
+`ApplicationWork` owns the managed Effect runtime, accepted task fibers and periodic refresh. Update preparation drains accepted tasks before flushing; a failed preparation must leave the runtime usable. Backup restore drains other tasks while excluding its own command. Normal quit drains and flushes before disposing the runtime. Preserve `tests/application-work.test.ts` and `tests/store-worker.test.ts`, then run the desktop app-updates and repository-import journeys for durability and recovery.
+
 ## Entry points and outcomes
 
 - **Header:** The icon-only update control appears in the hub and writing workspace only after an update is downloaded and ready to install. Its primary foreground dot, accessible name and tooltip announce Update ready. Idle, checking, current, downloading, failed download and installing states have no header control. The desktop journey verifies these hidden states, then opens the ready popover from both headers and captures `06-hub-update-popover.png` alongside the workspace screenshot.

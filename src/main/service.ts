@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { basename, relative } from 'node:path'
-import { Effect } from 'effect'
 import { commits, indexCommits, commitDetails, inspectRepository, git, githubRemote } from './git'
 import { HttpError } from './http'
 import { discoverRepositories, repositoryPathKey } from './repository-discovery'
@@ -43,12 +42,6 @@ export class JournalService {
     ) {}
     reply(extra: Partial<Reply> = {}, state = this.store.snapshot()): Reply {
         return { state, connections: this.connections(), ...extra }
-    }
-    execute(command: Command): Effect.Effect<Reply, Error> {
-        return Effect.tryPromise({
-            try: () => this.handle(command),
-            catch: (error) => (error instanceof Error ? error : new Error(String(error)))
-        })
     }
     async addRepository(path: string, persist = true): Promise<void> {
         const inspected = await inspectRepository(path)
