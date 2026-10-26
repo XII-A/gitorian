@@ -272,3 +272,56 @@ it('restores admission and scheduling after interruption during saving', async (
     await vi.waitFor(() => expect(ticks).toBeGreaterThan(before))
     await app.close()
 })
+
+it('seals admission in the same transaction that observes durable quiescence', async () => {
+    for (let attempt = 0; attempt < 50; attempt++) {
+        const app = await application()
+        let active = false
+        const operation = Effect.all(
+            [
+                app.work.shutdown(
+                    Effect.sync(() => {
+                        expect(active).toBe(false)
+                    })
+                ),
+                Effect.yieldNow().pipe(
+                    Effect.zipRight(
+                        app.work.accept(
+                            Effect.gen(function* () {
+                                active = true
+                                yield* Effect.sleep(1)
+                                active = false
+                            })
+                        )
+                    ),
+                    Effect.exit
+                )
+            ],
+            { concurrency: 'unbounded', discard: true }
+        ).pipe(Effect.withMaxOpsBeforeYield(12))
+        await app.run(operation)
+        await app.close()
+    }
+})
+
+it('keeps disposed ownership permanently closed when an in-flight shutdown fails', async () => {
+    const app = await application()
+    let release!: () => void
+    const pending = app.run(
+        app.work.accept(
+            Effect.promise(
+                () =>
+                    new Promise<void>((resolve) => {
+                        release = resolve
+                    })
+            )
+        )
+    )
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    const closing = app.run(app.work.shutdown(Effect.fail(new Error('disk full')))).catch(() => undefined)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await app.close()
+    release()
+    await Promise.all([pending, closing])
+    await expect(Effect.runPromise(app.work.accept(Effect.void))).rejects.toThrow('closed')
+})
