@@ -303,6 +303,8 @@ try {
     await wait(`document.querySelector('[aria-label="Journal body"]')?.innerText.includes(${JSON.stringify(writing)})`)
     assert(true, 'Native writing survives full process quit and restart')
     await screenshot('04-writing-after-restart')
+    await click('[aria-label="Journal breadcrumb"] button')
+    await wait(`!!document.querySelector('[aria-label="Open settings"]')`)
     await click('[aria-label="Open settings"]')
     await tab('Backup')
     await button('Export backup')
