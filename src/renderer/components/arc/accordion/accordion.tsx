@@ -6,7 +6,7 @@ import * as AccordionPrimitive from '@radix-ui/react-accordion'
 import { ChevronDown } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
 import type { TargetAndTransition, Variants } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './accordion.module.css'
 
 export interface AccordionItem {

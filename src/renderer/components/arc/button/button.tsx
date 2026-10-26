@@ -4,7 +4,7 @@ import { forwardRef, isValidElement, useCallback, useEffect, useLayoutEffect, us
 import type { ButtonHTMLAttributes, ReactNode, Ref, RefObject } from 'react'
 import { AnimatePresence, animate, motion, useIsPresent, useMotionValue, useReducedMotion } from 'motion/react'
 import type { TargetAndTransition, Variants } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './button.module.css'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'

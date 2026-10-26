@@ -22,7 +22,7 @@ The full skill (component choice, layout, motion, examples, review checklist) is
 6. The accent marks active, selected, progress, and emphasized data. Status colors only for real status, with a label. Third-party logos in their real colors.
 7. Type: Geist for headings 30px and up, Inter for the rest, weights 400 and 500 only, sizes from the scale, `tabular-nums` for changing numbers.
 8. Nested corners are concentric: inner radius = outer radius - padding.
-9. Motion from `@/components/arc/lib/motion-tokens`: `spring.smooth` (no overshoot) for panels and anything that reports state, `spring.snappy` for presses, `spring.morph` for shared highlights. Animate transform and opacity, one continuous movement, and a reduced motion branch for every animation.
+9. Motion from `@/components/arc/motion-tokens`: `spring.smooth` (no overshoot) for panels and anything that reports state, `spring.snappy` for presses, `spring.morph` for shared highlights. Animate transform and opacity, one continuous movement, and a reduced motion branch for every animation.
 10. First render is server-safe (no `window`, `localStorage`, `Date.now()`, or `Math.random()` output), and animated elements keep stable keys.
 11. Every data region has loading (`skeleton`), empty (`empty-state`), error (inline `alert`), and in-place success states.
 12. Check 390, 768, 1024, and 1440px: no sideways scroll, wide tables scroll inside their card, touch targets at least 44px.

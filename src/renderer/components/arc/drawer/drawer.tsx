@@ -6,7 +6,7 @@ import type { ComponentPropsWithoutRef, ReactNode, RefObject } from 'react'
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
 import type { PanInfo, Transition } from 'motion/react'
 import { X } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import type { CoordinatedSurface } from '../coordinated-surface'
 import styles from './drawer.module.css'
 

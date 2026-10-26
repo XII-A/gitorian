@@ -14,7 +14,7 @@ import {
     type TargetAndTransition,
     type Transition
 } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './badge.module.css'
 
 export type BadgeTone = 'neutral' | 'success' | 'info' | 'warning' | 'danger'

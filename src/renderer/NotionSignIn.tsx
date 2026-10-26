@@ -9,7 +9,7 @@ import { ArrowLeft, ChevronDown } from 'lucide-react'
 import { ConfirmMorph } from './components/arc/confirm-morph/confirm-morph'
 import { useDisconnectTransition } from './useDisconnectTransition'
 import { motion, useReducedMotion } from 'motion/react'
-import { motionTokens } from './components/arc/lib/motion-tokens'
+import { motionTokens } from './components/arc/motion-tokens'
 
 export function NotionSignIn({
     connected,

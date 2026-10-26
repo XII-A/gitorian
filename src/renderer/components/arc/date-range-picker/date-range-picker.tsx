@@ -28,7 +28,7 @@ import {
 } from 'motion/react'
 import type { Transition, Variants } from 'motion/react'
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import { useToday } from '../calendar/calendar'
 import styles from './date-range-picker.module.css'
 

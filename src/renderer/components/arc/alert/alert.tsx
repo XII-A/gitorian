@@ -16,7 +16,7 @@ import {
     type Transition
 } from 'motion/react'
 import { Check, Info as InfoCircle, TriangleAlert as WarningTriangle, CircleX as XmarkCircle, X } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './alert.module.css'
 
 export type AlertTone = 'info' | 'success' | 'warning' | 'danger'

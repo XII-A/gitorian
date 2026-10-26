@@ -6,7 +6,7 @@ import { formatDay } from './workspace-model'
 import { BarChart } from './components/arc/bar-chart/bar-chart'
 import type { BarChartDatum } from './components/arc/bar-chart/bar-chart'
 import { Popover, PopoverAnchor, PopoverContent } from './components/arc/popover/popover'
-import { motionTokens } from './components/arc/lib/motion-tokens'
+import { motionTokens } from './components/arc/motion-tokens'
 import './activity-chart.css'
 
 export function ActivityChart({

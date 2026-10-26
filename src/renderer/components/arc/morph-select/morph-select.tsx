@@ -10,7 +10,7 @@ import type {
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
 import type { Transition, Variants } from 'motion/react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './morph-select.module.css'
 import { ScrollArea } from '../scroll-area/scroll-area'
 

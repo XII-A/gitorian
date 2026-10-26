@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { RepositoryImportProgress, State } from '../shared/model'
-import { motionTokens } from './components/arc/lib/motion-tokens'
+import { motionTokens } from './components/arc/motion-tokens'
 
 function ProgressNumber({ value }: { value: number | string }) {
     const reduce = useReducedMotion()

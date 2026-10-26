@@ -9,7 +9,7 @@ import {
     useReducedMotion,
     type AnimationPlaybackControls
 } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './skeleton.module.css'
 
 export interface SkeletonProps {

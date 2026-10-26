@@ -13,7 +13,7 @@ import {
     useTransform
 } from 'motion/react'
 import type { AnimationPlaybackControls, MotionValue, Variants } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './calendar.module.css'
 
 export type CalendarDateMatcher = (date: Date) => boolean

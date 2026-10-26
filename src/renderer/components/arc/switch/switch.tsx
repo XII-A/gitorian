@@ -5,7 +5,7 @@ import type { ComponentPropsWithoutRef, ComponentRef } from 'react'
 import * as SwitchPrimitive from '@radix-ui/react-switch'
 import { animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
 import type { Transition } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './switch.module.css'
 
 export interface SwitchProps extends ComponentPropsWithoutRef<typeof SwitchPrimitive.Root> {

@@ -3,7 +3,7 @@
 import { forwardRef, useEffect, useId, useRef, useState } from 'react'
 import type { InputHTMLAttributes } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './input.module.css'
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {

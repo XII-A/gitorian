@@ -8,7 +8,7 @@ import type { MotionValue } from 'motion/react'
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react/dist/csr/MagnifyingGlass'
 import { XIcon as X } from '@phosphor-icons/react/dist/csr/X'
 import { ScrollArea } from '../scroll-area/scroll-area'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './expanding-search.module.css'
 
 export interface ExpandingSearchItem {

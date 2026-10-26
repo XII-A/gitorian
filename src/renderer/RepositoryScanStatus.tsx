@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'motion/react'
-import { motionTokens } from './components/arc/lib/motion-tokens'
+import { motionTokens } from './components/arc/motion-tokens'
 
 const marks = {
     loading: ['M12 3 C17 3 21 7 21 12 C21 17 17 21 12 21', 'M12 21 C7 21 3 17 3 12 C3 9 4 6 6 5'],

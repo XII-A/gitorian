@@ -5,7 +5,7 @@ import type { CSSProperties, FocusEvent, KeyboardEvent, ReactElement, ReactNode 
 import * as TooltipPrimitive from '@radix-ui/react-tooltip'
 import { AnimatePresence, animate, motion, useIsPresent, useMotionValue, useReducedMotion } from 'motion/react'
 import type { TargetAndTransition } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import { Tooltip } from '../tooltip/tooltip'
 import styles from './floating-button-group.module.css'
 

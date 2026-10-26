@@ -178,8 +178,7 @@ p {
     letter-spacing: 1px;
     color: var(--text-secondary);
 }
-.coverage-label,
-.local-label {
+.coverage-label {
     font-size: 10px;
     color: var(--text-secondary);
 }
@@ -236,14 +235,6 @@ p {
 .separator:hover,
 .separator:focus-visible {
     background: var(--border-strong);
-}
-.draft-title {
-    font-size: 24px;
-    font-weight: 600;
-    letter-spacing: -0.6px;
-    background: transparent;
-    border: 0;
-    padding: 20px 0;
 }
 .editor-toolbar {
     display: flex;
@@ -323,17 +314,6 @@ p {
 }
 .selected-work p {
     margin-top: 12px;
-}
-.draft-footer {
-    position: sticky;
-    bottom: -24px;
-    background: var(--background);
-    border-top: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 0;
-    margin-top: 24px;
 }
 .file-diff {
     margin-top: 20px;

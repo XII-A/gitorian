@@ -24,7 +24,7 @@ import {
     type PointerEvent,
     type Ref
 } from 'react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './number-field.module.css'
 
 /** Text shown beside the number. A function receives the value, so a unit can follow it: `n => n === 1 ? " seat" : " seats"`. */
