@@ -6,7 +6,8 @@ import { ReplyUpdates } from '../shared/state-updates'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, writeFile, stat } from 'node:fs/promises'
-import { ApplicationWork } from './application-work'
+import { ApplicationWork, ApplicationWorkLive } from './application-work'
+import { Cause, Effect, Exit, ManagedRuntime, Runtime } from 'effect'
 import { commandSchema } from '../shared/model'
 import type { RepositoryImportProgress, NotionDiscoveryProgress } from '../shared/model'
 import { Store } from './store'
@@ -53,7 +54,29 @@ let updating = false
 let notionConnection: NotionConnection | undefined
 let stopNotionPages: (() => void) | undefined
 const referenceWindows = new Set<number>()
-const work = new ApplicationWork()
+const runtime = ManagedRuntime.make(ApplicationWorkLive)
+const work = runtime.runSync(ApplicationWork)
+const native = <A>(operation: () => Promise<A>) => Effect.tryPromise({ try: operation, catch: (error) => error })
+function execute<A, E>(operation: Effect.Effect<A, E, ApplicationWork>): Promise<A> {
+    const result = runtime.runPromiseExit(operation).then((exit) => {
+        if (Exit.isSuccess(exit)) return exit.value
+        throw Cause.squash(exit.cause)
+    })
+    void result.catch(() => {
+        /* Detached desktop work is observed; awaiters retain the original failure. */
+    })
+    return result
+}
+function runNative<A>(operation: (drain: () => Promise<void>) => Promise<A>): Promise<A> {
+    return execute(
+        work.accept(
+            Effect.gen(function* () {
+                const accepted = yield* Effect.runtime<ApplicationWork>()
+                return yield* native(() => operation(() => Runtime.runPromise(accepted)(work.drain)))
+            })
+        )
+    )
+}
 function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
     const window = new BrowserWindow({
         title: 'Gitorian',
@@ -163,7 +186,7 @@ void app.whenReady().then(() => {
             : new Response(null, { status: 404 })
     })
     ipcMain.handle('journal:image-choose', (event, input: unknown) =>
-        work.run(async () => {
+        runNative(async () => {
             const window = BrowserWindow.fromWebContents(event.sender)
             if (
                 !window ||
@@ -212,7 +235,7 @@ void app.whenReady().then(() => {
             })
             .parse(input)
         if (request.restoreId !== store.state.restoreId) throw new Error('The journal changed. Insert the image again.')
-        return work.run(() => store.importImage(request.bytes, request.restoreId))
+        return runNative(() => store.importImage(request.bytes, request.restoreId))
     })
     const vault = new Vault(app.getPath('userData'))
     store.state.transportPauses ??= {}
@@ -270,7 +293,7 @@ void app.whenReady().then(() => {
             updating = true
             const resume = service.prepareToClose()
             try {
-                await work.drain()
+                await execute(work.drain)
                 await store.flush()
             } catch (error) {
                 updating = false
@@ -308,18 +331,18 @@ void app.whenReady().then(() => {
             throw new Error('Reference windows are read-only')
         switch (command.type) {
             case 'loadWeek':
-                void work.run(() => service.refresh({ since: command.since, missingOnly: true }))
+                void runNative(() => service.refresh({ since: command.since, missingOnly: true }))
                 return service.reply()
             case 'refresh':
-                if (command.since) return work.run(() => service.handle(command))
-                void work.run(() => service.refresh({ ...command, resume: true }))
+                if (command.since) return runNative(() => service.handle(command))
+                void runNative(() => service.refresh({ ...command, resume: true }))
                 return service.reply({ message: 'Activity refresh started. You can keep writing.' })
             case 'backfill': {
                 const repository = store.state.repositories.find((item) => item.id === command.repositoryId)
                 if (!repository || repository.removed) throw new Error('Choose a tracked repository.')
                 if (command.since > repository.trackingStart)
                     throw new Error('Choose a date before the current history start.')
-                void work.run(() =>
+                void runNative(() =>
                     service.backfill(command.repositoryId, command.since).catch((error: unknown) => {
                         store.state.refreshError = error instanceof Error ? error.message : String(error)
                         store.persist()
@@ -357,11 +380,11 @@ void app.whenReady().then(() => {
                     progress({ stage: 'selecting' })
                     const path = await folder()
                     if (!path) return service.reply()
-                    return await work.run(() => service.scanRepositories(path, progress))
+                    return await runNative(() => service.scanRepositories(path, progress))
                 }
-                const importing = work.run(async () => {
+                const importing = runNative(async () => {
                     const reply = await service.importRepositories(command.scanId, command.paths, progress)
-                    if (store.state.settings.refreshMinutes > 0) void work.run(() => service.refresh())
+                    if (store.state.settings.refreshMinutes > 0) void runNative(() => service.refresh())
                     return reply
                 })
                 if (service.reply().state.repositoryImport?.status !== 'running') return await importing
@@ -658,7 +681,7 @@ void app.whenReady().then(() => {
     const durableCommand = async (event: IpcMainInvokeEvent, input: unknown) => {
         if (closing || restoring || updating)
             throw new Error('Journal is busy; retry after it finishes saving or restoring')
-        return work.run(async (drain) => {
+        return runNative(async (drain) => {
             const reply = await commandHandler(event, input, drain)
             await store.flush()
             return reply
@@ -692,14 +715,14 @@ void app.whenReady().then(() => {
         )
         if (pending) {
             const [source, repositoryId] = pending[0].split(':')
-            void work.run(() => service.refresh({ repositoryId, source: source === 'git' ? 'git' : 'github' }))
+            void runNative(() => service.refresh({ repositoryId, source: source === 'git' ? 'git' : 'github' }))
             return
         }
         if (minutes > 0 && !mainWindow.isDestroyed() && mainWindow.isVisible() && elapsed >= minutes * 60000)
-            void work.run(() => service.refresh())
+            void runNative(() => service.refresh())
     }
-    work.repeat(5000, refreshIfActive)
-    if (store.state.settings.refreshMinutes > 0) void work.run(() => service.refresh())
+    void execute(work.repeat(5000, Effect.sync(refreshIfActive)))
+    if (store.state.settings.refreshMinutes > 0) void runNative(() => service.refresh())
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) mainWindow = windowFor()
     })
@@ -720,7 +743,8 @@ app.on('before-quit', (event) => {
     void (async () => {
         // Stop producers before sealing the writer queue. Already accepted operations
         // may still checkpoint while their network requests finish.
-        await work.shutdown(() => store.shutdown())
+        await execute(work.shutdown(native(() => store.shutdown())))
+        await runtime.dispose()
     })()
         .then(() => {
             closed = true

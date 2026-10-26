@@ -1,67 +1,145 @@
-import { Cause, Effect, Exit, Fiber, Layer, ManagedRuntime } from 'effect'
+import { Context, Data, Deferred, Effect, Exit, Fiber, FiberRef, Layer, Scope } from 'effect'
 
-/** Owns accepted desktop work; durable shutdown drains before disposing resources. */
-export class ApplicationWork {
-    private readonly runtime = ManagedRuntime.make(Layer.scope)
-    private readonly tasks = new Map<symbol, Fiber.RuntimeFiber<unknown, unknown>>()
-    private sealed = false
-
-    constructor() {
-        this.runtime.runSync(Effect.void)
-    }
-
-    run<A>(work: (drain: () => Promise<void>) => Promise<A>): Promise<A> {
-        const completion = new Promise<A>((resolve, reject) => {
-            if (this.sealed) {
-                reject(new Error('Journal work is closed'))
-                return
-            }
-            const id = Symbol()
-            const fiber = this.runtime.runFork(
-                Effect.tryPromise({ try: () => work(() => this.drain(id)), catch: (error) => error })
-            )
-            this.tasks.set(id, fiber)
-            fiber.addObserver((exit) => {
-                this.tasks.delete(id)
-                if (Exit.isSuccess(exit)) resolve(exit.value)
-                else {
-                    const error = Cause.squash(exit.cause)
-                    reject(error instanceof Error ? error : new Error(String(error)))
-                }
-            })
-        })
-        // Detached producers still have an error observer; awaiting callers retain rejection.
-        void completion.catch(() => {
-            /* The command or background producer owns error presentation. */
-        })
-        return completion
-    }
-
-    async drain(except?: symbol): Promise<void> {
-        for (;;) {
-            const pending = [...this.tasks].filter(([id]) => id !== except).map(([, fiber]) => fiber)
-            if (!pending.length) return
-            await this.runtime.runPromise(
-                Effect.forEach(pending, Fiber.await, { concurrency: 'unbounded', discard: true })
-            )
-        }
-    }
-
-    repeat(milliseconds: number, tick: () => void): void {
-        this.runtime.runSync(
-            Effect.forkScoped(Effect.forever(Effect.sleep(milliseconds).pipe(Effect.andThen(Effect.sync(tick)))))
-        )
-    }
-
-    async shutdown(save: () => Promise<void>): Promise<void> {
-        await this.drain()
-        this.sealed = true
-        try {
-            await save()
-        } catch (error) {
-            this.sealed = false
-            throw error
-        }
-        await this.runtime.dispose()
-    }
+export class WorkClosed extends Data.TaggedError('WorkClosed') {
+    readonly message = 'Journal work is closed'
 }
+export class WorkBusy extends Data.TaggedError('WorkBusy') {
+    readonly message = 'Journal work is already draining'
+}
+
+/** Admission and durable draining; execution belongs to the application runtime. */
+export interface ApplicationWork {
+    readonly accept: <A, E, R>(operation: Effect.Effect<A, E, R>) => Effect.Effect<A, E | WorkClosed, R>
+    readonly fork: <A, E, R>(operation: Effect.Effect<A, E, R>) => Effect.Effect<void, WorkClosed, R>
+    readonly drain: Effect.Effect<void, WorkBusy>
+    readonly repeat: <E, R>(
+        milliseconds: number,
+        tick: Effect.Effect<unknown, E, R>
+    ) => Effect.Effect<void, WorkClosed, R>
+    readonly shutdown: <E, R>(save: Effect.Effect<void, E, R>) => Effect.Effect<void, E | WorkBusy, R>
+}
+
+export const ApplicationWork = Context.GenericTag<ApplicationWork>('gitorian/ApplicationWork')
+
+export const ApplicationWorkLive = Layer.scoped(
+    ApplicationWork,
+    Effect.gen(function* () {
+        const scope = yield* Scope.Scope
+        const tasks = new Map<symbol, Deferred.Deferred<void>>()
+        const ancestry = yield* FiberRef.make<readonly symbol[]>([])
+        const shutdownLock = yield* Effect.makeSemaphore(1)
+        const producers = new Set<Fiber.RuntimeFiber<unknown, unknown>>()
+        let state: 'open' | 'saving' | 'closed' = 'open'
+        let scheduling = true
+        let draining = false
+        yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+                state = 'closed'
+                scheduling = false
+            })
+        )
+
+        const accept = <A, E, R>(operation: Effect.Effect<A, E, R>) =>
+            Effect.uninterruptibleMask((restore) =>
+                Effect.gen(function* () {
+                    if (state !== 'open') return yield* new WorkClosed()
+                    const parents = yield* FiberRef.get(ancestry)
+                    const done = yield* Deferred.make<void>()
+                    const id = Symbol()
+                    tasks.set(id, done)
+                    return yield* restore(operation).pipe(
+                        Effect.locally(ancestry, [...parents, id]),
+                        Effect.ensuring(
+                            Effect.gen(function* () {
+                                tasks.delete(id)
+                                yield* Deferred.succeed(done, undefined)
+                            })
+                        )
+                    )
+                })
+            )
+
+        const drain = Effect.acquireUseRelease(
+            Effect.suspend(() => {
+                if (draining) return Effect.fail(new WorkBusy())
+                draining = true
+                return Effect.void
+            }),
+            () =>
+                Effect.gen(function* () {
+                    const parents = yield* FiberRef.get(ancestry)
+                    for (;;) {
+                        const pending = [...tasks].filter(([id]) => !parents.includes(id)).map(([, done]) => done)
+                        if (!pending.length) return
+                        yield* Effect.forEach(pending, Deferred.await, { concurrency: 'unbounded', discard: true })
+                    }
+                }),
+            () =>
+                Effect.sync(() => {
+                    draining = false
+                })
+        )
+
+        const fork = <A, E, R>(operation: Effect.Effect<A, E, R>) =>
+            Effect.uninterruptibleMask((restore) =>
+                Effect.gen(function* () {
+                    if (state !== 'open') return yield* new WorkClosed()
+                    const started = yield* Deferred.make<void, WorkClosed>()
+                    yield* Effect.forkIn(
+                        accept(Deferred.succeed(started, undefined).pipe(Effect.zipRight(restore(operation)))).pipe(
+                            Effect.onExit((exit) =>
+                                Exit.isFailure(exit) ? Deferred.fail(started, new WorkClosed()) : Effect.void
+                            ),
+                            Effect.exit
+                        ),
+                        scope
+                    )
+                    // Acknowledgement means admission succeeded; rejection must reach the producer.
+                    yield* Deferred.await(started)
+                })
+            )
+
+        const repeat = <E, R>(milliseconds: number, tick: Effect.Effect<unknown, E, R>) =>
+            Effect.gen(function* () {
+                if (state !== 'open') return yield* new WorkClosed()
+                const fiber = yield* Effect.forkIn(
+                    Effect.forever(
+                        Effect.sleep(milliseconds).pipe(
+                            Effect.zipRight(
+                                Effect.suspend(() => (scheduling ? Effect.exit(accept(tick)) : Effect.void))
+                            )
+                        )
+                    ),
+                    scope
+                )
+                producers.add(fiber)
+            })
+
+        const shutdown = <E, R>(save: Effect.Effect<void, E, R>) =>
+            shutdownLock.withPermits(1)(
+                Effect.suspend(() => {
+                    if (state === 'closed') return Effect.void
+                    return Effect.gen(function* () {
+                        scheduling = false
+                        yield* drain
+                        state = 'saving'
+                        yield* save
+                        state = 'closed'
+                        yield* Fiber.interruptAll(producers)
+                        producers.clear()
+                    }).pipe(
+                        Effect.onExit((exit) =>
+                            Effect.sync(() => {
+                                if (Exit.isFailure(exit) && state !== 'closed') {
+                                    state = 'open'
+                                    scheduling = true
+                                }
+                            })
+                        )
+                    )
+                })
+            )
+
+        return { accept, fork, drain, repeat, shutdown }
+    })
+)
