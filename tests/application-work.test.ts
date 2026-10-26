@@ -1,4 +1,4 @@
-import { Effect, ManagedRuntime } from 'effect'
+import { Effect, ManagedRuntime, Supervisor } from 'effect'
 import { expect, it, vi } from 'vitest'
 import { ApplicationWork, ApplicationWorkLive } from '../src/main/application-work'
 
@@ -324,4 +324,23 @@ it('keeps disposed ownership permanently closed when an in-flight shutdown fails
     release()
     await Promise.all([pending, closing])
     await expect(Effect.runPromise(app.work.accept(Effect.void))).rejects.toThrow('closed')
+})
+
+it('does not leave a periodic producer registered after shutdown wins admission', async () => {
+    const app = await application()
+    const supervisor = await Effect.runPromise(Supervisor.track)
+    await app.run(
+        Effect.all(
+            [
+                Effect.gen(function* () {
+                    for (let step = 0; step < 23; step++) yield* Effect.sync(() => undefined)
+                    yield* Effect.exit(app.work.repeat(100000, Effect.void))
+                }),
+                app.work.shutdown(Effect.void)
+            ],
+            { concurrency: 'unbounded' }
+        ).pipe(Effect.supervised(supervisor), Effect.withMaxOpsBeforeYield(48))
+    )
+    expect((await Effect.runPromise(supervisor.value)).length).toBe(0)
+    await app.close()
 })

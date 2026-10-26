@@ -116,20 +116,32 @@ export const ApplicationWorkLive = Layer.scoped(
             )
 
         const repeat = <E, R>(milliseconds: number, tick: Effect.Effect<unknown, E, R>) =>
-            Effect.gen(function* () {
-                if (lifetimeClosed || state !== 'open') return yield* new WorkClosed()
-                const fiber = yield* Effect.forkIn(
-                    Effect.forever(
-                        Effect.sleep(milliseconds).pipe(
-                            Effect.zipRight(
-                                Effect.suspend(() => (scheduling ? Effect.exit(accept(tick)) : Effect.void))
+            Effect.uninterruptibleMask((restore) =>
+                Effect.gen(function* () {
+                    if (lifetimeClosed || state !== 'open') return yield* new WorkClosed()
+                    const fiber = yield* Effect.forkIn(
+                        restore(
+                            Effect.forever(
+                                Effect.sleep(milliseconds).pipe(
+                                    Effect.zipRight(
+                                        Effect.suspend(() => (scheduling ? Effect.exit(accept(tick)) : Effect.void))
+                                    )
+                                )
                             )
-                        )
-                    ),
-                    scope
-                )
-                producers.add(fiber)
-            })
+                        ),
+                        scope
+                    )
+                    const admitted = yield* Effect.sync(() => {
+                        if (lifetimeClosed || state !== 'open') return false
+                        producers.add(fiber)
+                        return true
+                    })
+                    if (!admitted) {
+                        yield* Fiber.interrupt(fiber)
+                        return yield* new WorkClosed()
+                    }
+                })
+            )
 
         const shutdown = <E, R>(save: Effect.Effect<void, E, R>) =>
             shutdownLock.withPermits(1)(
