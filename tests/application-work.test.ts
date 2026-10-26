@@ -1,4 +1,4 @@
-import { Effect, Fiber, FiberId, ManagedRuntime, RuntimeFlags, RuntimeFlagsPatch, Supervisor } from 'effect'
+import { Effect, type Fiber, FiberId, ManagedRuntime, RuntimeFlags, RuntimeFlagsPatch, Supervisor } from 'effect'
 import { expect, it, vi } from 'vitest'
 import { ApplicationWork, ApplicationWorkLive } from '../src/main/application-work'
 
