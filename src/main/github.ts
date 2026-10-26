@@ -71,15 +71,95 @@ interface Device {
     interval: number
     expires_in: number
 }
+interface Credential {
+    access_token: string
+    refresh_token?: string
+    expires?: number
+}
+interface TokenResponse {
+    access_token?: string
+    refresh_token?: string
+    expires_in?: number
+    error?: string
+}
 export class GitHub {
     private device?: Device & { expires: number; nextPoll: number }
+    private renewal?: { stored: string; work: Promise<string> }
     constructor(
         private readonly http: Http,
-        private readonly token: () => string,
+        private readonly credential: () => string,
         private readonly setToken: (token: string) => void
     ) {}
+    private session(): Credential {
+        const stored = this.credential()
+        // Earlier releases stored just the non-expiring access token.
+        if (!stored.startsWith('{')) return { access_token: stored }
+        return JSON.parse(stored) as Credential
+    }
+    private token(): string {
+        return this.session().access_token
+    }
+    private save(result: TokenResponse): string {
+        const session: Credential = {
+            access_token: result.access_token!,
+            refresh_token: result.refresh_token,
+            expires: result.expires_in ? Date.now() + result.expires_in * 1000 : undefined
+        }
+        this.setToken(result.refresh_token ? JSON.stringify(session) : session.access_token)
+        return session.access_token
+    }
+    private async renew(rejected?: string): Promise<string> {
+        const stored = this.credential()
+        const session = this.session()
+        if (rejected && rejected !== session.access_token) return session.access_token
+        if (!session.refresh_token) return session.access_token
+        if (!rejected && (!session.expires || session.expires > Date.now() + 60_000)) return session.access_token
+        if (this.renewal?.stored === stored) return this.renewal.work
+        const work = (async () => {
+            const response = await fetch('https://github.com/login/oauth/access_token', {
+                method: 'POST',
+                signal: AbortSignal.timeout(30000),
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    client_id: githubClientId,
+                    grant_type: 'refresh_token',
+                    refresh_token: session.refresh_token
+                })
+            })
+            if (!response.ok)
+                throw new HttpError(
+                    response.status,
+                    `GitHub connection renewal failed (${response.status}). Try again.`
+                )
+            const result = (await response.json()) as TokenResponse
+            if (this.credential() !== stored) throw new Error('GitHub connection changed during renewal. Try again.')
+            if (result.error === 'bad_refresh_token')
+                throw new HttpError(401, 'GitHub connection expired. Reconnect in Settings.')
+            if (result.error || !result.access_token || !result.refresh_token)
+                throw new Error('GitHub connection renewal failed. Try again.')
+            return this.save(result)
+        })()
+        const renewal = { stored, work }
+        this.renewal = renewal
+        try {
+            return await work
+        } finally {
+            if (this.renewal === renewal) this.renewal = undefined
+        }
+    }
+    private async authenticated<T>(request: (token: string) => Promise<T>): Promise<T> {
+        const token = await this.renew()
+        try {
+            return await request(token)
+        } catch (error) {
+            if (!(error instanceof HttpError) || error.status !== 401 || !this.session().refresh_token) throw error
+            return request(await this.renew(token))
+        }
+    }
     private request<T>(path: string, background = false): Promise<T> {
-        return this.http.request<T>(`https://api.github.com/${path}`, this.token(), {}, 'json', { background })
+        return this.authenticated((token) =>
+            this.http.request<T>(`https://api.github.com/${path}`, token, {}, 'json', { background })
+        )
     }
     private async list<T>(path: string, background = false): Promise<T[]> {
         const result: T[] = []
@@ -132,7 +212,7 @@ export class GitHub {
             })
         })
         if (!response.ok) throw new Error(`GitHub sign-in failed (${response.status}); try again`)
-        const result = (await response.json()) as { access_token?: string; error?: string }
+        const result = (await response.json()) as TokenResponse
         if (result.error === 'slow_down') {
             device.interval += 5
             device.nextPoll = Date.now() + device.interval * 1000
@@ -152,7 +232,7 @@ export class GitHub {
             'https://api.github.com/user/emails',
             result.access_token
         )
-        this.setToken(result.access_token)
+        this.save(result)
         this.device = undefined
         return { login: user.login, emails: emails.map((item) => item.email) }
     }
@@ -337,7 +417,7 @@ export class GitHub {
                 throw new Error('This commit has too many changed files. Open it in GitHub for the complete source.')
         }
         const diff = includeDiff
-            ? await this.diff(`https://api.github.com/${path}`, this.token(), {
+            ? await this.diff(`https://api.github.com/${path}`, {
                   headers: { Accept: 'application/vnd.github.diff' }
               })
             : ''
@@ -346,9 +426,11 @@ export class GitHub {
             files: files.map(activityFile)
         }
     }
-    private async diff(url: string, token: string, init: RequestInit, background = false): Promise<string> {
+    private async diff(url: string, init: RequestInit, background = false): Promise<string> {
         try {
-            return await this.http.request<string>(url, token, init, 'text', { maxBytes: 2_000_000, background })
+            return await this.authenticated((token) =>
+                this.http.request<string>(url, token, init, 'text', { maxBytes: 2_000_000, background })
+            )
         } catch (error) {
             if (error instanceof HttpError && error.status === 413) return 'Diff is too large. Open in GitHub.'
             // GitHub may reject the diff representation (for example, when its
@@ -392,7 +474,6 @@ export class GitHub {
         const diffPath = provenIntegration ? `repos/${remote}/commits/${before.merge_commit_sha}` : path
         const diff = await this.diff(
             `https://api.github.com/${diffPath}`,
-            this.token(),
             { headers: { Accept: 'application/vnd.github.diff' } },
             background
         )

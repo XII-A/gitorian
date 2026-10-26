@@ -42,6 +42,10 @@ dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [fol
 shell.openExternal = () => Promise.resolve()
 let authorized = false
 let failAfter = true
+let rotations = 0
+let clockOffset = 0
+const realNow = Date.now.bind(Date)
+Date.now = () => realNow() + clockOffset
 const requests = []
 const now = new Date().toISOString()
 const json = (value) => Promise.resolve(new Response(JSON.stringify(value)))
@@ -57,9 +61,29 @@ globalThis.fetch = (input, init = {}) => {
             interval: 1,
             expires_in: 600
         })
-    if (url.href === 'https://github.com/login/oauth/access_token')
-        return json(authorized ? { access_token: 'isolated-fixture-token' } : { error: 'authorization_pending' })
+    if (url.href === 'https://github.com/login/oauth/access_token') {
+        const body = JSON.parse(init.body)
+        if (body.grant_type === 'refresh_token') {
+            assert.equal(body.refresh_token, `fixture-refresh-${rotations}`)
+            assert.equal(body.client_secret, undefined)
+            rotations++
+        }
+        return json(
+            authorized
+                ? {
+                      access_token: `isolated-fixture-token-${rotations}`,
+                      refresh_token: `fixture-refresh-${rotations}`,
+                      expires_in: 28800
+                  }
+                : { error: 'authorization_pending' }
+        )
+    }
     assert.equal(url.host, 'api.github.com', 'Fixture must not access external services')
+    assert.equal(
+        new Headers(init.headers).get('Authorization'),
+        `Bearer isolated-fixture-token-${rotations}`,
+        'API requests must use the latest access token, never the stored credential JSON'
+    )
     if (url.pathname === '/user') return json({ login: 'fixture-author' })
     if (url.pathname === '/user/emails') return json([{ email: 'fixture@example.com' }])
     const match = /^\/repos\/fixture\/(before|after)\/pulls(?:\/1(\/commits|\/reviews)?)?$/.exec(url.pathname)
@@ -206,6 +230,20 @@ app.on('browser-window-created', (_, window) => {
             await wait(`!document.querySelector('.acquisition-sources')`)
             await wait(`document.querySelector('.weekly-hub').textContent.includes('GitHub work after')`)
             await shot('automatic-prs')
+            record({
+                action: 'Simulate nine hours closed by advancing only the main-process clock; refresh both repositories through the UI'
+            })
+            clockOffset = 9 * 60 * 60 * 1000
+            await click('Refresh activity')
+            await wait(
+                `(async()=>{const r=await window.journal.invoke({type:'state'});return r.connections.github && r.state.repositories.every(repo=>r.state.acquisition?.['github:'+repo.id]?.status==='idle')})()`
+            )
+            assert.equal(rotations, 1, 'Multiple repositories must share one credential renewal')
+            await shot('github-renewed-without-reconnect')
+            writeFileSync(
+                join(output, 'github-renewal.json'),
+                JSON.stringify({ simulatedHoursClosed: 9, rotations, repositories: 2, connected: true }, null, 2)
+            )
             // The existing repository command is an explicit local-only preference, not import setup.
             record({
                 action: 'Set Local only through repository IPC, then refresh and reload; Settings form interaction is outside this journey'

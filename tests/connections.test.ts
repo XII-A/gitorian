@@ -1,6 +1,75 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { GitHub } from '../src/main/github'
 import { Http } from '../src/main/http'
+import { sampleState } from '../src/renderer/workspace-sample'
+
+// Failure modes: discarded refresh credentials, simultaneous repository refreshes,
+// rotation after a restart, and a disconnect while rotation is in flight.
+it('renews an expired device credential after restart for multiple repositories without reconnecting', async () => {
+    vi.useFakeTimers()
+    let stored = ''
+    let rotations = 0
+    const transport: typeof fetch = (input, init) => {
+        const url = input instanceof Request ? input.url : input.toString()
+        if (url.endsWith('/device/code'))
+            return Promise.resolve(
+                Response.json({
+                    device_code: 'device',
+                    user_code: 'CODE',
+                    verification_uri: 'https://github.com/login/device',
+                    interval: 1,
+                    expires_in: 600
+                })
+            )
+        if (url.endsWith('/oauth/access_token')) {
+            if (typeof init?.body !== 'string') throw new Error('Expected a JSON exchange body')
+            const body = JSON.parse(init.body) as Record<string, string>
+            if (body.grant_type === 'refresh_token') {
+                rotations++
+                expect(body.refresh_token).toBe(`refresh-${rotations - 1}`)
+                expect(body.client_secret).toBeUndefined()
+            }
+            return Promise.resolve(
+                Response.json({
+                    access_token: `access-${rotations}`,
+                    refresh_token: `refresh-${rotations}`,
+                    expires_in: 28800
+                })
+            )
+        }
+        if (url.endsWith('/user')) return Promise.resolve(Response.json({ login: 'author' }))
+        if (url.endsWith('/user/emails')) return Promise.resolve(Response.json([]))
+        const expected = rotations > 0 ? `access-${rotations}` : 'expired'
+        return Promise.resolve(
+            new Headers(init?.headers).get('Authorization') === `Bearer ${expected}`
+                ? Response.json([])
+                : new Response('{}', { status: 401 })
+        )
+    }
+    vi.stubGlobal('fetch', transport)
+    const create = () =>
+        new GitHub(
+            new Http(transport),
+            () => stored,
+            (value) => {
+                stored = value
+            }
+        )
+    const signin = create()
+    await signin.start()
+    vi.advanceTimersByTime(1000)
+    await signin.poll()
+    vi.advanceTimersByTime(9 * 60 * 60 * 1000)
+    const state = sampleState('2026-10-05')
+    const reopened = create()
+    await expect(
+        Promise.all(state.repositories.slice(0, 2).map((repo) => reopened.files(repo, state.activities[8])))
+    ).resolves.toEqual([[], []])
+    expect(rotations).toBe(1)
+    vi.advanceTimersByTime(9 * 60 * 60 * 1000)
+    await expect(create().files(state.repositories[0], state.activities[8])).resolves.toEqual([])
+    expect(rotations).toBe(2)
+})
 
 afterEach(() => {
     vi.useRealTimers()
@@ -57,6 +126,90 @@ it('respects GitHub device polling intervals and discovers identities after auth
             .filter(({ url }) => url.includes('github.com/login/'))
             .every(({ body }) => body.client_id === 'Ov23li9PFMAWRrbZQ6Xy' && !('client_secret' in body))
     ).toBe(true)
+})
+
+it('renews once on an early 401, including a diff request, while preserving legacy tokens', async () => {
+    let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: Date.now() + 3600_000 })
+    let rotations = 0
+    const transport: typeof fetch = (input, init) => {
+        if ((input instanceof Request ? input.url : input.toString()).includes('/oauth/access_token')) {
+            rotations++
+            return Promise.resolve(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
+        }
+        if (
+            new Headers(init?.headers).get('Authorization') === 'Bearer old' &&
+            new Headers(init?.headers).get('Accept') === 'application/vnd.github.diff'
+        )
+            return Promise.resolve(new Response('{}', { status: 401 }))
+        return Promise.resolve(
+            new Headers(init?.headers).get('Accept') === 'application/vnd.github.diff'
+                ? new Response('fixture diff')
+                : Response.json({ files: [] })
+        )
+    }
+    vi.stubGlobal('fetch', transport)
+    const github = new GitHub(
+        new Http(transport),
+        () => stored,
+        (value) => {
+            stored = value
+        }
+    )
+    const repo = sampleState('2026-10-05').repositories[0]
+    expect((await github.commitDetails(repo, 'a'.repeat(40))).diff).toBe('fixture diff')
+    expect(rotations).toBe(1)
+    stored = 'legacy-token'
+    await github.commitDetails(repo, 'b'.repeat(40))
+    expect(rotations).toBe(1)
+})
+
+it('keeps credentials on a temporary renewal failure and permits retry', async () => {
+    let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: 1 })
+    const original = stored
+    const exchange = vi
+        .fn<typeof fetch>()
+        .mockRejectedValueOnce(new TypeError('fetch failed'))
+        .mockResolvedValueOnce(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
+    vi.stubGlobal('fetch', exchange)
+    const github = new GitHub(
+        new Http(() => Promise.resolve(Response.json([]))),
+        () => stored,
+        (value) => {
+            stored = value
+        }
+    )
+    const state = sampleState('2026-10-05')
+    await expect(github.files(state.repositories[0], state.activities[8])).rejects.toThrow('fetch failed')
+    expect(stored).toBe(original)
+    await expect(github.files(state.repositories[0], state.activities[8])).resolves.toEqual([])
+    expect(exchange).toHaveBeenCalledTimes(2)
+})
+
+it('does not restore a disconnected credential when a renewal completes late', async () => {
+    let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: 1 })
+    let finish!: (response: Response) => void
+    vi.stubGlobal(
+        'fetch',
+        () =>
+            new Promise<Response>((resolve) => {
+                finish = resolve
+            })
+    )
+    const api = vi.fn<typeof fetch>()
+    const github = new GitHub(
+        new Http(api),
+        () => stored,
+        (value) => {
+            stored = value
+        }
+    )
+    const state = sampleState('2026-10-05')
+    const pending = github.files(state.repositories[0], state.activities[8])
+    stored = ''
+    finish(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
+    await expect(pending).rejects.toThrow('connection changed')
+    expect(stored).toBe('')
+    expect(api).not.toHaveBeenCalled()
 })
 
 it('backs off after a rate limit without issuing repeated requests', async () => {

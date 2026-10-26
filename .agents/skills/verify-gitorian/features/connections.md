@@ -5,6 +5,7 @@ Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify connections`. The runn
 ## GitHub entry points
 
 - Import-before-connect and connect-before-import: `pnpm verify github-import` owns automatic PR/review acquisition for both orders, including with periodic refresh disabled. See [Automatic GitHub activity](repository-import.md#automatic-github-activity).
+- Expiring GitHub credentials: the same journey receives a simulated access/refresh pair, advances the main-process clock by nine hours, then refreshes two repositories from the hub. Require `github-renewal.json` with one rotation and `github-renewed-without-reconnect.png`, successful repository sources and a connected account. OAuth HTTP is simulated; renderer, IPC and encrypted vault writes are real. This simulates elapsed time, not a whole-process restart. `tests/connections.test.ts` owns client reconstruction after expiry, persisted refresh-token rotation across a second reconstruction, early 401 recovery for diffs, temporary renewal failure/retry, legacy access tokens, and disconnect during renewal. Older saved expiring credentials lack refresh tokens and require one fresh authorization.
 
 - Settings > Connections: GitHub and Notion headings have their matching decorative brand logos and Connect actions instead of disconnected text. GitHub has no client-ID field or app-creation link.
 - GitHub Connect: the heading control shows its starting spinner, then expands to the code, icon-only Copy code action, Cancel, and primary Open GitHub action.
