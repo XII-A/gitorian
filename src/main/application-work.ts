@@ -11,13 +11,16 @@ export class ApplicationWork {
     }
 
     run<A>(work: (drain: () => Promise<void>) => Promise<A>): Promise<A> {
-        if (this.sealed) return Promise.reject(new Error('Journal work is closed'))
-        const id = Symbol()
-        const fiber = this.runtime.runFork(
-            Effect.tryPromise({ try: () => work(() => this.drain(id)), catch: (error) => error })
-        )
-        this.tasks.set(id, fiber)
-        return new Promise<A>((resolve, reject) => {
+        const completion = new Promise<A>((resolve, reject) => {
+            if (this.sealed) {
+                reject(new Error('Journal work is closed'))
+                return
+            }
+            const id = Symbol()
+            const fiber = this.runtime.runFork(
+                Effect.tryPromise({ try: () => work(() => this.drain(id)), catch: (error) => error })
+            )
+            this.tasks.set(id, fiber)
             fiber.addObserver((exit) => {
                 this.tasks.delete(id)
                 if (Exit.isSuccess(exit)) resolve(exit.value)
@@ -27,6 +30,11 @@ export class ApplicationWork {
                 }
             })
         })
+        // Detached producers still have an error observer; awaiting callers retain rejection.
+        void completion.catch(() => {
+            /* The command or background producer owns error presentation. */
+        })
+        return completion
     }
 
     async drain(except?: symbol): Promise<void> {

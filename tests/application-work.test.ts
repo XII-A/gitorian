@@ -1,5 +1,27 @@
-import { expect, it } from 'vitest'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { expect, it, vi } from 'vitest'
 import { ApplicationWork } from '../src/main/application-work'
+
+it('observes detached failures while preserving rejection for callers that await the result', async () => {
+    const source = new URL('../src/main/application-work.ts', import.meta.url).href
+    const script = `
+        import { ApplicationWork } from ${JSON.stringify(source)};
+        const work = new ApplicationWork();
+        void work.run(() => Promise.reject(new Error('detached failure')));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const message = await work.run(() => Promise.reject(new Error('awaited failure'))).catch(error => error.message);
+        if (message !== 'awaited failure') throw new Error('Caller lost its failure');
+        await work.shutdown(() => Promise.resolve());
+        console.log('drained');
+    `
+    const result = await promisify(execFile)(
+        process.execPath,
+        ['--import', 'tsx', '--input-type=module', '-e', script],
+        { timeout: 10000 }
+    )
+    expect(result.stdout).toContain('drained')
+})
 
 it('drains accepted work and its follow-up work even when another task fails', async () => {
     const work = new ApplicationWork()
@@ -32,6 +54,10 @@ it('lets a restore command drain prior work without waiting for itself', async (
     const events: string[] = []
     const prior = work.run(async () => {
         await Promise.resolve()
+        void work.run(async () => {
+            await Promise.resolve()
+            events.push('follow-up')
+        })
         events.push('prior')
     })
     await work.run(async (drain) => {
@@ -39,8 +65,21 @@ it('lets a restore command drain prior work without waiting for itself', async (
         events.push('restore')
     })
     await prior
-    expect(events).toEqual(['prior', 'restore'])
+    expect(events).toEqual(['prior', 'follow-up', 'restore'])
     await work.shutdown(() => Promise.resolve())
+})
+
+it('stops periodic producers after successful shutdown', async () => {
+    const work = new ApplicationWork()
+    let ticks = 0
+    work.repeat(5, () => {
+        ticks++
+    })
+    await vi.waitFor(() => expect(ticks).toBeGreaterThan(0))
+    await work.shutdown(() => Promise.resolve())
+    const settled = ticks
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(ticks).toBe(settled)
 })
 
 it('keeps the runtime usable when durable shutdown fails so saving can be retried', async () => {

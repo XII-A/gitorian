@@ -359,24 +359,22 @@ void app.whenReady().then(() => {
                     if (!path) return service.reply()
                     return await work.run(() => service.scanRepositories(path, progress))
                 }
-                const importing = service.importRepositories(command.scanId, command.paths, progress)
+                const importing = work.run(async () => {
+                    const reply = await service.importRepositories(command.scanId, command.paths, progress)
+                    if (store.state.settings.refreshMinutes > 0) void work.run(() => service.refresh())
+                    return reply
+                })
                 if (service.reply().state.repositoryImport?.status !== 'running') return await importing
-                void work
-                    .run(() =>
-                        importing.then(() => {
-                            if (store.state.settings.refreshMinutes > 0) void work.run(() => service.refresh())
-                        })
-                    )
-                    .catch((error: unknown) => {
-                        store.state.repositoryImport = {
-                            id: store.state.repositoryImport?.id,
-                            status: 'error',
-                            completed: 0,
-                            total: 0,
-                            message: error instanceof Error ? error.message : String(error)
-                        }
-                        store.persist()
-                    })
+                void importing.catch((error: unknown) => {
+                    store.state.repositoryImport = {
+                        id: store.state.repositoryImport?.id,
+                        status: 'error',
+                        completed: 0,
+                        total: 0,
+                        message: error instanceof Error ? error.message : String(error)
+                    }
+                    store.persist()
+                })
                 return service.reply({ message: 'Import started. You can close Settings and keep writing.' })
             }
             case 'relocate': {
