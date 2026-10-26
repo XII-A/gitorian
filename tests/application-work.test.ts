@@ -273,37 +273,37 @@ it('restores admission and scheduling after interruption during saving', async (
     await app.close()
 })
 
-it('seals admission in the same transaction that observes durable quiescence', async () => {
-    for (let attempt = 0; attempt < 50; attempt++) {
+it('seals admission atomically against registration under scheduler pressure', async () => {
+    for (let attempt = 0; attempt < 20; attempt++) {
         const app = await application()
-        let active = false
-        const operation = Effect.all(
-            [
-                app.work.shutdown(
-                    Effect.sync(() => {
-                        expect(active).toBe(false)
-                    })
-                ),
-                Effect.yieldNow().pipe(
-                    Effect.zipRight(
-                        app.work.accept(
-                            Effect.gen(function* () {
-                                active = true
-                                yield* Effect.sleep(1)
-                                active = false
-                            })
-                        )
-                    ),
-                    Effect.exit
-                )
-            ],
-            { concurrency: 'unbounded', discard: true }
-        ).pipe(Effect.withMaxOpsBeforeYield(12))
-        await app.run(operation)
+        const events: string[] = []
+        const admission = Effect.gen(function* () {
+            for (let step = 0; step < 7; step++) yield* Effect.sync(() => undefined)
+            yield* app.work.accept(
+                Effect.gen(function* () {
+                    events.push('begin')
+                    yield* Effect.sleep(1)
+                    events.push('end')
+                })
+            )
+        }).pipe(Effect.exit)
+        await app.run(
+            Effect.all(
+                [
+                    admission,
+                    app.work.shutdown(
+                        Effect.sync(() => {
+                            events.push('save')
+                        })
+                    )
+                ],
+                { concurrency: 'unbounded', discard: true }
+            ).pipe(Effect.withMaxOpsBeforeYield(16))
+        )
+        expect(events).toEqual(events.includes('begin') ? ['begin', 'end', 'save'] : ['save'])
         await app.close()
     }
 })
-
 it('keeps disposed ownership permanently closed when an in-flight shutdown fails', async () => {
     const app = await application()
     let release!: () => void

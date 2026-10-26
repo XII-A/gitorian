@@ -44,11 +44,15 @@ export const ApplicationWorkLive = Layer.scoped(
         const accept = <A, E, R>(operation: Effect.Effect<A, E, R>) =>
             Effect.uninterruptibleMask((restore) =>
                 Effect.gen(function* () {
-                    if (lifetimeClosed || state !== 'open') return yield* new WorkClosed()
                     const parents = yield* FiberRef.get(ancestry)
                     const done = yield* Deferred.make<undefined>()
                     const id = Symbol()
-                    tasks.set(id, done)
+                    const admitted = yield* Effect.sync(() => {
+                        if (lifetimeClosed || state !== 'open') return false
+                        tasks.set(id, done)
+                        return true
+                    })
+                    if (!admitted) return yield* new WorkClosed()
                     return yield* restore(operation).pipe(
                         Effect.locally(ancestry, [...parents, id]),
                         Effect.ensuring(
