@@ -145,27 +145,29 @@ export const ApplicationWorkLive = Layer.scoped(
 
         const shutdown = <E, R>(save: Effect.Effect<void, E, R>) =>
             shutdownLock.withPermits(1)(
-                Effect.suspend(() => {
-                    if (state === 'closed') return Effect.void
-                    return Effect.gen(function* () {
-                        scheduling = false
-                        yield* drainWork(true)
-                        yield* save
-                        lifetimeClosed = true
-                        state = 'closed'
-                        yield* Fiber.interruptAll(producers)
-                        producers.clear()
-                    }).pipe(
-                        Effect.onExit((exit) =>
-                            Effect.sync(() => {
-                                if (Exit.isFailure(exit) && !lifetimeClosed && state !== 'closed') {
-                                    state = 'open'
-                                    scheduling = true
-                                }
-                            })
+                Effect.uninterruptibleMask((restore) =>
+                    Effect.suspend(() => {
+                        if (state === 'closed') return Effect.void
+                        return Effect.gen(function* () {
+                            scheduling = false
+                            yield* restore(drainWork(true))
+                            yield* restore(save)
+                            lifetimeClosed = true
+                            state = 'closed'
+                            yield* Fiber.interruptAll(producers)
+                            producers.clear()
+                        }).pipe(
+                            Effect.onExit((exit) =>
+                                Effect.sync(() => {
+                                    if (Exit.isFailure(exit) && !lifetimeClosed && state !== 'closed') {
+                                        state = 'open'
+                                        scheduling = true
+                                    }
+                                })
+                            )
                         )
-                    )
-                })
+                    })
+                )
             )
 
         return { accept, fork, drain: drainWork(), repeat, shutdown }

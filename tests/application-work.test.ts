@@ -1,4 +1,4 @@
-import { Effect, ManagedRuntime, Supervisor } from 'effect'
+import { Deferred, Effect, Fiber, ManagedRuntime, Supervisor } from 'effect'
 import { expect, it, vi } from 'vitest'
 import { ApplicationWork, ApplicationWorkLive } from '../src/main/application-work'
 
@@ -340,6 +340,25 @@ it('does not leave a periodic producer registered after shutdown wins admission'
             ],
             { concurrency: 'unbounded' }
         ).pipe(Effect.supervised(supervisor), Effect.withMaxOpsBeforeYield(48))
+    )
+    expect((await Effect.runPromise(supervisor.value)).length).toBe(0)
+    await app.close()
+})
+
+it('finishes terminal producer cleanup when shutdown is interrupted after saving', async () => {
+    const app = await application()
+    const supervisor = await Effect.runPromise(Supervisor.track)
+    await app.run(
+        Effect.gen(function* () {
+            yield* app.work.repeat(100000, Effect.void)
+            const saved = yield* Deferred.make<undefined>()
+            const closing = yield* Effect.fork(
+                app.work.shutdown(Deferred.succeed(saved, undefined).pipe(Effect.asVoid))
+            )
+            yield* Deferred.await(saved)
+            yield* Fiber.interrupt(closing)
+            yield* app.work.shutdown(Effect.void)
+        }).pipe(Effect.supervised(supervisor), Effect.withMaxOpsBeforeYield(16))
     )
     expect((await Effect.runPromise(supervisor.value)).length).toBe(0)
     await app.close()
