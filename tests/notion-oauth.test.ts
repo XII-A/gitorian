@@ -977,3 +977,28 @@ it.each(['before staging', 'after staging'] as const)(
         expect(await run(restarted.connection.token())).toBe('restored-access')
     }
 )
+
+it.each(['choose', 'poll'] as const)(
+    'reports an unreadable recovery checkpoint through %s failure channel',
+    async (mode) => {
+        const recovery = new Map<string, JournalSetup>()
+        const app = desktop(origin, recovery)
+        if (mode === 'choose') await installed(app)
+        else await approve(app)
+        const problem = new Error('Recovery checkpoint is unreadable')
+        vi.spyOn(recovery, 'get').mockImplementation(() => {
+            throw problem
+        })
+        const result = await run(
+            Effect.either(
+                mode === 'choose'
+                    ? app.connection.choose().pipe(Effect.asVoid)
+                    : app.connection.poll().pipe(Effect.asVoid)
+            )
+        )
+        expect(result._tag).toBe('Left')
+        if (result._tag !== 'Left') throw new Error('Expected recovery read failure')
+        expect(result.left).toMatchObject({ _tag: 'ConnectionError', cause: problem })
+        expect(app.store.state.settings.destination?.id).toBe(mode === 'choose' ? selectedPage.id : undefined)
+    }
+)

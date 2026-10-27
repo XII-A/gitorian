@@ -459,16 +459,18 @@ export function makeNotionConnection(
                                         try: () => decodeTokens(value),
                                         catch: connectionError
                                     })
-                                    synchronizeDestination()
-                                    if (attemptGeneration !== generation)
-                                        return yield* Effect.fail(new ConnectionError('Notion connection cancelled.'))
-                                    pendingGeneration = credentialGeneration
-                                    pendingInstalled = false
-                                    pending = {
-                                        ...tokens,
-                                        origin: serviceOrigin,
-                                        journal: journalSetup(tokens.workspace_id)
-                                    }
+                                    yield* Effect.try({
+                                        try: () => {
+                                            synchronizeDestination()
+                                            if (attemptGeneration !== generation)
+                                                throw new ConnectionError('Notion connection cancelled.')
+                                            const journal = journalSetup(tokens.workspace_id)
+                                            pendingGeneration = credentialGeneration
+                                            pendingInstalled = false
+                                            pending = { ...tokens, origin: serviceOrigin, journal }
+                                        },
+                                        catch: connectionError
+                                    })
                                     if (current.expiration) yield* Fiber.interrupt(current.expiration)
                                 })
                             )
@@ -608,15 +610,19 @@ export function makeNotionConnection(
                 const owner = credentialGeneration
                 const choiceGeneration = yield* Effect.sync(() => ++attemptGeneration)
                 yield* releaseAttempt()
-                synchronizeDestination()
-                if (closed || owner !== credentialGeneration || choiceGeneration !== attemptGeneration)
-                    return yield* Effect.fail(
-                        new ConnectionError('Notion connection changed while choosing a destination.')
-                    )
-                pendingGeneration = owner
-                pendingInstalled = true
-                pending = { ...current, journal: journalSetup(current.workspace_id) }
-                return true
+                return yield* Effect.try({
+                    try: () => {
+                        synchronizeDestination()
+                        if (closed || owner !== credentialGeneration || choiceGeneration !== attemptGeneration)
+                            throw new ConnectionError('Notion connection changed while choosing a destination.')
+                        const journal = journalSetup(current.workspace_id)
+                        pendingGeneration = owner
+                        pendingInstalled = true
+                        pending = { ...current, journal }
+                        return true
+                    },
+                    catch: connectionError
+                })
             })
         const pages = setupPages(pendingToken)
         const installedPages = setupPages(token)
