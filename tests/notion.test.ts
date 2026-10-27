@@ -1,9 +1,8 @@
+import { providerHttp } from './transport-fixtures'
 import { expect, it, vi } from 'vitest'
 import { Notion } from '../src/main/notion'
-import { Http } from '../src/main/http'
 import type { Destination } from '../src/shared/model'
 import { journal } from './fixtures'
-
 it('describes a saved page by its title and emoji and never stores an expired remote icon URL', async () => {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(
         new Response(
@@ -16,7 +15,7 @@ it('describes a saved page by its title and emoji and never stores an expired re
         )
     )
     const notion = new Notion(
-        new Http(transport),
+        providerHttp(transport),
         () => 'token',
         undefined,
         () => Promise.reject(new Error('Expired icon'))
@@ -30,7 +29,6 @@ it('describes a saved page by its title and emoji and never stores an expired re
     })
     expect(await notion.destinationIcon('https://example.com/expired.png')).toBeUndefined()
 })
-
 it('lists every accessible page by name across cursors, preserving duplicate titles and parent context', async () => {
     const page = (id: string, parent?: string) => ({
         id,
@@ -60,7 +58,7 @@ it('lists every accessible page by name across cursors, preserving duplicate tit
             )
         )
         .mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ results: [], has_more: false }))))
-    const notion = new Notion(new Http(transport), () => 'pending-token')
+    const notion = new Notion(providerHttp(transport), () => 'pending-token')
     expect(await notion.accessiblePages()).toEqual([
         {
             kind: 'page',
@@ -86,10 +84,9 @@ it('lists every accessible page by name across cursors, preserving duplicate tit
             .every(([, init]) => JSON.parse(init!.body as string).filter.value === 'page')
     ).toBe(true)
 })
-
 it('never creates a page when a selected existing destination becomes inaccessible', async () => {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 404 }))
-    const notion = new Notion(new Http(transport), () => 'pending-token')
+    const notion = new Notion(providerHttp(transport), () => 'pending-token')
     await expect(
         notion.prepareJournal({ id: 'setup', started: false }, vi.fn(), {
             kind: 'page',
@@ -100,7 +97,6 @@ it('never creates a page when a selected existing destination becomes inaccessib
     ).rejects.toThrow()
     expect(transport.mock.calls.map(([, init]) => init?.method ?? 'GET')).toEqual(['GET'])
 })
-
 it.each(['existing', 'new'])(
     'saves a %s destination after the canceled scan has paused the shared provider budget',
     async (kind) => {
@@ -108,7 +104,7 @@ it.each(['existing', 'new'])(
             .fn<typeof fetch>()
             .mockResolvedValueOnce(new Response('{}', { status: 429, headers: { 'Retry-After': '1' } }))
             .mockImplementation(() => Promise.resolve(Response.json({ id: 'parent' })))
-        const http = new Http(transport)
+        const http = providerHttp(transport)
         await expect(http.request('https://api.notion.com/v1/blocks/parent/children', 'token')).rejects.toMatchObject({
             status: 429
         })
@@ -133,14 +129,13 @@ it.each(['existing', 'new'])(
         ])
     }
 )
-
 it('checkpoints private journal creation before writing, then reuses the confirmed destination', async () => {
     const events: string[] = []
     const transport = vi.fn<typeof fetch>((url, init) => {
         events.push(`${init?.method ?? 'GET'} ${url instanceof Request ? url.url : url.toString()}`)
         return Promise.resolve(new Response(JSON.stringify({ id: 'private-journal' })))
     })
-    const notion = new Notion(new Http(transport), () => 'oauth-token')
+    const notion = new Notion(providerHttp(transport), () => 'oauth-token')
     const destination = await notion.prepareJournal({ id: 'setup-one', started: false }, (id) =>
         events.push(id ?? 'creating')
     )
@@ -156,7 +151,6 @@ it('checkpoints private journal creation before writing, then reuses the confirm
     ).toEqual(destination)
     expect(transport).toHaveBeenCalledTimes(1)
 })
-
 it('recovers an uncertain journal creation only by its setup marker and never blindly creates again', async () => {
     const transport = vi.fn<typeof fetch>((url) =>
         Promise.resolve(
@@ -185,7 +179,7 @@ it('recovers an uncertain journal creation only by its setup marker and never bl
             )
         )
     )
-    const notion = new Notion(new Http(transport), () => 'oauth-token')
+    const notion = new Notion(providerHttp(transport), () => 'oauth-token')
     const checkpoint = vi.fn()
     expect((await notion.prepareJournal({ id: 'setup-one', started: true }, checkpoint)).id).toBe('matching')
     expect(checkpoint).toHaveBeenCalledWith('matching')
@@ -193,14 +187,13 @@ it('recovers an uncertain journal creation only by its setup marker and never bl
         transport.mock.calls.some(([url]) => (url instanceof Request ? url.url : url.toString()).endsWith('/pages'))
     ).toBe(false)
     const empty = new Notion(
-        new Http(() => Promise.resolve(new Response(JSON.stringify({ results: [], has_more: false })))),
+        providerHttp(() => Promise.resolve(new Response(JSON.stringify({ results: [], has_more: false })))),
         () => 'oauth-token'
     )
     await expect(empty.prepareJournal({ id: 'uncertain', started: true }, checkpoint)).rejects.toThrow(
         /confirm|existing/i
     )
 })
-
 it('returns the integration name and avatar without exposing other user details', async () => {
     const transport = vi.fn<typeof fetch>(() =>
         Promise.resolve(
@@ -214,22 +207,22 @@ it('returns the integration name and avatar without exposing other user details'
             )
         )
     )
-    const notion = new Notion(new Http(transport), () => 'test-token')
+    const notion = new Notion(providerHttp(transport), () => 'test-token')
     expect(await notion.profile()).toEqual({ name: 'Weekly journal', avatarUrl: 'https://example.com/bot.png' })
     expect(transport.mock.calls[0][0]).toBe('https://api.notion.com/v1/users/me')
 })
-
 it('handles an integration with no name or avatar', async () => {
     const transport: typeof fetch = () =>
         Promise.resolve(new Response(JSON.stringify({ name: null, avatar_url: null })))
-    expect(await new Notion(new Http(transport), () => 'test-token').profile()).toEqual({ name: 'Notion integration' })
+    expect(await new Notion(providerHttp(transport), () => 'test-token').profile()).toEqual({
+        name: 'Notion integration'
+    })
 })
-
 it.each(['page', 'database'] as const)(
     'tests a %s destination without listing or reading its entries',
     async (kind) => {
         const transport = vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}')))
-        const notion = new Notion(new Http(transport), () => 'test-token')
+        const notion = new Notion(providerHttp(transport), () => 'test-token')
         await notion.verifyDestination({ kind, id: 'destination', titleProperty: 'Name', dateProperty: '' })
         expect(transport).toHaveBeenCalledTimes(1)
         expect(transport.mock.calls[0][0]).toBe(
@@ -238,15 +231,13 @@ it.each(['page', 'database'] as const)(
         expect(transport.mock.calls[0][1]?.method ?? 'GET').toBe('GET')
     }
 )
-
 it.each([400, 401, 404, 500])('explains an unreachable destination (%s)', async (status) => {
     const transport = vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}', { status })))
-    const notion = new Notion(new Http(transport), () => 'test-token')
+    const notion = new Notion(providerHttp(transport), () => 'test-token')
     await expect(
         notion.verifyDestination({ kind: 'page', id: 'destination', titleProperty: 'Name', dateProperty: '' })
     ).rejects.toThrow(/Check|Reconnect/)
 })
-
 it('refreshes only app-published entries even after the destination changes', async () => {
     const app = await journal()
     try {
@@ -278,10 +269,9 @@ it('refreshes only app-published entries even after the destination changes', as
         await app.close()
     }
 })
-
 it('rejects an empty destination before making a request', async () => {
     const transport = vi.fn<typeof fetch>()
-    const notion = new Notion(new Http(transport), () => 'test-token')
+    const notion = new Notion(providerHttp(transport), () => 'test-token')
     const destination: Destination = { kind: 'page', id: '  ', titleProperty: 'Name', dateProperty: '' }
     await expect(notion.verifyDestination(destination)).rejects.toThrow('Enter a destination ID')
     expect(transport).not.toHaveBeenCalled()

@@ -1,8 +1,7 @@
+import { providerHttp } from './transport-fixtures'
 import { afterEach, expect, it, vi } from 'vitest'
 import { GitHub } from '../src/main/github'
-import { Http } from '../src/main/http'
 import { sampleState } from '../src/renderer/workspace-sample'
-
 // Failure modes: discarded refresh credentials, simultaneous repository refreshes,
 // rotation after a restart, and a disconnect while rotation is in flight.
 it('renews an expired device credential after restart for multiple repositories without reconnecting', async () => {
@@ -49,7 +48,7 @@ it('renews an expired device credential after restart for multiple repositories 
     vi.stubGlobal('fetch', transport)
     const create = () =>
         new GitHub(
-            new Http(transport),
+            providerHttp(transport),
             () => stored,
             (value) => {
                 stored = value
@@ -70,18 +69,19 @@ it('renews an expired device credential after restart for multiple repositories 
     await expect(create().files(state.repositories[0], state.activities[8])).resolves.toEqual([])
     expect(rotations).toBe(2)
 })
-
 afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
 })
-
 it('respects GitHub device polling intervals and discovers identities after authorization', async () => {
     vi.useFakeTimers()
     let token = ''
     let authorized = false
     let attempts = 0
-    const requests: { url: string; body: Record<string, string> }[] = []
+    const requests: {
+        url: string
+        body: Record<string, string>
+    }[] = []
     const transport: typeof fetch = (input, init) =>
         Promise.resolve().then(() => {
             const url = input instanceof Request ? input.url : String(input)
@@ -104,7 +104,7 @@ it('respects GitHub device polling intervals and discovers identities after auth
         })
     vi.stubGlobal('fetch', transport)
     const github = new GitHub(
-        new Http(transport),
+        providerHttp(transport),
         () => token,
         (value) => {
             token = value
@@ -127,9 +127,8 @@ it('respects GitHub device polling intervals and discovers identities after auth
             .every(({ body }) => body.client_id === 'Ov23li9PFMAWRrbZQ6Xy' && !('client_secret' in body))
     ).toBe(true)
 })
-
 it('renews once on an early 401, including a diff request, while preserving legacy tokens', async () => {
-    let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: Date.now() + 3600_000 })
+    let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: Date.now() + 3600000 })
     let rotations = 0
     const transport: typeof fetch = (input, init) => {
         if ((input instanceof Request ? input.url : input.toString()).includes('/oauth/access_token')) {
@@ -149,7 +148,7 @@ it('renews once on an early 401, including a diff request, while preserving lega
     }
     vi.stubGlobal('fetch', transport)
     const github = new GitHub(
-        new Http(transport),
+        providerHttp(transport),
         () => stored,
         (value) => {
             stored = value
@@ -162,7 +161,6 @@ it('renews once on an early 401, including a diff request, while preserving lega
     await github.commitDetails(repo, 'b'.repeat(40))
     expect(rotations).toBe(1)
 })
-
 it('keeps credentials on a temporary renewal failure and permits retry', async () => {
     let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: 1 })
     const original = stored
@@ -172,7 +170,7 @@ it('keeps credentials on a temporary renewal failure and permits retry', async (
         .mockResolvedValueOnce(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
     vi.stubGlobal('fetch', exchange)
     const github = new GitHub(
-        new Http(() => Promise.resolve(Response.json([]))),
+        providerHttp(() => Promise.resolve(Response.json([]))),
         () => stored,
         (value) => {
             stored = value
@@ -184,7 +182,6 @@ it('keeps credentials on a temporary renewal failure and permits retry', async (
     await expect(github.files(state.repositories[0], state.activities[8])).resolves.toEqual([])
     expect(exchange).toHaveBeenCalledTimes(2)
 })
-
 it('does not restore a disconnected credential when a renewal completes late', async () => {
     let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: 1 })
     let finish!: (response: Response) => void
@@ -197,7 +194,7 @@ it('does not restore a disconnected credential when a renewal completes late', a
     )
     const api = vi.fn<typeof fetch>()
     const github = new GitHub(
-        new Http(api),
+        providerHttp(api),
         () => stored,
         (value) => {
             stored = value
@@ -211,7 +208,6 @@ it('does not restore a disconnected credential when a renewal completes late', a
     expect(stored).toBe('')
     expect(api).not.toHaveBeenCalled()
 })
-
 it('backs off after a rate limit without issuing repeated requests', async () => {
     vi.useFakeTimers()
     let attempts = 0
@@ -220,7 +216,7 @@ it('backs off after a rate limit without issuing repeated requests', async () =>
             attempts++
             return new Response('{}', { status: 429, headers: { 'retry-after': '30' } })
         })
-    const http = new Http(transport)
+    const http = providerHttp(transport)
     await expect(http.request('https://api.notion.com/v1/users/me', 'private-token')).rejects.toThrow('429')
     await expect(http.request('https://api.notion.com/v1/users/me', 'private-token')).rejects.toThrow('rate limit')
     expect(attempts).toBe(1)
@@ -228,7 +224,6 @@ it('backs off after a rate limit without issuing repeated requests', async () =>
     await expect(http.request('https://api.notion.com/v1/users/me', 'private-token')).rejects.toThrow('429')
     expect(attempts).toBe(2)
 })
-
 it('keeps polling GitHub after slow_down and reports expiry without connecting', async () => {
     vi.useFakeTimers()
     let attempts = 0
@@ -253,7 +248,7 @@ it('keeps polling GitHub after slow_down and reports expiry without connecting',
             )
         })
     vi.stubGlobal('fetch', transport)
-    const github = new GitHub(new Http(transport), () => '', setToken)
+    const github = new GitHub(providerHttp(transport), () => '', setToken)
     await github.start()
     vi.advanceTimersByTime(5000)
     expect(await github.poll()).toEqual({ pending: true, interval: 10 })
@@ -264,9 +259,8 @@ it('keeps polling GitHub after slow_down and reports expiry without connecting',
     await expect(github.poll()).rejects.toThrow('expired')
     expect(setToken).not.toHaveBeenCalled()
 })
-
 it('explains disabled GitHub device flow before attempting browser authorization', async () => {
     vi.stubGlobal('fetch', () => Promise.resolve(new Response(JSON.stringify({ error: 'device_flow_disabled' }))))
-    const github = new GitHub(new Http(), () => '', vi.fn())
+    const github = new GitHub(providerHttp(), () => '', vi.fn())
     await expect(github.start()).rejects.toThrow('GitHub sign-in is unavailable')
 })

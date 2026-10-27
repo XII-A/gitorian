@@ -1,16 +1,15 @@
+import { providerHttp } from './transport-fixtures'
 import { expect, it } from 'vitest'
 import { GitHub } from '../src/main/github'
-import { Http } from '../src/main/http'
 import { activitySchema } from '../src/shared/model'
 import { sampleState } from '../src/renderer/workspace-sample'
 import { summarizeChanges } from '../src/shared/change-statistics'
-
 it('retains rename paths from GitHub PR and commit metadata through state validation', async () => {
     const state = sampleState('2026-10-05')
     const files = [
         { filename: 'src/new.ts', previous_filename: 'src/old.ts', status: 'renamed', additions: 12, deletions: 3 }
     ]
-    const http = new Http((input) =>
+    const http = providerHttp((input) =>
         Promise.resolve(
             new Response(
                 JSON.stringify(
@@ -39,11 +38,10 @@ it('retains rename paths from GitHub PR and commit metadata through state valida
     expect((await github.commitDetails(state.repositories[0], 'a'.repeat(40), false)).files).toEqual(expected)
     expect(activitySchema.parse({ ...state.activities[8], files: expected }).files).toEqual(expected)
 })
-
 it('includes every metadata page in PR and remote commit line totals without requesting a patch', async () => {
     const state = sampleState('2026-10-05')
     const urls: string[] = []
-    const http = new Http((input) => {
+    const http = providerHttp((input) => {
         const url = new URL(input instanceof Request ? input.url : input.toString())
         urls.push(url.href)
         const second = url.searchParams.get('page') === '2'

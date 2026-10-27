@@ -1,6 +1,6 @@
 import type { Activity, Repository } from '../shared/model'
 import { localDate } from '../shared/model'
-import type { Http } from './http'
+import type { ProviderHttp } from './provider-http'
 import { fingerprint, githubRemote } from './git'
 import { HttpError } from './http'
 
@@ -86,7 +86,7 @@ export class GitHub {
     private device?: Device & { expires: number; nextPoll: number }
     private renewal?: { stored: string; work: Promise<string> }
     constructor(
-        private readonly http: Http,
+        private readonly http: ProviderHttp,
         private readonly credential: () => string,
         private readonly setToken: (token: string) => void
     ) {}
