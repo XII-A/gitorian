@@ -33,7 +33,7 @@ The owning scenario is `tests/e2e/repository-import.spec.ts`, using the shared P
 
 ## Gotchas
 
-The native picker is automated; filesystem discovery, Git inspection, IPC, renderer, and SQLite are real. The harness intentionally delays I/O to capture progress, so its runtime is not an import-performance benchmark. Two repositories are established through application commands before the user journey; count assertions account for these fixtures. A successful final screenshot alone does not prove cancellation or persistence.
+The native picker is automated; filesystem discovery, Git inspection, IPC, renderer, and SQLite are real. The harness intentionally delays I/O to capture progress, so its runtime is not an import-performance benchmark. Two repositories are established through application commands before the user journey; count assertions account for these fixtures. The stopped repository is selected by its canonical path using `fs.promises.realpath`, matching real Git inspection. On Windows its lookup input deliberately uses uppercase `ARCHIVED-TOOLS` to cover aliases; ordinary `realpathSync` preserves that casing and is insufficient. A successful final screenshot alone does not prove cancellation or persistence.
 
 ## Automatic GitHub activity
 
