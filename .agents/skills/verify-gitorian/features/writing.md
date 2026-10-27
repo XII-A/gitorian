@@ -10,6 +10,7 @@ Start or resume a weekly entry, edit structured writing, cite work, and recover 
 - `writing.save`: typing autosaves and survives renderer reload.
 - `writing.template`: a new entry inherits the saved template without mutating it.
 - `writing.citation`: selected activity is inserted without losing surrounding writing; undo removes the insertion.
+- `writing.clipboard`: workspace right-click and Shift+F10 expose Arc Cut, Copy and Paste for the title, body and selected read-only text.
 - `writing.update`: background update download preserves input, focus and autosave; explicit installation checkpoints the final revision. Owned by the [app updates journey](app-updates.md).
 
 ## How to get to it (user POV)
@@ -32,3 +33,9 @@ Preconditions: `pnpm build`. `pnpm smoke` runs `tools/desktop-smoke.mjs` against
 Run `pnpm verify publishing` after a build for Notion publishing feedback. This journal-only Electron fixture uses the real preload, IPC, publishing adapter, encrypted fixture credential and store with simulated Notion HTTP. Publish must show `Published to Notion` and change the header action to `Update in Notion`. Edit using native text input, update the same page, and require `Updated in Notion`, one page creation, and update requests. Reload preserves the update label. A simulated 403 must show recovery without a success toast. The runner independently checks persisted writing and retains screenshots, HTTP bodies, actions, process exit and cleanup. It makes no live Notion requests.
 
 The diagnostic's reload keeps the main process alive; it is not a full process restart. Its historical assertion names do not strengthen that proof. A full-restart persistence claim requires closing and reopening the same disposable profile. Sample-mode Publish is simulated. Real Notion publishing requires an authorized test destination and is outside this local journey. Keep the existing autosave/race/editor behavior tests while these gaps remain.
+
+## Workspace clipboard journey
+
+Run `pnpm build`, `pnpm verify doctor`, then `pnpm test:e2e workspace-clipboard`. The journal-only Playwright scenario owns clipboard behavior; it creates no repositories and uses no integrations.
+
+The journey starts from hub Open journal, types bold body text, copies and cuts through the mouse menu, undoes the cut and pastes the rich text. It cuts/pastes the title, checks Shift+F10, keyboard selection and Escape focus restoration, then copies selected Activity heading text with Cut/Paste disabled. Outside press closes the menu; reduced motion retains keyboard access. Reload and an independent post-exit SQLite read must retain the title and both bold text copies. In the selected-text menu screenshot, verify separate Arc keycaps for Ctrl and X/C/V aligned at the trailing edge. Keep the named screenshots, persisted-drafts.json, trace, actions and successful run.json with cleanup evidence.
