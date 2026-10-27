@@ -1,12 +1,10 @@
+import { providerHttp } from './transport-fixtures'
 import { describe, expect, it, vi } from 'vitest'
 import { GitHub } from '../src/main/github'
-import { Http } from '../src/main/http'
 import { activitySchema } from '../src/shared/model'
 import { pullRequestContext } from '../src/renderer/pull-request'
 import { sampleState } from '../src/renderer/workspace-sample'
-
 const repository = { ...sampleState('2026-10-05').repositories[0], remote: 'https://github.com/example/project' }
-
 describe('pull request status acquisition', () => {
     it.each([
         ['open', false, null, 'open'],
@@ -31,7 +29,7 @@ describe('pull request status acquisition', () => {
             head: { ref: 'feature/work', sha: 'head-sha' }
         }
         const dates = ['2026-10-02T10:00:00Z', '2026-10-06T10:00:00Z', '2026-10-08T10:00:00Z']
-        const http = new Http((input) => {
+        const http = providerHttp((input) => {
             const url = input instanceof Request ? input.url : String(input)
             const result = url.includes('/pulls?')
                 ? [pull]
@@ -55,7 +53,6 @@ describe('pull request status acquisition', () => {
         })
         expect(activities.filter((item) => item.kind !== 'pr').every((item) => !item.pullRequest)).toBe(true)
     })
-
     it('refreshes status-only changes even when GitHub timestamps and commit hashes are unchanged', async () => {
         let draft = true
         const pull = {
@@ -73,7 +70,7 @@ describe('pull request status acquisition', () => {
             head: { ref: 'feature', sha: 'head' }
         }
         const github = new GitHub(
-            new Http((input) => {
+            providerHttp((input) => {
                 const url = input instanceof Request ? input.url : String(input)
                 return Promise.resolve(
                     new Response(JSON.stringify(url.includes('/pulls?') ? [{ ...pull, draft }] : []))
@@ -89,7 +86,6 @@ describe('pull request status acquisition', () => {
         expect(await github.activities(repository, 'me', [], { versions })).toEqual([])
     })
 })
-
 describe('legacy PR context', () => {
     it('does not infer open status from the absence of a merged event', () => {
         const activity = { ...sampleState('2026-10-05').activities[8], kind: 'pr' as const }

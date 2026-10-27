@@ -1,7 +1,7 @@
 import { fromNotion, toNotion } from '../shared/notion-format'
 import type { NotionBlock } from '../shared/notion-format'
 import type { Destination, Entry, ConnectionProfile, State, NotionDiscoveryProgress } from '../shared/model'
-import type { Http } from './http'
+import type { ProviderHttp } from './provider-http'
 import { HttpError } from './http'
 import type { Store } from './store'
 import { downloadImage, UnsupportedImageError } from './images'
@@ -37,7 +37,7 @@ const pageIcon = (page: Page) => {
 }
 export class Notion {
     constructor(
-        private readonly http: Http,
+        private readonly http: ProviderHttp,
         private readonly token: (refresh?: boolean, rejected?: string) => string | Promise<string>,
         private readonly images?: Pick<Store, 'image' | 'importImage'>,
         private readonly imageDownload = downloadImage

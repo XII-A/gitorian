@@ -1,3 +1,4 @@
+import { providerHttp } from './transport-fixtures'
 import { randomUUID } from 'node:crypto'
 import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -5,26 +6,22 @@ import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { Store } from '../src/main/store'
-import { Http } from '../src/main/http'
 import { Notion } from '../src/main/notion'
 import { GitHub } from '../src/main/github'
 import { JournalService } from '../src/main/service'
 import type { NotionBlock } from '../src/shared/notion-format'
 import { afterAll } from 'vitest'
-
 const execute = promisify(execFile)
 const gitAt =
     (directory: string) =>
     async (...args: string[]) =>
         (await execute('git', args, { cwd: directory, windowsHide: true })).stdout.trim()
-
 async function removeFixture(directory: string) {
     const target = resolve(directory)
     if (dirname(target) !== resolve(tmpdir()) || !target.startsWith(resolve(tmpdir()) + sep + 'gitorian-'))
         throw new Error(`Unexpected fixture directory: ${target}`)
     await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 }
-
 let gitTemplate: Promise<string> | undefined
 let templateDirectory: string | undefined
 async function createGitTemplate() {
@@ -39,7 +36,6 @@ async function createGitTemplate() {
     await git('branch', 'main')
     return templateDirectory
 }
-
 afterAll(async () => {
     if (templateDirectory) await removeFixture(templateDirectory)
 })
@@ -49,7 +45,7 @@ export async function journal() {
     const directory = await mkdtemp(join(tmpdir(), 'gitorian-test-'))
     const store = new Store(join(directory, 'tracking.sqlite'))
     const remote = transport()
-    const http = new Http(remote.fetch)
+    const http = providerHttp(remote.fetch)
     const github = new GitHub(
         http,
         () => 'test-token',
@@ -105,7 +101,11 @@ export function transport() {
         properties: Record<string, unknown>
         blocks: NotionBlock[]
     }[] = []
-    const requests: { url: string; method: string; body?: Record<string, unknown> }[] = []
+    const requests: {
+        url: string
+        method: string
+        body?: Record<string, unknown>
+    }[] = []
     const remote = {
         pages,
         requests,

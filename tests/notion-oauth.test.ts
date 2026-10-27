@@ -1,12 +1,11 @@
+import { providerHttp } from './transport-fixtures'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { createOAuthHandler } from '../services/notion-oauth/src/handler'
 import { Notion } from '../src/main/notion'
-import { Http } from '../src/main/http'
 import type { Destination } from '../src/shared/model'
 import type { JournalSetup } from '../src/main/notion-connection'
 import { NotionConnection } from '../src/main/notion-connection'
-
 const origin = 'https://auth.example.com'
 const config = { origin, clientId: 'public-app', clientSecret: 'server-only-secret', stateSecret: 's'.repeat(48) }
 const verifier = 'v'.repeat(43)
@@ -21,7 +20,6 @@ const jsonRequest = (path: string, value: unknown) =>
         body: JSON.stringify(value)
     })
 const active: NotionConnection[] = []
-
 it.each([false, true])(
     'credential staging failure preserves the persisted pair across restart (installed=%s)',
     async (hasInstalled) => {
@@ -67,7 +65,6 @@ it.each([false, true])(
         expect(creations).toBe(1)
     }
 )
-
 it('restart selects staged credentials if the process dies immediately after the destination commit', async () => {
     const app = desktop()
     let destination = await installed(app)
@@ -94,7 +91,6 @@ it('restart selects staged credentials if the process dies immediately after the
     expect(await restarted.connection.token()).toBe('new-access')
     expect(destination.id).toBe('new-journal')
 })
-
 it('does not fall back to legacy credentials when the committed credential slot is unavailable', async () => {
     const app = desktop()
     const destination = await installed(app)
@@ -104,7 +100,6 @@ it('does not fall back to legacy credentials when the committed credential slot 
     expect(restarted.connection.connected()).toBe(false)
     expect(await restarted.connection.token()).toBe('')
 })
-
 it.each([false, true])('defers credential rotation until destination commit finishes (installed=%s)', async (edit) => {
     const app = desktop()
     if (edit) {
@@ -141,7 +136,6 @@ it.each([false, true])('defers credential rotation until destination commit fini
     const restarted = desktop(origin, new Map(), { secrets: app.secrets, destination })
     expect(await restarted.connection.token()).toBe('rotated-access')
 })
-
 it('rejects an intercepted handoff paired with another valid attempt before contacting Notion', async () => {
     const provider = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(response(credentials)))
     const handler = createOAuthHandler(config, provider)
@@ -174,7 +168,6 @@ it('rejects an intercepted handoff paired with another valid attempt before cont
     expect(await accepted.json()).toEqual(credentials)
     expect(provider).toHaveBeenCalledTimes(1)
 })
-
 it.each(['persist', 'flush'])(
     'retains confirmation after local %s fails and retries without creating another page',
     async (failure) => {
@@ -213,7 +206,6 @@ it.each(['persist', 'flush'])(
 afterEach(() => {
     active.splice(0).forEach((connection) => connection.cancel())
 })
-
 async function authorize(handler: ReturnType<typeof createOAuthHandler>, port = 12345) {
     const started = await handler(new Request(`${origin}/authorize?port=${port}&challenge=${challenge}&nonce=${nonce}`))
     expect(started.status).toBe(302)
@@ -221,7 +213,6 @@ async function authorize(handler: ReturnType<typeof createOAuthHandler>, port = 
     expect(location.origin).toBe('https://api.notion.com')
     return location.searchParams.get('state')!
 }
-
 it('binds the browser callback and token exchange to the desktop verifier without a token in redirects', async () => {
     const provider = vi.fn<typeof fetch>().mockResolvedValue(response(credentials))
     const handler = createOAuthHandler(config, provider)
@@ -252,7 +243,6 @@ it('binds the browser callback and token exchange to the desktop verifier withou
         redirect_uri: `${origin}/callback`
     })
 })
-
 it('rejects tampering, expiration, unsafe callbacks and oversized payloads before contacting Notion', async () => {
     const provider = vi.fn<typeof fetch>()
     let now = 1000000
@@ -262,7 +252,7 @@ it('rejects tampering, expiration, unsafe callbacks and oversized payloads befor
     const grant = new URL(callback.headers.get('Location')!).searchParams.get('grant')!
     for (const bad of [`${state}x`, 'invalid'])
         expect((await handler(new Request(`${origin}/callback?state=${bad}&code=x`))).status).toBe(400)
-    now += 11 * 60_000
+    now += 11 * 60000
     expect((await handler(jsonRequest('/token', { state, grant, verifier }))).status).toBe(400)
     for (const port of ['0', '65536', '12345@evil.example', '//evil.example'])
         expect(
@@ -272,7 +262,6 @@ it('rejects tampering, expiration, unsafe callbacks and oversized payloads befor
     expect((await handler(jsonRequest('/refresh', { refresh_token: 'x'.repeat(20000) }))).status).toBe(413)
     expect(provider).not.toHaveBeenCalled()
 })
-
 it('returns safe provider failures, forwards denial only to the paired app, and rotates refresh credentials', async () => {
     const provider = vi
         .fn<typeof fetch>()
@@ -291,11 +280,13 @@ it('returns safe provider failures, forwards denial only to the paired app, and 
         refresh_token: 'valid'
     })
 })
-
 function desktop(
     serviceOrigin = origin,
     recovery = new Map<string, JournalSetup>(),
-    disk?: { secrets: Map<string, string>; destination?: Destination }
+    disk?: {
+        secrets: Map<string, string>
+        destination?: Destination
+    }
 ) {
     const secrets = disk?.secrets ?? new Map<string, string>()
     let readKey = 'notion'
@@ -337,7 +328,6 @@ function desktop(
         }
     }
 }
-
 async function approve(app: ReturnType<typeof desktop>) {
     const started = await app.connection.start()
     const authorization = await app.handler(new Request(started.url))
@@ -348,7 +338,6 @@ async function approve(app: ReturnType<typeof desktop>) {
     expect(local.status).toBe(200)
     return started
 }
-
 it.each([origin, 'http://localhost:8788'])(
     'connects through %s, persists tokens, refreshes and disconnects',
     async (serviceOrigin) => {
@@ -392,7 +381,6 @@ it.each([origin, 'http://localhost:8788'])(
         expect(app.secrets.get('notion')).toBe('')
     }
 )
-
 it('ignores an exchange completing after cancellation and closes the old callback listener', async () => {
     const app = desktop()
     await approve(app)
@@ -410,7 +398,6 @@ it('ignores an exchange completing after cancellation and closes the old callbac
     await expect(polling).rejects.toThrow(/cancel/i)
     expect(await app.connection.token()).toBe('')
 })
-
 it('does not resurrect a disconnected account after a delayed refresh; installed static tokens remain usable', async () => {
     const app = desktop()
     app.secrets.set('notion', 'installed-static-token')
@@ -441,7 +428,6 @@ it('does not resurrect a disconnected account after a delayed refresh; installed
     await expect(afterClose).rejects.toThrow(/cancel|disconnect/i)
     expect(await app.connection.token()).toBe('')
 })
-
 it('discards unconfirmed authorization, but finishes an explicitly confirmed operation after Settings closes', async () => {
     const app = desktop()
     await approve(app)
@@ -466,10 +452,8 @@ it('discards unconfirmed authorization, but finishes an explicitly confirmed ope
     expect((await saving).id).toBe('confirmed-page')
     expect(app.connection.connected()).toBe(true)
 })
-
 const selectedPage = { kind: 'page' as const, id: 'selected-page', titleProperty: 'Name', dateProperty: '' }
 const rotated = { ...credentials, access_token: 'access-two', refresh_token: 'refresh-two' }
-
 it('keeps a saved connection usable when recovery cleanup fails and permits another destination edit', async () => {
     const recovery = new Map<string, JournalSetup>()
     const app = desktop(origin, recovery)
@@ -492,7 +476,6 @@ it('keeps a saved connection usable when recovery cleanup fails and permits anot
     app.connection.destinationSaved()
     expect(recovery.size).toBe(0)
 })
-
 async function installed(app: ReturnType<typeof desktop>) {
     await approve(app)
     await app.connection.poll()
@@ -501,7 +484,6 @@ async function installed(app: ReturnType<typeof desktop>) {
         return Promise.resolve(selectedPage)
     })
 }
-
 it('recovers a created page after losing all in-memory credentials and restarting authorization', async () => {
     const recovery = new Map<string, JournalSetup>()
     const first = desktop(origin, recovery)
@@ -528,7 +510,6 @@ it('recovers a created page after losing all in-memory credentials and restartin
     }, 'Work journal')
     expect(creations).toBe(1)
 })
-
 it.each([
     { name: 'new authorization discovery', edit: false, confirm: false },
     { name: 'destination edit discovery', edit: true, confirm: false },
@@ -550,7 +531,7 @@ it.each([
                 : response(confirm ? {} : { results: [], has_more: false, next_cursor: null })
         )
     )
-    const notion = new Notion(new Http(api), (refresh, rejected) => app.connection.pendingToken(refresh, rejected))
+    const notion = new Notion(providerHttp(api), (refresh, rejected) => app.connection.pendingToken(refresh, rejected))
     if (confirm) {
         await expect(
             app.connection.completeJournal((setup, checkpoint) =>
@@ -572,7 +553,6 @@ it.each([
         'Bearer access-two'
     ])
 })
-
 it('confirmation preserves credentials rotated by a concurrent installed-session request', async () => {
     const app = desktop()
     await installed(app)
@@ -584,7 +564,6 @@ it('confirmation preserves credentials rotated by a concurrent installed-session
     })
     expect(app.session()).toMatchObject({ ...rotated, journal: { pageId: 'new-destination' } })
 })
-
 it('waits for an in-flight rotation before committing an edited destination', async () => {
     const app = desktop()
     await installed(app)

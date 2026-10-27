@@ -1,6 +1,6 @@
+import { providerHttp } from './transport-fixtures'
 import { expect, it, vi } from 'vitest'
 import { GitHub } from '../src/main/github'
-import { Http } from '../src/main/http'
 import type { Repository } from '../src/shared/model'
 import { WorkQueue } from '../src/main/work-queue'
 import { workspace, transport } from './fixtures'
@@ -8,7 +8,6 @@ import { Store } from '../src/main/store'
 import { join } from 'node:path'
 import * as gitModule from '../src/main/git'
 import { JournalService } from '../src/main/service'
-
 const repository: Repository = {
     id: 'repo',
     name: 'Project',
@@ -22,7 +21,6 @@ const repository: Repository = {
     branchBases: {},
     branches: []
 }
-
 it('stops before enriching old unrelated PR history', async () => {
     const fetcher = vi.fn<typeof fetch>((input) => {
         const url = input instanceof Request ? input.url : String(input)
@@ -48,21 +46,22 @@ it('stops before enriching old unrelated PR history', async () => {
               : pulls[0]
         return Promise.resolve(new Response(JSON.stringify(value)))
     })
-    const github = new GitHub(new Http(fetcher), () => 'test', vi.fn())
+    const github = new GitHub(providerHttp(fetcher), () => 'test', vi.fn())
     expect(await github.activities(repository, 'me', [])).toEqual([])
     expect(fetcher).toHaveBeenCalledTimes(1)
 })
-
 it('reconsiders completed GitHub coverage when the journal timezone changes', async () => {
     const app = await workspace()
     try {
         app.repository.trackingStart = '2026-10-05'
         app.store.state.settings.timezone = 'UTC'
-        const http = new Http(async (input, init) => {
+        const http = providerHttp(async (input, init) => {
             const response = await app.remote.fetch(input, init)
             const url = input instanceof Request ? input.url : String(input)
             if (!url.includes('/pulls?')) return response
-            const pulls = (await response.json()) as { updated_at: string }[]
+            const pulls = (await response.json()) as {
+                updated_at: string
+            }[]
             pulls[0].updated_at = '2026-10-04T22:00:00Z'
             return new Response(JSON.stringify(pulls))
         })
@@ -81,7 +80,6 @@ it('reconsiders completed GitHub coverage when the journal timezone changes', as
         await app.close()
     }
 })
-
 it('recognizes secondary throttling even with primary quota remaining', async () => {
     const fetcher = vi.fn<typeof fetch>(() =>
         Promise.resolve(
@@ -91,15 +89,17 @@ it('recognizes secondary throttling even with primary quota remaining', async ()
             })
         )
     )
-    const http = new Http(fetcher)
+    const http = providerHttp(fetcher)
     await expect(http.request('https://api.github.com/repos/example/project', 'test')).rejects.toThrow()
     await expect(http.request('https://api.github.com/repos/example/project', 'test')).rejects.toThrow()
     expect(fetcher).toHaveBeenCalledTimes(1)
 })
-
 it('uses conditional reads and shares simultaneous readers without mixing credentials', async () => {
-    const attempts: { token: string | null; etag: string | null }[] = []
-    const http = new Http((_url, init) => {
+    const attempts: {
+        token: string | null
+        etag: string | null
+    }[] = []
+    const http = providerHttp((_url, init) => {
         const headers = new Headers(init?.headers)
         attempts.push({ token: headers.get('Authorization'), etag: headers.get('If-None-Match') })
         if (headers.get('If-None-Match')) return Promise.resolve(new Response(null, { status: 304 }))
@@ -115,7 +115,6 @@ it('uses conditional reads and shares simultaneous readers without mixing creden
     await http.request(url, 'two')
     expect(attempts.map((attempt) => attempt.etag)).toEqual([null, 'version', null])
 })
-
 it('admits foreground work ahead of queued backfill and bounds concurrency', async () => {
     const queue = new WorkQueue(1)
     const order: string[] = []
@@ -139,20 +138,18 @@ it('admits foreground work ahead of queued backfill and bounds concurrency', asy
     await Promise.all([first, background, foreground])
     expect(order).toEqual(['foreground', 'background'])
 })
-
 it('preserves credential-scoped throttle pauses across transport restart', async () => {
     const pauses = {}
     const fetcher = vi.fn<typeof fetch>(() =>
         Promise.resolve(new Response('{}', { status: 429, headers: { 'retry-after': '60' } }))
     )
     const store = { pauses, changed: vi.fn() }
-    await expect(new Http(fetcher, store).request('https://api.github.com/user', 'one')).rejects.toThrow('429')
-    await expect(new Http(fetcher, store).request('https://api.github.com/user', 'one')).rejects.toThrow('paused')
+    await expect(providerHttp(fetcher, store).request('https://api.github.com/user', 'one')).rejects.toThrow('429')
+    await expect(providerHttp(fetcher, store).request('https://api.github.com/user', 'one')).rejects.toThrow('paused')
     expect(fetcher).toHaveBeenCalledTimes(1)
-    await expect(new Http(fetcher, store).request('https://api.github.com/user', 'two')).rejects.toThrow('429')
+    await expect(providerHttp(fetcher, store).request('https://api.github.com/user', 'two')).rejects.toThrow('429')
     expect(fetcher).toHaveBeenCalledTimes(2)
 })
-
 it('repeated refresh skips unchanged PR enrichment and unchanged Git histories', async () => {
     const app = await workspace()
     const log = vi.spyOn(gitModule, 'indexCommits')
@@ -182,7 +179,6 @@ it('repeated refresh skips unchanged PR enrichment and unchanged Git histories',
         await app.close()
     }
 })
-
 it('loads hub file metadata without acquiring a patch and coalesces workspace diff reads', async () => {
     const app = await workspace()
     const read = vi.spyOn(gitModule, 'commitDetails')
@@ -206,7 +202,6 @@ it('loads hub file metadata without acquiring a patch and coalesces workspace di
         await app.close()
     }
 })
-
 it('keeps patch bodies out of snapshots and retains patches and checkpoints after restart', async () => {
     const app = await workspace()
     try {
@@ -230,17 +225,18 @@ it('keeps patch bodies out of snapshots and retains patches and checkpoints afte
         await app.close()
     }
 })
-
 it('retains successful PR batches when a later PR fails and skips them on retry', async () => {
     const remote = transport()
     const original = remote.fetch
     let fail = true
     let firstReads = 0
-    const http = new Http(async (input, init) => {
+    const http = providerHttp(async (input, init) => {
         const url = input instanceof Request ? input.url : String(input)
         if (url.includes('/pulls?')) {
             const response = await original(input, init)
-            const pulls = (await response.json()) as { number: number }[]
+            const pulls = (await response.json()) as {
+                number: number
+            }[]
             return new Response(JSON.stringify([pulls[0], { ...pulls[0], number: 2 }]))
         }
         if (url.includes('/pulls/1/commits')) firstReads++
@@ -252,7 +248,11 @@ it('retains successful PR batches when a later PR fails and skips them on retry'
     const captured: string[] = []
     const scan = {
         versions,
-        batch: (items: { id: string }[]) => {
+        batch: (
+            items: {
+                id: string
+            }[]
+        ) => {
             captured.push(...items.map((item) => item.id))
             return Promise.resolve()
         }
@@ -266,7 +266,6 @@ it('retains successful PR batches when a later PR fails and skips them on retry'
     expect(firstReads).toBe(1)
     expect(captured).toContain('repo:pr:2')
 })
-
 it('bounds enrichment to twenty changed PRs per pass and resumes the same page', async () => {
     let calls = 0
     const pulls = Array.from({ length: 100 }, (_, index) => ({
@@ -283,7 +282,7 @@ it('bounds enrichment to twenty changed PRs per pass and resumes the same page',
         head: { ref: 'feature', sha: 'a'.repeat(40) }
     }))
     const github = new GitHub(
-        new Http((input) => {
+        providerHttp((input) => {
             calls++
             const url = input instanceof Request ? input.url : String(input)
             return Promise.resolve(
@@ -301,7 +300,6 @@ it('bounds enrichment to twenty changed PRs per pass and resumes the same page',
     expect(second.find((item) => item.kind === 'pr')?.id).toBe('repo:pr:21')
     expect(calls).toBe(82)
 })
-
 it('a user pause survives scheduled refresh and explicit retry resumes it', async () => {
     const app = await workspace()
     try {
@@ -320,15 +318,16 @@ it('a user pause survives scheduled refresh and explicit retry resumes it', asyn
         await app.close()
     }
 })
-
 it('discovers a new review on an old PR without importing its old milestones', async () => {
     const remote = transport()
     const github = new GitHub(
-        new Http(async (input, init) => {
+        providerHttp(async (input, init) => {
             const response = await remote.fetch(input, init)
             const url = input instanceof Request ? input.url : String(input)
             if (!url.includes('/pulls?')) return response
-            const pulls = (await response.json()) as { created_at: string }[]
+            const pulls = (await response.json()) as {
+                created_at: string
+            }[]
             pulls[0].created_at = '2020-01-01T00:00:00Z'
             return new Response(JSON.stringify(pulls))
         }),
@@ -339,7 +338,6 @@ it('discovers a new review on an old PR without importing its old milestones', a
     expect(activities.some((item) => item.kind === 'review')).toBe(true)
     expect(activities.some((item) => item.kind === 'opened')).toBe(false)
 })
-
 it('indexes only new commit bodies after ref changes and updates known branch membership', async () => {
     const app = await workspace()
     try {
@@ -357,7 +355,6 @@ it('indexes only new commit bodies after ref changes and updates known branch me
         await app.close()
     }
 })
-
 it('queues and coalesces an explicit source retry behind active acquisition', async () => {
     const app = await workspace()
     let release!: () => void

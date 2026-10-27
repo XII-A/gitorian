@@ -1,3 +1,4 @@
+import type { ProviderHttp } from './provider-http'
 import { NotionDiscoveryCache } from './notion-discovery-cache'
 import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
@@ -7,13 +8,13 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, writeFile, stat } from 'node:fs/promises'
 import { ApplicationWork, ApplicationWorkLive } from './application-work'
-import { Cause, Effect, Exit, ManagedRuntime, Runtime } from 'effect'
+import { Cause, Effect, Exit, Layer, ManagedRuntime, Runtime } from 'effect'
 import { commandSchema } from '../shared/model'
 import type { RepositoryImportProgress, NotionDiscoveryProgress } from '../shared/model'
 import { Store } from './store'
 import { ConnectionProfileCache } from './connection-profiles'
 import { Vault } from './vault'
-import { Http } from './http'
+import { Http, HttpLive } from './http'
 import { GitHub } from './github'
 import { Notion } from './notion'
 import { NotionConnection } from './notion-connection'
@@ -54,10 +55,10 @@ let updating = false
 let notionConnection: NotionConnection | undefined
 let stopNotionPages: (() => void) | undefined
 const referenceWindows = new Set<number>()
-const runtime = ManagedRuntime.make(ApplicationWorkLive)
-const work = runtime.runSync(ApplicationWork)
+let runtime: ManagedRuntime.ManagedRuntime<ApplicationWork | Http, never>
+let work: ApplicationWork
 const native = <A>(operation: () => Promise<A>) => Effect.tryPromise({ try: operation, catch: (error) => error })
-function execute<A, E>(operation: Effect.Effect<A, E, ApplicationWork>): Promise<A> {
+function execute<A, E>(operation: Effect.Effect<A, E, ApplicationWork | Http>): Promise<A> {
     const result = runtime.runPromiseExit(operation).then((exit) => {
         if (Exit.isSuccess(exit)) return exit.value
         throw Cause.squash(exit.cause)
@@ -239,7 +240,22 @@ void app.whenReady().then(() => {
     })
     const vault = new Vault(app.getPath('userData'))
     store.state.transportPauses ??= {}
-    const http = new Http(fetch, { pauses: store.state.transportPauses, changed: () => store.persist() })
+    runtime = ManagedRuntime.make(
+        Layer.merge(
+            ApplicationWorkLive,
+            HttpLive(fetch, {
+                pauses: () => (store.state.transportPauses ??= {}),
+                changed: () => {
+                    store.persist()
+                }
+            })
+        )
+    )
+    work = runtime.runSync(ApplicationWork)
+    const transport = runtime.runSync(Http)
+    const http: ProviderHttp = {
+        request: <T>(...args: Parameters<Http['request']>) => execute(transport.request<T>(...args))
+    }
     const github = new GitHub(
         http,
         () => vault.get('github'),

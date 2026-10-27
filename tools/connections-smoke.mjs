@@ -1060,6 +1060,9 @@ app.on('browser-window-created', (_, window) => {
             holdInitialSearch = true
             await approveNotion()
             await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
+            await js(
+                `(() => {const input=${notionScope}.querySelector('[role="combobox"]:not([inert] *)'); input.focus(); input.click()})()`
+            )
             await wait(`!!document.querySelector('[aria-label="Notion pages"]')`)
             const typePageQuery = async (text) => {
                 await js(

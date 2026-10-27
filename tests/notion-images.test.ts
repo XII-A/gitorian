@@ -1,3 +1,4 @@
+import { providerHttp } from './transport-fixtures'
 import { afterEach, expect, it, vi } from 'vitest'
 import sharp from 'sharp'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -5,14 +6,12 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Store } from '../src/main/store'
 import { Notion } from '../src/main/notion'
-import { Http } from '../src/main/http'
 import { validateImage, UnsupportedImageError } from '../src/main/images'
 import { toNotion } from '../src/shared/notion-format'
 import type { NotionBlock } from '../src/shared/notion-format'
 import type { State } from '../src/shared/model'
 import { JournalService } from '../src/main/service'
 import { GitHub } from '../src/main/github'
-
 const cleanup: (() => void)[] = []
 afterEach(() => cleanup.splice(0).forEach((close) => close()))
 async function setup() {
@@ -48,7 +47,13 @@ async function setup() {
                         ? {
                               type: 'file',
                               file: {
-                                  url: `https://files.example/temporary/${(data.file_upload as { id: string }).id}?signed=${counter}`
+                                  url: `https://files.example/temporary/${
+                                      (
+                                          data.file_upload as {
+                                              id: string
+                                          }
+                                      ).id
+                                  }?signed=${counter}`
                               },
                               caption: data.caption
                           }
@@ -72,7 +77,7 @@ async function setup() {
             expect(new Headers(init.headers).get('Content-Type')).toBeNull()
             const file = (init.body as FormData).get('file') as File
             uploads.set(path.split('/')[1], new Uint8Array(await file.arrayBuffer()))
-            return json({ status: 'uploaded', expiry_time: new Date(Date.now() + 3600_000).toISOString() })
+            return json({ status: 'uploaded', expiry_time: new Date(Date.now() + 3600000).toISOString() })
         }
         if (path.startsWith('file_uploads/')) return json({ status: 'uploaded', expiry_time: null })
         if (path === 'pages' && init.method === 'POST') {
@@ -98,7 +103,9 @@ async function setup() {
             return json({ results: blocks, has_more: false })
         }
         for (const block of blocks) {
-            const data = block[block.type] as { children?: NotionBlock[] }
+            const data = block[block.type] as {
+                children?: NotionBlock[]
+            }
             if (path === `blocks/${block.id}/children`) return json({ results: data.children, has_more: false })
         }
         throw new Error(`Unexpected request ${path}`)
@@ -108,7 +115,7 @@ async function setup() {
         const upload = uploads.get(new URL(url).pathname.split('/').at(-1)!)!
         return validateImage(upload)
     })
-    const notion = new Notion(new Http(fetcher), () => 'private-token', store, download)
+    const notion = new Notion(providerHttp(fetcher), () => 'private-token', store, download)
     const save: State['saves'][number] = {
         id: 'save',
         draftId: 'draft',
@@ -128,7 +135,6 @@ async function setup() {
     }
     return { store, id, bytes, save, notion, fetcher, download, remote }
 }
-
 it('uploads once for repeated images and round-trips bytes/descriptions through temporary URLs', async () => {
     const app = await setup()
     const checkpoint = vi.fn(() => Promise.resolve())
@@ -152,7 +158,6 @@ it('uploads once for repeated images and round-trips bytes/descriptions through 
     app.remote.wrongImage = true
     await expect(app.notion.reconcile(app.save)).rejects.toThrow('differs')
 })
-
 it('finds a complete image-bearing page after a lost create response without duplicating it', async () => {
     const app = await setup()
     app.remote.loseCreate = true
@@ -168,7 +173,6 @@ it('finds a complete image-bearing page after a lost create response without dup
         )
     ).toHaveLength(1)
 })
-
 it('preflights expired image uploads before deleting existing writing during an update', async () => {
     const app = await setup()
     await app.notion.publish(app.save)
@@ -183,7 +187,6 @@ it('preflights expired image uploads before deleting existing writing during an 
     expect(app.fetcher.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(true)
     expect(toNotion((await app.notion.refreshEntry('page')).body)).toEqual(toNotion(app.save.body))
 })
-
 it('represents unsupported remote media explicitly and never confirms it as the expected image', async () => {
     const app = await setup()
     await app.notion.publish(app.save)
@@ -194,10 +197,9 @@ it('represents unsupported remote media explicitly and never confirms it as the 
     app.download.mockRejectedValue(new Error('Download unavailable'))
     await expect(app.notion.refreshEntry('page')).rejects.toThrow('Download unavailable')
 })
-
 it('keeps upload network failures retryable without an uncertain-page lock', async () => {
     const app = await setup()
-    const github = new GitHub(new Http(app.fetcher), () => '', vi.fn())
+    const github = new GitHub(providerHttp(app.fetcher), () => '', vi.fn())
     const journal = new JournalService(app.store, github, app.notion, () => ({
         github: false,
         notion: true,
