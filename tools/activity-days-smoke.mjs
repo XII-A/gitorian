@@ -115,13 +115,29 @@ app.on('browser-window-created', (_, window) => {
                 const rows = surface === 'hub' ? '.hub-activity' : '.ws-activity-row'
                 const toolbar = surface === 'hub' ? '.hub-filters' : '.ws-activity-filters'
                 await js(`document.querySelector('${toolbar}').style.width='320px'`)
-                await pause(150)
+                await wait(
+                    `(()=>{const strip=document.querySelector('${toolbar}');return strip?.getBoundingClientRect().width<=321&&!!strip.querySelector('[aria-label="Scroll activity filters right"]')})()`
+                )
                 assert.ok(
                     await js(
                         `(()=>{const strip=document.querySelector('${toolbar}');const rects=Array.from(strip.querySelector('.activity-filter-items').children).map(n=>n.getBoundingClientRect());return rects.every(r=>Math.abs(r.top-rects[0].top)<1)&&!!strip.querySelector('[aria-label="Scroll activity filters right"]')})()`
                     ),
                     `${surface} filters must stay in one row with visible overflow arrows`
                 )
+                await js(
+                    `(()=>{const view=document.querySelector('${toolbar} .activity-filter-viewport');view.scrollLeft=(view.scrollWidth-view.clientWidth)/2})()`
+                )
+                await wait(`document.querySelectorAll('${toolbar} .activity-filter-arrow').length===2`)
+                const arrowAlignment = await js(
+                    `(()=>{const strip=document.querySelector('${toolbar}'),view=strip.querySelector('.activity-filter-viewport').getBoundingClientRect();return Array.from(strip.querySelectorAll('.activity-filter-arrow')).map(button=>{const r=button.getBoundingClientRect();return {label:button.ariaLabel,offset:r.y+r.height/2-view.y-view.height/2,inScrollbar:!!button.closest('[data-axis]'),hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('button')===button}})})()`
+                )
+                assert.ok(
+                    arrowAlignment.every((button) => Math.abs(button.offset) <= 1 && !button.inScrollbar && button.hit),
+                    `${surface} arrows must align with the chips and remain reachable outside the scrollbar`
+                )
+                record(`${surface}: aligned arrow overlays`, arrowAlignment)
+                await shot(`${surface}-filter-arrows.png`)
+                await js(`document.querySelector('${toolbar} .activity-filter-viewport').scrollLeft=0`)
                 const dayList = await js(
                     `document.querySelector('.activity-day-filter [role="combobox"]').getAttribute('aria-controls')`
                 )

@@ -21,16 +21,53 @@
     flex: none;
 }
 .activity-filter-strip .activity-filter-arrow {
-    flex: none;
+    --focus-outline-offset: -2px;
+    pointer-events: auto;
+    position: absolute;
+    inset-block: 0;
+    margin-block: auto;
+    height: var(--control-height-sm);
     width: var(--control-height-sm);
     min-height: var(--control-height-sm);
     padding: 0;
     border-radius: var(--radius-pill);
     color: var(--text-secondary);
 }
+.activity-filter-edge {
+    --activity-filter-surface: var(--activity-surface, var(--background));
+    position: absolute;
+    z-index: 2;
+    inset-block: 0;
+    width: calc(var(--control-height-sm) + var(--space-3));
+    pointer-events: none;
+}
+.activity-filter-edge-start {
+    inset-inline-start: 0;
+    background: linear-gradient(to right, var(--activity-filter-surface) var(--control-height-sm), transparent);
+}
+.activity-filter-edge-end {
+    inset-inline-end: 0;
+    background: linear-gradient(to left, var(--activity-filter-surface) var(--control-height-sm), transparent);
+}
+.activity-filter-edge-start > button {
+    inset-inline-start: 0;
+}
+.activity-filter-edge-end > button {
+    inset-inline-end: 0;
+}
 @media (pointer: coarse) {
+    .activity-filter-edge {
+        width: calc(var(--control-height-md) + var(--space-3));
+    }
+    .activity-filter-edge-start {
+        background: linear-gradient(to right, var(--activity-filter-surface) var(--control-height-md), transparent);
+    }
+    .activity-filter-edge-end {
+        background: linear-gradient(to left, var(--activity-filter-surface) var(--control-height-md), transparent);
+    }
     .activity-filter-strip .activity-filter-arrow {
         width: var(--control-height-md);
+        height: var(--control-height-md);
         min-height: var(--control-height-md);
     }
 }

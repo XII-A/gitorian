@@ -37,6 +37,8 @@ app.on('browser-window-created', (_, window) => {
                     break
                 await new Promise((resolve) => setTimeout(resolve, 25))
             }
+            // Keep the real pointer off the toolbar to prove that its resting cue is visible.
+            window.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 })
             const result = await window.webContents.executeJavaScript(`(${checkActivityFilterReset.toString()})()`)
             window.focus()
             window.webContents.focus()
@@ -83,6 +85,19 @@ app.on('browser-window-created', (_, window) => {
                 menuFitsAfterResize
             }
             result.passed &&= visibleFocus && selectionRestoresFocus && menuFitsAfterResize
+            const hoverPoint = await js(
+                `(()=>{const r=document.querySelector('.activity-filter-viewport').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`
+            )
+            window.webContents.sendInputEvent({ type: 'mouseMove', ...hoverPoint })
+            await wait(
+                `Number(getComputedStyle(document.querySelector('.activity-filter-scroll [data-axis="x"]')).opacity)>.9`
+            )
+            result.scrollbarRevealedOnHover = true
+            window.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 })
+            await wait(
+                `Number(getComputedStyle(document.querySelector('.activity-filter-scroll [data-axis="x"]')).opacity)<.01`
+            )
+            result.scrollbarHidesAfterHover = true
             writeFileSync(join(output, 'actions.jsonl'), JSON.stringify(result) + '\n')
             writeFileSync(join(output, 'journey.json'), JSON.stringify(result, null, 2))
             await window.webContents.executeJavaScript(

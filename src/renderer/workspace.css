@@ -100,13 +100,14 @@
     overflow: hidden;
 }
 .ws-activity {
+    --activity-surface: color-mix(in oklab, var(--surface-muted) 35%, var(--surface));
     grid-column: 1;
     grid-row: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
     overflow: visible;
-    background: color-mix(in oklab, var(--surface-muted) 35%, var(--surface));
+    background: var(--activity-surface);
     border-right: 1px solid var(--border);
 }
 .ws-draft-host {
@@ -1016,6 +1017,7 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .ws-history-chip:not([aria-pressed='true']) {
     width: var(--control-height-sm);
