@@ -54,6 +54,38 @@ test('code blocks: language, exact copy, real wrapping and saved edits', async (
         expect((await block.getByRole('toolbar', { name: 'Code actions' }).boundingBox())!.x).toBeCloseTo(toolbar!.x, 0)
         await shot('01-code-overflow')
     })
+    await test.step('one glide highlight spans language, copy and wrap without changing keyboard order', async () => {
+        const toolbar = block.getByRole('toolbar', { name: 'Code actions' })
+        const highlight = toolbar.locator('[data-fbg-highlight]')
+        const copy = block.getByRole('button', { name: 'Copy code', exact: true })
+        const wrap = block.getByRole('button', { name: 'Wrap lines', exact: true })
+        await expect(highlight).toHaveCount(1)
+        const follows = async (control: typeof language) => {
+            await expect
+                .poll(async () => {
+                    const target = await control.boundingBox()
+                    const current = await highlight.boundingBox()
+                    if (!target || !current) return Infinity
+                    return Math.max(
+                        Math.abs(target.x - current.x),
+                        Math.abs(target.y - current.y),
+                        Math.abs(target.width - current.width),
+                        Math.abs(target.height - current.height)
+                    )
+                })
+                .toBeLessThan(2)
+            await expect(highlight).toHaveCSS('opacity', '1')
+        }
+        for (const control of [copy, wrap, language]) {
+            await control.hover()
+            await follows(control)
+        }
+        await toolbar.screenshot({ path: info.outputPath('01-language-glide-detail.png') })
+        await page.mouse.move(20, 20)
+        await copy.press('Shift+Tab')
+        await expect(language).toBeFocused()
+        await follows(language)
+    })
     await test.step('search and change language with keyboard, dismiss without losing editing position', async () => {
         await chooseLanguage('plain text', 'Plain text')
         await expect(language).toContainText('Plain text')
