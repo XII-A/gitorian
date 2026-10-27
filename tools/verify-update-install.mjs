@@ -333,9 +333,11 @@ try {
     socket.close()
     socket = undefined
     await pause(2000)
-    const db = new DatabaseSync(join(profile, 'gitorian.sqlite'), { readOnly: true })
+    const db = new DatabaseSync(join(profile, 'journal.sqlite'), { readOnly: true })
     const drafts = db
-        .prepare("SELECT json FROM state_records WHERE collection='drafts'")
+        .prepare(
+            "SELECT json_object('id',id,'title',title,'body',json(body),'week',week,'version',version,'updatedAt',updatedAt) AS json FROM drafts"
+        )
         .all()
         .map((row) => JSON.parse(row.json))
     db.close()

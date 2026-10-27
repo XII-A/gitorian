@@ -1,3 +1,5 @@
+import { run } from './effect-fixtures'
+import { journalState } from './database-fixtures'
 import { run as execute } from './effect-fixtures'
 // @vitest-environment happy-dom
 import { act, createElement } from 'react'
@@ -119,10 +121,11 @@ it('shows real partial Git results while loading and clears the button when all 
         }
         pending = execute(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
         await vi.waitFor(
-            () => {
+            async () => {
                 expect(secondBatch).toBe(true)
-                const completed = app.store.state.repositories.filter(
-                    (repository) => app.store.state.acquisition?.[`git:${repository.id}`]?.historySince === '2026-10-05'
+                const saved = await journalState(app.store)
+                const completed = saved.repositories.filter(
+                    (repository) => saved.acquisition?.[`git:${repository.id}`]?.historySince === '2026-10-05'
                 )
                 expect(completed).toHaveLength(3)
             },
@@ -141,18 +144,18 @@ it('shows real partial Git results while loading and clears the button when all 
         }
         const render = () =>
             act(async () => {
-                root.render(createElement(Harness, { value: app.service.reply().state }))
+                root.render(createElement(Harness, { value: (await run(app.service.reply())).state }))
                 await Promise.resolve()
             })
         await render()
-        expect(rangeActivities(app.store.state, '2026-10-05', '2026-10-11').length).toBeGreaterThan(3)
+        expect(rangeActivities(await journalState(app.store), '2026-10-05', '2026-10-11').length).toBeGreaterThan(3)
         expect(host.querySelector('button')?.getAttribute('aria-busy')).toBe('true')
         release()
         await pending
         await render()
         expect(host.querySelector('button')?.hasAttribute('aria-busy')).toBe(false)
         expect(
-            Object.values(app.store.state.acquisition ?? {}).every(
+            Object.values((await journalState(app.store)).acquisition ?? {}).every(
                 (status) => status.status === 'idle' && !status.windowEnd
             )
         ).toBe(true)
@@ -181,27 +184,30 @@ it('automatically rehydrates the same week when its journal timezone changes wit
     }
     const render = () =>
         act(async () => {
-            root.render(createElement(Harness, { value: app.service.reply().state }))
+            root.render(createElement(Harness, { value: (await run(app.service.reply())).state }))
             await Promise.resolve()
         })
     try {
-        app.store.state.settings.timezone = 'UTC'
-        app.store.state.settings.githubLogin = ''
+        await app.store.saveSettings({ ...app.store.config.settings, timezone: 'UTC' })
+        await app.store.setGitHubLogin('')
         await app.git('commit', '--allow-empty', '--date=2026-10-04T22:00:00Z', '-m', 'Timezone boundary')
         await execute(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
         await render()
-        expect(command).not.toHaveBeenCalled()
-        expect(rangeActivities(app.store.state, '2026-10-05', '2026-10-11')).toHaveLength(0)
+        expect(command.mock.calls.every(([input]) => input.type === 'view')).toBe(true)
+        expect(rangeActivities(await journalState(app.store), '2026-10-05', '2026-10-11')).toHaveLength(0)
         index.mockClear()
-        app.store.state.settings.timezone = 'Europe/Istanbul'
+        command.mockClear()
+        await app.store.saveSettings({ ...app.store.config.settings, timezone: 'Europe/Istanbul' })
         await render()
-        expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'loadWeek', since: '2026-10-05' })
-        await command.mock.results[0].value
+        await vi.waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'loadWeek', since: '2026-10-05' }))
+        await Promise.all(command.mock.results.map((result) => result.value))
         expect(index).not.toHaveBeenCalled()
-        expect(rangeActivities(app.store.state, '2026-10-05', '2026-10-11').map((activity) => activity.title)).toEqual([
-            'Timezone boundary'
-        ])
-        expect(app.store.state.acquisition?.[`git:${app.repository.id}`].historyTimezone).toBe('Europe/Istanbul')
+        expect(
+            rangeActivities(await journalState(app.store), '2026-10-05', '2026-10-11').map((activity) => activity.title)
+        ).toEqual(['Timezone boundary'])
+        expect((await journalState(app.store)).acquisition?.[`git:${app.repository.id}`].historyTimezone).toBe(
+            'Europe/Istanbul'
+        )
     } finally {
         await act(async () => {
             root.unmount()

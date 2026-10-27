@@ -352,7 +352,7 @@ export function WeeklyHub({
                                     <BookOpen size={17} aria-hidden="true" />
                                 </Button>
                             </Tooltip>
-                            <EntryHistory state={state} onWrite={(week) => onWrite(week || currentWeek)} />
+                            <EntryHistory state={state} run={run} onWrite={(week) => onWrite(week || currentWeek)} />
                             <Tooltip content="Refresh activity" side="bottom">
                                 <Button
                                     variant="ghost"

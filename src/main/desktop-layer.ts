@@ -7,19 +7,17 @@ import { NotionConnection, NotionConnectionLive } from './notion-connection'
 import type { ConnectionAdapters } from './notion-connection'
 import { ConnectionState, JournalStore } from './journal-context'
 import { JournalModulesLive } from './journal-layer'
-import type { Store } from './store'
+import type { JournalDatabase } from './journal-database'
 import type { Vault } from './vault'
 
 /** Native adapters and scoped modules are assembled once for the desktop lifetime. */
-export function desktopLayer(store: Store, vault: Vault, connection: Omit<ConnectionAdapters, 'vault'>) {
+export function desktopLayer(store: JournalDatabase, vault: Vault, connection: Omit<ConnectionAdapters, 'vault'>) {
     const native = Layer.mergeAll(
         Layer.scope,
         Layer.succeed(JournalStore, store),
         HttpLive(connection.fetcher, {
-            pauses: () => (store.state.transportPauses ??= {}),
-            changed: () => {
-                store.persist()
-            }
+            pauses: () => store.config.transportPauses,
+            changed: (scope, until) => store.savePause(scope, until).then(() => undefined)
         })
     )
     const authorization = NotionConnectionLive({ ...connection, vault }).pipe(Layer.provideMerge(native))

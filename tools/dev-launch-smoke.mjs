@@ -45,7 +45,7 @@ child.stderr.on('data', (chunk) => {
 const exited = new Promise((done) => child.once('exit', (code, signal) => done({ code, signal })))
 try {
     const started = Date.now()
-    while (!existsSync(join(scratch, 'profile', 'gitorian.sqlite'))) {
+    while (!existsSync(join(scratch, 'profile', 'journal.sqlite'))) {
         if (Date.now() - started > 45000 || child.exitCode !== null)
             throw new Error('The isolated development desktop did not start.')
         await delay(100)

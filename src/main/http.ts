@@ -26,7 +26,7 @@ interface ReadOptions {
 }
 interface PauseStore {
     pauses: () => Record<string, number>
-    changed: () => void
+    changed: (scope: string, until: number) => void | Promise<void>
 }
 interface CachedResponse {
     etag: string
@@ -62,11 +62,11 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
             const transientPauses: Record<string, number> = {}
             const pauses = pauseStore?.pauses ?? (() => transientPauses)
             const pause = (scope: string, until: number): Effect.Effect<void, DurabilityError> =>
-                Effect.try({
-                    try: () => {
+                Effect.tryPromise({
+                    try: async () => {
                         const current = pauses()
                         current[scope] = Math.max(current[scope] ?? 0, until)
-                        pauseStore?.changed()
+                        await pauseStore?.changed(scope, current[scope])
                     },
                     catch: (error) => new DurabilityError(error)
                 })

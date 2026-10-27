@@ -118,9 +118,13 @@ test('checklists retain editable text, keyboard behavior and saved state', async
 
     await test.step('independent post-exit SQLite matches the saved document', async () => {
         await desktop.close()
-        const db = new DatabaseSync(join(profile, 'gitorian.sqlite'), { readOnly: true })
+        const db = new DatabaseSync(join(profile, 'journal.sqlite'), { readOnly: true })
         try {
-            const rows = db.prepare("SELECT json FROM state_records WHERE collection='drafts'").all()
+            const rows = db
+                .prepare(
+                    "SELECT json_object('id',id,'title',title,'body',json(body),'week',week,'version',version,'updatedAt',updatedAt) AS json FROM drafts"
+                )
+                .all()
             const drafts = rows.map((row) => JSON.parse(String(row.json)) as { body: JournalNode })
             writeFileSync(info.outputPath('persisted-drafts.json'), JSON.stringify(drafts, null, 2))
             expect(drafts).toHaveLength(1)

@@ -92,8 +92,8 @@ let credentialSaveFailures = 0
 const hasNotionCredentials = () =>
     ['notion', 'notion-a', 'notion-b'].some((key) => existsSync(join(directory, 'profile', `${key}.secret`)))
 const assertRestartPair = async (id, access) => {
-    const db = new DatabaseSync(join(directory, 'profile', 'gitorian.sqlite'), { readOnly: true })
-    const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
+    const db = new DatabaseSync(join(directory, 'profile', 'journal.sqlite'), { readOnly: true })
+    const row = db.prepare('SELECT settings AS json FROM journal').get()
     const destination = row ? JSON.parse(row.json).destination : undefined
     db.close()
     const state = initialState()

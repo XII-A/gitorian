@@ -24,13 +24,13 @@ Add screenshots and diagrams with `/image`, clipboard paste, or file drop. PNG, 
 
 ## Data storage and privacy
 
-The app stores journal state in `gitorian.sqlite` in Electron’s per-user application data directory (`app.getPath('userData')`). Default locations are `%APPDATA%/Gitorian` on Windows, `~/Library/Application Support/Gitorian` on macOS, and `$XDG_CONFIG_HOME/Gitorian` or `~/.config/Gitorian` on Linux. SQLite may also create `-wal` and `-shm` files.
+The app stores journal state in `journal.sqlite` in Electron’s per-user application data directory (`app.getPath('userData')`). Default locations are `%APPDATA%/Gitorian` on Windows, `~/Library/Application Support/Gitorian` on macOS, and `$XDG_CONFIG_HOME/Gitorian` or `~/.config/Gitorian` on Linux. SQLite may also create `-wal` and `-shm` files.
 
 This database is **not encrypted**. It includes image bytes, drafts, repository paths and remotes, author emails, imported activity, cached diffs and revision evidence, and cached Notion entries. Treat it as private source and writing data. There is no app-operated journal storage or analytics service. A small OAuth helper handles Notion credential exchange and refresh. Connected integrations make requests to GitHub and Notion; external links and Notion avatars can also access the network. Publishing sends the entry content, images, and citations to the chosen Notion destination.
 
 Integration tokens live separately in `github.secret` and `notion.secret`, encrypted using Electron `safeStorage` when a supported operating-system credential backend is available. Without one (including Linux’s `basic_text` backend), new tokens remain in memory for the session and require sign-in again after restart. Disconnecting removes the local token; revoke access in GitHub or Notion too if you want to invalidate it remotely. Disconnecting does not erase cached journal data.
 
-Use Settings → Backup to export or import journal state. Exports omit repository folder paths, cached diffs, and revision diff bodies; they do **not** include integration tokens. They still contain writing, all imported images (including removed images), activity, account metadata, repository remotes, and author emails, so keep them private. Import replaces this device’s journal and requires locating repositories again. JSON backups support up to 512 MiB. Existing text-only backups remain importable; new image-bearing backups require this app version or newer. Removed image bytes are retained for undo and recovery; there is no automatic image cleanup yet. For a full local backup, close the app and copy its entire data directory; encrypted tokens may not be portable to another machine or account.
+Use Settings → Backup to export or import journal state. Format 3 exports include captured patches and revision evidence, and omit repository folder paths and integration tokens. They still contain writing, all imported images (including removed images), activity, account metadata, repository remotes, and author emails, so keep them private. Import replaces this device’s journal and requires locating repositories again. JSON backups support up to 512 MiB. Only format 3 backups are accepted by this pre-release schema. The former development database is left untouched and is not imported automatically. Imported image bytes remain durable for undo and unsaved recovery; automatic cache collection prunes only eligible patches and resolved publication history. For a full local backup, close the app and copy its entire data directory; encrypted tokens may not be portable to another machine or account.
 
 ## Integration setup and permissions
 
@@ -59,7 +59,7 @@ You can change the destination to an existing parent page or database data sourc
 
 ## Development
 
-Requirements: Node.js **22.19 or newer**, **pnpm 10.24.0** (pinned in `package.json`), and Git.
+Requirements: Node.js **24.16 or newer**, **pnpm 10.24.0** (pinned in `package.json`), and Git.
 
 ```sh
 git clone https://github.com/XII-A/gitorian.git
@@ -122,3 +122,5 @@ The app uses Electron, React, TypeScript, SQLite, and electron-vite. `src/main` 
 Use [GitHub Issues](https://github.com/XII-A/gitorian/issues) for bugs and feature requests. Remove tokens, private repository names, paths, journal content, and personal information from reports and screenshots. Do not attach your application data directory or journal backup.
 
 MIT licensed; see [LICENSE](LICENSE) and [NOTICE](NOTICE) for bundled component attribution.
+
+See [local database design](docs/database.md) for schema ownership, migrations, retention and verification.

@@ -31,13 +31,13 @@ export async function githubClient(http: Http, ...adapters: Parameters<typeof Gi
     return runtime.runPromise(GitHub)
 }
 import { makeNotion } from '../src/main/notion'
-import type { Store } from '../src/main/store'
+import type { JournalDatabase } from '../src/main/journal-database'
 import { downloadImage } from '../src/main/images'
 
 export function notionClient(
     http: Http,
     token: (refresh?: boolean, rejected?: string) => string | Promise<string>,
-    images?: Pick<Store, 'image' | 'importImage'>,
+    images?: Pick<JournalDatabase, 'image' | 'importImage'>,
     imageDownload = downloadImage
 ) {
     return makeNotion(
@@ -58,7 +58,7 @@ import { Notion } from '../src/main/notion'
 import type { Reply } from '../src/shared/model'
 
 export async function journalClient(
-    store: Store,
+    store: JournalDatabase,
     github: GitHub,
     notion: Notion,
     connections: () => Reply['connections'],

@@ -43,6 +43,7 @@ export function WorkspaceDraft({
 }: Props) {
     const [draft, setDraft] = useState<Draft>()
     const [status, setStatus] = useState('')
+    const [recoveryConflict, setRecoveryConflict] = useState<Draft>()
     const [busy, setBusy] = useState(false)
     const [imagesReady, setImagesReady] = useState(true)
     const [words, setWords] = useState(0)
@@ -60,7 +61,7 @@ export function WorkspaceDraft({
     const mounted = useRef(true)
     const notifiedSave = useRef('')
     const drafts = state.drafts.filter((item) => item.week === week)
-    const ready = !!draft && !busy
+    const ready = !!draft && !busy && !recoveryConflict
     const storageKey = `gitorian:recovery:${sample ? 'sample' : (state.restoreId ?? 'local')}:${week}`
     const snapshot = useCallback(() => {
         if (bodySnapshot.current && latest.current) {
@@ -93,6 +94,11 @@ export function WorkspaceDraft({
                     )
                 return false
             }
+            const committed = result.draftSaved
+            if (committed && latest.current) {
+                latest.current.version = committed.version
+                writing.version = committed.version
+            }
             if (latest.current === writing) {
                 dirty.current = false
                 try {
@@ -112,12 +118,22 @@ export function WorkspaceDraft({
     const choose = useCallback(
         (item: Draft) => {
             let recovered = item
+            dirty.current = false
+            setRecoveryConflict(undefined)
             try {
                 const raw = localStorage.getItem(storageKey)
                 const parsed = raw ? draftSchema.safeParse(JSON.parse(raw)) : undefined
-                if (parsed?.success && parsed.data.id === item.id && parsed.data.updatedAt > item.updatedAt) {
-                    recovered = { ...parsed.data, publishedEntryId: item.publishedEntryId }
-                    dirty.current = true
+                if (parsed?.success && parsed.data.id === item.id) {
+                    const copy = parsed.data
+                    const differs = copy.title !== item.title || JSON.stringify(copy.body) !== JSON.stringify(item.body)
+                    if (differs && copy.version !== item.version) {
+                        setRecoveryConflict(copy)
+                    } else if (differs && copy.updatedAt > item.updatedAt) {
+                        recovered = { ...copy, publishedEntryId: item.publishedEntryId }
+                        dirty.current = true
+                    } else if (!differs) {
+                        localStorage.removeItem(storageKey)
+                    }
                 }
             } catch {
                 /* An unavailable recovery cache does not prevent opening saved writing. */
@@ -383,7 +399,7 @@ export function WorkspaceDraft({
                     <Button
                         size="sm"
                         loading={busy}
-                        disabled={!draft || uncertain || needsNotion || !imagesReady}
+                        disabled={!draft || uncertain || needsNotion || !imagesReady || !!recoveryConflict}
                         title={
                             !imagesReady
                                 ? 'Finish or dismiss image imports before publishing'
@@ -410,7 +426,7 @@ export function WorkspaceDraft({
                                     aria-label="Entry title"
                                     value={draft.title}
                                     placeholder="Entry title"
-                                    readOnly={busy}
+                                    readOnly={busy || !!recoveryConflict}
                                     rows={2}
                                     onChange={(event) => edit({ ...snapshot()!, title: event.target.value })}
                                 />
@@ -424,7 +440,7 @@ export function WorkspaceDraft({
                                 value={draft.body}
                                 template={entryTemplate}
                                 onEdit={editBody}
-                                readOnly={busy}
+                                readOnly={busy || !!recoveryConflict}
                                 autoFocus={focusWriting}
                             />
                         </>
@@ -442,9 +458,48 @@ export function WorkspaceDraft({
             <footer className={`ws-writing-footer${needsNotion ? ' ws-needs-notion' : ''}`}>
                 <span>{draft ? `${words} words` : '0 words'}</span>
                 <span role="status">
-                    {status && <WorkspaceIcon name="check" width="14" height="14" />}
-                    {status}
+                    {status && !recoveryConflict && <WorkspaceIcon name="check" width="14" height="14" />}
+                    {recoveryConflict ? 'Saved writing changed elsewhere. Choose which copy to keep.' : status}
                 </span>
+                {recoveryConflict && (
+                    <>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                                const recovered = {
+                                    ...recoveryConflict,
+                                    version: latest.current!.version,
+                                    publishedEntryId: latest.current!.publishedEntryId
+                                }
+                                latest.current = recovered
+                                bodySnapshot.current = undefined
+                                dirty.current = true
+                                setRecoveryConflict(undefined)
+                                setDraft(recovered)
+                                setWords(journalWordCount(recovered.body))
+                                cache()
+                                void persist()
+                            }}
+                        >
+                            Use recovery copy
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                                try {
+                                    localStorage.removeItem(storageKey)
+                                } catch {
+                                    /* The saved draft remains authoritative. */
+                                }
+                                setRecoveryConflict(undefined)
+                            }}
+                        >
+                            Keep saved writing
+                        </Button>
+                    </>
+                )}
                 {dirty.current && status.startsWith('Could not') && (
                     <Button className="ws-retry-saving" variant="ghost" size="sm" onClick={persist}>
                         Retry saving

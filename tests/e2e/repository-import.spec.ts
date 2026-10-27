@@ -179,10 +179,12 @@ test('repository import: selection, cancellation, recovery and durable tracking'
     })
     await test.step('post-exit SQLite contains exactly the selected tracking choices', async () => {
         await desktop.close()
-        const db = new DatabaseSync(join(profile, 'gitorian.sqlite'), { readOnly: true })
+        const db = new DatabaseSync(join(profile, 'journal.sqlite'), { readOnly: true })
         try {
             const repositories = db
-                .prepare("SELECT json FROM state_records WHERE collection='repositories'")
+                .prepare(
+                    "SELECT json_object('id',id,'name',name,'path',path,'removed',removed,'available',available) AS json FROM repositories"
+                )
                 .all()
                 .map((row) => JSON.parse(String(row.json)) as Repository)
             writeFileSync(info.outputPath('persisted-repositories.json'), JSON.stringify(repositories, null, 2))

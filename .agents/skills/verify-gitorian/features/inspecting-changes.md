@@ -39,3 +39,5 @@ After `pnpm build`, run `pnpm verify inspector-tabs` for the focused tab regress
 Hidden Electron windows can pause animation; the existing diagnostic measures the vertical escape rather than claiming smooth horizontal motion. Reference windows are read-only. Preserve existing failure/loading/cached/confirmed-empty behavior tests until those distinct states are covered by real desktop journeys. The diagnostic currently emits console results without the import runner's complete retained proof contract.
 
 Light-theme captures use an explicit renderer theme fixture because the app stays dark when OS appearance changes. The repository-import journey owns the production startup and OS-change assertions.
+
+The acquisition diagnostic dismisses setup before opening real hub activity, opens workspace Details, then uses native mouse input on the Diff tab. It independently checks that metadata-only hub loading created no patch rows in `journal.sqlite`. Patch IDs are content hashes, so count all patches rather than a historical ID prefix.

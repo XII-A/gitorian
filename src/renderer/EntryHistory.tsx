@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BookOpen, ChevronRight, History, X } from 'lucide-react'
-import type { JournalNode, State } from '../shared/model'
+import type { Command, Entry, EntryPage, Reply, State } from '../shared/model'
 import { Dialog, DialogClose, DialogContent } from './components/arc/dialog/dialog'
 import { useHistoryMotion } from './use-history-motion'
 import { Drawer, DrawerContent, DrawerTrigger, useDrawerItem } from './components/arc/drawer/drawer'
@@ -14,10 +14,6 @@ import { HistoryHover } from './HistoryHover'
 import { journalWeek } from './hub-model'
 import './entry-history.css'
 
-function documentText(node: JournalNode): string {
-    return node.text ?? (node.content ?? []).map(documentText).join(' ')
-}
-
 function entryDate(date: string, options: Intl.DateTimeFormatOptions) {
     return new Date(`${date.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', {
         ...options,
@@ -25,7 +21,15 @@ function entryDate(date: string, options: Intl.DateTimeFormatOptions) {
     })
 }
 
-export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week: string) => void }) {
+export function EntryHistory({
+    state,
+    onWrite,
+    run
+}: {
+    state: State
+    onWrite: (week: string) => void
+    run: (command: Command) => Promise<Reply | undefined>
+}) {
     const [open, setOpen] = useState(false)
     const [query, setQuery] = useState('')
     const [selectedId, setSelectedId] = useState<string>()
@@ -36,12 +40,58 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
     })
     const reader = useRef<HTMLDivElement>(null)
     const selectedRow = useRef<HTMLButtonElement>(null)
-    const entries = [...state.entries].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id))
-    const search = query.trim().toLocaleLowerCase('en-US')
-    const visible = entries.filter((entry) =>
-        `${entry.title} ${entry.date} ${documentText(entry.body)}`.toLocaleLowerCase('en-US').includes(search)
-    )
-    const selected = useDrawerItem(entries.find((entry) => entry.id === selectedId))
+    const [page, setPage] = useState<EntryPage>({ items: [] })
+    const [loadedEntry, setLoadedEntry] = useState<Entry>()
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState('')
+    const request = useRef(0)
+    useEffect(() => {
+        const token = ++request.current
+        let active = true
+        if (!open) return
+        setLoading(true)
+        setError('')
+        setPage({ items: [] })
+        const timer = setTimeout(() => {
+            void run({ type: 'entryHistory', query }).then((reply) => {
+                if (!active || token !== request.current) return
+                setPage(reply?.entryPage ?? { items: [] })
+                setError(reply?.entryPage ? '' : 'Could not load entries. Close and reopen to retry.')
+                setLoading(false)
+            })
+        }, 150)
+        return () => {
+            clearTimeout(timer)
+            active = false
+        }
+    }, [open, query, run, state.restoreId])
+    useEffect(() => {
+        let active = true
+        setLoadedEntry(undefined)
+        if (selectedId)
+            void run({ type: 'entry', id: selectedId }).then((reply) => {
+                if (active) {
+                    setLoadedEntry(reply?.entry)
+                    if (!reply?.entry) setError('Could not open this entry. Close and reopen history to retry.')
+                }
+            })
+        return () => {
+            active = false
+        }
+    }, [selectedId, run, state.restoreId])
+    const more = async () => {
+        const token = request.current
+        setLoading(true)
+        const reply = await run({ type: 'entryHistory', query, cursor: page.next })
+        if (token !== request.current) return
+        if (reply?.entryPage)
+            setPage((previous) => ({ ...reply.entryPage!, items: [...previous.items, ...reply.entryPage!.items] }))
+        else setError('Could not load more entries. Retry loading.')
+        setLoading(false)
+    }
+    const search = query.trim()
+    const visible = page.items
+    const selected = useDrawerItem(loadedEntry)
     const months = [...new Set(visible.map((entry) => entry.date.slice(0, 7)))]
     const openWeek = (date?: string) => {
         setReading(false)
@@ -84,7 +134,7 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                         <SearchField
                             label="Search entries"
                             hideLabel
-                            placeholder={`Search ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}...`}
+                            placeholder="Search entries..."
                             value={query}
                             onValueChange={setQuery}
                         />
@@ -94,6 +144,7 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                             label="Previous weekly entries"
                             fade={16}
                         >
+                            {(loading || error) && <p role="status">{error || 'Loading entries?'}</p>}
                             {visible.length ? (
                                 <HistoryHover>
                                     {months.map((month) => (
@@ -134,8 +185,7 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                                                                 </span>
                                                                 <span className="history-row-title">{entry.title}</span>
                                                                 <span className="history-excerpt">
-                                                                    {documentText(entry.body) ||
-                                                                        'An entry without body text.'}
+                                                                    {entry.excerpt || 'An entry without body text.'}
                                                                 </span>
                                                                 <ChevronRight
                                                                     className="history-row-arrow"
@@ -150,7 +200,7 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                                         </section>
                                     ))}
                                 </HistoryHover>
-                            ) : (
+                            ) : !loading && !error ? (
                                 <EmptyState
                                     icon={<BookOpen size={24} />}
                                     iconVariant="plain"
@@ -170,6 +220,11 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                                         </Button>
                                     }
                                 />
+                            ) : null}
+                            {page.next && (
+                                <Button variant="ghost" size="sm" loading={loading} onClick={more}>
+                                    Load more entries
+                                </Button>
                             )}
                         </ScrollArea>
                     </section>

@@ -1,3 +1,4 @@
+import { seedJournal } from './seed-journal.mjs'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { DatabaseSync } from 'node:sqlite'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
@@ -12,6 +13,10 @@ const assertPerformance = process.env.WRITING_PROFILE_ASSERT === '1'
 const directory = mkdtempSync(resolve('.ai-docs', 'dev-writing-userdata-'))
 app.setPath('userData', directory)
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
+setTimeout(() => {
+    console.error('Writing profile timed out')
+    app.exit(1)
+}, 100000).unref()
 const fixture = JSON.parse(readFileSync('.ai-docs/workspace-writing-profile-fixture.json', 'utf8'))
 fixture.repositories.forEach((repo) => {
     repo.available = false
@@ -39,45 +44,38 @@ if (branchCount)
         if (i >= 600) activity.date = '2026-09-01T12:00:00Z'
     })
 const fixtureBytes = Buffer.byteLength(JSON.stringify(fixture))
-const db = new DatabaseSync(join(directory, 'gitorian.sqlite'))
-db.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)')
-db.prepare('INSERT INTO state VALUES(1,?)').run(JSON.stringify(fixture))
-if (Number(process.env.WRITING_IMAGES_COUNT ?? 0) > 0) {
-    db.exec(
-        'CREATE TABLE images (id TEXT PRIMARY KEY, mime TEXT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, bytes BLOB NOT NULL)'
-    )
-    const insert = db.prepare('INSERT INTO images VALUES(?,?,?,?,?)')
-    for (const image of JSON.parse(readFileSync('.ai-docs/workspace-writing-images.json', 'utf8')))
-        insert.run(image.id, image.mime, image.width, image.height, Buffer.from(image.bytes, 'base64'))
-}
-db.close()
+await seedJournal(
+    directory,
+    fixture,
+    Number(process.env.WRITING_IMAGES_COUNT ?? 0) > 0
+        ? JSON.parse(readFileSync('.ai-docs/workspace-writing-images.json', 'utf8'))
+        : []
+)
 const churn = process.env.WRITING_CHURN !== '0'
 const activityChurn = process.env.WRITING_ACTIVITY_CHURN !== '0'
-const legacyIPC = process.env.WRITING_LEGACY_IPC === '1'
 const exposedMain = resolve('.ai-docs', `writing-main-${label}.mjs`)
 let mainSource = readFileSync('out/main/index.js', 'utf8')
-if (!mainSource.includes('store = new Store(')) throw Error('Cannot expose diagnostic Store: compiled entry changed')
+if (!mainSource.includes('store = await JournalDatabase.open('))
+    throw Error('Cannot expose diagnostic database: compiled entry changed')
 mainSource = mainSource
-    .replace('store = new Store(', 'store = globalThis.__writingStore = new Store(')
+    .replace(
+        'store = await JournalDatabase.open(',
+        'store = globalThis.__writingDatabase = await JournalDatabase.open('
+    )
     .replace(
         /const directory = fileURLToPath\(new URL\("\.", import.meta.url\)\);/,
         `const directory = ${JSON.stringify(resolve('out/main'))};`
     )
 mainSource = mainSource
     .replace(
-        'new URL("./store-writer.js", import.meta.url)',
-        `new URL(${JSON.stringify(pathToFileURL(resolve('out/main/store-writer.js')).href)})`
+        /DatabaseWorker.open\(path, import.meta.url\)/g,
+        `DatabaseWorker.open(path, ${JSON.stringify(pathToFileURL(resolve('out/main/index.js')).href)})`
     )
     .replace(
         /from "(\.\/chunks\/[^"]+)"/g,
         (_, relative) => `from ${JSON.stringify(pathToFileURL(resolve('out/main', relative)).href)}`
     )
 writeFileSync(exposedMain, mainSource)
-const legacyPreload = resolve('.ai-docs', `writing-preload-${label}.cjs`)
-writeFileSync(
-    legacyPreload,
-    `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('journal',{invoke:command=>ipcRenderer.invoke('journal:command',command),onRepositoryImportProgress:listener=>{const handler=(_,value)=>listener(value);ipcRenderer.on('journal:repository-import',handler);return()=>ipcRenderer.removeListener('journal:repository-import',handler)}})`
-)
 const commands = []
 const sqliteExecs = []
 const nativeExec = DatabaseSync.prototype.exec
@@ -117,14 +115,17 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 let started = false
 app.on('browser-window-created', (_, initial) => {
     if (!globalThis.__writingChurnTimer) {
-        const store = globalThis.__writingStore
-        store.state.acquisition = { 'git:sample-repo-0': { status: 'running', offset: 0 } }
-        store.state.snapshotVersion++
+        const store = globalThis.__writingDatabase
+        let offset = 0
+        const key = `git:${fixture.repositories[0].id}`
+        void store.saveCheckpoint(key, { status: 'running', offset })
         globalThis.__writingChurnTimer = setInterval(() => {
             if (churn) {
-                if (activityChurn) store.state.activities[0].description = `Background update ${Date.now()}`
-                store.state.acquisition['git:sample-repo-0'].offset++
-                store.state.snapshotVersion++
+                if (activityChurn)
+                    void store.applyAcquisitionBatch({
+                        activities: [{ ...fixture.activities[0], description: `Background update ${Date.now()}` }]
+                    })
+                void store.saveCheckpoint(key, { status: 'running', offset: ++offset })
             }
         }, 2000)
     }
@@ -142,7 +143,7 @@ app.on('browser-window-created', (_, initial) => {
                 webPreferences: {
                     offscreen: true,
                     backgroundThrottling: false,
-                    preload: legacyIPC ? legacyPreload : resolve('out/preload/index.cjs'),
+                    preload: resolve('out/preload/index.cjs'),
                     sandbox: true,
                     contextIsolation: true
                 }
@@ -154,7 +155,9 @@ app.on('browser-window-created', (_, initial) => {
             win.webContents.on('console-message', (event) => {
                 if (event.level === 'error') console.error(event.message)
             })
-            await win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/?workspace=true&week=2026-10-12`)
+            const rendererURL = new URL(process.env.WRITING_RENDERER_URL)
+            rendererURL.search = '?workspace=true&week=2026-10-12'
+            await win.loadURL(rendererURL.href)
             initial.destroy()
             const js = (source) => win.webContents.executeJavaScript(source)
             for (let i = 0; i < 100 && !(await js(`!!document.querySelector('.tiptap')`)); i++) await pause(50)
@@ -162,8 +165,8 @@ app.on('browser-window-created', (_, initial) => {
             const setup = await js(
                 `({toggles:document.querySelectorAll('[data-type="toggleContent"]').length,development:!!document.querySelector('script[src="/@vite/client"]')})`
             )
-            if (setup.toggles !== 10 || !setup.development)
-                throw Error('Expected the ten-toggle Vite development fixture')
+            if (setup.toggles !== 10 || setup.development !== (rendererURL.protocol !== 'file:'))
+                throw Error('Expected the ten-toggle fixture in the requested renderer build')
             win.webContents.debugger.attach('1.3')
             const cdp = (method, params = {}) => win.webContents.debugger.sendCommand(method, params)
             const rows = [],
@@ -239,7 +242,7 @@ app.on('browser-window-created', (_, initial) => {
             clearInterval(mainTimer)
             clearInterval(globalThis.__writingChurnTimer)
             await pause(1300)
-            await globalThis.__writingStore.flush()
+            await globalThis.__writingDatabase.draft(fixture.drafts[0].id)
             const { profile } = await cdp('Profiler.stop')
             writeFileSync(`.ai-docs/writing-${label}.cpuprofile`, JSON.stringify(profile))
             const mainProfile = await mainPost('Profiler.stop')
@@ -269,12 +272,10 @@ app.on('browser-window-created', (_, initial) => {
             for (const task of classifiedTasks)
                 if (task.totalSampleMs > 0 && task.gcMs / task.totalSampleMs >= 0.8) task.classification = 'gc'
             const editorJSON = await js(`JSON.stringify(document.querySelector('.tiptap').editor.getJSON())`)
-            const verifyDb = new DatabaseSync(join(directory, 'gitorian.sqlite'), { readOnly: true })
-            const saved = verifyDb
-                .prepare('SELECT json FROM state_records WHERE collection=? AND id=?')
-                .get('drafts', fixture.drafts[0].id)
+            const verifyDb = new DatabaseSync(join(directory, 'journal.sqlite'), { readOnly: true })
+            const saved = verifyDb.prepare('SELECT body FROM drafts WHERE id=?').get(fixture.drafts[0].id)
             verifyDb.close()
-            const savedMatchesEditor = !!saved && JSON.stringify(JSON.parse(saved.json).body) === editorJSON
+            const savedMatchesEditor = !!saved && JSON.stringify(JSON.parse(saved.body)) === editorJSON
             const stats = (values) => {
                 const sorted = values.filter(Number.isFinite).sort((a, b) => a - b)
                 return {
@@ -307,7 +308,6 @@ app.on('browser-window-created', (_, initial) => {
                 setup,
                 churn,
                 activityChurn,
-                legacyIPC,
                 savedMatchesEditor,
                 fixtureBytes,
                 entries: entryCount,
@@ -330,7 +330,7 @@ app.on('browser-window-created', (_, initial) => {
                 JSON.stringify({ ...summary, rows, heartbeats, mainTicks, commands, sqliteExecs, metrics }, null, 2)
             )
             console.info(JSON.stringify(summary))
-            await globalThis.__writingStore.shutdown()
+            await globalThis.__writingDatabase.close()
             if (
                 assertPerformance &&
                 (!savedMatchesEditor ||
@@ -349,8 +349,4 @@ app.on('browser-window-created', (_, initial) => {
         }
     })
 })
-setTimeout(() => {
-    console.error('Dev writing profile timed out')
-    app.exit(1)
-}, 100000).unref()
 await import(pathToFileURL(exposedMain).href)

@@ -19,6 +19,7 @@
         "lint:fix": "oxlint --type-aware --fix",
         "format": "oxfmt --write .",
         "format:check": "oxfmt --check .",
+        "db:generate": "node tools/generate-migration.mjs",
         "icons": "node tools/generate-icons.mjs",
         "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
         "package": "pnpm build && electron-builder",
@@ -36,6 +37,7 @@
         "smoke:dev-reload": "node tools/dev-reload-smoke.mjs",
         "smoke:dev-launch": "node tools/dev-launch-smoke.mjs",
         "smoke:writing": "node tools/workspace-writing-dev-profile.mjs --assert",
+        "smoke:writing:release": "node tools/workspace-writing-profile.mjs --assert",
         "smoke:images": "electron tools/image-smoke.mjs"
     },
     "build": {
@@ -51,6 +53,7 @@
         "files": [
             "out/**/*",
             "resources/icon.png",
+            "resources/migrations/**/*",
             "package.json",
             "LICENSE",
             "NOTICE",
@@ -102,6 +105,7 @@
         "@tiptap/react": "3.31.4",
         "@tiptap/starter-kit": "3.31.4",
         "@xmldom/xmldom": "^0.9.12",
+        "drizzle-orm": "1.0.0-rc.5",
         "effect": "3.22.2",
         "electron-updater": "6.8.9",
         "gitdiff-parser": "0.3.1",
@@ -128,6 +132,7 @@
         "@types/react-dom": "19.3.0",
         "@types/refractor": "^3.4.1",
         "@vitejs/plugin-react": "5.1.4",
+        "drizzle-kit": "1.0.0-rc.5",
         "electron": "44.5.1",
         "electron-builder": "26.15.3",
         "electron-vite": "5.0.0",
@@ -144,6 +149,6 @@
     "license": "MIT",
     "packageManager": "pnpm@10.24.0",
     "engines": {
-        "node": ">=22.19.0"
+        "node": ">=24.16.0"
     }
 }

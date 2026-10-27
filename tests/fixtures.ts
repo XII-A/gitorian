@@ -11,7 +11,7 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { Store } from '../src/main/store'
+import { JournalDatabase } from '../src/main/journal-database'
 import type { NotionBlock } from '../src/shared/notion-format'
 import { afterAll } from 'vitest'
 const execute = promisify(execFile)
@@ -46,7 +46,7 @@ export const patch =
     'diff --git a/a.ts b/a.ts\nindex 1111111..2222222 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n'
 export async function journal() {
     const directory = await mkdtemp(join(tmpdir(), 'gitorian-test-'))
-    const store = new Store(join(directory, 'tracking.sqlite'))
+    const store = await JournalDatabase.open(join(directory, 'tracking.sqlite'))
     const remote = transport()
     const runtime = ManagedRuntime.make(
         journalLayer({
@@ -66,8 +66,8 @@ export async function journal() {
         runtime.runPromise(Notion),
         runtime.runPromise(NotionRequests)
     ])
-    store.state.settings.githubLogin = 'me'
-    store.state.settings.destination = { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' }
+    await store.setGitHubLogin('me')
+    await store.setDestination({ kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' })
     return {
         directory,
         store,
@@ -78,7 +78,7 @@ export async function journal() {
         requests,
         close: async () => {
             await runtime.dispose()
-            store.close()
+            await store.close()
             await removeFixture(directory)
         }
     }
@@ -91,8 +91,9 @@ export async function workspace() {
         // Each scenario still owns its checkout, SQLite store, and transport state.
         await cp(await (gitTemplate ??= createGitTemplate()), app.directory, { recursive: true })
         await run(app.service.addRepository(app.directory))
-        const repository = app.store.state.repositories[0]
+        const repository = app.store.config.repositories[0]
         repository.remote = 'https://github.com/example/project.git'
+        await app.store.saveRepository(repository)
         return { ...app, git, repository }
     } catch (error) {
         await app.close()

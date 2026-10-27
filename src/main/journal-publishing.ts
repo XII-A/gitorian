@@ -8,13 +8,13 @@ import { NotionFailure } from './notion'
 import { NotionRequests } from './notion-request'
 import { imageIds, imageExtension } from '../shared/images'
 import { makeSharedRequests } from './shared-requests'
-import { randomUUID } from 'node:crypto'
 import { Context, Effect, Layer } from 'effect'
 import { HttpError } from './http'
 import { Notion } from './notion'
 import { ConnectionState, JournalError, JournalStore } from './journal-context'
 import { DurabilityError } from './durability-error'
 import type { State } from '../shared/model'
+type PublishingAttempt = State['saves'][number] & { generation: string }
 const convert = (...args: Parameters<typeof toNotion>) =>
     Effect.try({
         try: () => toNotion(...args),
@@ -47,23 +47,20 @@ export const JournalPublishingLive = Layer.scoped(
         const sharedReconciliation = yield* makeSharedRequests<string, undefined, Error>(
             () => new JournalError('Publishing is closed')
         )
-        const confirming = new Set<string>()
-        const checkpoint = Effect.try({
-            try: () => {
-                store.persist()
-            },
-            catch: (error) => new DurabilityError(error)
-        })
-            .pipe(
-                Effect.zipRight(
-                    Effect.tryPromise({ try: () => store.flush(), catch: (error) => new DurabilityError(error) })
-                )
+        const local = <A>(operation: () => Promise<A>) =>
+            Effect.tryPromise({ try: operation, catch: (error) => new DurabilityError(error) })
+        // Unacknowledged remote progress must be checkpointed again before another remote mutation.
+        const volatileAttempts = new Map<string, PublishingAttempt>()
+        const checkpoint = (save: PublishingAttempt) =>
+            local(() => store.checkpointPublication(save, save.generation)).pipe(
+                Effect.tapError(() =>
+                    Effect.sync(() => {
+                        volatileAttempts.set(save.id, save)
+                    })
+                ),
+                Effect.uninterruptible
             )
-            .pipe(Effect.uninterruptible)
-        const remotePublish = (
-            save: State['saves'][number],
-            progress: PageWriteProgress
-        ): Effect.Effect<Entry, Error> =>
+        const remotePublish = (save: PublishingAttempt, progress: PageWriteProgress): Effect.Effect<Entry, Error> =>
             Effect.gen(function* () {
                 if (!save.title.trim() || save.title.length > 2000)
                     return yield* Effect.fail(new HttpError(400, 'Use a title between 1 and 2000 characters'))
@@ -91,7 +88,7 @@ export const JournalPublishingLive = Layer.scoped(
                     })
                 })
                 save.entryId = page.id
-                yield* checkpoint
+                yield* checkpoint(save)
                 for (const children of batches.slice(1))
                     yield* request(`blocks/${page.id}/children`, {
                         method: 'PATCH',
@@ -107,7 +104,7 @@ export const JournalPublishingLive = Layer.scoped(
                 }
             })
         const remoteReconcile = (
-            save: State['saves'][number],
+            save: PublishingAttempt,
             progress: PageWriteProgress
         ): Effect.Effect<Entry | undefined, Error> =>
             Effect.gen(function* () {
@@ -121,9 +118,6 @@ export const JournalPublishingLive = Layer.scoped(
                 }[] = []
                 for (const page of pages) {
                     const blocks = yield* loadBlocks(page.id)
-                    const legacyMarker = blocks.some(
-                        (block) => block.type === 'paragraph' && JSON.stringify(block.paragraph).includes(save.marker)
-                    )
                     const title = Object.values(page.properties)
                         .find((property) => property.title)
                         ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
@@ -134,7 +128,6 @@ export const JournalPublishingLive = Layer.scoped(
                     // only one complete matching page created during this publish attempt.
                     if (
                         save.entryId ||
-                        legacyMarker ||
                         (title === save.title &&
                             elapsed >= -1000 &&
                             elapsed <= 120000 &&
@@ -162,7 +155,7 @@ export const JournalPublishingLive = Layer.scoped(
                         )
                     // Adopt the identified page durably before resuming remote writes.
                     save.entryId = page.id
-                    yield* checkpoint
+                    yield* checkpoint(save)
                     const sending = yield* convert(save.body, yield* uploadImages(save))
                     progress.dispatched = true
                     for (const children of yield* chunkBlocks(sending.slice(actual.length)))
@@ -174,7 +167,7 @@ export const JournalPublishingLive = Layer.scoped(
                 }
                 return undefined
             })
-        const remoteUpdate = (save: State['saves'][number], progress: PageWriteProgress): Effect.Effect<Entry, Error> =>
+        const remoteUpdate = (save: PublishingAttempt, progress: PageWriteProgress): Effect.Effect<Entry, Error> =>
             Effect.gen(function* () {
                 const expected = yield* convert(save.body)
                 yield* chunkBlocks(expected)
@@ -189,7 +182,7 @@ export const JournalPublishingLive = Layer.scoped(
                     // Persist the replacement boundary before mutating remote content, so a
                     // lost response or restart cannot cause newly appended writing to be deleted.
                 }
-                yield* checkpoint
+                yield* checkpoint(save)
                 const oldIds = new Set(save.replacedBlockIds)
                 const remaining = blocks.filter((block) => !oldIds.has(block.id!))
                 const actual = remaining.length ? yield* convert(fromNotion(remaining)) : []
@@ -252,11 +245,11 @@ export const JournalPublishingLive = Layer.scoped(
                 try: () => splitBlocks(blocks),
                 catch: (error) => (error instanceof Error ? error : new NotionFailure(String(error)))
             })
-        const uploadImages = (save: State['saves'][number]): Effect.Effect<Record<string, string>, Error> =>
+        const uploadImages = (save: PublishingAttempt): Effect.Effect<Record<string, string>, Error> =>
             Effect.gen(function* () {
                 const uploads: Record<string, string> = {}
                 for (const id of imageIds(save.body)) {
-                    const image = images?.image(id)
+                    const image = yield* local(() => images.image(id))
                     if (!image)
                         return yield* Effect.fail(
                             new HttpError(
@@ -305,112 +298,30 @@ export const JournalPublishingLive = Layer.scoped(
                         )
                     save.imageUploads ??= {}
                     save.imageUploads[id] = { id: created.id, expiresAt: uploaded.expiry_time }
-                    yield* checkpoint
+                    yield* checkpoint(save)
                     uploads[id] = created.id
                 }
                 return uploads
             })
-        const confirm = (save: State['saves'][number], entry: State['entries'][number]): (() => void) => {
-            const state = store.state
-            const previousSave = { status: save.status, entryId: save.entryId, error: save.error }
-            const previousEntry = state.entries.find((item) => item.id === entry.id)
-            const previousCoverage = new Set(state.coverage)
-            const draft = state.drafts.find((item) => item.id === save.draftId)
-            const previousLink = draft?.publishedEntryId
-            const index = state.entries.findIndex((item) => item.id === entry.id)
-            if (index < 0) state.entries.push(entry)
-            else state.entries[index] = entry
-            for (const selected of save.selections)
-                if (
-                    !state.coverage.some(
-                        (link) =>
-                            link.activityId === selected.activityId &&
-                            link.revision === selected.revision &&
-                            link.entryId === entry.id
-                    )
-                )
-                    state.coverage.push({ ...selected, entryId: entry.id })
-            save.status = 'confirmed'
-            save.entryId = entry.id
-            save.error = undefined
-            // The page belongs to this weekly draft even if newer local edits arrived
-            // while publishing. The next publish must update that page.
-            if (draft) draft.publishedEntryId = entry.id
-            const addedCoverage = new Set(state.coverage.filter((link) => !previousCoverage.has(link)))
-            return () => {
-                Object.assign(save, previousSave)
-                const current = state.entries.findIndex((item) => item.id === entry.id)
-                if (current >= 0 && state.entries[current] === entry) {
-                    if (previousEntry) state.entries[current] = previousEntry
-                    else state.entries.splice(current, 1)
-                }
-                state.coverage = state.coverage.filter((link) => !addedCoverage.has(link))
-                if (draft?.publishedEntryId === entry.id) draft.publishedEntryId = previousLink
-            }
-        }
-        const confirmDurably = (
-            save: State['saves'][number],
-            entry: State['entries'][number]
-        ): Effect.Effect<void, Error> => {
-            return Effect.acquireUseRelease(
-                Effect.sync(() => {
-                    confirming.add(save.id)
-                    return confirm(save, entry)
-                }),
-                (rollback) => checkpoint.pipe(Effect.onError(() => Effect.sync(rollback))),
-                () =>
+        const confirmDurably = (save: PublishingAttempt, entry: Entry): Effect.Effect<void, Error> =>
+            local(() => store.confirmPublication(save.id, entry, save.generation)).pipe(
+                Effect.tap(() =>
                     Effect.sync(() => {
-                        confirming.delete(save.id)
+                        volatileAttempts.delete(save.id)
                     })
-            ).pipe(Effect.uninterruptible)
-        }
+                ),
+                Effect.uninterruptible
+            )
         const publish = (draftId: string): Effect.Effect<void, Error> =>
             Effect.uninterruptibleMask((restore) =>
                 Effect.gen(function* () {
-                    const state = store.state
-                    const draft = state.drafts.find((item) => item.id === draftId)
-                    if (!draft) return yield* Effect.fail(new JournalError('Draft does not exist'))
-                    if (
-                        state.saves.some(
-                            (save) =>
-                                save.draftId === draftId &&
-                                (['pending', 'unknown'].includes(save.status) || confirming.has(save.id))
-                        )
-                    )
-                        return yield* Effect.fail(
-                            new JournalError('This draft has an uncertain save. Verify it before publishing again.')
-                        )
-                    const previous = state.saves
-                        .filter((save) => save.entryId === draft.publishedEntryId && save.status === 'confirmed')
-                        .at(-1)
-                    const destination = previous?.destination ?? state.settings.destination
-                    if (!destination || !connections().notion)
+                    if (!connections().notion)
                         return yield* Effect.fail(new JournalError('Connect Notion and choose a destination first'))
-                    const save: State['saves'][number] = {
-                        id: randomUUID(),
-                        draftId,
-                        status: 'pending',
-                        marker: `gitorian-operation:${randomUUID()}`,
-                        title: draft.title,
-                        body: structuredClone(draft.body),
-                        selections: structuredClone(draft.selections),
-                        destination: structuredClone(destination),
-                        createdAt: new Date().toISOString(),
-                        week: draft.week,
-                        entryId: draft.publishedEntryId,
-                        updateExisting: !!draft.publishedEntryId
-                    }
+                    const generation = store.generation
+                    const created = yield* local(() => store.beginPublication(draftId, generation))
+                    const save: PublishingAttempt = { ...created, generation }
                     const progress: PageWriteProgress = { dispatched: false }
-                    state.saves.push(save)
                     // No external write is allowed until the recovery intent is durable.
-                    yield* checkpoint.pipe(
-                        Effect.tapError((error) =>
-                            Effect.sync(() => {
-                                save.status = 'failed'
-                                save.error = String(error)
-                            })
-                        )
-                    )
                     yield* restore(
                         remotePublish(save, progress).pipe(
                             Effect.flatMap((entry) => confirmDurably(save, entry)),
@@ -432,7 +343,14 @@ export const JournalPublishingLive = Layer.scoped(
                                             ? String(error)
                                             : `${String(error)} Your page has not been changed. Try publishing again.`
                                         // The caller must not outrun persistence of the recovery outcome.
-                                        yield* checkpoint
+                                        yield* local(() =>
+                                            store.recordPublicationOutcome(
+                                                save.id,
+                                                save.status as 'unknown' | 'failed',
+                                                save.error!,
+                                                generation
+                                            )
+                                        )
                                         return yield* Effect.fail(error)
                                     })
                             })
@@ -445,7 +363,14 @@ export const JournalPublishingLive = Layer.scoped(
                                 save.error = progress.dispatched
                                     ? 'Publishing was interrupted. Verify the saved page before trying again.'
                                     : 'Publishing was interrupted before the page changed. Try publishing again.'
-                                return checkpoint.pipe(Effect.orDie)
+                                return local(() =>
+                                    store.recordPublicationOutcome(
+                                        save.id,
+                                        save.status as 'unknown' | 'failed',
+                                        save.error!,
+                                        generation
+                                    )
+                                ).pipe(Effect.orDie)
                             })
                         )
                     )
@@ -456,15 +381,21 @@ export const JournalPublishingLive = Layer.scoped(
                 saveId,
                 Effect.succeed(
                     Effect.gen(function* () {
-                        const save = store.state.saves.find((item) => item.id === saveId)
-                        if (!save || save.status !== 'unknown')
+                        const generation = store.generation
+                        const found = yield* local(() => store.publication(saveId))
+                        if (!found || found.status !== 'unknown')
                             return yield* Effect.fail(new JournalError('No uncertain save to verify'))
+                        const volatile = volatileAttempts.get(saveId)
+                        const save: PublishingAttempt =
+                            volatile?.generation === generation
+                                ? { ...volatile, status: found.status }
+                                : { ...found, generation }
                         const entry = yield* remoteReconcile(save, { dispatched: false })
                         if (entry) yield* confirmDurably(save, entry)
                         else {
                             save.error =
                                 'The saved page has not been found yet. Retry verification after Notion is reachable; creation remains blocked.'
-                            yield* checkpoint
+                            yield* checkpoint(save)
                         }
                     }).pipe(Effect.as(undefined))
                 )

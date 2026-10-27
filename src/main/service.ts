@@ -6,17 +6,17 @@ import { Context, Effect, Layer, type Scope } from 'effect'
 import { commits, inspectRepository, git } from './git'
 import { JournalPublishing } from './journal-publishing'
 import { ActivityAcquisition } from './activity-acquisition'
-import { ActivityRecords, mergeActivities } from './activity-records'
+import { ActivityRecords } from './activity-records'
 import { ConnectionState, JournalError, JournalStore } from './journal-context'
 import { discoverRepositories, repositoryPathKey } from './repository-discovery'
 import { weekOf } from '../shared/model'
-import type { Command, Reply, RepositoryImportProgress, Selection } from '../shared/model'
-import { imageIds } from '../shared/images'
+import type { Command, Reply, RepositoryImportProgress, Repository, Selection } from '../shared/model'
+import type { JournalView } from './database/types'
 export interface JournalService {
-    readonly reply: (extra?: Partial<Reply>, state?: Reply['state']) => Reply
+    readonly reply: (extra?: Partial<Reply>, view?: JournalView) => Effect.Effect<Reply, JournalFailure>
     readonly suspend: Effect.Effect<void, never, Scope.Scope>
     readonly stopWork: (source: 'git' | 'github' | 'repositories', repositoryId?: string) => Effect.Effect<void>
-    readonly addRepository: (path: string, persist?: boolean) => Effect.Effect<void, JournalFailure>
+    readonly addRepository: (path: string) => Effect.Effect<void, JournalFailure>
     readonly scanRepositories: (
         folder: string,
         onProgress?: (progress: RepositoryImportProgress) => void
@@ -40,6 +40,8 @@ function makeJournal() {
         const publishing = yield* JournalPublishing
         const records = yield* ActivityRecords
         const connections = (yield* ConnectionState).snapshot
+        const local = <A>(operation: () => Promise<A>) =>
+            Effect.tryPromise({ try: operation, catch: (error) => toJournalFailure(error) })
         let importing = false
         let repositoryScan:
             | {
@@ -53,17 +55,16 @@ function makeJournal() {
         const importsSuspended = () => suspensions.size > 0
         const findRepository = (id: string) =>
             Effect.suspend(() => {
-                const repository = store.state.repositories.find((item) => item.id === id)
+                const repository = store.config.repositories.find((item) => item.id === id)
                 return repository
                     ? Effect.succeed(repository)
                     : Effect.fail(new JournalError('Repository is no longer available'))
             })
         const findActivity = (id: string) =>
-            Effect.suspend(() => {
-                const activity = store.state.activities.find((item) => item.id === id)
+            local(async () => {
+                const activity = await store.activity(id)
+                if (!activity) throw new JournalError('Work is no longer available')
                 return activity
-                    ? Effect.succeed(activity)
-                    : Effect.fail(new JournalError('Work is no longer available'))
             })
         const suspend = acquisition.suspend.pipe(
             Effect.zipRight(
@@ -85,38 +86,40 @@ function makeJournal() {
             Effect.gen(function* () {
                 if (source === 'repositories') importStopped = true
                 else yield* acquisition.stop(source, repositoryId)
-                store.persist()
             })
-        const reply = (extra: Partial<Reply> = {}, state = store.snapshot()): Reply => {
-            return { state, connections: connections(), ...extra }
-        }
-        const addRepository = (path: string, persist = true): Effect.Effect<void, Error> =>
+        const reply = (extra: Partial<Reply> = {}, view?: JournalView) =>
+            local(async (): Promise<Reply> => ({
+                state: await store.readWorkspace(view),
+                connections: connections(),
+                ...extra
+            }))
+        const addRepository = (path: string): Effect.Effect<void, Error> =>
             Effect.gen(function* () {
                 const inspected = yield* Effect.tryPromise({
                     try: () => inspectRepository(path),
                     catch: (error) => (error instanceof Error ? error : new JournalError(String(error)))
                 })
                 if (
-                    store.state.repositories.some(
+                    store.config.repositories.some(
                         (repository) => repositoryPathKey(repository.path) === repositoryPathKey(inspected.path)
                     )
                 )
                     return yield* Effect.fail(new JournalError('This repository is already tracked'))
-                store.state.repositories.push({
+                const repository: Repository = {
                     id: randomUUID(),
                     name: inspected.name,
                     path: inspected.path,
                     remote: inspected.githubRemote,
                     base: inspected.base,
                     emails: inspected.email ? [inspected.email] : [],
-                    trackingStart: weekOf(new Date(), store.state.settings),
+                    trackingStart: weekOf(new Date(), store.config.settings),
                     available: true,
                     removed: false,
                     branchBases: {},
                     branches: inspected.branches,
                     remotes: inspected.remotes
-                })
-                if (persist) store.persist()
+                }
+                yield* local(() => store.saveRepository(repository))
             })
         const scanRepositories = (
             folder: string,
@@ -131,13 +134,13 @@ function makeJournal() {
                 })
                 const id = randomUUID()
                 repositoryScan = { id, ...discovered }
-                return reply({
+                return yield* reply({
                     repositoryScan: {
                         id,
                         folder,
                         unreadable: discovered.unreadable,
                         repositories: discovered.paths.map((path) => {
-                            const tracked = store.state.repositories.find(
+                            const tracked = store.config.repositories.find(
                                 (item) => repositoryPathKey(item.path) === repositoryPathKey(path)
                             )
                             return {
@@ -164,7 +167,7 @@ function makeJournal() {
                     return yield* Effect.fail(
                         new JournalError('Repository import is suspended while the journal is maintained.')
                     )
-                if (importing) return reply({ message: 'A repository import is already running.' })
+                if (importing) return yield* reply({ message: 'A repository import is already running.' })
                 const scan = repositoryScan
                 if (!scan || scan.id !== scanId)
                     return yield* Effect.fail(
@@ -184,8 +187,11 @@ function makeJournal() {
                 importing = true
                 importStopped = false
                 const importId = randomUUID()
-                store.state.repositoryImport = { id: importId, status: 'running', completed: 0, total: 0 }
-                store.persist()
+                yield* local(() =>
+                    store.saveProgress({
+                        repositoryImport: { id: importId, status: 'running', completed: 0, total: 0 }
+                    })
+                )
                 return yield* Effect.gen(function* () {
                     let added = 0
                     let existing = 0
@@ -197,19 +203,22 @@ function makeJournal() {
                     let skipped = discovered.unreadable.length
                     let completed = 0
                     onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
-                    store.state.repositoryImport = {
-                        id: importId,
-                        status: 'running',
-                        completed,
-                        total: discovered.paths.length
-                    }
-                    store.persist()
+                    yield* local(() =>
+                        store.saveProgress({
+                            repositoryImport: {
+                                id: importId,
+                                status: 'running',
+                                completed,
+                                total: discovered.paths.length
+                            }
+                        })
+                    )
                     yield* Effect.forEach(
                         discovered.paths,
                         (path) =>
                             Effect.gen(function* () {
                                 if (importStopped || importsSuspended()) return
-                                const tracked = store.state.repositories.find(
+                                const tracked = store.config.repositories.find(
                                     (item) => repositoryPathKey(item.path) === repositoryPathKey(path)
                                 )
                                 yield* Effect.gen(function* () {
@@ -227,10 +236,11 @@ function makeJournal() {
                                                 branches: inspected.branches,
                                                 remotes: inspected.remotes
                                             })
+                                            yield* local(() => store.saveRepository(tracked))
                                             restored++
                                         } else existing++
                                     } else {
-                                        yield* addRepository(path, false)
+                                        yield* addRepository(path)
                                         added++
                                     }
                                 }).pipe(
@@ -245,13 +255,16 @@ function makeJournal() {
                                     )
                                 )
                                 completed++
-                                store.state.repositoryImport = {
-                                    id: importId,
-                                    status: 'running',
-                                    completed,
-                                    total: discovered.paths.length
-                                }
-                                if (completed % 4 === 0) store.persist()
+                                yield* local(() =>
+                                    store.saveProgress({
+                                        repositoryImport: {
+                                            id: importId,
+                                            status: 'running',
+                                            completed,
+                                            total: discovered.paths.length
+                                        }
+                                    })
+                                )
                                 onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
                             }),
                         { concurrency: 2, discard: true }
@@ -263,17 +276,20 @@ function makeJournal() {
                     if (skipped) messages.push(`${skipped} unreadable or invalid folders skipped.`)
                     if (importStopped || importsSuspended())
                         messages.push('Import stopped. Add the folder again to continue.')
-                    store.state.repositoryImport = {
-                        id: importId,
-                        skipped,
-                        skippedItems,
-                        status: importStopped || importsSuspended() ? 'cancelled' : 'done',
-                        completed,
-                        total: discovered.paths.length,
-                        message: messages.join(' ')
-                    }
-                    store.persist()
-                    return reply({ message: messages.join(' ') })
+                    yield* local(() =>
+                        store.saveProgress({
+                            repositoryImport: {
+                                id: importId,
+                                skipped,
+                                skippedItems,
+                                status: importStopped || importsSuspended() ? 'cancelled' : 'done',
+                                completed,
+                                total: discovered.paths.length,
+                                message: messages.join(' ')
+                            }
+                        })
+                    )
+                    return yield* reply({ message: messages.join(' ') })
                 }).pipe(
                     Effect.ensuring(
                         Effect.sync(() => {
@@ -290,45 +306,44 @@ function makeJournal() {
         }
         const handle = (command: Command): Effect.Effect<Reply, Error> =>
             Effect.gen(function* () {
-                const state = store.state
+                const generation = store.generation
                 switch (command.type) {
                     case 'state':
-                        return reply()
+                        return yield* reply()
+                    case 'view':
+                        return yield* reply({}, command.view)
                     case 'repository': {
-                        const repository = yield* findRepository(command.repository.id)
-                        const incoming = command.repository
-                        // Renderer configuration cannot assign arbitrary filesystem paths.
-                        Object.assign(repository, incoming, { path: repository.path, available: repository.available })
+                        const previous = yield* findRepository(command.repository.id)
+                        yield* local(() =>
+                            store.saveRepository(
+                                { ...command.repository, path: previous.path, available: previous.available },
+                                generation
+                            )
+                        )
                         break
                     }
                     case 'loadWeek':
                         yield* refresh({ since: command.since, missingOnly: true })
-                        return reply()
+                        break
                     case 'refresh':
                         yield* refresh({ ...command, resume: true })
-                        return reply()
+                        break
                     case 'backfill':
                         yield* backfill(command.repositoryId, command.since)
-                        return reply()
+                        break
                     case 'stopWork':
                         yield* stopWork(command.source, command.repositoryId)
-                        return reply()
+                        break
                     case 'history': {
                         const repository = yield* findRepository(command.repositoryId)
-                        const remoteNames = (yield* Effect.tryPromise({
-                            try: () => git(repository.path, ['remote']),
-                            catch: (error) => (error instanceof Error ? error : new JournalError(String(error)))
-                        }))
+                        const remoteNames = (yield* local(() => git(repository.path, ['remote'])))
                             .trim()
                             .split('\n')
                             .filter(Boolean)
                         const remotePrefix = remoteNames.find((name) => command.branch.startsWith(`${name}/`))
                         const branchName = remotePrefix ? command.branch.slice(remotePrefix.length + 1) : command.branch
-                        const linked = state.activities.find(
-                            (activity) =>
-                                activity.kind === 'pr' &&
-                                activity.repositoryId === repository.id &&
-                                activity.branches.includes(branchName)
+                        const linked = (yield* local(() => store.activities(repository.id, 'pr'))).find((a) =>
+                            a.branches.includes(branchName)
                         )
                         const target = linked?.base
                         const remoteTarget = target
@@ -343,21 +358,19 @@ function makeJournal() {
                             : (repository.branchBases[command.branch] ??
                               repository.branchBases[branchName] ??
                               repository.base)
-                        const items = yield* Effect.tryPromise({
-                            try: () => commits(repository, command.branch, command.view, base, command.since),
-                            catch: (error) => (error instanceof Error ? error : new JournalError(String(error)))
-                        })
-                        for (const item of items) mergeActivities(store.state, [item])
-                        store.persist()
+                        const items = yield* local(() =>
+                            commits(repository, command.branch, command.view, base, command.since)
+                        )
+                        yield* local(() => store.applyAcquisitionBatch({ activities: items }, generation))
                         const authors = (Array.isArray(command.author) ? command.author : [command.author])
-                            .map((author) => author.trim().toLowerCase())
+                            .map((a) => a.trim().toLowerCase())
                             .filter(Boolean)
-                        return reply({
+                        return yield* reply({
                             activityIds: items
                                 .filter(
                                     (item) =>
                                         (!authors.length ||
-                                            authors.some((author) => item.author.toLowerCase().includes(author))) &&
+                                            authors.some((a) => item.author.toLowerCase().includes(a))) &&
                                         (!command.since || item.date.slice(0, 10) >= command.since)
                                 )
                                 .map((item) => item.id),
@@ -365,101 +378,74 @@ function makeJournal() {
                         })
                     }
                     case 'details':
-                        return reply(yield* records.details(command.activityId, command.content !== 'files'))
+                        return yield* reply(yield* records.details(command.activityId, command.content !== 'files'))
                     case 'newDraft':
-                        if (state.drafts.some((draft) => draft.week === command.week)) break
-                        state.drafts.push({
-                            id: randomUUID(),
-                            week: command.week,
-                            title: `${command.week} – ${new Date(new Date(`${command.week}T12:00:00Z`).getTime() + 6 * 86400000).toISOString().slice(0, 10)}`,
-                            body: structuredClone(state.settings.template),
-                            selections: [],
-                            updatedAt: new Date().toISOString()
+                        yield* local(() => store.createDraft(command.week, generation))
+                        break
+                    case 'entryHistory':
+                        return yield* reply({
+                            entryPage: yield* local(() => store.entryHistory(command.query, command.cursor))
                         })
-                        break
+                    case 'entry':
+                        return yield* reply({ entry: yield* local(() => store.entry(command.id)) })
                     case 'draft': {
-                        for (const id of imageIds(command.draft.body))
-                            if (!store.hasImage(id))
-                                return yield* Effect.fail(
-                                    new JournalError('A draft image is missing. Restore it from a backup.')
-                                )
-                        const draft = state.drafts.find((item) => item.id === command.draft.id)
-                        if (!draft) return yield* Effect.fail(new JournalError('Draft is unavailable'))
-                        draft.body = command.draft.body
-                        draft.title = command.draft.title
-                        draft.updatedAt = new Date().toISOString()
-                        break
+                        const saved = yield* local(() =>
+                            store.saveDraft(command.draft, command.draft.version, generation)
+                        )
+                        return yield* reply({ draftSaved: { id: saved.id, version: saved.version } })
                     }
                     case 'select': {
-                        const draft = state.drafts.find((item) => item.id === command.draftId)
-                        if (!draft) return yield* Effect.fail(new JournalError('Choose an editable draft'))
                         const activity = yield* findActivity(command.activityId)
-                        if (command.included) {
-                            if (draft.selections.some((item) => item.activityId === activity.id)) break
-                            const selected: Selection = { activityId: activity.id }
-                            if (activity.kind === 'pr') {
-                                selected.revision =
-                                    activity.revision && state.diffs[activity.id] !== undefined
-                                        ? activity.revision
-                                        : yield* records.capture(activity.id)
-                            }
-                            draft.selections.push(selected)
-                            activity.explicit = true
-                        } else draft.selections = draft.selections.filter((item) => item.activityId !== activity.id)
+                        const selection: Selection = { activityId: activity.id }
+                        if (command.included && activity.kind === 'pr')
+                            selection.revision = yield* records.capture(activity.id)
+                        yield* local(() => store.setSelection(command.draftId, selection, command.included, generation))
                         break
                     }
                     case 'disposition':
-                        Object.assign(yield* findActivity(command.activityId), {
-                            disposition: command.disposition,
-                            deferUntil: command.until,
-                            reason: command.reason
-                        })
-                        if (command.disposition === 'inbox') (yield* findActivity(command.activityId)).explicit = true
+                        yield* findActivity(command.activityId)
+                        yield* local(() =>
+                            store.setDisposition(
+                                command.activityId,
+                                command.disposition,
+                                command.until,
+                                command.reason,
+                                generation
+                            )
+                        )
                         break
-                    case 'settings': {
-                        for (const id of imageIds(command.settings.template))
-                            if (!store.hasImage(id))
-                                return yield* Effect.fail(
-                                    new JournalError('A template image is missing. Restore it from a backup.')
-                                )
-                        yield* Effect.try({
-                            try: () => new Intl.DateTimeFormat('en-US', { timeZone: command.settings.timezone }),
-                            catch: (error) => new JournalError(error instanceof Error ? error.message : String(error))
-                        })
-                        const order = command.settings.layout.order
-                        if (order.length !== 3 || new Set(order).size !== 3)
-                            return yield* Effect.fail(new JournalError('Layout must contain each pane once'))
-                        state.settings = { ...command.settings, destination: state.settings.destination }
+                    case 'settings':
+                        yield* local(() =>
+                            store.saveSettings(
+                                { ...command.settings, destination: store.config.settings.destination },
+                                generation
+                            )
+                        )
                         break
-                    }
                     case 'publish':
                         yield* publishing.publish(command.draftId)
-                        return reply()
+                        break
                     case 'reconcile':
                         yield* publishing.reconcile(command.saveId)
-                        return reply()
+                        break
                     case 'coverage': {
                         const activity = yield* findActivity(command.activityId)
-                        if (!state.entries.some((entry) => entry.id === command.entryId))
-                            return yield* Effect.fail(new JournalError('Choose a cached saved entry'))
-                        if (command.linked) {
-                            const revision =
-                                activity.kind === 'pr'
-                                    ? activity.revision && state.diffs[activity.id] !== undefined
-                                        ? activity.revision
-                                        : yield* records.capture(activity.id)
-                                    : undefined
-                            state.coverage.push({ activityId: activity.id, revision, entryId: command.entryId })
-                        } else
-                            state.coverage = state.coverage.filter(
-                                (link) => !(link.activityId === activity.id && link.entryId === command.entryId)
+                        const revision =
+                            command.linked && activity.kind === 'pr' ? yield* records.capture(activity.id) : undefined
+                        yield* local(() =>
+                            store.setCoverage(
+                                { activityId: activity.id, revision },
+                                command.entryId,
+                                command.linked,
+                                generation
                             )
+                        )
                         break
                     }
                     default:
                         return yield* Effect.fail(new JournalError('This command requires the desktop host'))
                 }
-                return reply({}, store.persist())
+                return yield* reply()
             })
         return {
             reply,

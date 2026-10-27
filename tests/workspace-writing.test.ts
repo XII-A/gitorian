@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
 import { sampleState } from '../src/renderer/workspace-sample'
-import type { Command, JournalNode } from '../src/shared/model'
+import type { Command, JournalNode, Reply } from '../src/shared/model'
 import type { EditorSnapshot } from '../src/renderer/editor-snapshot'
 
 const notifications = vi.hoisted(() => ({
@@ -66,6 +66,49 @@ afterEach(async () => {
 const body = (text: string): JournalNode => ({
     type: 'doc',
     content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
+})
+
+it('keeps a recovery copy from an older draft version until the writer explicitly chooses it', async () => {
+    const state = sampleState('2026-10-05')
+    state.drafts[0].version = 3
+    state.drafts[0].title = 'Saved in another window'
+    const recovered = {
+        ...state.drafts[0],
+        version: 2,
+        title: 'My unsaved writing',
+        body: body('Recover these words'),
+        updatedAt: '2099-01-01T12:00:00Z'
+    }
+    const key = 'gitorian:recovery:local:2026-10-05'
+    localStorage.setItem(key, JSON.stringify(recovered))
+    const run = vi.fn((_command: Command) =>
+        Promise.resolve({ state, connections: { github: false, notion: true, protectedStorage: false } })
+    )
+    await update(() =>
+        root.render(
+            createElement(WorkspaceDraft, {
+                state,
+                week: '2026-10-05',
+                sample: false,
+                notionConnected: true,
+                run,
+                publishTarget: null,
+                onReady: vi.fn(),
+                onSettings: vi.fn()
+            })
+        )
+    )
+    await update(() => vi.advanceTimersByTime(1200))
+    expect(run).not.toHaveBeenCalled()
+    expect(localStorage.getItem(key)).toContain('Recover these words')
+    const useCopy = [...container.querySelectorAll('button')].find(
+        (button) => button.textContent === 'Use recovery copy'
+    )
+    expect(useCopy).toBeDefined()
+    await update(() => useCopy!.click())
+    expect(run).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'draft', draft: expect.objectContaining({ version: 3, body: recovered.body }) })
+    )
 })
 
 it('does no synchronous recovery writes or backend saves during a typing burst, then saves the latest document once', async () => {
@@ -280,3 +323,51 @@ it.each([false, true])(
         expect(container.textContent).toContain('Update in Notion')
     }
 )
+
+it('advances dirty writing only to its own save acknowledgment when another writer changes the snapshot', async () => {
+    const state = sampleState('2026-10-05')
+    state.drafts[0].version = 1
+    let release!: (value: Reply) => void
+    const run = vi.fn(
+        (_command: Command) =>
+            new Promise<Reply>((resolve) => {
+                release = resolve
+            })
+    )
+    await update(() =>
+        root.render(
+            createElement(WorkspaceDraft, {
+                state,
+                week: '2026-10-05',
+                sample: false,
+                notionConnected: true,
+                run,
+                publishTarget: null,
+                onReady: vi.fn(),
+                onSettings: vi.fn()
+            })
+        )
+    )
+    await update(() => writer.change?.(body('First edit')))
+    await update(() => vi.advanceTimersByTime(1000))
+    await update(() => writer.change?.(body('Continued local writing')))
+    await update(() =>
+        release({
+            state: { ...state, drafts: [{ ...state.drafts[0], version: 3, body: body('Another writer') }] },
+            draftSaved: { id: state.drafts[0].id, version: 2 },
+            connections: { github: false, notion: true, protectedStorage: false }
+        })
+    )
+    await update(() => vi.advanceTimersByTime(1000))
+    expect(run.mock.calls[1][0]).toMatchObject({
+        type: 'draft',
+        draft: { version: 2, body: body('Continued local writing') }
+    })
+    await update(() =>
+        release({
+            state,
+            draftSaved: { id: state.drafts[0].id, version: 3 },
+            connections: { github: false, notion: true, protectedStorage: false }
+        })
+    )
+})

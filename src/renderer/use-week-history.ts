@@ -38,12 +38,27 @@ export function useWeekHistory(
     const login = state.settings.githubLogin
     const timezone = state.settings.timezone
     useEffect(() => {
-        if (!disabled && missingSources(latest.current, since).length) void run({ type: 'loadWeek', since })
+        if (disabled) return
+        const until = new Date(Date.parse(since) + 6 * 86400000).toISOString().slice(0, 10)
+        void run({ type: 'view', view: { since, until } }).then(() => {
+            if (missingSources(latest.current, since).length) void run({ type: 'loadWeek', since })
+        })
     }, [run, since, repositories, login, timezone, disabled])
+    const next = state.activityPage?.since === since ? state.activityPage.next : undefined
+    const nextId = next?.id,
+        nextInstant = next?.instant
+    useEffect(() => {
+        if (!disabled && nextId && nextInstant !== undefined)
+            void run({
+                type: 'view',
+                view: { since, until: state.activityPage!.until, cursor: { id: nextId, instant: nextInstant } }
+            })
+    }, [disabled, nextId, nextInstant, run, since, state.activityPage?.until])
     return (
         !disabled &&
-        missingSources(state, since).some(
-            (status) => status?.status === 'running' || (status?.status === 'idle' && !!status.windowEnd)
-        )
+        (!!next ||
+            missingSources(state, since).some(
+                (status) => status?.status === 'running' || (status?.status === 'idle' && !!status.windowEnd)
+            ))
     )
 }

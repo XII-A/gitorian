@@ -1,3 +1,4 @@
+import { journalState, editDraft } from './database-fixtures'
 import { Effect } from 'effect'
 import { JournalError } from '../src/main/journal-context'
 import { run } from './effect-fixtures'
@@ -92,8 +93,8 @@ it('imports nested repositories once, skips dependency folders, and resumes stop
         const progress: RepositoryImportProgress[] = []
         const scan = (await run(app.service.scanRepositories(parent, (update) => progress.push(update))))
             .repositoryScan!
-        expect(app.store.state.repositories).toHaveLength(1)
-        expect(app.store.state.repositoryImport).toBeUndefined()
+        expect((await journalState(app.store)).repositories).toHaveLength(1)
+        expect((await journalState(app.store)).repositoryImport).toBeUndefined()
         const first = await run(
             app.service.importRepositories(
                 scan.id,
@@ -115,9 +116,10 @@ it('imports nested repositories once, skips dependency folders, and resumes stop
         expect(first.message).toContain('1 unreadable or invalid folders skipped.')
         expect(first.state.repositories.map((repo) => repo.name)).toContain('two')
         expect(first.state.repositories).toHaveLength(3)
-        const tracked = app.store.state.repositories.find((repo) => repo.name === 'one')!
+        const tracked = (await journalState(app.store)).repositories.find((repo) => repo.name === 'one')!
         const id = tracked.id
         tracked.removed = true
+        await app.store.saveRepository(tracked)
         const rescan = (await run(app.service.scanRepositories(parent))).repositoryScan!
         expect(rescan.repositories.find((item) => item.name === 'one')?.status).toBe('stopped')
         expect(rescan.repositories.find((item) => item.name === 'two')?.status).toBe('tracked')
@@ -156,12 +158,12 @@ it('imports only checked repositories and rejects stale scans and paths outside 
         )
         await expect(run(app.service.importRepositories(scan.id, [app.directory]))).rejects.toThrow('scanned folder')
         await expect(run(app.service.importRepositories(scan.id, []))).rejects.toThrow('Select repositories')
-        expect(app.store.state.repositories).toHaveLength(1)
+        expect((await journalState(app.store)).repositories).toHaveLength(1)
         const selected = scan.repositories.find((item) => item.name === 'include')!.path
         await run(app.service.importRepositories(scan.id, [selected, selected]))
-        expect(app.store.state.repositories.map((item) => item.name)).toContain('include')
-        expect(app.store.state.repositories.map((item) => item.name)).not.toContain('exclude')
-        expect(app.store.state.repositoryImport?.total).toBe(1)
+        expect((await journalState(app.store)).repositories.map((item) => item.name)).toContain('include')
+        expect((await journalState(app.store)).repositories.map((item) => item.name)).not.toContain('exclude')
+        expect((await journalState(app.store)).repositoryImport?.total).toBe(1)
         await expect(run(app.service.importRepositories(scan.id, [selected]))).rejects.toThrow('expired')
     } finally {
         await app.close()
@@ -174,7 +176,7 @@ it('uses a saved Arc template for new drafts without changing existing writing',
     const app = await journal()
     try {
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
-        const original = structuredClone(app.store.state.drafts[0].body)
+        const original = structuredClone((await journalState(app.store)).drafts[0].body)
         const template = {
             type: 'doc',
             content: [
@@ -182,20 +184,22 @@ it('uses a saved Arc template for new drafts without changing existing writing',
                 { type: 'paragraph', content: [{ type: 'text', text: 'Keep one lesson.', marks: [{ type: 'bold' }] }] }
             ]
         }
-        const openSettings = structuredClone(app.store.state.settings)
-        app.store.state.settings.destination = {
+        const openSettings = structuredClone((await journalState(app.store)).settings)
+        await app.store.setDestination({
             kind: 'page',
             id: 'newly-confirmed-page',
             titleProperty: 'Name',
             dateProperty: ''
-        }
+        })
         await run(app.service.handle({ type: 'settings', settings: { ...openSettings, template } }))
-        expect(app.store.state.settings.destination.id).toBe('newly-confirmed-page')
+        expect((await journalState(app.store)).settings.destination?.id).toBe('newly-confirmed-page')
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-12' }))
-        expect(app.store.state.drafts[1].body).toEqual(template)
-        expect(app.store.state.drafts[0].body).toEqual(original)
-        app.store.state.drafts[1].body.content![0].content![0].text = 'Edited independently'
-        expect(app.store.state.settings.template).toEqual(template)
+        expect((await journalState(app.store)).drafts[1].body).toEqual(template)
+        expect((await journalState(app.store)).drafts[0].body).toEqual(original)
+        await editDraft(app.store, 1, (draft) => {
+            draft.body.content![0].content![0].text = 'Edited independently'
+        })
+        expect((await journalState(app.store)).settings.template).toEqual(template)
     } finally {
         await app.close()
     }
@@ -208,18 +212,17 @@ it('discards obsolete OAuth app settings from old journals without losing accoun
     expect(restored.settings.githubLogin).toBe('existing-author')
     expect(restored.settings.template).toEqual(saved.settings.template)
 })
-
 it('reports invalid timezone settings through the recoverable journal failure channel', async () => {
     const app = await journal()
     try {
-        const before = structuredClone(app.store.state.settings)
+        const before = structuredClone((await journalState(app.store)).settings)
         const result = await run(
             app.service
                 .handle({ type: 'settings', settings: { ...before, timezone: 'Invalid/Zone' } })
                 .pipe(Effect.catchAll((error) => Effect.succeed({ failure: error instanceof JournalError })))
         )
         expect(result).toEqual({ failure: true })
-        expect(app.store.state.settings).toEqual(before)
+        expect((await journalState(app.store)).settings).toEqual(before)
     } finally {
         await app.close()
     }

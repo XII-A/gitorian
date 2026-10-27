@@ -1,6 +1,6 @@
 # Frontend conventions
 
-Install Node.js 22.19 or newer and pnpm 10.24.0 (the version pinned in `package.json`), then run `pnpm install --frozen-lockfile`. Use `pnpm check` for validation and `pnpm build` for a production build.
+Install Node.js 24.16 or newer and pnpm 10.24.0 (the version pinned in `package.json`), then run `pnpm install --frozen-lockfile`. Use `pnpm check` for validation and `pnpm build` for a production build.
 
 The hub and writing workspace share Arc's semantic tokens and installed components. Import `components/arc/foundation.css` once in `src/renderer/src.tsx`. Keep page styles in the renderer's page stylesheet; use documented component props and layout classes rather than targeting CSS module internals.
 

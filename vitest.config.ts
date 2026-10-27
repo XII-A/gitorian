@@ -12,5 +12,6 @@ export default defineConfig({
             }
         }
     ],
-    test: { include: ['tests/**/*.test.ts'], testTimeout: 20000 }
+    // Domain scenarios own native database workers; bound simultaneous profiles and Git processes.
+    test: { include: ['tests/**/*.test.ts'], maxWorkers: 4, testTimeout: 20000 }
 })

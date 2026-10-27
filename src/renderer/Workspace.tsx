@@ -145,7 +145,7 @@ export function Workspace({
             switch (command.type) {
                 case 'draft': {
                     const index = next.drafts.findIndex((draft) => draft.id === command.draft.id)
-                    if (index >= 0) next.drafts[index] = command.draft
+                    if (index >= 0) next.drafts[index] = { ...command.draft, version: command.draft.version + 1 }
                     break
                 }
                 case 'newDraft':
@@ -156,6 +156,7 @@ export function Workspace({
                         title: '',
                         body: structuredClone(next.settings.template),
                         selections: [],
+                        version: 1,
                         updatedAt: new Date().toISOString()
                     })
                     break
@@ -190,7 +191,13 @@ export function Workspace({
                 setNotice('Sample changes are kept for this session. Local storage is unavailable.')
             }
             setExample(next)
-            return { state: next, connections: { github: false, notion: false, protectedStorage: false } }
+            return {
+                state: next,
+                connections: { github: false, notion: false, protectedStorage: false },
+                ...(command.type === 'draft'
+                    ? { draftSaved: { id: command.draft.id, version: command.draft.version + 1 } }
+                    : {})
+            }
         },
         [realRun, sample, week]
     )

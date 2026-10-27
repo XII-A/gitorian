@@ -1,7 +1,7 @@
+import { seedJournal } from './seed-journal.mjs'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, dirname, resolve } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { initialState, type Activity, type Repository } from '../src/shared/model'
 
 const scratch = process.env.GITORIAN_VERIFY_STATE!
@@ -109,10 +109,7 @@ state.repositories = [repository]
 state.activities = [commit, pr]
 const profile = join(scratch, 'profile')
 mkdirSync(profile, { recursive: true })
-const db = new DatabaseSync(join(profile, 'gitorian.sqlite'))
-db.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)')
-db.prepare('INSERT INTO state VALUES (1, ?)').run(JSON.stringify(state))
-db.close()
+await seedJournal(profile, state)
 const fixture = {
     repositoryPath: resolve(repositoryPath),
     sha,

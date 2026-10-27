@@ -21,7 +21,7 @@ it('lets a host exit after provider denial without an explicit connection cancel
         const runtime=ManagedRuntime.make(Layer.scoped(NotionConnection,makeNotionConnection({
             vault:{get:()=>'',set:()=>{}},origin:'https://auth.example.com',fetcher:async()=>new Response('{}'),
             recovery:{get:()=>undefined,set:()=>{},clear:()=>{}}
-        },{state:{settings:{}},persist:()=>{},flush:async()=>{}},()=>({
+        },{config:{settings:{}},generation:'fixture',setDestination:async()=>{}},()=>({
             prepareJournal:()=>Effect.fail(new Error('Unexpected setup')),destinationIcon:()=>Effect.succeed(undefined)
         }))));
         const connection=await runtime.runPromise(NotionConnection);
@@ -328,7 +328,30 @@ function ownConnection(
     }),
     commit: () => Promise<void> = () => Promise.resolve()
 ) {
-    const store = { state, persist: () => state, flush: commit }
+    const store = {
+        state,
+        get config() {
+            return { settings: this.state.settings }
+        },
+        get generation() {
+            return this.state.restoreId ?? 'fixture'
+        },
+        persist: () => state,
+        async setDestination(destination: Destination, generation?: string) {
+            if (generation && generation !== this.generation) throw new Error('Journal changed during restore')
+            const current = this.state,
+                previous = current.settings.destination
+            current.settings.destination = destination
+            try {
+                this.persist()
+                await commit()
+            } catch (error) {
+                if (this.state === current && current.settings.destination === destination)
+                    current.settings.destination = previous
+                throw error
+            }
+        }
+    }
     const runtime = ManagedRuntime.make(Layer.scoped(NotionConnection, makeNotionConnection(adapters, store, pages)))
     active.push(() => runtime.dispose())
     return { connection: runtime.runSync(NotionConnection), store, close: () => runtime.dispose() }
@@ -733,6 +756,7 @@ it('invalidates pending destination setup when restoration selects another works
     recovery.set('workspace-one', { id: 'old-recovery', started: true, pageId: 'old-workspace-page' })
     await run(app.connection.choose())
     const restored = initialState()
+    restored.restoreId = 'restored-journal'
     restored.settings.destination = { ...selectedPage, id: 'workspace-two-page', credentialSlot: 'b' }
     app.secrets.set(
         'notion-b',
@@ -923,6 +947,7 @@ it.each(['before staging', 'after staging'] as const)(
         await run(app.connection.choose())
         const prior = JSON.parse(app.secrets.get('notion-a')!)
         const restored = initialState()
+        restored.restoreId = 'restored-journal'
         restored.settings.destination = { ...selectedPage, id: 'restored-page', credentialSlot: 'b' }
         let durable = structuredClone(restored.settings.destination)
         const get = app.secrets.get.bind(app.secrets),

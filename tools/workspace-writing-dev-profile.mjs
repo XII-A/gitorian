@@ -25,16 +25,26 @@ await server.listen()
 const env = {
     ...process.env,
     ELECTRON_RENDERER_URL: 'http://127.0.0.1:4189',
+    WRITING_RENDERER_URL: 'http://127.0.0.1:4189',
     WRITING_PROFILE_LABEL: label,
     WRITING_PROFILE_ASSERT: process.argv.includes('--assert') ? '1' : '0'
 }
 delete env.ELECTRON_RUN_AS_NODE
-const child = spawn(electron, [resolve('tools/workspace-writing-dev-electron.mjs')], {
+const child = spawn(electron, [resolve('tools/workspace-writing-electron.mjs')], {
     env,
     windowsHide: true,
     stdio: 'inherit'
 })
+const deadline = setTimeout(() => {
+    console.error('Writing replay exceeded its process deadline')
+    if (child.pid && child.exitCode === null) {
+        if (process.platform === 'win32')
+            execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
+        else child.kill('SIGKILL')
+    }
+}, 120000)
 child.on('exit', async (code) => {
+    clearTimeout(deadline)
     await server.close()
     process.exitCode = code ?? 1
 })

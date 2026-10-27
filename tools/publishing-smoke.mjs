@@ -1,7 +1,7 @@
+import { seedJournal } from './seed-journal.mjs'
 import { app, safeStorage } from 'electron'
 import assert from 'node:assert/strict'
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
-import { DatabaseSync } from 'node:sqlite'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { tsImport } from 'tsx/esm/api'
@@ -42,10 +42,7 @@ state.drafts = [
         updatedAt: new Date().toISOString()
     }
 ]
-const db = new DatabaseSync(join(profile, 'gitorian.sqlite'))
-db.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)')
-db.prepare('INSERT INTO state VALUES (1, ?)').run(JSON.stringify(state))
-db.close()
+await seedJournal(profile, state)
 const requests = []
 let blocks = []
 let fail = false

@@ -1,22 +1,23 @@
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, resolve } from 'node:path'
+import { run } from '../tests/effect-fixtures'
+import { seedJournal } from '../tests/database-fixtures'
 import { workspace } from '../tests/fixtures'
 import { sampleState } from '../src/renderer/workspace-sample'
 import { commandSchema, weekOf } from '../src/shared/model'
 
 // Isolated profiling fixture. It never connects to real providers or a user's store.
 const fixture = await workspace()
-const week = weekOf(new Date(), fixture.store.state.settings)
+const week = weekOf(new Date(), fixture.store.config.settings)
 const sample = sampleState(week)
-fixture.store.state.repositories = sample.repositories
-fixture.store.state.activities = Array.from({ length: 600 }, (_, index) => ({
+sample.diffs = {}
+sample.activities = Array.from({ length: 600 }, (_, index) => ({
     ...structuredClone(sample.activities[index % sample.activities.length]),
     id: `writing-qa-${index}`
 }))
-fixture.store.state.settings.template = sample.drafts[0].body
-await fixture.service.handle({ type: 'newDraft', week })
-fixture.store.state.drafts[0].body = {
+sample.settings.template = sample.drafts[0].body
+sample.drafts[0].body = {
     type: 'doc',
     content: Array.from({ length: 200 }, (_, index) => ({
         type: 'paragraph',
@@ -28,12 +29,13 @@ fixture.store.state.drafts[0].body = {
         ]
     }))
 }
-fixture.store.persist()
+await seedJournal(fixture.store, sample)
 let background = false
-const timer = setInterval(() => {
+const timer = setInterval(async () => {
     if (!background) return
-    fixture.store.state.activities[0].description = `Background update ${Date.now()}`
-    fixture.store.persist()
+    const activity = (await fixture.store.activities())[0]
+    activity.description = `Background update ${Date.now()}`
+    await fixture.store.applyAcquisitionBatch({ activities: [activity] })
 }, 2000)
 const root = resolve('out/renderer')
 const server = createServer(async (request, response) => {
@@ -41,8 +43,7 @@ const server = createServer(async (request, response) => {
         const path = new URL(request.url ?? '/', 'http://localhost:4181').pathname
         if (path === '/background') {
             background = !background
-            fixture.store.state.acquisition = background ? { 'git:sample-repo-0': { status: 'running' } } : {}
-            fixture.store.persist()
+            await fixture.store.saveCheckpoint('git:sample-repo-0', { status: background ? 'running' : 'idle' })
             response.end(JSON.stringify({ background }))
             return
         }
@@ -51,8 +52,8 @@ const server = createServer(async (request, response) => {
             for await (const chunk of request) body += String(chunk)
             const command = commandSchema.parse(JSON.parse(body))
             const reply = ['open', 'popout'].includes(command.type)
-                ? fixture.service.reply()
-                : await fixture.service.handle(command)
+                ? await run(fixture.service.reply())
+                : await run(fixture.service.handle(command))
             response.setHeader('Content-Type', 'application/json')
             response.end(JSON.stringify(reply))
             return
