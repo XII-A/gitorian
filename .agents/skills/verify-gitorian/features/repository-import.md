@@ -18,6 +18,8 @@ Open settings -> Repositories -> Add repositories from folder. The native picker
 
 Preconditions: compiled app, installed Electron, Git on PATH, and no integration credentials. `pnpm verify repository-import` provisions all fixture state itself.
 
+The owning scenario is `tests/e2e/repository-import.spec.ts`, using the shared Playwright desktop fixture. Run it directly with `pnpm test:e2e repository-import`; add `--debug` for Inspector. Evidence survives reruns under `.ai-docs/verification/desktop/runs/`, and `pnpm test:e2e:report` opens the latest report. Consult [testing](../../../../docs/testing.md) for fixture authoring, traces and cleanup.
+
 - **Open:** `[aria-label="Open settings"]`, then `Add repositories from folder`; capture chooser waiting, scanning, success, and review.
 - **Branding:** the live doctor requires the document title and visible window title to read `Gitorian`; the runner independently reads `gitorian.sqlite` after exit.
 - **Appearance:** launch with Electron's platform theme set to light, then switch dark and back to light. Require the app theme and computed color scheme to remain dark; retain `00-dark-theme-light-platform.png`. This is process-local platform emulation and does not change the user's OS settings.
@@ -26,6 +28,7 @@ Preconditions: compiled app, installed Electron, Git on PATH, and no integration
 - **Clear search:** compare the clear SVG and button centers at rest and under native mouse hover, with a 0.5px tolerance. Retain `search-clear-alignment.json` and `05b-search-clear-hover.png`. Clicking clear must restore all six review rows, preserve four selected repositories, and return focus to the input before Cancel.
 - **Confirm:** reopen, deselect `playground`, click `Import 4 repositories`; wait for completion. Require five stored repositories total, `archived-tools` active, and no `playground`. Verify the independent post-exit SQLite result in `persisted-repositories.json`.
 - **Other picker entries:** choose the single `playground` folder -> `Import 1 repository`; Escape -> Settings. Choose a missing folder -> error -> `Back to Settings`.
+- **Motion/layout:** no horizontal overflow at 390/768/1024/1440px. Reduced-motion recovery must suppress the loading loop; cancel after scan success must remain in Settings beyond the delayed results transition.
 - **Proof:** require zero exit and `run.json.passed`, `cleanup.removed`, numbered screenshots, action transcript, and retained database query results.
 
 ## Gotchas

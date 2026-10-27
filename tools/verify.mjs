@@ -11,6 +11,20 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
+// Migrated journeys have one owner; keep the existing verification entry point discoverable.
+if (mode === 'repository-import' && process.argv.length === 3) {
+    const cli = require.resolve('@playwright/test/cli')
+    const child = spawn(process.execPath, [cli, 'test', 'repository-import'], {
+        cwd: root,
+        stdio: 'inherit',
+        windowsHide: true
+    })
+    const code = await new Promise((done, reject) => {
+        child.once('error', reject)
+        child.once('close', done)
+    })
+    process.exit(code ?? 1)
+}
 const runner =
     mode === 'activity-filters'
         ? 'activity-filter'
@@ -25,7 +39,6 @@ const connectionMode = mode === 'connections' || mode === 'notion'
 if (
     ![
         'doctor',
-        'repository-import',
         'connections',
         'notion',
         'onboarding',
@@ -306,18 +319,7 @@ if (mode === 'doctor') {
                 db.close()
             }
         }
-        if (
-            mode !== 'line-statistics' &&
-            mode !== 'inspector-tabs' &&
-            mode !== 'window-chrome' &&
-            mode !== 'publishing' &&
-            mode !== 'activity-counts' &&
-            mode !== 'hub-dialog' &&
-            mode !== 'app-updates' &&
-            mode !== 'github-import' &&
-            mode !== 'activity-filters' &&
-            mode !== 'activity-days'
-        ) {
+        if (onboardingMode || connectionMode) {
             const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
             try {
                 if (disclosureMode) {
@@ -356,18 +358,6 @@ if (mode === 'doctor') {
                                   : 'gitorian-fixture')
                     )
                         throw new Error('Persisted account settings differ from the authorized identity')
-                } else {
-                    const repositories = db
-                        .prepare("SELECT json FROM state_records WHERE collection='repositories'")
-                        .all()
-                        .map((row) => JSON.parse(String(row.json)))
-                    writeFileSync(join(output, 'persisted-repositories.json'), JSON.stringify(repositories, null, 2))
-                    const expected = ['api-server', 'archived-tools', 'design-system', 'website', 'website'].sort()
-                    if (
-                        JSON.stringify(repositories.map((item) => item.name).sort()) !== JSON.stringify(expected) ||
-                        repositories.some((item) => item.removed)
-                    )
-                        throw new Error('Persisted import differs from the selected repositories')
                 }
             } finally {
                 db.close()
@@ -549,16 +539,7 @@ if (mode === 'doctor') {
                                           'notion-provisioned.json',
                                           'captures.json'
                                       ]
-                                    : [
-                                          'doctor.json',
-                                          'actions.jsonl',
-                                          '01-choose-folder.png',
-                                          '05b-search-clear-hover.png',
-                                          'search-clear-alignment.json',
-                                          '08-complete.png',
-                                          '10-error-details.png',
-                                          'persisted-repositories.json'
-                                      ]
+                                    : []
         ).every((file) => existsSync(join(output, file)))
         report.passed &&= report.cleanup.removed && report.evidenceRetained
         report.finishedAt = new Date().toISOString()

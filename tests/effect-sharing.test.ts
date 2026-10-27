@@ -92,6 +92,9 @@ it.each(['refresh', 'import'] as const)(
         const b = await Effect.runPromise(Scope.make())
         try {
             const scan = kind === 'import' ? await run(app.service.scanRepositories(app.directory)) : undefined
+            // Submit discovery's canonical paths, as the UI does (TEMP may use a Windows alias).
+            const paths = scan?.repositoryScan?.repositories.map((repository) => repository.path) ?? []
+            if (kind === 'import') expect(paths).toHaveLength(1)
             await run(Scope.extend(app.service.suspend, a))
             await run(Scope.extend(app.service.suspend, b))
             await run(Scope.close(a, Exit.void))
@@ -99,16 +102,16 @@ it.each(['refresh', 'import'] as const)(
                 await run(app.service.refresh())
                 expect(app.store.state.lastRefreshAttempt).toBeUndefined()
             } else {
-                await expect(
-                    run(app.service.importRepositories(scan!.repositoryScan!.id, [app.directory]))
-                ).rejects.toThrow('suspended')
+                await expect(run(app.service.importRepositories(scan!.repositoryScan!.id, paths))).rejects.toThrow(
+                    'suspended'
+                )
             }
             await run(Scope.close(b, Exit.void))
             if (kind === 'refresh') {
                 await run(app.service.refresh())
                 expect(app.store.state.lastRefreshAttempt).toBeDefined()
             } else {
-                await run(app.service.importRepositories(scan!.repositoryScan!.id, [app.directory]))
+                await run(app.service.importRepositories(scan!.repositoryScan!.id, paths))
                 expect(app.store.state.repositoryImport?.status).toBe('done')
             }
         } finally {

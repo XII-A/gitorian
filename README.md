@@ -73,6 +73,7 @@ pnpm dev
 ```sh
 pnpm check        # TypeScript, lint, formatting, and unit/integration tests
 pnpm build        # Production compilation
+pnpm test:e2e     # Real Electron journeys (after build)
 pnpm start        # Preview the compiled desktop app
 pnpm package:dir  # Build an unpacked desktop app
 pnpm package      # Build an installer for the current platform into release/
@@ -80,11 +81,13 @@ pnpm package      # Build an installer for the current platform into release/
 
 Build on the target operating system for the most predictable installer results. Packaging alone does not publish a GitHub Release. Review build output, signing, and installer behavior before uploading release assets.
 
+See [testing](docs/testing.md) for focused commands, Playwright debugging, retained evidence, and guidance for adding or migrating tests.
+
 The app icon's editable source is `resources/icon.svg`, exported from [Paper](https://app.paper.design/file/01M5S7QJ9BJRNKDCTRHEA0E1CF). After replacing it, run `pnpm icons` and commit the generated PNG, Windows ICO, and macOS ICNS files. The runtime window icon and Linux package use the PNG; Windows and macOS packages use their native formats. Windows resource editing stays enabled to embed the icon while signing remains disabled.
 
 ## Releasing and repository protection
 
-PRs and pushes to `main` run **CI checks** (typecheck, lint, formatting, tests, and production compilation) on Windows. The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, the update feed (`latest.yml`) and installer blockmap, computes SHA-256 checksums for all three, and uploads them to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
+PRs targeting `main` or `release/**`, and pushes to `main`, run **CI checks** (typecheck, lint, formatting, tests, production compilation, and migrated Electron journeys) on Windows. The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, the update feed (`latest.yml`) and installer blockmap, computes SHA-256 checksums for all three, and uploads them to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
 
 After the release changes are merged into `main`, a maintainer creates a release candidate with:
 
