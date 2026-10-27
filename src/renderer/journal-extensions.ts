@@ -235,7 +235,9 @@ export const journalExtensions = () => [
     ImageImportPositions,
     StarterKit.configure({ heading: { levels: [1, 2, 3, 4] }, link: { openOnClick: false } }),
     TaskList,
-    TaskItem.configure({ nested: true }),
+    // TaskItem's live node view uses HTMLAttributes, not renderHTML's data-type.
+    // Keep its editable content beside the checkbox in both rendered forms.
+    TaskItem.configure({ nested: true, HTMLAttributes: { 'data-type': 'taskItem' } }),
     Toggle,
     ToggleSummary,
     ToggleContent,

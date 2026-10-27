@@ -12,9 +12,9 @@ const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
 // Migrated journeys have one owner; keep the existing verification entry point discoverable.
-if (mode === 'repository-import' && process.argv.length === 3) {
+if (['repository-import', 'writing-checklist'].includes(mode) && process.argv.length === 3) {
     const cli = require.resolve('@playwright/test/cli')
-    const child = spawn(process.execPath, [cli, 'test', 'repository-import'], {
+    const child = spawn(process.execPath, [cli, 'test', mode], {
         cwd: root,
         stdio: 'inherit',
         windowsHide: true
@@ -57,7 +57,7 @@ if (
     process.argv.length !== 3
 ) {
     console.error(
-        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | app-updates | github-import | activity-filters | activity-days (run pnpm build first)'
+        'Usage: pnpm verify doctor | repository-import | writing-checklist | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | app-updates | github-import | activity-filters | activity-days (run pnpm build first)'
     )
     process.exit(1)
 }
