@@ -1,5 +1,7 @@
 import { useEffect, useId, useState } from 'react'
-import { Button } from './components/arc/button/button'
+import { Check, CircleAlert, Copy, Maximize2, Minimize2 } from 'lucide-react'
+import { FloatingButtonGroup } from './components/arc/floating-button-group/floating-button-group'
+import type { FloatingButtonGroupItem } from './components/arc/floating-button-group/floating-button-group'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { Skeleton } from './components/arc/skeleton/skeleton'
@@ -169,20 +171,38 @@ export function MermaidBlock({ source }: { source: string }) {
             setCopy('error')
         }
     }
+    const actions: FloatingButtonGroupItem[] = []
+    if (view === 'diagram' && result.image) {
+        const SizeIcon = actualSize ? Minimize2 : Maximize2
+        actions.push({
+            id: 'size',
+            label: actualSize ? 'Fit diagram' : 'Actual size',
+            icon: <SizeIcon size={16} strokeWidth={1.75} />,
+            pressed: actualSize,
+            onSelect: () => setActualSize((value) => !value)
+        })
+    }
+    const CopyIcon = copy === 'copied' ? Check : copy === 'error' ? CircleAlert : Copy
+    actions.push({
+        id: 'copy',
+        label: copy === 'copied' ? 'Copied' : copy === 'error' ? 'Retry copy' : 'Copy source',
+        icon: <CopyIcon size={16} strokeWidth={1.75} />,
+        onSelect: () => {
+            void copySource()
+        }
+    })
     return (
         <section className="activity-mermaid" aria-label="Mermaid diagram">
             <div className="activity-mermaid-toolbar">
                 <SegmentedControl options={views} value={view} onValueChange={setView} label="Mermaid view" size="sm" />
-                <div className="activity-mermaid-actions">
-                    {view === 'diagram' && result.image && (
-                        <Button variant="ghost" size="sm" onClick={() => setActualSize((value) => !value)}>
-                            {actualSize ? 'Fit diagram' : 'Actual size'}
-                        </Button>
-                    )}
-                    <Button variant="ghost" size="sm" onClick={copySource}>
-                        {copy === 'copied' ? 'Copied' : copy === 'error' ? 'Retry copy' : 'Copy source'}
-                    </Button>
-                </div>
+                <FloatingButtonGroup
+                    label="Diagram actions"
+                    items={actions}
+                    iconOnly
+                    size="sm"
+                    variant="muted"
+                    tooltipSide="bottom"
+                />
             </div>
             <span className="sr-only" role="status">
                 {copy === 'copied' ? 'Source copied' : copy === 'error' ? 'Copy failed. Try again.' : ''}
