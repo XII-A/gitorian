@@ -1,6 +1,7 @@
-import { providerHttp } from './transport-fixtures'
+import { transportClient, githubClient, run } from './effect-fixtures'
+import { bindGitHub } from './provider-fixtures'
 import { expect, it, vi } from 'vitest'
-import { GitHub } from '../src/main/github'
+
 import type { Repository } from '../src/shared/model'
 import { WorkQueue } from '../src/main/work-queue'
 import { workspace, transport } from './fixtures'
@@ -46,7 +47,7 @@ it('stops before enriching old unrelated PR history', async () => {
               : pulls[0]
         return Promise.resolve(new Response(JSON.stringify(value)))
     })
-    const github = new GitHub(providerHttp(fetcher), () => 'test', vi.fn())
+    const github = bindGitHub(await githubClient(transportClient(fetcher), () => 'test', vi.fn()))
     expect(await github.activities(repository, 'me', [])).toEqual([])
     expect(fetcher).toHaveBeenCalledTimes(1)
 })
@@ -55,7 +56,7 @@ it('reconsiders completed GitHub coverage when the journal timezone changes', as
     try {
         app.repository.trackingStart = '2026-10-05'
         app.store.state.settings.timezone = 'UTC'
-        const http = providerHttp(async (input, init) => {
+        const http = transportClient(async (input, init) => {
             const response = await app.remote.fetch(input, init)
             const url = input instanceof Request ? input.url : String(input)
             if (!url.includes('/pulls?')) return response
@@ -67,7 +68,7 @@ it('reconsiders completed GitHub coverage when the journal timezone changes', as
         })
         const service = new JournalService(
             app.store,
-            new GitHub(http, () => 'test', vi.fn()),
+            bindGitHub(await githubClient(http, () => 'test', vi.fn())),
             app.notion,
             () => ({
                 github: true,
@@ -95,9 +96,9 @@ it('recognizes secondary throttling even with primary quota remaining', async ()
             })
         )
     )
-    const http = providerHttp(fetcher)
-    await expect(http.request('https://api.github.com/repos/example/project', 'test')).rejects.toThrow()
-    await expect(http.request('https://api.github.com/repos/example/project', 'test')).rejects.toThrow()
+    const http = transportClient(fetcher)
+    await expect(run(http.request('https://api.github.com/repos/example/project', 'test'))).rejects.toThrow()
+    await expect(run(http.request('https://api.github.com/repos/example/project', 'test'))).rejects.toThrow()
     expect(fetcher).toHaveBeenCalledTimes(1)
 })
 it('uses conditional reads and shares simultaneous readers without mixing credentials', async () => {
@@ -105,7 +106,7 @@ it('uses conditional reads and shares simultaneous readers without mixing creden
         token: string | null
         etag: string | null
     }[] = []
-    const http = providerHttp((_url, init) => {
+    const http = transportClient((_url, init) => {
         const headers = new Headers(init?.headers)
         attempts.push({ token: headers.get('Authorization'), etag: headers.get('If-None-Match') })
         if (headers.get('If-None-Match')) return Promise.resolve(new Response(null, { status: 304 }))
@@ -114,11 +115,11 @@ it('uses conditional reads and shares simultaneous readers without mixing creden
         )
     })
     const url = 'https://api.github.com/repos/example/project'
-    const first = await Promise.all([http.request(url, 'one'), http.request(url, 'one')])
+    const first = await Promise.all([run(http.request(url, 'one')), run(http.request(url, 'one'))])
     expect(attempts).toHaveLength(1)
     expect(first[0]).toEqual(first[1])
-    expect(await http.request(url, 'one')).toEqual(first[0])
-    await http.request(url, 'two')
+    expect(await run(http.request(url, 'one'))).toEqual(first[0])
+    await run(http.request(url, 'two'))
     expect(attempts.map((attempt) => attempt.etag)).toEqual([null, 'version', null])
 })
 it('admits foreground work ahead of queued backfill and bounds concurrency', async () => {
@@ -150,10 +151,31 @@ it('preserves credential-scoped throttle pauses across transport restart', async
         Promise.resolve(new Response('{}', { status: 429, headers: { 'retry-after': '60' } }))
     )
     const store = { pauses, changed: vi.fn() }
-    await expect(providerHttp(fetcher, store).request('https://api.github.com/user', 'one')).rejects.toThrow('429')
-    await expect(providerHttp(fetcher, store).request('https://api.github.com/user', 'one')).rejects.toThrow('paused')
+    await expect(
+        run(
+            transportClient(fetcher, { pauses: () => store.pauses, changed: store.changed }).request(
+                'https://api.github.com/user',
+                'one'
+            )
+        )
+    ).rejects.toThrow('429')
+    await expect(
+        run(
+            transportClient(fetcher, { pauses: () => store.pauses, changed: store.changed }).request(
+                'https://api.github.com/user',
+                'one'
+            )
+        )
+    ).rejects.toThrow('paused')
     expect(fetcher).toHaveBeenCalledTimes(1)
-    await expect(providerHttp(fetcher, store).request('https://api.github.com/user', 'two')).rejects.toThrow('429')
+    await expect(
+        run(
+            transportClient(fetcher, { pauses: () => store.pauses, changed: store.changed }).request(
+                'https://api.github.com/user',
+                'two'
+            )
+        )
+    ).rejects.toThrow('429')
     expect(fetcher).toHaveBeenCalledTimes(2)
 })
 it('repeated refresh skips unchanged PR enrichment and unchanged Git histories', async () => {
@@ -236,7 +258,7 @@ it('retains successful PR batches when a later PR fails and skips them on retry'
     const original = remote.fetch
     let fail = true
     let firstReads = 0
-    const http = providerHttp(async (input, init) => {
+    const http = transportClient(async (input, init) => {
         const url = input instanceof Request ? input.url : String(input)
         if (url.includes('/pulls?')) {
             const response = await original(input, init)
@@ -249,7 +271,7 @@ it('retains successful PR batches when a later PR fails and skips them on retry'
         if (fail && url.includes('/pulls/2/reviews')) return new Response('{}', { status: 403 })
         return original(input, init)
     })
-    const github = new GitHub(http, () => 'test', vi.fn())
+    const github = bindGitHub(await githubClient(http, () => 'test', vi.fn()))
     const versions: Record<string, string> = {}
     const captured: string[] = []
     const scan = {
@@ -287,16 +309,18 @@ it('bounds enrichment to twenty changed PRs per pass and resumes the same page',
         base: { ref: 'main', sha: 'b'.repeat(40) },
         head: { ref: 'feature', sha: 'a'.repeat(40) }
     }))
-    const github = new GitHub(
-        providerHttp((input) => {
-            calls++
-            const url = input instanceof Request ? input.url : String(input)
-            return Promise.resolve(
-                new Response(JSON.stringify(url.includes('/pulls?') && url.endsWith('page=1') ? pulls : []))
-            )
-        }),
-        () => 'test',
-        vi.fn()
+    const github = bindGitHub(
+        await githubClient(
+            transportClient((input) => {
+                calls++
+                const url = input instanceof Request ? input.url : String(input)
+                return Promise.resolve(
+                    new Response(JSON.stringify(url.includes('/pulls?') && url.endsWith('page=1') ? pulls : []))
+                )
+            }),
+            () => 'test',
+            vi.fn()
+        )
     )
     const versions: Record<string, string> = {}
     const first = await github.activities(repository, 'me', [], { versions })
@@ -326,19 +350,21 @@ it('a user pause survives scheduled refresh and explicit retry resumes it', asyn
 })
 it('discovers a new review on an old PR without importing its old milestones', async () => {
     const remote = transport()
-    const github = new GitHub(
-        providerHttp(async (input, init) => {
-            const response = await remote.fetch(input, init)
-            const url = input instanceof Request ? input.url : String(input)
-            if (!url.includes('/pulls?')) return response
-            const pulls = (await response.json()) as {
-                created_at: string
-            }[]
-            pulls[0].created_at = '2020-01-01T00:00:00Z'
-            return new Response(JSON.stringify(pulls))
-        }),
-        () => 'test',
-        vi.fn()
+    const github = bindGitHub(
+        await githubClient(
+            transportClient(async (input, init) => {
+                const response = await remote.fetch(input, init)
+                const url = input instanceof Request ? input.url : String(input)
+                if (!url.includes('/pulls?')) return response
+                const pulls = (await response.json()) as {
+                    created_at: string
+                }[]
+                pulls[0].created_at = '2020-01-01T00:00:00Z'
+                return new Response(JSON.stringify(pulls))
+            }),
+            () => 'test',
+            vi.fn()
+        )
     )
     const activities = await github.activities(repository, 'me', [])
     expect(activities.some((item) => item.kind === 'review')).toBe(true)

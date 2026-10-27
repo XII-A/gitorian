@@ -1,8 +1,8 @@
-import { publishingLayer } from './publishing-layer'
-import type { PublishingEnvironment } from './publishing-layer'
+import { desktopLayer } from './desktop-layer'
+import type { DesktopEnvironment } from './desktop-layer'
 import { JournalPublishing } from './journal-publishing'
 import type { ProviderNotion } from './provider-notion'
-import type { ProviderHttp } from './provider-http'
+import { bindGitHub } from './provider-github'
 import { NotionDiscoveryCache } from './notion-discovery-cache'
 import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
@@ -59,10 +59,10 @@ let updating = false
 let notionConnection: NotionConnection | undefined
 let stopNotionPages: (() => void) | undefined
 const referenceWindows = new Set<number>()
-let runtime: ManagedRuntime.ManagedRuntime<PublishingEnvironment, never>
+let runtime: ManagedRuntime.ManagedRuntime<DesktopEnvironment, never>
 let work: ApplicationWork
 const native = <A>(operation: () => Promise<A>) => Effect.tryPromise({ try: operation, catch: (error) => error })
-function execute<A, E>(operation: Effect.Effect<A, E, PublishingEnvironment>): Promise<A> {
+function execute<A, E>(operation: Effect.Effect<A, E, DesktopEnvironment>): Promise<A> {
     const result = runtime.runPromiseExit(operation).then((exit) => {
         if (Exit.isSuccess(exit)) return exit.value
         throw Cause.squash(exit.cause)
@@ -243,64 +243,32 @@ void app.whenReady().then(() => {
         return runNative(() => store.importImage(request.bytes, request.restoreId))
     })
     const vault = new Vault(app.getPath('userData'))
-    notionConnection = new NotionConnection(
-        vault,
-        (!app.isPackaged && process.env.GITORIAN_NOTION_OAUTH_ORIGIN) ||
-            import.meta.env.MAIN_VITE_NOTION_OAUTH_ORIGIN ||
-            '',
-        fetch,
-        new NotionSetupStore(join(app.getPath('userData'), 'notion-setup.json')),
-        store.state.settings.destination
+    runtime = ManagedRuntime.make(
+        desktopLayer(store, vault, {
+            origin:
+                (!app.isPackaged && process.env.GITORIAN_NOTION_OAUTH_ORIGIN) ||
+                import.meta.env.MAIN_VITE_NOTION_OAUTH_ORIGIN ||
+                '',
+            fetcher: fetch,
+            recovery: new NotionSetupStore(join(app.getPath('userData'), 'notion-setup.json'))
+        })
     )
-    const connection = notionConnection
+    work = runtime.runSync(ApplicationWork)
+    const transport = runtime.runSync(Http)
+    const connection = runtime.runSync(NotionConnection)
+    notionConnection = connection
     const connections = () => ({
         github: !!vault.get('github'),
         notion: connection.connected(),
         protectedStorage: vault.protected()
     })
-    // The legacy credential adapter retains an accepted rotation until it has persisted its result.
-    const tokenEffect =
-        (get: (refresh?: boolean, rejected?: string) => Promise<string>) => (refresh?: boolean, rejected?: string) =>
-            Effect.tryPromise({
-                try: () => get(refresh, rejected),
-                catch: (error) => (error instanceof Error ? error : new Error(String(error)))
-            }).pipe(Effect.uninterruptible)
-    runtime = ManagedRuntime.make(
-        publishingLayer({
-            store,
-            fetcher: fetch,
-            notionToken: tokenEffect((refresh, rejected) => connection.token(refresh, rejected)),
-            connections
-        })
-    )
-    work = runtime.runSync(ApplicationWork)
-    const transport = runtime.runSync(Http)
-    const http: ProviderHttp = {
-        request: <T>(...args: Parameters<Http['request']>) => execute(transport.request<T>(...args))
-    }
-    const github = new GitHub(
-        http,
-        () => vault.get('github'),
-        (token) => {
-            vault.set('github', token)
-        }
-    )
+    const github = bindGitHub(runtime.runSync(GitHub), execute)
     const bindNotion = (operations: Notion): ProviderNotion => ({
-        prepareJournal: (...args) => execute(operations.prepareJournal(...args)),
         accessiblePages: (...args) => execute(operations.accessiblePages(...args)),
-        destinationIcon: (...args) => execute(operations.destinationIcon(...args)),
-        describeDestination: (...args) => execute(operations.describeDestination(...args)),
         profile: (...args) => execute(operations.profile(...args)),
-        verifyDestination: (...args) => execute(operations.verifyDestination(...args)),
         refreshEntry: (...args) => execute(operations.refreshEntry(...args))
     })
     const notion = bindNotion(runtime.runSync(Notion))
-    const pendingNotion = bindNotion(
-        makeNotion(
-            transport,
-            tokenEffect((refresh, rejected) => connection.pendingToken(refresh, rejected))
-        )
-    )
     const publishing = runtime.runSync(JournalPublishing)
     const notionDiscovery = new NotionDiscoveryCache(join(app.getPath('userData'), 'notion-pages.json'))
     const notionReads = new Map<string, AbortController>()
@@ -461,7 +429,7 @@ void app.whenReady().then(() => {
                 notionPickerGeneration++
                 stopNotionPages?.()
                 availableNotionPages = []
-                const notionAuthorization = await connection.start()
+                const notionAuthorization = await execute(connection.start())
                 try {
                     await openExternal(notionAuthorization.url)
                 } catch {
@@ -473,13 +441,13 @@ void app.whenReady().then(() => {
                 return service.reply({ notionAuthorization })
             }
             case 'notionCancel':
-                connection.cancel()
+                await execute(connection.cancel())
                 notionPickerGeneration++
                 stopNotionPages?.()
                 availableNotionPages = []
                 break
             case 'notionPoll': {
-                const result = await connection.poll()
+                const result = await execute(connection.poll())
                 if ('pending' in result) return service.reply({ notionPending: { interval: result.interval } })
                 return service.reply()
             }
@@ -490,19 +458,14 @@ void app.whenReady().then(() => {
                 notionReads.set(command.requestId, controller)
                 const generation = notionPickerGeneration
                 try {
-                    const token = await connection.pendingToken()
+                    const token = await execute(connection.pendingToken())
                     controller.signal.throwIfAborted()
                     if (generation !== notionPickerGeneration) throw new Error('Notion page read cancelled.')
                     const parent = command.parentId
                         ? availableNotionPages.find((page) => page.id === command.parentId)
                         : undefined
                     if (command.parentId && !parent) throw new Error('Choose an available page to expand.')
-                    const discovery = bindNotion(
-                        makeNotion(
-                            transport,
-                            tokenEffect((refresh, rejected) => connection.pendingToken(refresh, rejected))
-                        )
-                    )
+                    const discovery = bindNotion(makeNotion(transport, connection.pendingToken))
                     const progress = (progress: NotionDiscoveryProgress) => {
                         if (
                             !controller.signal.aborted &&
@@ -538,8 +501,8 @@ void app.whenReady().then(() => {
                 notionPickerGeneration++
                 stopNotionPages?.()
                 availableNotionPages = []
-                if (connection.choose()) return service.reply()
-                const notionAuthorization = await connection.start()
+                if (await execute(connection.choose())) return service.reply()
+                const notionAuthorization = await execute(connection.start())
                 try {
                     await openExternal(notionAuthorization.url)
                 } catch {
@@ -559,38 +522,23 @@ void app.whenReady().then(() => {
                 // that read before saving so its late result cannot change the picker.
                 notionPickerGeneration++
                 stopNotionPages?.()
-                const destination = await connection.completeJournal(
-                    async (setup, checkpoint) =>
-                        pendingNotion.prepareJournal(
-                            setup,
-                            checkpoint,
-                            page
-                                ? {
-                                      kind: 'page',
-                                      id: page.id,
-                                      title: page.title,
-                                      icon: (await pendingNotion.destinationIcon(page.icon)) ?? '',
-                                      url: page.url,
-                                      titleProperty: 'Name',
-                                      dateProperty: ''
-                                  }
-                                : undefined
-                        ),
-                    selection.kind === 'new' ? selection.title : undefined,
-                    async (destination) => {
-                        const previous = store.state.settings.destination
-                        store.state.settings.destination = destination
-                        try {
-                            store.persist()
-                            await store.flush()
-                        } catch (error) {
-                            store.state.settings.destination = previous
-                            throw error
-                        }
-                    }
+                const destination = await execute(
+                    connection.completeJournal({
+                        title: selection.kind === 'new' ? selection.title : undefined,
+                        destination: page
+                            ? {
+                                  kind: 'page',
+                                  id: page.id,
+                                  title: page.title,
+                                  icon: page.icon,
+                                  url: page.url,
+                                  titleProperty: 'Name',
+                                  dateProperty: ''
+                              }
+                            : undefined
+                    })
                 )
-                connection.destinationSaved()
-                notionDiscovery.remember(await connection.token(), {
+                notionDiscovery.remember(await execute(connection.token()), {
                     ...page,
                     kind: 'page',
                     id: destination.id,
@@ -599,27 +547,12 @@ void app.whenReady().then(() => {
                     icon: destination.icon
                 })
                 if (previousIdentity !== connection.profileKey()) profiles.clear('notion')
-                connection.cancel()
+                await execute(connection.cancel())
                 break
             }
-            case 'notionDestination': {
-                const saved = store.state.settings.destination
-                if (!connection.connected() || !saved) break
-                try {
-                    const destination = await notion.describeDestination(saved)
-                    if (
-                        store.state.settings.destination?.id === saved.id &&
-                        connection.connected() &&
-                        JSON.stringify(saved) !== JSON.stringify(destination)
-                    ) {
-                        store.state.settings.destination = destination
-                        store.persist()
-                    }
-                } catch {
-                    /* Metadata failure never blocks an existing connection. */
-                }
+            case 'notionDestination':
+                await execute(connection.refreshDestination().pipe(Effect.catchAll(() => Effect.void)))
                 break
-            }
             case 'connectionProfiles':
                 return service.reply({ connectionProfiles: profiles.snapshot() })
             case 'refreshConnectionProfile':
@@ -654,7 +587,7 @@ void app.whenReady().then(() => {
                     stopNotionPages?.()
                     notionDiscovery.clear()
                     availableNotionPages = []
-                    connection.disconnect()
+                    await execute(connection.disconnect())
                 } else vault.set(command.service, '')
                 profiles.clear(command.service)
                 break
@@ -697,7 +630,7 @@ void app.whenReady().then(() => {
                             stopNotionPages?.()
                             notionDiscovery.clear()
                             availableNotionPages = []
-                            connection.disconnect()
+                            await execute(connection.disconnect())
                             return service.reply({ message: 'Backup imported.' })
                         }
                     }
@@ -778,7 +711,7 @@ app.on('window-all-closed', () => {
 let closed = false
 let closing = false
 app.on('before-quit', (event) => {
-    notionConnection?.cancel()
+    if (notionConnection) void execute(notionConnection.cancel())
     stopNotionPages?.()
     if (!store || closed) return
     event.preventDefault()

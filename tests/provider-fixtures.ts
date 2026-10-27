@@ -14,12 +14,8 @@ afterEach(async () => {
     lifetimes.clear()
 })
 export const bindNotion = (operations: Notion): ProviderNotion => ({
-    prepareJournal: (...args) => run(operations.prepareJournal(...args)),
     accessiblePages: (...args) => run(operations.accessiblePages(...args)),
-    destinationIcon: (...args) => run(operations.destinationIcon(...args)),
-    describeDestination: (...args) => run(operations.describeDestination(...args)),
     profile: (...args) => run(operations.profile(...args)),
-    verifyDestination: (...args) => run(operations.verifyDestination(...args)),
     refreshEntry: (...args) => run(operations.refreshEntry(...args))
 })
 export const bindPublishing = (operations: JournalPublishing): ProviderPublishing => ({
@@ -47,3 +43,6 @@ export function createPublishingCommands(
     lifetimes.add(() => runtime.dispose())
     return bindPublishing(runtime.runSync(JournalPublishing))
 }
+
+import { bindGitHub as bindNativeGitHub } from '../src/main/provider-github'
+export const bindGitHub = (operations: Parameters<typeof bindNativeGitHub>[0]) => bindNativeGitHub(operations, run)

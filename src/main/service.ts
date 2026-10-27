@@ -6,7 +6,7 @@ import { discoverRepositories, repositoryPathKey } from './repository-discovery'
 import { localDate, weekOf } from '../shared/model'
 import type { Activity, Command, Reply, Repository, RepositoryImportProgress, Selection, State } from '../shared/model'
 import type { Store } from './store'
-import type { GitHub } from './github'
+import type { ProviderGitHub } from './provider-github'
 import type { ProviderNotion, ProviderPublishing } from './provider-notion'
 import { forEachConcurrent, WorkQueue } from './work-queue'
 import { filesFromDiff } from './diff-files'
@@ -36,7 +36,7 @@ export class JournalService {
     }
     constructor(
         readonly store: Store,
-        private readonly github: GitHub,
+        private readonly github: ProviderGitHub,
         private readonly notion: Pick<ProviderNotion, 'refreshEntry'>,
         private readonly connections: () => Reply['connections'],
         private readonly publishing: ProviderPublishing

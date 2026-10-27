@@ -1,4 +1,4 @@
-import { providerHttp } from './transport-fixtures'
+import { run, transportClient } from './effect-fixtures'
 import { expect, it } from 'vitest'
 import { workspace } from './fixtures'
 import { HttpError } from '../src/main/http'
@@ -51,8 +51,10 @@ it('does not reuse an old comparison fingerprint when a changed PR diff returns 
     }
 })
 it('continues to reject a 406 on JSON metadata rather than masking a source failure', async () => {
-    const http = providerHttp(() => Promise.resolve(new Response('{}', { status: 406, statusText: 'Not Acceptable' })))
-    await expect(http.request('https://api.github.com/repos/example/project/pulls/1', 'test')).rejects.toBeInstanceOf(
-        HttpError
+    const http = await transportClient(() =>
+        Promise.resolve(new Response('{}', { status: 406, statusText: 'Not Acceptable' }))
     )
+    await expect(
+        run(http.request('https://api.github.com/repos/example/project/pulls/1', 'test'))
+    ).rejects.toBeInstanceOf(HttpError)
 })
