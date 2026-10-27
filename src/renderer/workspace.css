@@ -253,18 +253,19 @@
     align-items: center;
     gap: var(--space-1);
 }
-.ws-writing-footer:has(.ws-recovery-actions) {
-    height: auto;
-    min-height: var(--workspace-footer-height);
+.ws-conflict-form {
+    display: grid;
+    gap: var(--space-6);
 }
-.ws-recovery-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: var(--space-2);
-    grid-column: 1 / -1;
-    justify-self: center;
-    max-width: 100%;
+.ws-conflict-options {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+.ws-conflict-error {
+    margin: 0;
+    color: var(--danger);
 }
 .ws-writing-footer kbd {
     padding: 0 var(--space-1);

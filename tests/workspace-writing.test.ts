@@ -68,49 +68,6 @@ const body = (text: string): JournalNode => ({
     content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
 })
 
-it('keeps a recovery copy from an older draft version until the writer explicitly chooses it', async () => {
-    const state = sampleState('2026-10-05')
-    state.drafts[0].version = 3
-    state.drafts[0].title = 'Saved in another window'
-    const recovered = {
-        ...state.drafts[0],
-        version: 2,
-        title: 'My unsaved writing',
-        body: body('Recover these words'),
-        updatedAt: '2099-01-01T12:00:00Z'
-    }
-    const key = 'gitorian:recovery:local:2026-10-05'
-    localStorage.setItem(key, JSON.stringify(recovered))
-    const run = vi.fn((_command: Command) =>
-        Promise.resolve({ state, connections: { github: false, notion: true, protectedStorage: false } })
-    )
-    await update(() =>
-        root.render(
-            createElement(WorkspaceDraft, {
-                state,
-                week: '2026-10-05',
-                sample: false,
-                notionConnected: true,
-                run,
-                publishTarget: null,
-                onReady: vi.fn(),
-                onSettings: vi.fn()
-            })
-        )
-    )
-    await update(() => vi.advanceTimersByTime(1200))
-    expect(run).not.toHaveBeenCalled()
-    expect(localStorage.getItem(key)).toContain('Recover these words')
-    const useCopy = [...container.querySelectorAll('button')].find(
-        (button) => button.textContent === 'Use recovery copy'
-    )
-    expect(useCopy).toBeDefined()
-    await update(() => useCopy!.click())
-    expect(run).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'draft', draft: expect.objectContaining({ version: 3, body: recovered.body }) })
-    )
-})
-
 it('does no synchronous recovery writes or backend saves during a typing burst, then saves the latest document once', async () => {
     const state = sampleState('2026-10-05')
     const run = vi.fn((_command: Command) =>

@@ -83,6 +83,8 @@ At 600px and below, Settings navigation moves above the content and uses horizon
 
 Keep word count, save status, and the Notion action in one footer row, with the status centered between equal outer columns when space allows. Only writing panes 460px or narrower stack the count and status beside the settings action. Use a pane container query, since the writing pane can be narrow within a wide window.
 
+Draft version conflicts interrupt writing with an Arc Dialog and RadioGroup. Require selection followed by a consequence-named submission; keep both copies until success. The controlled dialog blocks Escape/outside dismissal and uses the local `DialogContent.showCloseButton={false}` extension. Other dialogs keep their close affordance. Refreshing after a failed draft command supplies conflict context, never a save acknowledgment. Keep retry guidance inside the dialog and return focus to Entry title after resolution.
+
 Keep sample state separate from real commands. The workspace header has no sample-data switch. Retain `workspace-sample.ts` and the explicit `?workspace=true&data=sample&week=2026-10-05` preview URL for design iteration and smoke tests; normal workspace navigation uses real data. Sample publishing is simulated. Detached reference windows remain read-only and send citations to the editable main workspace through the existing channel. They have no note form; citation results appear in the inspector footer.
 
 Use Arc `ScrollArea` for constrained activity, writing, diff, details, related-item, and popup lists. Name each viewport for keyboard users. The hub uses a named full-height Arc ScrollArea. Native text controls and document scrolling outside constrained views retain native scrolling.
