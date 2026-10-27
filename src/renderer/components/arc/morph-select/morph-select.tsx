@@ -770,6 +770,7 @@ export function MorphSelect({
                     <motion.div
                         className={styles.searchRow}
                         inert={!showSearch || undefined}
+                        aria-hidden={!showSearch || undefined}
                         initial={false}
                         animate={
                             showSearch

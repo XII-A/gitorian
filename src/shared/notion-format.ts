@@ -1,4 +1,5 @@
 import type { JournalNode } from './model'
+import { codeLanguage, notionCodeLanguage } from './code-languages'
 
 export interface RichText {
     type: 'text'
@@ -93,7 +94,9 @@ export function toNotion(document: JournalNode, uploads?: Record<string, string>
             ]
         }
         if (node.type === 'codeBlock')
-            return [block('code', { rich_text: richText(node.content), language: 'plain text' })]
+            return [
+                block('code', { rich_text: richText(node.content), language: notionCodeLanguage(node.attrs?.language) })
+            ]
         if (node.type === 'heading')
             return [
                 block(`heading_${Math.min(4, Number(node.attrs?.level ?? 1))}`, { rich_text: richText(node.content) })
@@ -122,7 +125,9 @@ function fromRichText(values: RichText[] = []): JournalNode[] {
 export function fromNotion(blocks: NotionBlock[]): JournalNode {
     const content: JournalNode[] = []
     for (const item of blocks) {
-        const data = item[item.type] as { rich_text?: RichText[]; checked?: boolean; title?: string } | undefined
+        const data = item[item.type] as
+            | { rich_text?: RichText[]; checked?: boolean; title?: string; language?: string }
+            | undefined
         const text = fromRichText(data?.rich_text)
         const nested = item.children?.length ? (fromNotion(item.children).content ?? []) : []
         if (
@@ -166,7 +171,8 @@ export function fromNotion(blocks: NotionBlock[]): JournalNode {
                     { type: 'toggleContent', content: nested.length ? nested : [{ type: 'paragraph' }] }
                 ]
             })
-        else if (item.type === 'code') content.push({ type: 'codeBlock', content: text })
+        else if (item.type === 'code')
+            content.push({ type: 'codeBlock', attrs: { language: codeLanguage(data?.language) }, content: text })
         else if (item.type === 'quote')
             content.push({ type: 'blockquote', content: [{ type: 'paragraph', content: text }, ...nested] })
         else if (item.type === 'paragraph') content.push({ type: 'paragraph', content: text }, ...nested)

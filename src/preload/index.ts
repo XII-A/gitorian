@@ -4,6 +4,7 @@ import type { AppUpdateState } from '../shared/app-updates'
 
 const bridge: DesktopBridge = {
     clipboard: (action) => ipcRenderer.invoke('journal:clipboard', action),
+    writeClipboardText: (text) => ipcRenderer.invoke('journal:clipboard-text', text),
     appUpdates: {
         state: () => ipcRenderer.invoke('journal:app-update-state'),
         install: () => ipcRenderer.invoke('journal:app-update-install'),

@@ -2,6 +2,23 @@ import { expect, it } from 'vitest'
 import { fromNotion, plainText, toNotion } from '../src/shared/notion-format'
 import type { JournalNode } from '../src/shared/model'
 
+it.each([
+    ['typescript', 'typescript'],
+    ['js', 'javascript'],
+    [null, 'plain text'],
+    ['custom-language', 'plain text']
+])('exports code language %s safely and imports the provider language', (language, expected) => {
+    const code = '  const value = "<raw>";\n\tvalue\n'
+    const blocks = toNotion({
+        type: 'doc',
+        content: [{ type: 'codeBlock', attrs: { language }, content: [{ type: 'text', text: code }] }]
+    })
+    expect(blocks[0].code).toMatchObject({ language: expected })
+    const imported = fromNotion(blocks).content![0]
+    expect(imported.attrs?.language).toBe(expected === 'plain text' ? null : expected)
+    expect(plainText(imported)).toBe(code)
+})
+
 it('round-trips the accepted formatting including nested lists, links, marks, quotes and code', () => {
     const formatted: JournalNode = {
         type: 'doc',
