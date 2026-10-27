@@ -158,7 +158,7 @@
 }
 
 /* Visible while scrolling, while the pointer is over the area, and always when asked. Appearing is quick; leaving lingers. */
-.root[data-scrolling] > .track,
+.root[data-scrollbars='auto'][data-scrolling] > .track,
 .root[data-dragging] > .track,
 .root[data-scrollbars='always'] > .track {
     opacity: 1;

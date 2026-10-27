@@ -25,8 +25,11 @@ export interface ScrollAreaProps extends Omit<HTMLAttributes<HTMLDivElement>, 'o
     orientation?: 'vertical' | 'horizontal' | 'both'
     /** Length of the edge fade in px. 0 turns the fades off. */
     fade?: number
-    /** "auto" shows scrollbars while scrolling or hovering; "always" keeps them visible when content overflows. */
-    scrollbars?: 'auto' | 'always'
+    /** "hover" reveals bars only over the area; "auto" also reveals them during scrolling. */
+    scrollbars?: 'auto' | 'always' | 'hover'
+    /** Non-scrolling overlays preserve leading/trailing keyboard order without changing viewport geometry. */
+    startOverlay?: ReactNode
+    endOverlay?: ReactNode
     /** How long scrollbars linger after scrolling stops, in ms. */
     hideDelay?: number
     /** Maximum height of the viewport, for vertical areas that should grow with their content. */
@@ -53,6 +56,8 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
         orientation = 'vertical',
         fade = 28,
         scrollbars = 'auto',
+        startOverlay,
+        endOverlay,
         hideDelay = 900,
         maxHeight,
         snap,
@@ -75,8 +80,8 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
     const hideTimer = useRef<number | undefined>(undefined)
     const lastEdges = useRef('')
     const onEdgeRef = useRef(onEdgeChange)
-    useImperativeHandle(forwardedRef, () => rootRef.current!)
-    useImperativeHandle(viewportRef, () => viewport.current!)
+    useImperativeHandle(forwardedRef, () => rootRef.current!, [])
+    useImperativeHandle(viewportRef, () => viewport.current!, [])
     useEffect(() => {
         onEdgeRef.current = onEdgeChange
     }, [onEdgeChange])
@@ -267,6 +272,7 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
             data-scrollbars={scrollbars}
             {...rest}
         >
+            {startOverlay}
             <div
                 ref={viewport}
                 className={[styles.viewport, viewportClassName].filter(Boolean).join(' ')}
@@ -281,6 +287,7 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
             </div>
             {vertical && bar('y')}
             {horizontal && bar('x')}
+            {endOverlay}
         </div>
     )
 })

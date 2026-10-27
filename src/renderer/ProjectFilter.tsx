@@ -15,6 +15,7 @@ export function ProjectFilter({
     return (
         <div className="project-filter">
             <MorphSelect
+                portal
                 label="Projects"
                 hideLabel
                 className="project-chip"

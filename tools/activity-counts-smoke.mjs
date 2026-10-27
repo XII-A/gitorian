@@ -77,7 +77,9 @@ app.on('browser-window-created', (_, window) => {
                 };window.__countMotion.frame=requestAnimationFrame(sample);
             })()`)
             await js(`document.querySelector('[aria-label="Refresh activity"]').click()`)
-            await wait(`document.querySelectorAll('.hub-activity').length === 10`)
+            await wait(
+                `document.querySelector('.activity-day-toggle')?.getAttribute('aria-label').includes('Show 5 more') && document.querySelectorAll('.hub-activity').length === 5`
+            )
             await pause(500)
             const motion = await js(`(() => {
                 cancelAnimationFrame(window.__countMotion.frame);
@@ -132,7 +134,11 @@ app.on('browser-window-created', (_, window) => {
             record({ retained, counts })
             assert.ok(counts[0].includes('10') && counts[1].includes('10'))
             await js(`document.querySelectorAll('.hub-filter-chip')[1].click()`)
-            assert.equal(await js(`document.querySelectorAll('.hub-activity').length`), 10)
+            assert.equal(await js(`document.querySelectorAll('.hub-activity').length`), 5)
+            assert.equal(
+                await js(`document.querySelector('.activity-day-toggle').textContent.includes('Show 5 more')`),
+                true
+            )
             window.setMinimumSize(0, 0)
             window.setContentSize(390, 900)
             await pause(200)

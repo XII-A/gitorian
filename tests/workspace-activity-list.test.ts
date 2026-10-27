@@ -23,6 +23,7 @@ it.each([true, false])(
                 root.render(
                     createElement(WorkspaceActivityList, {
                         activities: [],
+                        dayFilter: { day: 'all', setDay: vi.fn(), expanded: new Set<string>(), toggle: vi.fn() },
                         repositories: [],
                         timezone: 'UTC',
                         canCite: false,
