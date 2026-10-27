@@ -132,6 +132,12 @@ async function folder(): Promise<string | undefined> {
     return result.canceled ? undefined : result.filePaths[0]
 }
 void app.whenReady().then(() => {
+    ipcMain.handle('journal:clipboard', (event, input: unknown) => {
+        const action = z.enum(['cut', 'copy', 'paste']).parse(input)
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window || event.senderFrame !== window.webContents.mainFrame) throw new Error('Unknown desktop window')
+        event.sender[action]()
+    })
     ipcMain.handle('journal:window', (event, input: unknown) => {
         const action = z.enum(['state', 'minimize', 'toggleMaximize', 'close']).parse(input)
         const window = BrowserWindow.fromWebContents(event.sender)

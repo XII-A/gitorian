@@ -67,6 +67,8 @@ Local Arc extensions: `MorphSelect.renderTree` receives `{ id, query, selected, 
 
 ## Writing workspace
 
+Workspace clipboard actions use Arc `ContextMenu` with the local `openOnClick={false}`, `onOpen` and `restoreFocus` extensions. Primary clicks remain available to editing. Capture the target selection before the menu takes focus, restore it before the action, and use the validated preload clipboard command to run native Electron cut/copy/paste. This preserves editor paste handlers, rich text, images, undo and autosave. Read-only selections offer Copy; Cut and Paste require an editable target. Menu items render trailing shortcuts with the standalone Arc `ShortcutKbd` export copied from shortcut-recorder; keyboard opening uses Shift+F10 or ContextMenu. Escape restores the originating field and selection.
+
 The workspace has one layout: activity, writing, and inspector. It fills the viewport below its main header. The header uses Arc `Breadcrumb`; its Journal crumb returns to the hub. Equal outer grid columns center the date picker independently of the side controls. Desktop header padding is 8px vertically; at narrower widths the date moves into its own centered row. Below 1100px the inspector moves beneath the writing pane, and phones stack the panes with useful minimum heights. Preserve a readable writing measure inside the full-width pane.
 
 Publishing is rendered into the last main-header slot by `WorkspaceDraft`, so autosave, publishing, and their pending state share one owner. Opening the workspace resumes its latest unfinished draft for that week, or offers to start a new entry if there is none. Published entries are not opened for editing. Creating another entry never overwrites a published entry.
