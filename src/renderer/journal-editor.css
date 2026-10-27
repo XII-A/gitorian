@@ -253,6 +253,92 @@
 .journal-editor .tiptap pre code {
     padding: 0;
 }
+.journal-code-block {
+    position: relative;
+    min-width: 0;
+    margin-block: var(--space-4);
+    border-radius: var(--radius-inset);
+    background: var(--surface-muted);
+}
+.journal-code-tools {
+    position: absolute;
+    z-index: 1;
+    top: var(--space-2);
+    right: var(--space-2);
+    max-width: calc(100% - var(--space-4));
+    font-family: var(--font-body);
+    white-space: normal;
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.journal-code-block:hover .journal-code-tools,
+.journal-code-block:focus-within .journal-code-tools,
+.journal-code-tools:has([data-open]) {
+    opacity: 1;
+}
+.journal-code-scroll {
+    border-radius: inherit;
+}
+.journal-code-language-trigger {
+    max-width: 144px;
+}
+.journal-code-language-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.journal-editor .tiptap .journal-code-block pre {
+    margin: 0;
+    box-sizing: border-box;
+    width: max-content;
+    min-width: 100%;
+    padding: var(--space-6);
+    overflow: visible;
+    white-space: pre;
+    overflow-wrap: normal;
+    tab-size: 4;
+}
+.journal-editor .tiptap .journal-code-block[data-wrapped] pre {
+    width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.journal-code-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+.journal-code-block :is(.hljs-keyword, .hljs-selector-tag, .hljs-type, .hljs-built_in) {
+    color: var(--syntax-keyword);
+}
+.journal-code-block :is(.hljs-string, .hljs-regexp, .hljs-attr) {
+    color: var(--syntax-string);
+}
+.journal-code-block :is(.hljs-number, .hljs-literal, .hljs-symbol) {
+    color: var(--syntax-value);
+}
+.journal-code-block :is(.hljs-title, .hljs-property, .hljs-name) {
+    color: var(--syntax-name);
+}
+.journal-code-block :is(.hljs-comment, .hljs-quote) {
+    color: var(--text-muted);
+    font-style: italic;
+}
+@media (hover: none) {
+    .journal-code-tools {
+        opacity: 1;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .journal-code-tools {
+        transition: none;
+    }
+}
 .journal-editor .tiptap :is(ul, ol):not([data-type='taskList']) {
     /* Rotate through three marker styles at every depth. The li below passes
        resolved values to the next list without circular custom properties. */

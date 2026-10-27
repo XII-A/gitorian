@@ -7,6 +7,7 @@ import TaskItem from '@tiptap/extension-task-item'
 import { Plugin } from '@tiptap/pm/state'
 import { moveToggleBlock } from './toggle-indentation'
 import { JournalImageNode, ImageImportPositions } from './journal-images'
+import { JournalCodeBlock } from './journal-code-block'
 
 function deleteToggleWordBackward(editor: Editor): boolean {
     const { $from, from, empty } = editor.state.selection
@@ -233,7 +234,8 @@ const DashTypography = Extension.create({
 export const journalExtensions = () => [
     JournalImageNode,
     ImageImportPositions,
-    StarterKit.configure({ heading: { levels: [1, 2, 3, 4] }, link: { openOnClick: false } }),
+    JournalCodeBlock,
+    StarterKit.configure({ codeBlock: false, heading: { levels: [1, 2, 3, 4] }, link: { openOnClick: false } }),
     TaskList,
     // TaskItem's live node view uses HTMLAttributes, not renderHTML's data-type.
     // Keep its editable content beside the checkbox in both rendered forms.

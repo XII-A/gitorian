@@ -159,7 +159,7 @@ export const Editor = memo(function Editor({
     const id = useId()
     const updateMenu = (editor: TiptapEditor) => {
         const { $from, empty, from } = editor.state.selection
-        if (!empty && !readOnly && editor.state.selection instanceof TextSelection) {
+        if (!empty && !readOnly && !$from.parent.type.spec.code && editor.state.selection instanceof TextSelection) {
             const rect = host.current?.getBoundingClientRect()
             const coords = editor.view.coordsAtPos(from)
             setBar({
@@ -168,7 +168,7 @@ export const Editor = memo(function Editor({
             })
         } else setBar(undefined)
         const prefix = $from.parent.textBetween(0, $from.parentOffset, '\n')
-        const match = empty && !readOnly ? /\/([^/]*)$/.exec(prefix) : null
+        const match = empty && !readOnly && !$from.parent.type.spec.code ? /\/([^/]*)$/.exec(prefix) : null
         if (!match) {
             menuRef.current = undefined
             setMenu(undefined)
@@ -243,6 +243,17 @@ export const Editor = memo(function Editor({
                     return true
                 }
                 const text = clipboard?.getData('text/plain') ?? ''
+                const { $from, $to } = _view.state.selection
+                if ($from.parent.type.spec.code) {
+                    // A code-local paste is literal. Replacing several blocks must
+                    // retain their HTML structure instead of flattening into code.
+                    const html = clipboard?.getData('text/html')
+                    if (!$from.sameParent($to) && html && editorRef.current && !readOnly) {
+                        editorRef.current.commands.insertContent(html, { parseOptions: { preserveWhitespace: 'full' } })
+                        return true
+                    }
+                    return false
+                }
                 if (
                     clipboard?.getData('text/html') ||
                     !/(^#{1,4}\s|^\s*[-*+>]\s|^\s*\d+[.)]\s|`|\*\*|\[[^\]]+\]\()/m.test(text)

@@ -124,11 +124,14 @@ export function markdownToHtml(markdown: string) {
         const line = lines[index]
         if (/^\s*```/.test(line)) {
             flush()
+            const language = /^\s*```([^\s`]*)/.exec(line)?.[1] ?? ''
             const code: string[] = []
             index++
             while (index < lines.length && !/^\s*```/.test(lines[index])) code.push(lines[index++])
             index++
-            out.push(`<pre>${escapeHtml(code.join('\n')) || '<br>'}</pre>`)
+            out.push(
+                `<pre><code${language ? ` class="language-${escapeHtml(language)}"` : ''}>${escapeHtml(code.join('\n'))}</code></pre>`
+            )
             continue
         }
         if (!line.trim()) {

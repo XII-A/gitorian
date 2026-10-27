@@ -67,7 +67,8 @@ export function journalHTML(node: JournalNode): string {
     if (node.type === 'doc') return content
     if (node.type === 'hardBreak') return '<br>'
     if (node.type === 'horizontalRule') return '<hr>'
-    if (node.type === 'codeBlock') return `<pre>${content}</pre>`
+    if (node.type === 'codeBlock')
+        return `<pre${typeof node.attrs?.language === 'string' && node.attrs.language ? ` data-language="${escapeHTML(node.attrs.language)}"` : ''}><code>${content}</code></pre>`
     const tag =
         node.type === 'heading'
             ? `h${Math.min(4, Number(node.attrs?.level ?? 1))}`
@@ -122,6 +123,14 @@ export function journalFromHTML(html: string): JournalNode {
             if (node.tagName === 'PRE')
                 return {
                     type: 'codeBlock',
+                    attrs: {
+                        language:
+                            node.getAttribute('data-language') ??
+                            Array.from(node.firstElementChild?.classList ?? [])
+                                .find((value) => value.startsWith('language-'))
+                                ?.slice(9) ??
+                            null
+                    },
                     content: node.textContent ? [{ type: 'text', text: node.textContent }] : []
                 }
             if (node.tagName === 'BLOCKQUOTE')

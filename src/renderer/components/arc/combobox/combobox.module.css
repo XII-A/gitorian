@@ -152,6 +152,31 @@
 .autoHeight {
     overflow: hidden;
 }
+.popover.triggerPopover[data-side] {
+    width: min(280px, calc(100vw - var(--space-6)));
+    border-radius: var(--radius-control);
+    padding: var(--space-1);
+    box-shadow: var(--shadow-raised);
+}
+.control.menuSearch {
+    min-height: var(--control-height-sm);
+    margin-bottom: var(--space-1);
+    padding-inline: var(--space-2);
+    border: 0;
+    border-radius: var(--radius-inset);
+    background: transparent;
+    box-shadow: none;
+}
+.control.menuSearch:focus-within {
+    background: var(--surface-muted);
+    box-shadow: none;
+}
+.triggerPopover .option {
+    border-radius: var(--radius-inset);
+}
+.popover[data-instant] .option {
+    transition: none;
+}
 .listbox {
     min-width: 0;
 }

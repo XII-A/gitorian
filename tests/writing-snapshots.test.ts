@@ -28,6 +28,7 @@ it('keeps unchanged activity and settings references across draft saves and upda
     const state = sampleState('2026-10-05')
     state.snapshotVersion = 1
     window.journal = {
+        writeClipboardText: vi.fn(() => Promise.resolve()),
         invoke: vi.fn((command: Command) => {
             if (command.type === 'draft') {
                 state.drafts[0] = command.draft
@@ -97,7 +98,7 @@ it('uses incremental desktop replies while preserving the captured baseline thro
             )
         )
     })
-    window.journal = { invoke, updates }
+    window.journal = { invoke, updates, writeClipboardText: vi.fn(() => Promise.resolve()) }
     const host = document.createElement('div')
     document.body.append(host)
     const root = createRoot(host)

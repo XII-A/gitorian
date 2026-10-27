@@ -37,6 +37,13 @@
     --fbg-pad-x: 10px;
     --fbg-outer: calc(var(--radius-control) - 3px);
 }
+.xs {
+    --fbg-h: 24px;
+    --fbg-pad: 2px;
+    --fbg-gap: 2px;
+    --fbg-pad-x: 8px;
+    --fbg-outer: var(--radius-inset);
+}
 .md {
     --fbg-h: 36px;
 }
@@ -45,6 +52,17 @@
     border-color: var(--border);
     background: var(--surface-raised);
     box-shadow: var(--shadow-floating);
+}
+.floating[data-shadowless] {
+    box-shadow: none;
+}
+.startContent {
+    --button-hover-background: transparent;
+    --button-hover-border: transparent;
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    min-width: 0;
 }
 .vertical {
     flex-direction: column;
@@ -103,7 +121,8 @@
         background-color var(--duration-fast) var(--ease-standard),
         opacity var(--duration-fast) var(--ease-standard);
 }
-.sm .item {
+.sm .item,
+.xs .item {
     font-size: var(--text-xs);
 }
 .item[data-icon]:not([data-icon-only]) {
@@ -174,6 +193,10 @@
     width: 16px;
     height: 16px;
     stroke-width: 1.75;
+}
+.xs .icon svg {
+    width: 14px;
+    height: 14px;
 }
 .text {
     display: block;

@@ -409,6 +409,7 @@ export interface Reply {
 }
 export interface DesktopBridge {
     clipboard?: (action: 'cut' | 'copy' | 'paste') => Promise<void>
+    writeClipboardText: (text: string) => Promise<void>
     appUpdates?: {
         state: () => Promise<AppUpdateState>
         install: () => Promise<AppUpdateState>

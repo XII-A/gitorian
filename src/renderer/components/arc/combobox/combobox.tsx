@@ -3,11 +3,11 @@
 import { animate, AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
 import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import type { InputHTMLAttributes, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import type { InputHTMLAttributes, KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, ReactElement } from 'react'
 import { motionTokens } from '../motion-tokens'
 import styles from './combobox.module.css'
 import { ScrollArea } from '../scroll-area/scroll-area'
-import { Popover, PopoverAnchor, PopoverContent } from '../popover/popover'
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '../popover/popover'
 
 export interface ComboboxOption {
     value: string
@@ -29,6 +29,8 @@ export interface ComboboxProps extends Omit<
 > {
     label: string
     options: ComboboxOption[]
+    /** Open a single menu with search in its header from a toolbar button. */
+    trigger?: ReactElement
     value?: string
     defaultValue?: string
     onValueChange?: (value: string) => void
@@ -83,6 +85,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         variant = 'surface',
         hideLabel = false,
         renderTree,
+        trigger,
         disabled,
         onFocus,
         ...inputProps
@@ -95,6 +98,8 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     const hintId = description ? `${controlId}-description` : undefined
     const rootRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
+    const triggerRef = useRef<HTMLButtonElement>(null)
+    const tabbedAway = useRef(false)
     const restoringFocus = useRef(false)
     const optionRefs = useRef<Record<string, HTMLDivElement | null>>({})
     const optionsViewport = useRef<HTMLDivElement>(null)
@@ -120,7 +125,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         if (settledValue.current === selectedValue) return
         settledValue.current = selectedValue
         const input = inputRef.current
-        if (!input || reduceMotion || keyboardMenu || variant === 'inline' || (selectedValue && open)) return
+        if (trigger || !input || reduceMotion || keyboardMenu || variant === 'inline' || (selectedValue && open)) return
         const controls = selectedValue
             ? animate(
                   input,
@@ -133,7 +138,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                   { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] }
               )
         return () => controls.complete()
-    }, [selectedValue, reduceMotion, open, keyboardMenu, variant])
+    }, [selectedValue, reduceMotion, open, keyboardMenu, variant, trigger])
 
     const filteredOptions = useMemo(() => {
         const normalizedQuery = query.trim().toLocaleLowerCase()
@@ -168,10 +173,11 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         if (option.disabled) return
         setUncontrolledValue(option.value)
         onValueChange?.(option.value)
-        updateQuery('')
+        if (!trigger) updateQuery('')
         setOpen(false)
         restoringFocus.current = true
-        inputRef.current?.focus()
+        if (trigger) triggerRef.current?.focus()
+        else inputRef.current?.focus()
         restoringFocus.current = false
     }
 
@@ -186,6 +192,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
 
     const openMenu = () => {
         if (disabled || open) return
+        tabbedAway.current = false
         setOpen(true)
         updateQuery('')
         setActiveIndex(-1)
@@ -194,13 +201,19 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
         setOpen(false)
         updateQuery('')
         restoringFocus.current = true
-        inputRef.current?.focus()
+        if (!trigger) inputRef.current?.focus()
         restoringFocus.current = false
     }
 
     const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
         if (disabled) return
         setKeyboardMenu(true)
+        if (trigger && event.key === 'Tab' && open) {
+            tabbedAway.current = true
+            setOpen(false)
+            triggerRef.current?.focus()
+            return
+        }
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault()
             if (renderTree) {
@@ -236,113 +249,143 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             event.preventDefault()
             event.stopPropagation()
             setOpen(false)
-            updateQuery('')
+            if (!trigger) updateQuery('')
             return
         }
     }
 
-    const inputValue = open ? query : (selectedOption?.label ?? '')
+    const inputValue = trigger || open ? query : (selectedOption?.label ?? '')
     const activeOption = activeIndex >= 0 ? filteredOptions[activeIndex] : undefined
-    const instantMenu = keyboardMenu || !!reduceMotion
+    const instantMenu = !!trigger || keyboardMenu || !!reduceMotion
+
+    const searchControl = (
+        <div
+            className={[
+                styles.control,
+                trigger ? styles.menuSearch : '',
+                variant === 'inline' ? styles.inline : '',
+                open ? styles.open : '',
+                disabled ? styles.disabled : '',
+                !trigger ? (className ?? '') : ''
+            ]
+                .filter(Boolean)
+                .join(' ')}
+        >
+            <Search className={styles.searchIcon} size={16} strokeWidth={1.75} aria-hidden="true" />
+            <input
+                {...inputProps}
+                ref={inputRef}
+                aria-label={trigger ? `Search ${label.toLowerCase()}` : inputProps['aria-label']}
+                id={controlId}
+                type="text"
+                role="combobox"
+                value={inputValue}
+                // While searching, the chosen label stays in place as muted placeholder copy instead of vanishing.
+                placeholder={trigger ? placeholder : (selectedOption?.label ?? placeholder)}
+                disabled={disabled}
+                aria-describedby={hintId}
+                aria-expanded={open}
+                aria-controls={open ? listboxId : undefined}
+                aria-autocomplete="list"
+                aria-haspopup={renderTree ? 'tree' : 'listbox'}
+                aria-activedescendant={open && activeOption ? `${controlId}-option-${activeOption.value}` : undefined}
+                onFocus={(event) => {
+                    onFocus?.(event)
+                    if (!trigger && !restoringFocus.current) openMenu()
+                }}
+                onClick={openMenu}
+                onPointerDown={() => setKeyboardMenu(false)}
+                onChange={(event) => {
+                    updateQuery(event.target.value)
+                    setOpen(true)
+                    setActiveIndex(-1)
+                }}
+                onKeyDown={handleKeyDown}
+            />
+            <AnimatePresence initial={false}>
+                {!trigger && selectedOption && !disabled && !renderTree && (
+                    <motion.button
+                        type="button"
+                        className={styles.clear}
+                        aria-label="Clear selection"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={clear}
+                        initial={reduceMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.95)' }}
+                        animate={{
+                            opacity: 1,
+                            transform: 'scale(1)',
+                            transition: reduceMotion
+                                ? { duration: motionTokens.duration.instant }
+                                : {
+                                      ...motionTokens.spring.snappy,
+                                      opacity: { duration: motionTokens.duration.fast }
+                                  }
+                        }}
+                        exit={{
+                            opacity: 0,
+                            ...(reduceMotion ? {} : { transform: 'scale(0.95)' }),
+                            transition: {
+                                duration: motionTokens.duration.instant,
+                                ease: [...motionTokens.ease.standard]
+                            }
+                        }}
+                        whileTap={{
+                            transform: reduceMotion ? 'scale(1)' : 'scale(0.97)',
+                            transition: {
+                                duration: motionTokens.duration.instant,
+                                ease: [...motionTokens.ease.standard]
+                            }
+                        }}
+                    >
+                        <X size={16} strokeWidth={1.75} aria-hidden="true" />
+                    </motion.button>
+                )}
+            </AnimatePresence>
+            {!trigger && <ChevronDown className={styles.chevron} size={16} strokeWidth={1.75} aria-hidden="true" />}
+        </div>
+    )
 
     return (
         <Popover
             open={open}
             onOpenChange={(next) => {
                 setOpen(next)
-                if (!next) updateQuery('')
+                if (!next && !trigger) updateQuery('')
+                else if (next && trigger) {
+                    tabbedAway.current = false
+                    updateQuery('')
+                    setActiveIndex(options.findIndex((option) => option.value === selectedValue))
+                }
             }}
         >
-            <div ref={rootRef} className={styles.field}>
+            <div
+                ref={rootRef}
+                className={[styles.field, trigger ? className : ''].filter(Boolean).join(' ')}
+                data-open={open || undefined}
+            >
                 <label htmlFor={controlId} className={hideLabel ? styles.srOnly : undefined}>
                     {label}
                 </label>
-                <PopoverAnchor asChild>
-                    <div
-                        className={[
-                            styles.control,
-                            variant === 'inline' ? styles.inline : '',
-                            open ? styles.open : '',
-                            disabled ? styles.disabled : '',
-                            className ?? ''
-                        ]
-                            .filter(Boolean)
-                            .join(' ')}
-                    >
-                        <Search className={styles.searchIcon} size={16} strokeWidth={1.75} aria-hidden="true" />
-                        <input
-                            {...inputProps}
-                            ref={inputRef}
-                            id={controlId}
-                            type="text"
-                            role="combobox"
-                            value={inputValue}
-                            // While searching, the chosen label stays in place as muted placeholder copy instead of vanishing.
-                            placeholder={selectedOption?.label ?? placeholder}
-                            disabled={disabled}
-                            aria-describedby={hintId}
-                            aria-expanded={open}
-                            aria-controls={open ? listboxId : undefined}
-                            aria-autocomplete="list"
-                            aria-haspopup={renderTree ? 'tree' : 'listbox'}
-                            aria-activedescendant={
-                                open && activeOption ? `${controlId}-option-${activeOption.value}` : undefined
+                {trigger ? (
+                    <PopoverTrigger
+                        asChild
+                        ref={triggerRef}
+                        disabled={disabled}
+                        aria-label={label}
+                        onPointerDown={() => setKeyboardMenu(false)}
+                        onKeyDown={(event) => {
+                            setKeyboardMenu(true)
+                            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                                event.preventDefault()
+                                openMenu()
                             }
-                            onFocus={(event) => {
-                                onFocus?.(event)
-                                if (!restoringFocus.current) openMenu()
-                            }}
-                            onClick={openMenu}
-                            onPointerDown={() => setKeyboardMenu(false)}
-                            onChange={(event) => {
-                                updateQuery(event.target.value)
-                                setOpen(true)
-                                setActiveIndex(-1)
-                            }}
-                            onKeyDown={handleKeyDown}
-                        />
-                        <AnimatePresence initial={false}>
-                            {selectedOption && !disabled && !renderTree && (
-                                <motion.button
-                                    type="button"
-                                    className={styles.clear}
-                                    aria-label="Clear selection"
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    onClick={clear}
-                                    initial={reduceMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.95)' }}
-                                    animate={{
-                                        opacity: 1,
-                                        transform: 'scale(1)',
-                                        transition: reduceMotion
-                                            ? { duration: motionTokens.duration.instant }
-                                            : {
-                                                  ...motionTokens.spring.snappy,
-                                                  opacity: { duration: motionTokens.duration.fast }
-                                              }
-                                    }}
-                                    exit={{
-                                        opacity: 0,
-                                        ...(reduceMotion ? {} : { transform: 'scale(0.95)' }),
-                                        transition: {
-                                            duration: motionTokens.duration.instant,
-                                            ease: [...motionTokens.ease.standard]
-                                        }
-                                    }}
-                                    whileTap={{
-                                        transform: reduceMotion ? 'scale(1)' : 'scale(0.97)',
-                                        transition: {
-                                            duration: motionTokens.duration.instant,
-                                            ease: [...motionTokens.ease.standard]
-                                        }
-                                    }}
-                                >
-                                    <X size={16} strokeWidth={1.75} aria-hidden="true" />
-                                </motion.button>
-                            )}
-                        </AnimatePresence>
-                        <ChevronDown className={styles.chevron} size={16} strokeWidth={1.75} aria-hidden="true" />
-                    </div>
-                </PopoverAnchor>
+                        }}
+                    >
+                        {trigger}
+                    </PopoverTrigger>
+                ) : (
+                    <PopoverAnchor asChild>{searchControl}</PopoverAnchor>
+                )}
                 {description && (
                     <span id={hintId} className={styles.hint}>
                         {description}
@@ -353,17 +396,32 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                         <PopoverContent
                             asChild
                             forceMount
-                            role="presentation"
-                            onOpenAutoFocus={(event) => event.preventDefault()}
-                            onCloseAutoFocus={(event) => event.preventDefault()}
-                            onEscapeKeyDown={(event) => event.stopPropagation()}
+                            role={trigger ? 'dialog' : 'presentation'}
+                            aria-label={trigger ? label : undefined}
+                            align={trigger ? 'end' : 'start'}
+                            onOpenAutoFocus={(event) => {
+                                event.preventDefault()
+                                if (trigger) inputRef.current?.focus()
+                            }}
+                            onCloseAutoFocus={(event) => {
+                                if (!trigger || tabbedAway.current) event.preventDefault()
+                                tabbedAway.current = false
+                            }}
+                            onEscapeKeyDown={(event) => {
+                                setKeyboardMenu(true)
+                                event.stopPropagation()
+                            }}
                             onInteractOutside={(event) => {
                                 if (event.target instanceof Node && rootRef.current?.contains(event.target))
                                     event.preventDefault()
                             }}
                         >
                             <motion.div
-                                className={[styles.popover, variant === 'inline' ? styles.inlinePopover : '']
+                                className={[
+                                    styles.popover,
+                                    trigger ? styles.triggerPopover : '',
+                                    variant === 'inline' ? styles.inlinePopover : ''
+                                ]
                                     .filter(Boolean)
                                     .join(' ')}
                                 initial={instantMenu ? false : { opacity: 0, transform: 'scale(0.97)' }}
@@ -383,12 +441,20 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
                                         ease: [...motionTokens.ease.standard]
                                     }
                                 }}
-                                role="presentation"
+                                role={trigger ? 'dialog' : 'presentation'}
+                                aria-label={trigger ? label : undefined}
+                                data-instant={instantMenu || undefined}
                             >
+                                {trigger && searchControl}
                                 <AutoHeight reduceMotion={instantMenu}>
                                     <ScrollArea
-                                        maxHeight="min(300px, 40dvh, calc(var(--radix-popover-content-available-height) - 12px))"
+                                        maxHeight={
+                                            trigger
+                                                ? 'min(300px, 40dvh, calc(var(--radix-popover-content-available-height) - 64px))'
+                                                : 'min(300px, 40dvh, calc(var(--radix-popover-content-available-height) - 12px))'
+                                        }
                                         viewportRef={optionsViewport}
+                                        viewportStyle={trigger ? { overscrollBehavior: 'contain' } : undefined}
                                         fade={8}
                                         label={`${label} options`}
                                     >
