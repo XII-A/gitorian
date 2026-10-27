@@ -1,5 +1,9 @@
 # Connection controls
 
+After authorization, explicitly activate the Journal page combobox before checking its popup tree. Automatic popup focus timing is outside this backend journey. The combined two-provider journey has a 150-second process budget; individual action deadlines and failure/cleanup requirements remain unchanged.
+
+Transport owns credential-scoped lanes, shared reads, safe retries and response cleanup. Verify foreground priority, cancelled discovery without late UI changes, and persisted credential-scoped pauses. Uncertain writes remain unretried.
+
 Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify connections`. The runner owns a temporary journal-only profile and retains screenshots, actions, HTTP traces, process exit, independent SQLite evidence, and cleanup results under `.ai-docs/verification/connections-*/`.
 
 ## GitHub entry points
