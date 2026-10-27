@@ -52,7 +52,7 @@ Exercise the real user path and verify side effects alongside visible results. S
 
 ## Cleanup
 
-The runner waits for its Electron process to close, independently reads SQLite, then removes only the temporary directory it created. On its 90-second timeout it terminates its own process tree on Windows by PID. It restores neither personal state nor unrelated processes because it never uses them. Never kill by process name.
+The runner waits for its Electron process to close, independently reads SQLite, then removes only the temporary directory it created. On its 90-second timeout (150 seconds for the combined connections journey) it terminates its own process tree on Windows by PID. It restores neither personal state nor unrelated processes because it never uses them. Never kill by process name.
 
 Inspect the printed `run.json` after every run, including failures. Require `cleanup.removed` to be true, then confirm the numbered PNGs, `actions.jsonl`, and `run.json` still exist. If the host interrupts the runner, use its recorded PID and absolute scratch path to confirm ownership and terminate that process tree before removing that exact scratch directory. Preserve the evidence directory. Standalone legacy smoke scripts may leave locked temporary profiles; check their cleanup before claiming completion.
 

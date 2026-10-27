@@ -15,6 +15,14 @@ import { Notion } from './notion'
 import { ConnectionState, JournalError, JournalStore } from './journal-context'
 import { DurabilityError } from './durability-error'
 import type { State } from '../shared/model'
+const convert = (...args: Parameters<typeof toNotion>) =>
+    Effect.try({
+        try: () => toNotion(...args),
+        catch: (error) =>
+            new NotionFailure(error instanceof Error ? error.message : 'The writing could not be converted.', {
+                cause: error
+            })
+    })
 interface PageWriteProgress {
     dispatched: boolean
 }
@@ -60,7 +68,7 @@ export const JournalPublishingLive = Layer.scoped(
                 if (!save.title.trim() || save.title.length > 2000)
                     return yield* Effect.fail(new HttpError(400, 'Use a title between 1 and 2000 characters'))
                 if (save.entryId) return yield* remoteUpdate(save, progress)
-                const children = toNotion(save.body, yield* uploadImages(save))
+                const children = yield* convert(save.body, yield* uploadImages(save))
                 const batches = yield* chunkBlocks(children)
                 const destination = save.destination
                 const properties: Record<string, unknown> = {
@@ -130,7 +138,7 @@ export const JournalPublishingLive = Layer.scoped(
                         (title === save.title &&
                             elapsed >= -1000 &&
                             elapsed <= 120000 &&
-                            JSON.stringify(toNotion(body)) === JSON.stringify(toNotion(save.body)))
+                            JSON.stringify(yield* convert(body)) === JSON.stringify(yield* convert(save.body)))
                     )
                         candidates.push({ page, blocks })
                 }
@@ -142,8 +150,8 @@ export const JournalPublishingLive = Layer.scoped(
                     )
                 for (const { page, blocks } of candidates) {
                     const body = fromNotion(blocks)
-                    const actual = toNotion(body)
-                    const expected = toNotion(save.body)
+                    const actual = yield* convert(body)
+                    const expected = yield* convert(save.body)
                     if (JSON.stringify(actual) === JSON.stringify(expected))
                         return { ...(yield* readEntry(page)), body }
                     if (JSON.stringify(actual) !== JSON.stringify(expected.slice(0, actual.length)))
@@ -155,7 +163,7 @@ export const JournalPublishingLive = Layer.scoped(
                     // Adopt the identified page durably before resuming remote writes.
                     save.entryId = page.id
                     yield* checkpoint
-                    const sending = toNotion(save.body, yield* uploadImages(save))
+                    const sending = yield* convert(save.body, yield* uploadImages(save))
                     progress.dispatched = true
                     for (const children of yield* chunkBlocks(sending.slice(actual.length)))
                         yield* request(`blocks/${page.id}/children`, {
@@ -168,9 +176,9 @@ export const JournalPublishingLive = Layer.scoped(
             })
         const remoteUpdate = (save: State['saves'][number], progress: PageWriteProgress): Effect.Effect<Entry, Error> =>
             Effect.gen(function* () {
-                const expected = toNotion(save.body)
+                const expected = yield* convert(save.body)
                 yield* chunkBlocks(expected)
-                const sending = toNotion(save.body, yield* uploadImages(save))
+                const sending = yield* convert(save.body, yield* uploadImages(save))
                 const blocks = yield* loadBlocks(save.entryId!)
                 if (!save.replacedBlockIds) {
                     if (blocks.some((block) => !block.id))
@@ -184,7 +192,7 @@ export const JournalPublishingLive = Layer.scoped(
                 yield* checkpoint
                 const oldIds = new Set(save.replacedBlockIds)
                 const remaining = blocks.filter((block) => !oldIds.has(block.id!))
-                const actual = remaining.length ? toNotion(fromNotion(remaining)) : []
+                const actual = remaining.length ? yield* convert(fromNotion(remaining)) : []
                 if (JSON.stringify(actual) !== JSON.stringify(expected.slice(0, actual.length)))
                     return yield* Effect.fail(
                         new NotionFailure(
