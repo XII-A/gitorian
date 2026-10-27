@@ -4,6 +4,16 @@ import { Editor } from '@tiptap/react'
 import { journalExtensions } from '../src/renderer/journal-extensions'
 import { journalFromHTML, journalHTML } from '../src/renderer/workspace-model'
 import { plainText } from '../src/shared/notion-format'
+import { markdownToHtml } from '../src/renderer/components/arc/rich-text-editor/rich-text-editor'
+
+it('retains fenced language and raw whitespace through HTML and editor serialization', () => {
+    const writing = open(markdownToHtml('```custom-language\n  <raw>\n\tend\n```'))
+    const saved = writing.getJSON()
+    expect(saved.content?.[0].attrs?.language).toBe('custom-language')
+    expect(plainText(saved)).toBe('  <raw>\n\tend')
+    expect(journalFromHTML(journalHTML(saved))).toEqual(saved)
+    expect(writing.getHTML()).not.toContain('Copy code')
+})
 
 let editor: Editor | undefined
 afterEach(() => editor?.destroy())

@@ -67,6 +67,8 @@ Local Arc extensions: `MorphSelect.renderTree` receives `{ id, query, selected, 
 
 ## Writing workspace
 
+`JournalCodeBlock` owns the code node view, installed in place of StarterKit's default renderer. Its Arc Combobox changes the node's language without replacing text; its FloatingButtonGroup matches image actions and offers Copy code and Wrap lines/Unwrap lines. Controls are outside the editable code content and never serialize. Copy uses the validated preload text writer to retain LF on Windows; wrapping is local view state. Read-only code keeps copy/wrap and a static language label. Keep Markdown paste and slash/selection formatting out of code content. The shared code-language catalog normalizes aliases for Notion and falls back to plain text only at export for unknown languages. Verify with `pnpm test:e2e code-block`.
+
 The workspace has one layout: activity, writing, and inspector. It fills the viewport below its main header. The header uses Arc `Breadcrumb`; its Journal crumb returns to the hub. Equal outer grid columns center the date picker independently of the side controls. Desktop header padding is 8px vertically; at narrower widths the date moves into its own centered row. Below 1100px the inspector moves beneath the writing pane, and phones stack the panes with useful minimum heights. Preserve a readable writing measure inside the full-width pane.
 
 Publishing is rendered into the last main-header slot by `WorkspaceDraft`, so autosave, publishing, and their pending state share one owner. Opening the workspace resumes its latest unfinished draft for that week, or offers to start a new entry if there is none. Published entries are not opened for editing. Creating another entry never overwrites a published entry.

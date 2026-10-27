@@ -408,6 +408,7 @@ export interface Reply {
     detailError?: string
 }
 export interface DesktopBridge {
+    writeClipboardText: (text: string) => Promise<void>
     appUpdates?: {
         state: () => Promise<AppUpdateState>
         install: () => Promise<AppUpdateState>

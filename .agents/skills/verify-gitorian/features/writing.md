@@ -9,6 +9,7 @@ Start or resume a weekly entry, edit structured writing, cite work, and recover 
 - `writing.entry`: hub Write and workspace Start this week reach the same editable weekly draft.
 - `writing.save`: typing autosaves and survives renderer reload.
 - `writing.template`: a new entry inherits the saved template without mutating it.
+- `writing.code`: typed/pasted language fences and slash Code block use the same editable code node. Search/change Code language, Copy code, and Wrap lines/Unwrap lines retain raw text and saved language.
 - `writing.citation`: selected activity is inserted without losing surrounding writing; undo removes the insertion.
 - `writing.update`: background update download preserves input, focus and autosave; explicit installation checkpoints the final revision. Owned by the [app updates journey](app-updates.md).
 
@@ -26,6 +27,12 @@ Preconditions: `pnpm build`. `pnpm smoke` runs `tools/desktop-smoke.mjs` against
 - **Citation:** the sample phase inserts an activity citation and tests detached reference behavior. Repeat citation in real fixture mode and verify the saved body for a real-persistence claim.
 - **Evidence:** capture before typing, after input, save status, post-reload body, the resulting IPC body, and an independent post-exit SQLite read. Extend the diagnostic's current console-only evidence before accepting a changed writing path.
 - **Other entries:** explicitly drive workspace `Start this week` and resume an existing draft too; the hub-start result alone does not establish those entry points.
+
+## Code block journey
+
+Run `pnpm build`, `pnpm verify doctor`, then `pnpm test:e2e code-block`. This journal-only Playwright journey uses pointer/keyboard input, native Electron clipboard, the real preload and autosave, and an independent post-exit SQLite query. It covers a typed JavaScript fence, plain-text selection and searchable keyboard language change to TypeScript, Escape focus, editing, exact code copy (including LF on Windows), measured horizontal overflow before/after keyboard wrap and pointer unwrap, an unknown pasted fence, literal Markdown paste inside code, autosave and renderer reload. Keep the three numbered screenshots, persisted-drafts.json, trace, actions.jsonl and run.json; require clean exit and cleanup.removed. HTML/Markdown language round trips, provider alias normalization and unknown-language fallback are covered by the focused editor/format tests. No live Notion requests are made.
+
+Copy and wrapping remain available in read-only editors; the language is a static label. Wrapping is local view state and resets on remount. Unknown fence languages remain visible and stored locally; the Notion adapter exports unsupported languages as plain text. This does not add syntax highlighting. The existing slash menu still owns Code block creation; its formatter-menu tests cover that entry point. Native whole-document copy/paste also exercises a multiword provider language (Visual basic) before returning to TypeScript.
 
 ## Gotchas
 

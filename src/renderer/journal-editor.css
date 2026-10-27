@@ -253,6 +253,67 @@
 .journal-editor .tiptap pre code {
     padding: 0;
 }
+.journal-code-block {
+    position: relative;
+    min-width: 0;
+    margin-block: var(--space-4);
+    border-radius: var(--radius-inset);
+    background: var(--surface-muted);
+}
+.journal-code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3) 0;
+    white-space: normal;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+.journal-code-language {
+    min-width: 0;
+    width: 12rem;
+    max-width: calc(100% - 6rem);
+}
+.journal-code-tools {
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.journal-code-block:hover .journal-code-tools,
+.journal-code-block:focus-within .journal-code-tools {
+    opacity: 1;
+}
+.journal-editor .tiptap .journal-code-block pre {
+    margin: 0;
+    white-space: pre;
+    overflow-wrap: normal;
+    tab-size: 4;
+}
+.journal-editor .tiptap .journal-code-block[data-wrapped] pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.journal-code-status {
+    display: block;
+    padding-inline: var(--space-4);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    white-space: normal;
+}
+.journal-code-status:empty {
+    display: none;
+}
+@media (hover: none) {
+    .journal-code-tools {
+        opacity: 1;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .journal-code-tools {
+        transition: none;
+    }
+}
 .journal-editor .tiptap :is(ul, ol):not([data-type='taskList']) {
     /* Rotate through three marker styles at every depth. The li below passes
        resolved values to the next list without circular custom properties. */

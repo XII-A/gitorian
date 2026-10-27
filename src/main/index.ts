@@ -1,5 +1,5 @@
 import { NotionDiscoveryCache } from './notion-discovery-cache'
-import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, protocol } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import { ReplyUpdates } from '../shared/state-updates'
@@ -297,6 +297,12 @@ void app.whenReady().then(() => {
         if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame)
             throw new Error('Use the main journal window to update Gitorian')
     }
+    ipcMain.handle('journal:clipboard-text', (event, text: unknown) => {
+        const trusted = BrowserWindow.fromWebContents(event.sender)
+        if (!trusted || event.senderFrame !== event.sender.mainFrame || typeof text !== 'string')
+            throw new Error('Invalid clipboard request')
+        clipboard.writeText(text)
+    })
     ipcMain.handle('journal:app-update-state', (event) => {
         updateOwner(event)
         return appUpdates.snapshot()
