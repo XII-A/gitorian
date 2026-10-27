@@ -65,11 +65,17 @@ it('reconsiders completed GitHub coverage when the journal timezone changes', as
             pulls[0].updated_at = '2026-10-04T22:00:00Z'
             return new Response(JSON.stringify(pulls))
         })
-        const service = new JournalService(app.store, new GitHub(http, () => 'test', vi.fn()), app.notion, () => ({
-            github: true,
-            notion: false,
-            protectedStorage: false
-        }))
+        const service = new JournalService(
+            app.store,
+            new GitHub(http, () => 'test', vi.fn()),
+            app.notion,
+            () => ({
+                github: true,
+                notion: false,
+                protectedStorage: false
+            }),
+            app.publishingCommands
+        )
         await service.handle({ type: 'loadWeek', since: '2026-10-05' })
         expect(app.store.state.activities.some((activity) => activity.kind === 'pr')).toBe(false)
         app.store.state.settings.timezone = 'Europe/Istanbul'

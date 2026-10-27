@@ -2,6 +2,8 @@
 
 Start or resume a weekly entry, edit structured writing, cite work, and recover local writing without a Notion connection.
 
+`JournalPublishing` owns durable intent, confirmation, uncertain-outcome persistence and marker reconciliation using Effect. Preserve the journal/revision/Notion behavior tests, including the gated uncertain-outcome checkpoint: a lost response must not reach the caller before that recovery record is durable, and reconciliation must find the original page without another creation. Run `pnpm verify publishing` for the real Electron publish/update/rejection flow and post-exit SQLite evidence. Simulated HTTP is the provider adapter; this journey authorizes no live publishing.
+
 ## Sub-features
 
 - `writing.entry`: hub Write and workspace Start this week reach the same editable weekly draft.

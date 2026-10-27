@@ -1,29 +1,50 @@
-import { fromNotion, toNotion } from '../shared/notion-format'
+import { ConnectionError } from './connection-errors'
+import { DurabilityError } from './durability-error'
+import type { NotionRequestFailure } from './notion-request'
+import { makeNotionRequests } from './notion-request'
+import { fromNotion } from '../shared/notion-format'
 import type { NotionBlock } from '../shared/notion-format'
-import type { Destination, Entry, ConnectionProfile, State, NotionDiscoveryProgress } from '../shared/model'
-import type { ProviderHttp } from './provider-http'
-import { HttpError } from './http'
+import type { Destination, Entry, ConnectionProfile, NotionDiscoveryProgress } from '../shared/model'
+import { Http } from './http'
+import { Context, Effect, Layer } from 'effect'
+import { HttpError, TransportError } from './http'
 import type { Store } from './store'
 import { downloadImage, UnsupportedImageError } from './images'
-import { imageIds, imageExtension } from '../shared/images'
 import type { JournalSetup } from './notion-connection'
 import sharp from 'sharp'
 import { discoverNotionPages, type NotionPageRead } from './notion-discovery'
-import { retryNotionRateLimit } from './notion-rate-limit'
-
-interface Page {
+import { retryNotionRateLimit, NotionReadCancelled } from './notion-rate-limit'
+export interface Page {
     id: string
     url: string
     created_time: string
-    properties: Record<string, { title?: { plain_text?: string; text?: { content: string } }[] }>
+    properties: Record<
+        string,
+        {
+            title?: {
+                plain_text?: string
+                text?: {
+                    content: string
+                }
+            }[]
+        }
+    >
     icon?: {
         type: string
         emoji?: string
-        external?: { url: string }
-        file?: { url: string }
-        custom_emoji?: { url: string }
+        external?: {
+            url: string
+        }
+        file?: {
+            url: string
+        }
+        custom_emoji?: {
+            url: string
+        }
     } | null
-    parent?: { page_id?: string }
+    parent?: {
+        page_id?: string
+    }
 }
 interface List<T> {
     results: T[]
@@ -35,469 +56,358 @@ const pageIcon = (page: Page) => {
     const url = page.icon?.external?.url ?? page.icon?.file?.url ?? page.icon?.custom_emoji?.url
     return url?.startsWith('https://') ? url : undefined
 }
-export class Notion {
-    constructor(
-        private readonly http: ProviderHttp,
-        private readonly token: (refresh?: boolean, rejected?: string) => string | Promise<string>,
-        private readonly images?: Pick<Store, 'image' | 'importImage'>,
-        private readonly imageDownload = downloadImage
-    ) {}
-    private async request<T>(path: string, init?: RequestInit): Promise<T> {
-        const token = await this.token()
-        if (!token) throw new Error('Connect Notion to publish or refresh')
-        try {
-            return await this.http.request<T>(`https://api.notion.com/v1/${path}`, token, init)
-        } catch (error) {
-            // A rejected authorization has not applied the write. Never replay uncertain writes.
-            if (!(error instanceof HttpError) || error.status !== 401) throw error
-            const refreshed = await this.token(true, token)
-            if (!refreshed || refreshed === token) throw error
-            return this.http.request<T>(`https://api.notion.com/v1/${path}`, refreshed, init)
-        }
-    }
-    private setupRequest<T>(path: string, init?: RequestInit): Promise<T> {
-        return retryNotionRateLimit(() => this.request<T>(path, init))
-    }
-    async prepareJournal(
+export class NotionFailure extends Error {
+    readonly _tag = 'NotionFailure'
+}
+export type NotionError = NotionFailure | NotionRequestFailure | NotionReadCancelled
+export function isNotionError(error: unknown): error is NotionError {
+    return (
+        error instanceof NotionFailure ||
+        error instanceof HttpError ||
+        error instanceof TransportError ||
+        error instanceof ConnectionError ||
+        error instanceof DurabilityError ||
+        error instanceof NotionReadCancelled
+    )
+}
+export function toNotionError(error: unknown): NotionError {
+    return isNotionError(error)
+        ? error
+        : new NotionFailure(error instanceof Error ? error.message : String(error), { cause: error })
+}
+export type Notion = ReturnType<typeof makeNotion>
+export const Notion = Context.GenericTag<Notion>('gitorian/Notion')
+type NotionToken = (refresh?: boolean, rejected?: string) => Effect.Effect<string, Error>
+export const NotionLive = (
+    getToken: NotionToken,
+    images?: Pick<Store, 'image' | 'importImage'>,
+    imageDownload = downloadImage
+) =>
+    Layer.effect(
+        Notion,
+        Effect.map(Http, (http) => makeNotion(http, getToken, images, imageDownload))
+    )
+export function makeNotion(
+    http: Http,
+    getToken: NotionToken,
+    images?: Pick<Store, 'image' | 'importImage'>,
+    imageDownload = downloadImage
+) {
+    const prepareJournal = (
         setup: JournalSetup,
         checkpoint: (pageId?: string) => void,
         existing?: Destination
-    ): Promise<Destination> {
-        const destination = (id: string): Destination => ({ kind: 'page', id, titleProperty: 'Name', dateProperty: '' })
-        if (existing?.id) {
-            if (existing.id === setup.pageId) return existing
-            await this.verifyDestination(existing)
-            checkpoint(existing.id)
-            return existing
-        }
-        const title = setup.title ?? 'Weekly Journal'
-        if (setup.pageId) return { ...destination(setup.pageId), ...(setup.title ? { title } : {}) }
-        const marker = `gitorian setup: ${setup.id}`
-        if (setup.started) {
-            const matches: string[] = []
-            let cursor: string | null = null
-            do {
-                const pages: List<Page> = await this.setupRequest('search', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        query: title,
-                        filter: { value: 'page', property: 'object' },
-                        ...(cursor ? { start_cursor: cursor } : {})
-                    })
-                })
-                for (const page of pages.results) {
-                    const pageTitle = Object.values(page.properties)
-                        .find((property) => property.title)
-                        ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
-                        .join('')
-                    if (pageTitle !== title) continue
-                    const children = await this.setupRequest<{
-                        results: {
-                            type: string
-                            paragraph?: { rich_text: { plain_text?: string; text?: { content: string } }[] }
-                        }[]
-                    }>(`blocks/${page.id}/children?page_size=100`)
-                    if (
-                        children.results.some(
-                            (block) =>
-                                block.type === 'paragraph' &&
-                                block.paragraph?.rich_text
-                                    .map((text) => text.plain_text ?? text.text?.content ?? '')
-                                    .join('') === marker
-                        )
-                    )
-                        matches.push(page.id)
-                }
-                cursor = pages.has_more ? pages.next_cursor : null
-            } while (cursor)
-            if (matches.length !== 1)
-                throw new Error('Could not confirm page creation. Retry or choose an existing page.')
-            checkpoint(matches[0])
-            return { ...destination(matches[0]), ...(setup.title ? { title } : {}) }
-        }
-        checkpoint()
-        const page = await this.setupRequest<{ id: string; url?: string }>('pages', {
-            method: 'POST',
-            headers: { 'Notion-Version': '2026-03-11' },
-            body: JSON.stringify({
-                parent: { type: 'workspace', workspace: true },
-                properties: { title: { title: [{ text: { content: title } }] } },
-                children: [
-                    {
-                        object: 'block',
-                        type: 'paragraph',
-                        paragraph: { rich_text: [{ type: 'text', text: { content: marker } }] }
-                    }
-                ]
+    ): Effect.Effect<Destination, Error> =>
+        Effect.gen(function* () {
+            const destination = (id: string): Destination => ({
+                kind: 'page',
+                id,
+                titleProperty: 'Name',
+                dateProperty: ''
             })
+            if (existing?.id) {
+                if (existing.id === setup.pageId) return existing
+                yield* verifyDestination(existing)
+                yield* Effect.try({
+                    try: () => checkpoint(existing.id),
+                    catch: (error) => (error instanceof Error ? error : new NotionFailure(String(error)))
+                })
+                return existing
+            }
+            const title = setup.title ?? 'Weekly Journal'
+            if (setup.pageId) return { ...destination(setup.pageId), ...(setup.title ? { title } : {}) }
+            const marker = `gitorian setup: ${setup.id}`
+            if (setup.started) {
+                const matches: string[] = []
+                let cursor: string | null = null
+                do {
+                    const pages: List<Page> = yield* setupRequest<List<Page>>('search', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            query: title,
+                            filter: { value: 'page', property: 'object' },
+                            ...(cursor ? { start_cursor: cursor } : {})
+                        })
+                    })
+                    for (const page of pages.results) {
+                        const pageTitle = Object.values(page.properties)
+                            .find((property) => property.title)
+                            ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
+                            .join('')
+                        if (pageTitle !== title) continue
+                        const children = yield* setupRequest<{
+                            results: {
+                                type: string
+                                paragraph?: {
+                                    rich_text: {
+                                        plain_text?: string
+                                        text?: {
+                                            content: string
+                                        }
+                                    }[]
+                                }
+                            }[]
+                        }>(`blocks/${page.id}/children?page_size=100`)
+                        if (
+                            children.results.some(
+                                (block) =>
+                                    block.type === 'paragraph' &&
+                                    block.paragraph?.rich_text
+                                        .map((text) => text.plain_text ?? text.text?.content ?? '')
+                                        .join('') === marker
+                            )
+                        )
+                            matches.push(page.id)
+                    }
+                    cursor = pages.has_more ? pages.next_cursor : null
+                } while (cursor)
+                if (matches.length !== 1)
+                    return yield* Effect.fail(
+                        new NotionFailure('Could not confirm page creation. Retry or choose an existing page.')
+                    )
+                yield* Effect.try({
+                    try: () => checkpoint(matches[0]),
+                    catch: (error) => (error instanceof Error ? error : new NotionFailure(String(error)))
+                })
+                return { ...destination(matches[0]), ...(setup.title ? { title } : {}) }
+            }
+            yield* Effect.try({
+                try: () => checkpoint(),
+                catch: (error) => (error instanceof Error ? error : new NotionFailure(String(error)))
+            })
+            const page = yield* setupRequest<{
+                id: string
+                url?: string
+            }>('pages', {
+                method: 'POST',
+                headers: { 'Notion-Version': '2026-03-11' },
+                body: JSON.stringify({
+                    parent: { type: 'workspace', workspace: true },
+                    properties: { title: { title: [{ text: { content: title } }] } },
+                    children: [
+                        {
+                            object: 'block',
+                            type: 'paragraph',
+                            paragraph: { rich_text: [{ type: 'text', text: { content: marker } }] }
+                        }
+                    ]
+                })
+            })
+            if (typeof page.id !== 'string' || !page.id)
+                return yield* Effect.fail(
+                    new NotionFailure('Journal setup could not be confirmed. Connect again to check the saved journal.')
+                )
+            yield* Effect.try({
+                try: () => checkpoint(page.id),
+                catch: (error) => (error instanceof Error ? error : new NotionFailure(String(error)))
+            })
+            return {
+                ...destination(page.id),
+                ...(setup.title ? { title, icon: '' } : {}),
+                ...(page.url ? { url: page.url } : {})
+            }
         })
-        if (typeof page.id !== 'string' || !page.id)
-            throw new Error('Journal setup could not be confirmed. Connect again to check the saved journal.')
-        checkpoint(page.id)
-        return {
-            ...destination(page.id),
-            ...(setup.title ? { title, icon: '' } : {}),
-            ...(page.url ? { url: page.url } : {})
-        }
-    }
-    async accessiblePages(
+    const describeDestination = (destination: Destination): Effect.Effect<Destination, Error> =>
+        Effect.gen(function* () {
+            if (destination.kind !== 'page') return destination
+            const page = yield* request<Page>(`pages/${encodeURIComponent(destination.id)}`)
+            const title = Object.values(page.properties ?? {})
+                .find((property) => property.title)
+                ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
+                .join('')
+                .trim()
+            return {
+                ...destination,
+                title: title || destination.title || 'Untitled',
+                url: page.url ?? destination.url,
+                icon:
+                    page.icon === undefined
+                        ? (destination.icon ?? '')
+                        : ((yield* destinationIcon(pageIcon(page))) ?? '')
+            }
+        })
+    const profile = (): Effect.Effect<ConnectionProfile, Error> =>
+        Effect.gen(function* () {
+            const user = yield* request<{
+                name?: string | null
+                avatar_url?: string | null
+            }>('users/me')
+            return {
+                name: user.name?.trim() || 'Notion integration',
+                avatarUrl: user.avatar_url?.startsWith('https://') ? user.avatar_url : undefined
+            }
+        })
+    const refreshEntry = (id: string): Effect.Effect<Entry, Error> =>
+        Effect.gen(function* () {
+            return yield* readEntry(yield* request<Page>(`pages/${encodeURIComponent(id)}`))
+        })
+    const loadPages = (destination: Destination): Effect.Effect<Page[], Error> =>
+        Effect.gen(function* () {
+            if (destination.kind === 'database') {
+                const pages: Page[] = []
+                let cursor: string | null = null
+                do {
+                    const response: List<Page> = yield* request<List<Page>>(
+                        `data_sources/${encodeURIComponent(destination.id)}/query`,
+                        {
+                            method: 'POST',
+                            body: JSON.stringify({ page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) })
+                        }
+                    )
+                    pages.push(...response.results)
+                    cursor = response.has_more ? response.next_cursor : null
+                } while (cursor)
+                return pages
+            }
+            const blocks = yield* loadBlocks(destination.id)
+            const ids: string[] = []
+            const visit = (items: NotionBlock[]) => {
+                for (const block of items) {
+                    if (block.type === 'child_page' && block.id) ids.push(block.id)
+                    visit(block.children ?? [])
+                }
+            }
+            visit(blocks)
+            const pages: Page[] = []
+            for (const id of ids) pages.push(yield* request<Page>(`pages/${id}`))
+            return pages
+        })
+    const readEntry = (page: Page): Effect.Effect<Entry, Error> =>
+        Effect.gen(function* () {
+            const title =
+                Object.values(page.properties)
+                    .find((property) => property.title)
+                    ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
+                    .join('') ?? 'Untitled'
+            return {
+                id: page.id,
+                title,
+                date: page.created_time,
+                url: page.url,
+                body: fromNotion(yield* loadBlocks(page.id)),
+                refreshedAt: new Date().toISOString()
+            }
+        })
+    const { request } = makeNotionRequests(http, getToken)
+    const setupRequest = <T>(path: string, init?: RequestInit) => retryNotionRateLimit(request<T>(path, init))
+    const accessiblePages = (
         progress?: (update: NotionDiscoveryProgress) => void,
         signal?: AbortSignal,
         options?: NotionPageRead
-    ) {
-        return discoverNotionPages(
-            (path, init) => {
-                signal?.throwIfAborted()
-                return this.request(path, { ...init, ...(signal ? { signal } : {}) })
-            },
+    ) =>
+        discoverNotionPages(
+            <T>(path: string, init?: RequestInit) => request<T>(path, { ...init, ...(signal ? { signal } : {}) }),
             progress,
             signal,
             options
         )
+    const destinationIcon = (icon?: string): Effect.Effect<string | undefined> => {
+        if (!icon?.startsWith('https://')) return Effect.succeed(icon)
+        return Effect.gen(function* () {
+            const image = yield* Effect.tryPromise({ try: () => imageDownload(icon), catch: (error) => error })
+            const bytes = yield* Effect.tryPromise({
+                try: () => sharp(image.bytes).resize(32, 32, { fit: 'inside' }).webp({ quality: 80 }).toBuffer(),
+                catch: (error) => error
+            })
+            return 'data:image/webp;base64,' + bytes.toString('base64')
+        }).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
     }
-    async destinationIcon(icon?: string): Promise<string | undefined> {
-        if (!icon?.startsWith('https://')) return icon
-        try {
-            const image = await this.imageDownload(icon)
-            const bytes = await sharp(image.bytes).resize(32, 32, { fit: 'inside' }).webp({ quality: 80 }).toBuffer()
-            return `data:image/webp;base64,${bytes.toString('base64')}`
-        } catch {
-            return undefined
-        }
-    }
-    async describeDestination(destination: Destination): Promise<Destination> {
-        if (destination.kind !== 'page') return destination
-        const page = await this.request<Page>(`pages/${encodeURIComponent(destination.id)}`)
-        const title = Object.values(page.properties ?? {})
-            .find((property) => property.title)
-            ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
-            .join('')
-            .trim()
-        return {
-            ...destination,
-            title: title || destination.title || 'Untitled',
-            url: page.url ?? destination.url,
-            icon:
-                page.icon === undefined
-                    ? (destination.icon ?? '')
-                    : ((await this.destinationIcon(pageIcon(page))) ?? '')
-        }
-    }
-    async profile(): Promise<ConnectionProfile> {
-        const user = await this.request<{ name?: string | null; avatar_url?: string | null }>('users/me')
-        return {
-            name: user.name?.trim() || 'Notion integration',
-            avatarUrl: user.avatar_url?.startsWith('https://') ? user.avatar_url : undefined
-        }
-    }
-    async verifyDestination(destination: Destination): Promise<void> {
-        if (!destination.id.trim()) throw new Error('Enter a destination ID first.')
-        const kind = destination.kind === 'page' ? 'Page' : 'Database data source'
-        try {
-            await this.setupRequest(
-                `${destination.kind === 'page' ? 'pages' : 'data_sources'}/${encodeURIComponent(destination.id.trim())}`
-            )
-        } catch (error) {
-            if (error instanceof HttpError) {
-                if (error.status === 401)
-                    throw new Error('Reconnect Notion with a valid integration token and try again.')
-                if (error.status === 403 || error.status === 404)
-                    throw new Error(
-                        `${kind} could not be reached. Check the ID and share it with your Notion integration.`
-                    )
-                if (error.status === 400)
-                    throw new Error(
-                        `Check the ${destination.kind === 'page' ? 'page' : 'data source'} ID and try again.`
-                    )
-            }
-            throw new Error('Could not test the destination. Check your connection and try again.')
-        }
-    }
-    async refreshEntry(id: string): Promise<Entry> {
-        return this.entry(await this.request<Page>(`pages/${encodeURIComponent(id)}`))
-    }
-    async blocks(id: string): Promise<NotionBlock[]> {
-        const blocks: NotionBlock[] = []
-        let cursor: string | null = null
-        do {
-            const response: List<NotionBlock> = await this.request(
-                `blocks/${encodeURIComponent(id)}/children?page_size=100${cursor ? `&start_cursor=${cursor}` : ''}`
-            )
-            for (const block of response.results) {
-                if (block.type === 'image' && this.images) {
-                    const image = block.image as { type: string; file?: { url: string }; external?: { url: string } }
-                    const url = image.type === 'file' ? image.file?.url : image.external?.url
-                    if (!url) throw new Error('Could not retrieve the Notion image. Refresh again.')
-                    try {
-                        const downloaded = await this.imageDownload(url)
-                        block.managedAssetId = await this.images.importImage(downloaded.bytes)
-                    } catch (error) {
-                        if (!(error instanceof UnsupportedImageError)) throw error
-                        // Unsupported media cannot match a managed image during verification.
+    const verifyDestination = (destination: Destination): Effect.Effect<void, Error> =>
+        Effect.gen(function* () {
+            if (!destination.id.trim()) return yield* Effect.fail(new NotionFailure('Enter a destination ID first.'))
+            const kind = destination.kind === 'page' ? 'Page' : 'Database data source'
+            yield* setupRequest(
+                (destination.kind === 'page' ? 'pages' : 'data_sources') +
+                    '/' +
+                    encodeURIComponent(destination.id.trim())
+            ).pipe(
+                Effect.mapError((error) => {
+                    if (error instanceof HttpError) {
+                        if (error.status === 401)
+                            return new NotionFailure('Reconnect Notion with a valid integration token and try again.')
+                        if (error.status === 403 || error.status === 404)
+                            return new NotionFailure(
+                                kind + ' could not be reached. Check the ID and share it with your Notion integration.'
+                            )
+                        if (error.status === 400)
+                            return new NotionFailure(
+                                'Check the ' +
+                                    (destination.kind === 'page' ? 'page' : 'data source') +
+                                    ' ID and try again.'
+                            )
                     }
-                }
-                if (block.has_children && block.id && block.type !== 'child_page' && block.type !== 'child_database')
-                    block.children = await this.blocks(block.id)
-                blocks.push(block)
-            }
-            cursor = response.has_more ? response.next_cursor : null
-        } while (cursor)
-        return blocks
-    }
-    async pages(destination: Destination): Promise<Page[]> {
-        if (destination.kind === 'database') {
-            const pages: Page[] = []
+                    return new NotionFailure('Could not test the destination. Check your connection and try again.')
+                })
+            )
+        })
+    const loadBlocks = (id: string): Effect.Effect<NotionBlock[], Error> =>
+        Effect.gen(function* () {
+            const blocks: NotionBlock[] = []
             let cursor: string | null = null
             do {
-                const response: List<Page> = await this.request(
-                    `data_sources/${encodeURIComponent(destination.id)}/query`,
-                    {
-                        method: 'POST',
-                        body: JSON.stringify({ page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) })
-                    }
+                const response: List<NotionBlock> = yield* request<List<NotionBlock>>(
+                    'blocks/' +
+                        encodeURIComponent(id) +
+                        '/children?page_size=100' +
+                        (cursor ? '&start_cursor=' + cursor : '')
                 )
-                pages.push(...response.results)
+                for (const block of response.results) {
+                    if (block.type === 'image' && images) {
+                        const image = block.image as {
+                            type: string
+                            file?: {
+                                url: string
+                            }
+                            external?: {
+                                url: string
+                            }
+                        }
+                        const url = image.type === 'file' ? image.file?.url : image.external?.url
+                        if (!url)
+                            return yield* Effect.fail(
+                                new NotionFailure('Could not retrieve the Notion image. Refresh again.')
+                            )
+                        yield* Effect.gen(function* () {
+                            const downloaded = yield* Effect.tryPromise({
+                                try: () => imageDownload(url),
+                                catch: (error) => (error instanceof Error ? error : new NotionFailure(String(error)))
+                            })
+                            block.managedAssetId = yield* Effect.tryPromise({
+                                try: () => images.importImage(downloaded.bytes),
+                                catch: (error) => (error instanceof Error ? error : new NotionFailure(String(error)))
+                            })
+                        }).pipe(
+                            Effect.catchAll((error) =>
+                                error instanceof UnsupportedImageError ? Effect.void : Effect.fail(error)
+                            )
+                        )
+                    }
+                    if (
+                        block.has_children &&
+                        block.id &&
+                        block.type !== 'child_page' &&
+                        block.type !== 'child_database'
+                    )
+                        block.children = yield* loadBlocks(block.id)
+                    blocks.push(block)
+                }
                 cursor = response.has_more ? response.next_cursor : null
             } while (cursor)
-            return pages
-        }
-        const blocks = await this.blocks(destination.id)
-        const ids: string[] = []
-        const visit = (items: NotionBlock[]) => {
-            for (const block of items) {
-                if (block.type === 'child_page' && block.id) ids.push(block.id)
-                visit(block.children ?? [])
-            }
-        }
-        visit(blocks)
-        const pages: Page[] = []
-        for (const id of ids) pages.push(await this.request<Page>(`pages/${id}`))
-        return pages
-    }
-    async entry(page: Page): Promise<Entry> {
-        const title =
-            Object.values(page.properties)
-                .find((property) => property.title)
-                ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
-                .join('') ?? 'Untitled'
-        return {
-            id: page.id,
-            title,
-            date: page.created_time,
-            url: page.url,
-            body: fromNotion(await this.blocks(page.id)),
-            refreshedAt: new Date().toISOString()
-        }
-    }
-    async publish(save: State['saves'][number], checkpoint?: () => void | Promise<void>): Promise<Entry> {
-        if (!save.title.trim() || save.title.length > 2000)
-            throw new HttpError(400, 'Use a title between 1 and 2000 characters')
-        if (save.entryId) return this.update(save, checkpoint)
-        const children = toNotion(save.body, await this.uploadImages(save, checkpoint))
-        const batches = this.batches(children)
-        const destination = save.destination
-        const properties: Record<string, unknown> = {
-            [destination.kind === 'page' ? 'title' : destination.titleProperty]: {
-                title: [{ text: { content: save.title } }]
-            }
-        }
-        if (destination.kind === 'database' && destination.dateProperty)
-            properties[destination.dateProperty] = { date: { start: save.week ?? save.createdAt.slice(0, 10) } }
-        const page = await this.request<Page>('pages', {
-            method: 'POST',
-            body: JSON.stringify({
-                parent: destination.kind === 'page' ? { page_id: destination.id } : { data_source_id: destination.id },
-                properties,
-                children: batches[0] ?? []
-            })
+            return blocks
         })
-        save.entryId = page.id
-        await checkpoint?.()
-        for (const children of batches.slice(1))
-            await this.request(`blocks/${page.id}/children`, { method: 'PATCH', body: JSON.stringify({ children }) })
-        return {
-            id: page.id,
-            url: page.url,
-            title: save.title,
-            date: save.createdAt,
-            body: save.body,
-            refreshedAt: new Date().toISOString()
-        }
-    }
-    async reconcile(save: State['saves'][number], checkpoint?: () => void | Promise<void>): Promise<Entry | undefined> {
-        if (save.updateExisting) return this.update(save, checkpoint)
-        const pages = save.entryId
-            ? [await this.request<Page>(`pages/${save.entryId}`)]
-            : await this.pages(save.destination)
-        const candidates: { page: Page; blocks: NotionBlock[] }[] = []
-        for (const page of pages) {
-            const blocks = await this.blocks(page.id)
-            const legacyMarker = blocks.some(
-                (block) => block.type === 'paragraph' && JSON.stringify(block.paragraph).includes(save.marker)
-            )
-            const title = Object.values(page.properties)
-                .find((property) => property.title)
-                ?.title?.map((text) => text.plain_text ?? text.text?.content ?? '')
-                .join('')
-            const elapsed = Date.parse(page.created_time) - Date.parse(save.createdAt)
-            const body = fromNotion(blocks)
-            // New pages contain only user writing. Without a checkpointed ID, adopt
-            // only one complete matching page created during this publish attempt.
-            if (
-                save.entryId ||
-                legacyMarker ||
-                (title === save.title &&
-                    elapsed >= -1000 &&
-                    elapsed <= 120000 &&
-                    JSON.stringify(toNotion(body)) === JSON.stringify(toNotion(save.body)))
-            )
-                candidates.push({ page, blocks })
-        }
-        if (candidates.length > 1)
-            throw new Error(
-                'More than one matching Notion page was found. Inspect them in Notion before retrying verification.'
-            )
-        for (const { page, blocks } of candidates) {
-            const body = fromNotion(blocks)
-            const actual = toNotion(body)
-            const expected = toNotion(save.body)
-            if (JSON.stringify(actual) === JSON.stringify(expected)) return { ...(await this.entry(page)), body }
-            if (JSON.stringify(actual) !== JSON.stringify(expected.slice(0, actual.length)))
-                throw new Error(
-                    'The possible saved page differs from the draft. Coverage remains pending; inspect it in Notion.'
-                )
-            // A checkpointed ID (or legacy marker) identifies a partial page safely.
-            const sending = toNotion(save.body, await this.uploadImages(save, checkpoint))
-            for (const children of this.batches(sending.slice(actual.length)))
-                await this.request(`blocks/${page.id}/children`, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ children })
-                })
-            return { ...(await this.entry(page)), body: save.body }
-        }
-        return undefined
-    }
-    private async update(save: State['saves'][number], checkpoint?: () => void | Promise<void>): Promise<Entry> {
-        const expected = toNotion(save.body)
-        this.batches(expected)
-        const sending = toNotion(save.body, await this.uploadImages(save, checkpoint))
-        const blocks = await this.blocks(save.entryId!)
-        if (!save.replacedBlockIds) {
-            if (blocks.some((block) => !block.id))
-                throw new Error('Notion did not return block IDs. Retry verification.')
-            save.replacedBlockIds = blocks.map((block) => block.id!)
-            // Persist the replacement boundary before mutating remote content, so a
-            // lost response or restart cannot cause newly appended writing to be deleted.
-            await checkpoint?.()
-        }
-        const oldIds = new Set(save.replacedBlockIds)
-        const remaining = blocks.filter((block) => !oldIds.has(block.id!))
-        const actual = remaining.length ? toNotion(fromNotion(remaining)) : []
-        if (JSON.stringify(actual) !== JSON.stringify(expected.slice(0, actual.length)))
-            throw new Error('The Notion page changed during publishing. Inspect it in Notion before verifying again.')
-        const properties = {
-            [save.destination.kind === 'page' ? 'title' : save.destination.titleProperty]: {
-                title: [{ text: { content: save.title } }]
-            }
-        }
-        const page = await this.request<Page>(`pages/${save.entryId}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ properties })
-        })
-        for (const block of blocks.filter((block) => oldIds.has(block.id!)))
-            await this.request(`blocks/${block.id}`, { method: 'DELETE' })
-        for (const children of this.batches(sending.slice(actual.length)))
-            await this.request(`blocks/${save.entryId}/children`, {
-                method: 'PATCH',
-                body: JSON.stringify({ children })
-            })
-        return {
-            id: page.id,
-            url: page.url,
-            title: save.title,
-            date: page.created_time,
-            body: save.body,
-            refreshedAt: new Date().toISOString()
-        }
-    }
-    private async uploadImages(
-        save: State['saves'][number],
-        checkpoint?: () => void | Promise<void>
-    ): Promise<Record<string, string>> {
-        const uploads: Record<string, string> = {}
-        try {
-            for (const id of imageIds(save.body)) {
-                const image = this.images?.image(id)
-                if (!image)
-                    throw new HttpError(400, 'A journal image is missing. Restore it from a backup before publishing.')
-                const existing = save.imageUploads?.[id]
-                if (existing && (!existing.expiresAt || Date.parse(existing.expiresAt) > Date.now() + 60_000)) {
-                    try {
-                        const current = await this.request<{ status: string; expiry_time: string | null }>(
-                            `file_uploads/${existing.id}`
-                        )
-                        if (current.status === 'uploaded') {
-                            uploads[id] = existing.id
-                            continue
-                        }
-                    } catch (error) {
-                        if (!(error instanceof HttpError && error.status === 404)) throw error
-                    }
-                }
-                const created = await this.request<{ id: string }>('file_uploads', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        mode: 'single_part',
-                        filename: `${id}.${imageExtension(image.mime)}`,
-                        content_type: image.mime
-                    })
-                })
-                const form = new FormData()
-                form.append(
-                    'file',
-                    new Blob([new Uint8Array(image.bytes)], { type: image.mime }),
-                    `${id}.${imageExtension(image.mime)}`
-                )
-                const uploaded = await this.request<{ status: string; expiry_time: string | null }>(
-                    `file_uploads/${created.id}/send`,
-                    { method: 'POST', body: form }
-                )
-                if (uploaded.status !== 'uploaded')
-                    throw new Error('Notion has not finished uploading an image. Try publishing again.')
-                save.imageUploads ??= {}
-                save.imageUploads[id] = { id: created.id, expiresAt: uploaded.expiry_time }
-                await checkpoint?.()
-                uploads[id] = created.id
-            }
-        } catch (error) {
-            if (error instanceof HttpError && error.status >= 400 && error.status < 500) throw error
-            throw new HttpError(
-                400,
-                'Could not upload images to Notion. Your page has not been changed. Try publishing again.'
-            )
-        }
-        return uploads
-    }
-    private batches(blocks: NotionBlock[]): NotionBlock[][] {
-        const batches: NotionBlock[][] = []
-        let batch: NotionBlock[] = []
-        let bytes = 0
-        for (const block of blocks) {
-            const size = Buffer.byteLength(JSON.stringify(block))
-            if (size > 450000)
-                throw new HttpError(
-                    400,
-                    'A journal block exceeds the Notion payload limit; split this block before publishing'
-                )
-            if (batch.length >= 100 || bytes + size > 450000) {
-                batches.push(batch)
-                batch = []
-                bytes = 0
-            }
-            batch.push(block)
-            bytes += size
-        }
-        if (batch.length) batches.push(batch)
-        return batches
+    return {
+        prepareJournal: Effect.fn('Notion.prepareJournal')(prepareJournal, Effect.mapError(toNotionError)),
+        accessiblePages: Effect.fn('Notion.accessiblePages')(accessiblePages, Effect.mapError(toNotionError)),
+        destinationIcon: Effect.fn('Notion.destinationIcon')(destinationIcon, Effect.mapError(toNotionError)),
+        describeDestination: Effect.fn('Notion.describeDestination')(
+            describeDestination,
+            Effect.mapError(toNotionError)
+        ),
+        profile: Effect.fn('Notion.profile')(profile, Effect.mapError(toNotionError)),
+        verifyDestination: Effect.fn('Notion.verifyDestination')(verifyDestination, Effect.mapError(toNotionError)),
+        refreshEntry: Effect.fn('Notion.refreshEntry')(refreshEntry, Effect.mapError(toNotionError)),
+        blocks: Effect.fn('Notion.blocks')(loadBlocks, Effect.mapError(toNotionError)),
+        pages: Effect.fn('Notion.pages')(loadPages, Effect.mapError(toNotionError)),
+        entry: Effect.fn('Notion.entry')(readEntry, Effect.mapError(toNotionError))
     }
 }

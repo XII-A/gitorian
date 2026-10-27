@@ -1,3 +1,4 @@
+import { createPublishingCommands } from './provider-fixtures'
 import { expect, it, vi } from 'vitest'
 import { workspace } from './fixtures'
 import * as gitModule from '../src/main/git'
@@ -5,7 +6,6 @@ import { JournalService } from '../src/main/service'
 import { Store } from '../src/main/store'
 import { join } from 'node:path'
 import { rangeActivities } from '../src/renderer/hub-model'
-
 it('loads newly imported repositories when an earlier request for the same week is still running', async () => {
     const app = await workspace()
     const imported = await workspace()
@@ -43,7 +43,6 @@ it('loads newly imported repositories when an earlier request for the same week 
         await Promise.all([app.close(), imported.close()])
     }
 })
-
 it('loads all five local sources and an earlier requested week while GitHub is blocked', async () => {
     const app = await workspace()
     let release!: () => void
@@ -86,7 +85,6 @@ it('loads all five local sources and an earlier requested week while GitHub is b
         await app.close()
     }
 })
-
 it('reuses out-of-range author history after restart, and skips acquisition for a covered week', async () => {
     const app = await workspace()
     let reopened: Store | undefined
@@ -96,11 +94,21 @@ it('reuses out-of-range author history after restart, and skips acquisition for 
         await app.service.refresh({ source: 'git' })
         expect(app.store.state.activities).toHaveLength(0)
         reopened = new Store(join(app.directory, 'tracking.sqlite'))
-        const service = new JournalService(reopened, app.github, app.notion, () => ({
-            github: false,
-            notion: false,
-            protectedStorage: false
-        }))
+        const service = new JournalService(
+            reopened,
+            app.github,
+            app.notion,
+            () => ({
+                github: false,
+                notion: false,
+                protectedStorage: false
+            }),
+            createPublishingCommands(reopened, app.nativeNotion, app.requests, () => ({
+                github: false,
+                notion: false,
+                protectedStorage: false
+            }))
+        )
         index.mockClear()
         await service.handle({ type: 'loadWeek', since: '2020-01-01' })
         expect(index).not.toHaveBeenCalled()
@@ -116,7 +124,6 @@ it('reuses out-of-range author history after restart, and skips acquisition for 
         await app.close()
     }
 })
-
 it('reuses rewritten author dates while retaining existing journal decisions', async () => {
     const app = await workspace()
     try {
@@ -140,7 +147,6 @@ it('reuses rewritten author dates while retaining existing journal decisions', a
         await app.close()
     }
 })
-
 it.each([
     ['Europe/Istanbul', '2026-10-04T22:00:00Z', '2026-10-05', '2026-10-11', 1],
     ['America/New_York', '2026-11-02T04:30:00Z', '2026-11-02', '2026-11-08', 0]
@@ -160,11 +166,13 @@ it.each([
         await app.close()
     }
 })
-
 it('gives all five repositories a first batch before continuing the first two large histories', async () => {
     const app = await workspace()
     const index = vi.spyOn(gitModule, 'indexCommits')
-    const order: { id: string; offset: number }[] = []
+    const order: {
+        id: string
+        offset: number
+    }[] = []
     try {
         app.repository.remotes = []
         for (let i = 1; i < 5; i++) app.store.state.repositories.push({ ...app.repository, id: `repo-${i}` })
@@ -194,7 +202,6 @@ it('gives all five repositories a first batch before continuing the first two la
         await app.close()
     }
 })
-
 it('does not coalesce a timezone change into an in-flight scan using the previous timezone', async () => {
     const app = await workspace()
     let release!: () => void

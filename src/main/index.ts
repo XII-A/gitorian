@@ -1,3 +1,7 @@
+import { publishingLayer } from './publishing-layer'
+import type { PublishingEnvironment } from './publishing-layer'
+import { JournalPublishing } from './journal-publishing'
+import type { ProviderNotion } from './provider-notion'
 import type { ProviderHttp } from './provider-http'
 import { NotionDiscoveryCache } from './notion-discovery-cache'
 import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from 'electron'
@@ -7,16 +11,16 @@ import { ReplyUpdates } from '../shared/state-updates'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, writeFile, stat } from 'node:fs/promises'
-import { ApplicationWork, ApplicationWorkLive } from './application-work'
-import { Cause, Effect, Exit, Layer, ManagedRuntime, Runtime } from 'effect'
+import { ApplicationWork } from './application-work'
+import { Cause, Effect, Exit, ManagedRuntime, Runtime } from 'effect'
 import { commandSchema } from '../shared/model'
 import type { RepositoryImportProgress, NotionDiscoveryProgress } from '../shared/model'
 import { Store } from './store'
 import { ConnectionProfileCache } from './connection-profiles'
 import { Vault } from './vault'
-import { Http, HttpLive } from './http'
+import { Http } from './http'
 import { GitHub } from './github'
-import { Notion } from './notion'
+import { Notion, makeNotion } from './notion'
 import { NotionConnection } from './notion-connection'
 import { NotionSetupStore } from './notion-setup'
 import { JournalService } from './service'
@@ -55,10 +59,10 @@ let updating = false
 let notionConnection: NotionConnection | undefined
 let stopNotionPages: (() => void) | undefined
 const referenceWindows = new Set<number>()
-let runtime: ManagedRuntime.ManagedRuntime<ApplicationWork | Http, never>
+let runtime: ManagedRuntime.ManagedRuntime<PublishingEnvironment, never>
 let work: ApplicationWork
 const native = <A>(operation: () => Promise<A>) => Effect.tryPromise({ try: operation, catch: (error) => error })
-function execute<A, E>(operation: Effect.Effect<A, E, ApplicationWork | Http>): Promise<A> {
+function execute<A, E>(operation: Effect.Effect<A, E, PublishingEnvironment>): Promise<A> {
     const result = runtime.runPromiseExit(operation).then((exit) => {
         if (Exit.isSuccess(exit)) return exit.value
         throw Cause.squash(exit.cause)
@@ -239,17 +243,35 @@ void app.whenReady().then(() => {
         return runNative(() => store.importImage(request.bytes, request.restoreId))
     })
     const vault = new Vault(app.getPath('userData'))
-    store.state.transportPauses ??= {}
+    notionConnection = new NotionConnection(
+        vault,
+        (!app.isPackaged && process.env.GITORIAN_NOTION_OAUTH_ORIGIN) ||
+            import.meta.env.MAIN_VITE_NOTION_OAUTH_ORIGIN ||
+            '',
+        fetch,
+        new NotionSetupStore(join(app.getPath('userData'), 'notion-setup.json')),
+        store.state.settings.destination
+    )
+    const connection = notionConnection
+    const connections = () => ({
+        github: !!vault.get('github'),
+        notion: connection.connected(),
+        protectedStorage: vault.protected()
+    })
+    // The legacy credential adapter retains an accepted rotation until it has persisted its result.
+    const tokenEffect =
+        (get: (refresh?: boolean, rejected?: string) => Promise<string>) => (refresh?: boolean, rejected?: string) =>
+            Effect.tryPromise({
+                try: () => get(refresh, rejected),
+                catch: (error) => (error instanceof Error ? error : new Error(String(error)))
+            }).pipe(Effect.uninterruptible)
     runtime = ManagedRuntime.make(
-        Layer.merge(
-            ApplicationWorkLive,
-            HttpLive(fetch, {
-                pauses: () => (store.state.transportPauses ??= {}),
-                changed: () => {
-                    store.persist()
-                }
-            })
-        )
+        publishingLayer({
+            store,
+            fetcher: fetch,
+            notionToken: tokenEffect((refresh, rejected) => connection.token(refresh, rejected)),
+            connections
+        })
     )
     work = runtime.runSync(ApplicationWork)
     const transport = runtime.runSync(Http)
@@ -263,18 +285,23 @@ void app.whenReady().then(() => {
             vault.set('github', token)
         }
     )
-    notionConnection = new NotionConnection(
-        vault,
-        (!app.isPackaged && process.env.GITORIAN_NOTION_OAUTH_ORIGIN) ||
-            import.meta.env.MAIN_VITE_NOTION_OAUTH_ORIGIN ||
-            '',
-        fetch,
-        new NotionSetupStore(join(app.getPath('userData'), 'notion-setup.json')),
-        store.state.settings.destination
+    const bindNotion = (operations: Notion): ProviderNotion => ({
+        prepareJournal: (...args) => execute(operations.prepareJournal(...args)),
+        accessiblePages: (...args) => execute(operations.accessiblePages(...args)),
+        destinationIcon: (...args) => execute(operations.destinationIcon(...args)),
+        describeDestination: (...args) => execute(operations.describeDestination(...args)),
+        profile: (...args) => execute(operations.profile(...args)),
+        verifyDestination: (...args) => execute(operations.verifyDestination(...args)),
+        refreshEntry: (...args) => execute(operations.refreshEntry(...args))
+    })
+    const notion = bindNotion(runtime.runSync(Notion))
+    const pendingNotion = bindNotion(
+        makeNotion(
+            transport,
+            tokenEffect((refresh, rejected) => connection.pendingToken(refresh, rejected))
+        )
     )
-    const connection = notionConnection
-    const notion = new Notion(http, (refresh, rejected) => connection.token(refresh, rejected), store)
-    const pendingNotion = new Notion(http, (refresh, rejected) => connection.pendingToken(refresh, rejected))
+    const publishing = runtime.runSync(JournalPublishing)
     const notionDiscovery = new NotionDiscoveryCache(join(app.getPath('userData'), 'notion-pages.json'))
     const notionReads = new Map<string, AbortController>()
     stopNotionPages = () => {
@@ -283,7 +310,7 @@ void app.whenReady().then(() => {
         notionDiscovery.cancel()
     }
     let notionPickerGeneration = 0
-    let availableNotionPages: Awaited<ReturnType<Notion['accessiblePages']>> = []
+    let availableNotionPages: Awaited<ReturnType<ProviderNotion['accessiblePages']>> = []
     const profiles = new ConnectionProfileCache(
         join(app.getPath('userData'), 'connection-profiles.json'),
         (service) => (service === 'notion' ? connection.profileKey() : vault.get(service)),
@@ -295,11 +322,10 @@ void app.whenReady().then(() => {
                       avatarUrl: `https://github.com/${encodeURIComponent(store.state.settings.githubLogin)}.png?size=64`
                   })
     )
-    service = new JournalService(store, github, notion, () => ({
-        github: !!vault.get('github'),
-        notion: connection.connected(),
-        protectedStorage: vault.protected()
-    }))
+    service = new JournalService(store, github, notion, connections, {
+        publish: (draftId) => execute(publishing.publish(draftId)),
+        reconcile: (saveId) => execute(publishing.reconcile(saveId))
+    })
     mainWindow = windowFor()
     const updater = new WindowsUpdater()
     const appUpdates = new AppUpdates(
@@ -471,8 +497,11 @@ void app.whenReady().then(() => {
                         ? availableNotionPages.find((page) => page.id === command.parentId)
                         : undefined
                     if (command.parentId && !parent) throw new Error('Choose an available page to expand.')
-                    const discovery = new Notion(http, (refresh, rejected) =>
-                        connection.pendingToken(refresh, rejected)
+                    const discovery = bindNotion(
+                        makeNotion(
+                            transport,
+                            tokenEffect((refresh, rejected) => connection.pendingToken(refresh, rejected))
+                        )
                     )
                     const progress = (progress: NotionDiscoveryProgress) => {
                         if (

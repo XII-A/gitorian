@@ -7,7 +7,7 @@ import { localDate, weekOf } from '../shared/model'
 import type { Activity, Command, Reply, Repository, RepositoryImportProgress, Selection, State } from '../shared/model'
 import type { Store } from './store'
 import type { GitHub } from './github'
-import type { Notion } from './notion'
+import type { ProviderNotion, ProviderPublishing } from './provider-notion'
 import { forEachConcurrent, WorkQueue } from './work-queue'
 import { filesFromDiff } from './diff-files'
 import { hasFileStatistics } from '../shared/change-statistics'
@@ -37,8 +37,9 @@ export class JournalService {
     constructor(
         readonly store: Store,
         private readonly github: GitHub,
-        private readonly notion: Notion,
-        private readonly connections: () => Reply['connections']
+        private readonly notion: Pick<ProviderNotion, 'refreshEntry'>,
+        private readonly connections: () => Reply['connections'],
+        private readonly publishing: ProviderPublishing
     ) {}
     reply(extra: Partial<Reply> = {}, state = this.store.snapshot()): Reply {
         return { state, connections: this.connections(), ...extra }
@@ -467,7 +468,7 @@ export class JournalService {
                               else state.entries[index] = entry
                           }
                           for (const save of state.saves.filter((item) => item.status === 'unknown'))
-                              await this.reconcile(save.id)
+                              await this.publishing.reconcile(save.id)
                       })
                   )
                 : Promise.resolve()
@@ -705,95 +706,6 @@ export class JournalService {
         activity.filesLoaded = true
         this.store.persist()
     }
-    private confirm(save: State['saves'][number], entry: State['entries'][number]): void {
-        const state = this.store.state
-        const index = state.entries.findIndex((item) => item.id === entry.id)
-        if (index < 0) state.entries.push(entry)
-        else state.entries[index] = entry
-        for (const selected of save.selections)
-            if (
-                !state.coverage.some(
-                    (link) =>
-                        link.activityId === selected.activityId &&
-                        link.revision === selected.revision &&
-                        link.entryId === entry.id
-                )
-            )
-                state.coverage.push({ ...selected, entryId: entry.id })
-        save.status = 'confirmed'
-        save.entryId = entry.id
-        save.error = undefined
-        const draft = state.drafts.find((item) => item.id === save.draftId)
-        // The page belongs to this weekly draft even if newer local edits arrived
-        // while publishing. The next publish must update that page.
-        if (draft) draft.publishedEntryId = entry.id
-        this.store.persist()
-    }
-    private async publish(draftId: string): Promise<void> {
-        const state = this.store.state
-        const draft = state.drafts.find((item) => item.id === draftId)
-        if (!draft) throw new Error('Draft does not exist')
-        if (state.saves.some((save) => save.draftId === draftId && ['pending', 'unknown'].includes(save.status)))
-            throw new Error('This draft has an uncertain save. Verify it before publishing again.')
-        const previous = state.saves
-            .filter((save) => save.entryId === draft.publishedEntryId && save.status === 'confirmed')
-            .at(-1)
-        const destination = previous?.destination ?? state.settings.destination
-        if (!destination || !this.connections().notion) throw new Error('Connect Notion and choose a destination first')
-        const save: State['saves'][number] = {
-            id: randomUUID(),
-            draftId,
-            status: 'pending',
-            marker: `gitorian-operation:${randomUUID()}`,
-            title: draft.title,
-            body: structuredClone(draft.body),
-            selections: structuredClone(draft.selections),
-            destination: structuredClone(destination),
-            createdAt: new Date().toISOString(),
-            week: draft.week
-        }
-        save.entryId = draft.publishedEntryId
-        save.updateExisting = !!draft.publishedEntryId
-        state.saves.push(save)
-        this.store.persist()
-        await this.store.flush()
-        try {
-            this.confirm(
-                save,
-                await this.notion.publish(save, async () => {
-                    this.store.persist()
-                    await this.store.flush()
-                })
-            )
-        } catch (error) {
-            // Server-side errors and network failures may occur after a committed write.
-            save.status =
-                (!save.entryId || (save.updateExisting && !save.replacedBlockIds)) &&
-                error instanceof HttpError &&
-                error.status >= 400 &&
-                error.status < 500 &&
-                error.status !== 408
-                    ? 'failed'
-                    : 'unknown'
-            save.error = String(error)
-            this.store.persist()
-            throw error
-        }
-    }
-    private async reconcile(saveId: string): Promise<void> {
-        const save = this.store.state.saves.find((item) => item.id === saveId)
-        if (!save || save.status !== 'unknown') throw new Error('No uncertain save to verify')
-        const entry = await this.notion.reconcile(save, async () => {
-            this.store.persist()
-            await this.store.flush()
-        })
-        if (entry) this.confirm(save, entry)
-        else {
-            save.error =
-                'The saved page has not been found yet. Retry verification after Notion is reachable; creation remains blocked.'
-            this.store.persist()
-        }
-    }
     async handle(command: Command): Promise<Reply> {
         const state = this.store.state
         switch (command.type) {
@@ -936,10 +848,10 @@ export class JournalService {
                 break
             }
             case 'publish':
-                await this.publish(command.draftId)
+                await this.publishing.publish(command.draftId)
                 return this.reply()
             case 'reconcile':
-                await this.reconcile(command.saveId)
+                await this.publishing.reconcile(command.saveId)
                 return this.reply()
             case 'coverage': {
                 const activity = this.activity(command.activityId)
