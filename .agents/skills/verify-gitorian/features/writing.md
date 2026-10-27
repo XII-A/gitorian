@@ -10,17 +10,28 @@ Start or resume a weekly entry, edit structured writing, cite work, and recover 
 - `writing.save`: typing autosaves and survives renderer reload.
 - `writing.template`: a new entry inherits the saved template without mutating it.
 - `writing.citation`: selected activity is inserted without losing surrounding writing; undo removes the insertion.
+- `writing.checklist`: formatter and task shortcut insertion, editable text beside checkboxes, Enter continuation/exit, Backspace/undo and saved checked state. Run `pnpm verify writing-checklist`.
 - `writing.update`: background update download preserves input, focus and autosave; explicit installation checkpoints the final revision. Owned by the [app updates journey](app-updates.md).
 
 ## How to get to it (user POV)
 
-From the hub use `Write`, or `Open journal` then `Start this week`. Reopen the same week to resume unfinished writing. In the workspace, edit Entry title and Journal body; inspect activity and use its citation action.
+From the hub use `Write this week’s entry` or `Open journal` to create or resume the current week's draft. An empty week reached inside the workspace offers `Start this week’s entry`. In the workspace, edit Entry title and Journal body; inspect activity and use its citation action.
 
 ## Driving it with Electron
 
+### Checklist journey
+
+After `pnpm build`, run `pnpm verify writing-checklist` (`tests/e2e/writing-checklist.spec.ts`). The shared desktop fixture owns a journal-only disposable profile with disconnected providers and no repositories. Open journal from the hub creates the current week's draft; resume opens the existing draft.
+
+The journey clears the template with native selection/typing, chooses Checklist with the pointer, and types immediately. Require text to appear beside the checkbox, not below it. Enter must create an unchecked item whose empty text area accepts a pointer click after focus leaves the editor. Backspace deletes text normally; at an item's start it unwraps while preserving text, and undo restores the task. Enter on an empty item exits to a paragraph. Keyboard formatter selection and the editor's typed `[ ] ` shortcut reach the same behavior. Autosave, renderer reload and a post-exit read-only SQLite query must preserve the document and checked state.
+
+Inspect `run.json` for `passed: true`, `exit: 0` and `cleanup.removed: true`. Retain numbered screenshots, actions, trace, `inserted-dom.json`, `saved-body.json` and `persisted-drafts.json` in the printed evidence directory. This proves renderer reload and durable storage, not a full process restart or external publishing.
+
+### Other writing paths
+
 Preconditions: `pnpm build`. `pnpm smoke` runs `tools/desktop-smoke.mjs` against temporary repositories and an isolated profile. It drives real writing before explicitly switching to the sample workspace. Use the existing source as the executable journey and keep its real/sample phases distinct.
 
-- **Start:** `[aria-label="Open journal"]` opens the workspace without creating a draft. `[aria-label="Journal breadcrumb"]` returns to the hub; the `Write` action starts writing from the saved template.
+- **Start:** `[aria-label="Open journal"]` creates or resumes the weekly draft. `[aria-label="Journal breadcrumb"]` returns to the hub. The legacy smoke's no-draft-created expectation predates the hub's automatic writing start; the checklist journey observes the current behavior.
 - **Type/save:** focus `[aria-label="Journal body"]`; `webContents.insertText('The draft survives a restart.')` exercises real input. Wait for a real IPC draft result containing that text, reload the workspace, and require the rendered text to survive.
 - **Recovery:** the existing harness injects a newer recovery record as explicit fault setup, then reloads and observes recovered text. This is recovery coverage, not user input.
 - **Citation:** the sample phase inserts an activity citation and tests detached reference behavior. Repeat citation in real fixture mode and verify the saved body for a real-persistence claim.
