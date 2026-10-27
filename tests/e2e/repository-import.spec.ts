@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test, expect } from './support/desktop'
@@ -47,6 +48,8 @@ test('repository import: selection, cancellation, recovery and durable tracking'
             await chooseFolder(join(folder, name))
             await page.evaluate(() => window.journal.invoke({ type: 'addRepository' }))
         }
+        // Match inspection's canonical paths, including Windows short names and case aliases.
+        const stoppedPath = join(folder, process.platform === 'win32' ? 'ARCHIVED-TOOLS' : 'archived-tools')
         await page.evaluate(
             async (stoppedPath) => {
                 const { state } = await window.journal.invoke({ type: 'state' })
@@ -55,7 +58,7 @@ test('repository import: selection, cancellation, recovery and durable tracking'
                 await window.journal.invoke({ type: 'settings', settings: { ...state.settings, refreshMinutes: 0 } })
                 await window.journal.invoke({ type: 'repository', repository: { ...stopped, removed: true } })
             },
-            join(folder, 'archived-tools')
+            await realpath(stoppedPath)
         )
         writeFileSync(info.outputPath('fixture.json'), JSON.stringify({ folder, names, delayedIO: true }, null, 2))
     })
