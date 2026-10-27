@@ -75,7 +75,7 @@ export interface MorphSelectProps {
     className?: string
     /** Local toolbar variants keep the resting trigger consistent with activity chips. */
     variant?: 'surface' | 'ghost'
-    size?: 'xs' | 'sm' | 'md'
+    size?: 'sm' | 'md'
     /** Replaces the flat options with an Arc TreeView. Give the tree this context's id. */
     renderTree?: (context: MorphSelectTreeContext) => ReactNode
     /** Full selected value for truncated toolbar labels. */

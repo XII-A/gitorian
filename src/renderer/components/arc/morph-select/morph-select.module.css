@@ -22,16 +22,6 @@
     --ms-h: var(--control-height-sm);
     font-size: var(--text-xs);
 }
-.root[data-size='xs'] {
-    --ms-h: 24px;
-    font-size: var(--text-xs);
-}
-.root[data-size='xs'] .trigger {
-    padding-inline: var(--space-2) var(--space-6);
-}
-.root[data-size='xs'] .chevron {
-    right: var(--space-1);
-}
 .root[data-variant='ghost']:not([data-open]) .shape {
     background: transparent;
     box-shadow: none;

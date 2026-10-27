@@ -8,7 +8,7 @@ import { motionTokens } from '../motion-tokens'
 import styles from './button.module.css'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
-export type ButtonSize = 'sm' | 'md' | 'lg'
+export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg'
 
 export interface ButtonProps extends Omit<
     ButtonHTMLAttributes<HTMLButtonElement>,

@@ -3,9 +3,10 @@ import { all, createLowlight } from 'lowlight'
 import { NodeViewWrapper, NodeViewContent, ReactNodeViewRenderer, useEditorState } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { useEffect, useState } from 'react'
-import { Check, Copy, WrapText, AlertCircle } from 'lucide-react'
+import { Check, ChevronDown, Copy, WrapText, AlertCircle } from 'lucide-react'
 import { codeLanguage, codeLanguageLabel } from '../shared/code-languages'
-import { MorphSelect } from './components/arc/morph-select/morph-select'
+import { Combobox } from './components/arc/combobox/combobox'
+import { Button } from './components/arc/button/button'
 import { FloatingButtonGroup } from './components/arc/floating-button-group/floating-button-group'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 
@@ -86,23 +87,27 @@ function CodeBlockView({ node, editor, updateAttributes }: NodeViewProps) {
                     shadow={false}
                     iconOnly
                     startContent={
-                        <MorphSelect
+                        <Combobox
                             label="Code language"
                             className="journal-code-language"
                             hideLabel
-                            variant="ghost"
-                            size="xs"
-                            portal
-                            align="end"
-                            panelWidth={256}
-                            maxListHeight={264}
-                            maxTriggerWidth={144}
-                            animateTriggerWidth={false}
-                            title={codeLanguageLabel(language)}
-                            items={options.map((value) => ({ value, label: codeLanguageLabel(value) }))}
+                            placeholder="Search languages"
+                            options={options.map((value) => ({ value, label: codeLanguageLabel(value) }))}
                             value={language}
                             disabled={!editable}
                             onValueChange={(value) => updateAttributes({ language: codeLanguage(value) })}
+                            trigger={
+                                <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    animateContent={false}
+                                    className="journal-code-language-trigger"
+                                    title={codeLanguageLabel(language)}
+                                >
+                                    <span className="journal-code-language-label">{codeLanguageLabel(language)}</span>
+                                    <ChevronDown size={12} aria-hidden="true" />
+                                </Button>
+                            }
                         />
                     }
                     items={[

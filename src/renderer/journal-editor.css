@@ -279,6 +279,15 @@
 .journal-code-scroll {
     border-radius: inherit;
 }
+.journal-code-language-trigger {
+    max-width: 144px;
+}
+.journal-code-language-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .journal-editor .tiptap .journal-code-block pre {
     margin: 0;
     box-sizing: border-box;
