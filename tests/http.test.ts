@@ -1,7 +1,7 @@
 import { Effect, Fiber, ManagedRuntime } from 'effect'
 import { Http, HttpLive } from '../src/main/http'
 import { expect, it, vi } from 'vitest'
-import { transportClient, run } from './transport-fixtures'
+import { transportClient, run } from './effect-fixtures'
 it('releases admission after abort even when stream cancellation never completes', async () => {
     let releaseCancellation!: () => void
     const cancellation = new Promise<void>((resolve) => {

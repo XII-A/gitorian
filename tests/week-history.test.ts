@@ -1,8 +1,9 @@
-import { createPublishingCommands } from './provider-fixtures'
+import { GitHubFailure } from '../src/main/github'
+import { Effect } from 'effect'
+import { run, journalClient } from './effect-fixtures'
 import { expect, it, vi } from 'vitest'
 import { workspace } from './fixtures'
 import * as gitModule from '../src/main/git'
-import { JournalService } from '../src/main/service'
 import { Store } from '../src/main/store'
 import { join } from 'node:path'
 import { rangeActivities } from '../src/renderer/hub-model'
@@ -23,14 +24,16 @@ it('loads newly imported repositories when an earlier request for the same week 
     try {
         await imported.git('commit', '--allow-empty', '--date=2026-10-06T12:00:00Z', '-m', 'Imported project work')
         expect(await app.git('log', '--format=%s')).not.toContain('Imported project work')
-        first = app.service.handle({ type: 'loadWeek', since: '2026-10-05' })
+        first = run(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
         await vi.waitFor(() => expect(index).toHaveBeenCalledTimes(1))
-        const scan = (await app.service.scanRepositories(imported.directory)).repositoryScan!
-        await app.service.importRepositories(
-            scan.id,
-            scan.repositories.map((repository) => repository.path)
+        const scan = (await run(app.service.scanRepositories(imported.directory))).repositoryScan!
+        await run(
+            app.service.importRepositories(
+                scan.id,
+                scan.repositories.map((repository) => repository.path)
+            )
         )
-        second = app.service.handle({ type: 'loadWeek', since: '2026-10-05' })
+        second = run(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
         release()
         await Promise.all([first, second])
         expect(
@@ -49,18 +52,20 @@ it('loads all five local sources and an earlier requested week while GitHub is b
     const held = new Promise<void>((resolve) => {
         release = resolve
     })
-    const github = vi.spyOn(app.github, 'activities').mockImplementation(async (_repo, _login, _tracked, scan) => {
-        await held
-        scan?.checkpoint?.(1, true)
-        return []
-    })
+    const github = vi.spyOn(app.github, 'activities').mockImplementation((_repo, _login, _tracked, scan) =>
+        Effect.gen(function* () {
+            yield* Effect.promise(() => held)
+            yield* scan?.checkpoint?.(1, true) ?? Effect.void
+            return []
+        }).pipe(Effect.mapError((error) => new GitHubFailure(error.message, { cause: error })))
+    )
     let pending: Promise<void> | undefined
     let earlier: Promise<unknown> | undefined
     try {
         app.remote.github = true
         app.repository.trackingStart = '2099-01-01'
         for (let i = 1; i < 5; i++) app.store.state.repositories.push({ ...app.repository, id: `repo-${i}` })
-        pending = app.service.refresh()
+        pending = run(app.service.refresh())
         await vi.waitFor(
             () => {
                 const local = Object.entries(app.store.state.acquisition ?? {}).filter(
@@ -72,7 +77,7 @@ it('loads all five local sources and an earlier requested week while GitHub is b
         )
         expect(app.store.state.activities).toHaveLength(0)
         expect(github).toHaveBeenCalledTimes(2)
-        earlier = app.service.handle({ type: 'loadWeek', since: '2020-01-01' })
+        earlier = run(app.service.handle({ type: 'loadWeek', since: '2020-01-01' }))
         await vi.waitFor(
             () => expect(app.store.state.activities.filter((activity) => activity.kind === 'commit')).toHaveLength(5),
             { timeout: 10000 }
@@ -91,10 +96,10 @@ it('reuses out-of-range author history after restart, and skips acquisition for 
     const index = vi.spyOn(gitModule, 'indexCommits')
     try {
         app.repository.trackingStart = '2099-01-01'
-        await app.service.refresh({ source: 'git' })
+        await run(app.service.refresh({ source: 'git' }))
         expect(app.store.state.activities).toHaveLength(0)
         reopened = new Store(join(app.directory, 'tracking.sqlite'))
-        const service = new JournalService(
+        const service = await journalClient(
             reopened,
             app.github,
             app.notion,
@@ -103,20 +108,16 @@ it('reuses out-of-range author history after restart, and skips acquisition for 
                 notion: false,
                 protectedStorage: false
             }),
-            createPublishingCommands(reopened, app.nativeNotion, app.requests, () => ({
-                github: false,
-                notion: false,
-                protectedStorage: false
-            }))
+            app.requests
         )
         index.mockClear()
-        await service.handle({ type: 'loadWeek', since: '2020-01-01' })
+        await run(service.handle({ type: 'loadWeek', since: '2020-01-01' }))
         expect(index).not.toHaveBeenCalled()
         expect(reopened.state.activities).toHaveLength(1)
         expect(reopened.state.acquisition?.[`git:${app.repository.id}`].historySince).toBe('2020-01-01')
         expect(service.reply().state).not.toHaveProperty('gitHistory')
         index.mockClear()
-        await service.handle({ type: 'loadWeek', since: '2020-01-08' })
+        await run(service.handle({ type: 'loadWeek', since: '2020-01-08' }))
         expect(index).not.toHaveBeenCalled()
     } finally {
         index.mockRestore()
@@ -128,14 +129,14 @@ it('reuses rewritten author dates while retaining existing journal decisions', a
     const app = await workspace()
     try {
         await app.git('commit', '--allow-empty', '--date=2020-01-07T12:00:00Z', '-m', 'Old author date, recent rewrite')
-        await app.service.refresh({ source: 'git' })
+        await run(app.service.refresh({ source: 'git' }))
         const current = app.store.state.activities[0]
         current.disposition = 'dismissed'
         current.reason = 'Already recorded'
         expect(
             app.store.state.activities.some((activity) => activity.title === 'Old author date, recent rewrite')
         ).toBe(false)
-        await app.service.handle({ type: 'loadWeek', since: '2020-01-06' })
+        await run(app.service.handle({ type: 'loadWeek', since: '2020-01-06' }))
         expect(
             app.store.state.activities.find((activity) => activity.title === 'Old author date, recent rewrite')?.date
         ).toContain('2020-01-07')
@@ -155,12 +156,12 @@ it.each([
     try {
         app.store.state.settings.timezone = timezone
         await app.git('commit', '--allow-empty', `--date=${date}`, '-m', 'Week boundary')
-        await app.service.refresh({ source: 'git', since })
+        await run(app.service.refresh({ source: 'git', since }))
         const visible = () =>
             rangeActivities(app.store.state, since, end).filter((activity) => activity.title === 'Week boundary')
         expect(visible()).toHaveLength(count)
         app.store.state.activities = []
-        await app.service.handle({ type: 'loadWeek', since })
+        await run(app.service.handle({ type: 'loadWeek', since }))
         expect(visible()).toHaveLength(count)
     } finally {
         await app.close()
@@ -187,7 +188,7 @@ it('gives all five repositories a first batch before continuing the first two la
                 nextOffset: large.has(repository.id) && !offset ? 2000 : undefined
             }
         })
-        await app.service.handle({ type: 'refresh', source: 'git', since: '2020-01-01' })
+        await run(app.service.handle({ type: 'refresh', source: 'git', since: '2020-01-01' }))
         expect(new Set(order.slice(0, 5).map((batch) => batch.id)).size).toBe(5)
         expect(order.slice(0, 5).every((batch) => batch.offset === 0)).toBe(true)
         expect(order.filter((batch) => batch.offset === 2000)).toHaveLength(2)
@@ -218,10 +219,10 @@ it('does not coalesce a timezone change into an in-flight scan using the previou
     try {
         app.store.state.settings.timezone = 'UTC'
         await app.git('commit', '--allow-empty', '--date=2026-10-04T22:00:00Z', '-m', 'In-flight timezone boundary')
-        first = app.service.handle({ type: 'loadWeek', since: '2026-10-05' })
+        first = run(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
         await vi.waitFor(() => expect(index).toHaveBeenCalledTimes(1))
         app.store.state.settings.timezone = 'Europe/Istanbul'
-        second = app.service.handle({ type: 'loadWeek', since: '2026-10-05' })
+        second = run(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
         release()
         await Promise.all([first, second])
         expect(rangeActivities(app.store.state, '2026-10-05', '2026-10-11').map((activity) => activity.title)).toEqual([

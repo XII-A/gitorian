@@ -255,17 +255,17 @@ it('refreshes only app-published entries even after the destination changes', as
             properties: { title: { title: [{ text: { content: 'Existing Notion entry' } }] } },
             blocks: []
         })
-        await app.service.handle({ type: 'refresh', source: 'notion' })
+        await run(app.service.handle({ type: 'refresh', source: 'notion' }))
         expect(app.remote.requests).toEqual([])
         expect(app.store.state.entries).toEqual([])
-        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
-        await app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id })
+        await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
+        await run(app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id }))
         const published = app.remote.pages[1]
         published.properties = { title: { title: [{ text: { content: 'Updated in Notion' } }] } }
         app.remote.requests.length = 0
         // Published entries remain tracked when the user changes the publishing destination.
         app.store.state.settings.destination = undefined
-        await app.service.handle({ type: 'refresh', source: 'notion' })
+        await run(app.service.handle({ type: 'refresh', source: 'notion' }))
         expect(app.store.state.entries.map((entry) => entry.id)).toEqual([published.id])
         expect(app.store.state.entries[0].title).toBe('Updated in Notion')
         expect(app.remote.requests.map((request) => request.url)).toEqual([

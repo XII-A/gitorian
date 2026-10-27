@@ -1,8 +1,3 @@
-import { desktopLayer } from './desktop-layer'
-import type { DesktopEnvironment } from './desktop-layer'
-import { JournalPublishing } from './journal-publishing'
-import type { ProviderNotion } from './provider-notion'
-import { bindGitHub } from './provider-github'
 import { NotionDiscoveryCache } from './notion-discovery-cache'
 import { app, BrowserWindow, dialog, ipcMain, shell, protocol } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
@@ -12,15 +7,17 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, writeFile, stat } from 'node:fs/promises'
 import { ApplicationWork } from './application-work'
-import { Cause, Effect, Exit, ManagedRuntime, Runtime } from 'effect'
+import { Cause, Deferred, Effect, Exit, ManagedRuntime, Scope } from 'effect'
 import { commandSchema } from '../shared/model'
-import type { RepositoryImportProgress, NotionDiscoveryProgress } from '../shared/model'
+import type { Reply, RepositoryImportProgress, NotionDiscoveryProgress } from '../shared/model'
 import { Store } from './store'
 import { ConnectionProfileCache } from './connection-profiles'
 import { Vault } from './vault'
 import { Http } from './http'
 import { GitHub } from './github'
 import { Notion, makeNotion } from './notion'
+import { desktopLayer } from './desktop-layer'
+import type { DesktopEnvironment } from './desktop-layer'
 import { NotionConnection } from './notion-connection'
 import { NotionSetupStore } from './notion-setup'
 import { JournalService } from './service'
@@ -29,9 +26,7 @@ import { watchWindowTitleBar } from './window-title-bar'
 import { imageLimits, imageIdPattern, imageExtension } from '../shared/images'
 import { WindowsUpdater } from './windows-updater'
 import { AppUpdates } from './app-updates'
-
 if (!app.isPackaged && process.env.GITORIAN_DEV_PROFILE) app.setPath('userData', process.env.GITORIAN_DEV_PROFILE)
-
 // Chromium 152 hides the thread's native cursor, including inside file dialogs.
 // Remove after Electron includes chromium/chromium@a2be9eeac1d506dae63b2994cd605d83bb7622ea.
 if (process.platform === 'win32') {
@@ -45,11 +40,9 @@ if (process.platform === 'win32') {
     disabledFeatures.add('HideCursorWhileTyping')
     app.commandLine.appendSwitch('disable-features', [...disabledFeatures].join(','))
 }
-
 protocol.registerSchemesAsPrivileged([
     { scheme: 'journal-image', privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ])
-
 const directory = fileURLToPath(new URL('.', import.meta.url))
 let mainWindow: BrowserWindow
 let store: Store
@@ -72,15 +65,13 @@ function execute<A, E>(operation: Effect.Effect<A, E, DesktopEnvironment>): Prom
     })
     return result
 }
-function runNative<A>(operation: (drain: () => Promise<void>) => Promise<A>): Promise<A> {
-    return execute(
-        work.accept(
-            Effect.gen(function* () {
-                const accepted = yield* Effect.runtime<ApplicationWork>()
-                return yield* native(() => operation(() => Runtime.runPromise(accepted)(work.drain)))
-            })
-        )
-    )
+function runNative<A>(operation: () => Promise<A>): Promise<A> {
+    return execute(work.accept(native(operation)))
+}
+function holdJournal(): () => void {
+    const scope = runtime.runSync(Scope.make())
+    runtime.runSync(Scope.extend(service.suspend, scope))
+    return () => runtime.runSync(Scope.close(scope, Exit.void))
 }
 function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
     const window = new BrowserWindow({
@@ -254,22 +245,12 @@ void app.whenReady().then(() => {
         })
     )
     work = runtime.runSync(ApplicationWork)
-    const transport = runtime.runSync(Http)
+    service = runtime.runSync(JournalService)
+    const http = runtime.runSync(Http)
+    const github = runtime.runSync(GitHub)
+    const notion = runtime.runSync(Notion)
     const connection = runtime.runSync(NotionConnection)
     notionConnection = connection
-    const connections = () => ({
-        github: !!vault.get('github'),
-        notion: connection.connected(),
-        protectedStorage: vault.protected()
-    })
-    const github = bindGitHub(runtime.runSync(GitHub), execute)
-    const bindNotion = (operations: Notion): ProviderNotion => ({
-        accessiblePages: (...args) => execute(operations.accessiblePages(...args)),
-        profile: (...args) => execute(operations.profile(...args)),
-        refreshEntry: (...args) => execute(operations.refreshEntry(...args))
-    })
-    const notion = bindNotion(runtime.runSync(Notion))
-    const publishing = runtime.runSync(JournalPublishing)
     const notionDiscovery = new NotionDiscoveryCache(join(app.getPath('userData'), 'notion-pages.json'))
     const notionReads = new Map<string, AbortController>()
     stopNotionPages = () => {
@@ -278,22 +259,18 @@ void app.whenReady().then(() => {
         notionDiscovery.cancel()
     }
     let notionPickerGeneration = 0
-    let availableNotionPages: Awaited<ReturnType<ProviderNotion['accessiblePages']>> = []
+    let availableNotionPages: Effect.Effect.Success<ReturnType<Notion['accessiblePages']>> = []
     const profiles = new ConnectionProfileCache(
         join(app.getPath('userData'), 'connection-profiles.json'),
         (service) => (service === 'notion' ? connection.profileKey() : vault.get(service)),
         (service) =>
             service === 'notion'
-                ? notion.profile()
+                ? execute(notion.profile())
                 : Promise.resolve({
                       name: store.state.settings.githubLogin,
                       avatarUrl: `https://github.com/${encodeURIComponent(store.state.settings.githubLogin)}.png?size=64`
                   })
     )
-    service = new JournalService(store, github, notion, connections, {
-        publish: (draftId) => execute(publishing.publish(draftId)),
-        reconcile: (saveId) => execute(publishing.reconcile(saveId))
-    })
     mainWindow = windowFor()
     const updater = new WindowsUpdater()
     const appUpdates = new AppUpdates(
@@ -301,7 +278,7 @@ void app.whenReady().then(() => {
         async () => {
             if (closing || restoring) throw new Error('Journal is busy')
             updating = true
-            const resume = service.prepareToClose()
+            const resume = holdJournal()
             try {
                 await execute(work.drain)
                 await store.flush()
@@ -333,197 +310,261 @@ void app.whenReady().then(() => {
         if (!mainWindow.isDestroyed()) mainWindow.webContents.send('journal:app-update-state', state)
     })
     appUpdates.start()
-    const commandHandler = async (event: IpcMainInvokeEvent, input: unknown, drain: () => Promise<void>) => {
-        const command = commandSchema.parse(input)
-        const trusted = BrowserWindow.fromWebContents(event.sender)
-        if (!trusted || event.senderFrame !== trusted.webContents.mainFrame) throw new Error('Unknown desktop window')
-        if (referenceWindows.has(event.sender.id) && !['state', 'details', 'open'].includes(command.type))
-            throw new Error('Reference windows are read-only')
-        switch (command.type) {
-            case 'loadWeek':
-                void runNative(() => service.refresh({ since: command.since, missingOnly: true }))
-                return service.reply()
-            case 'refresh':
-                if (command.since) return runNative(() => service.handle(command))
-                void runNative(() => service.refresh({ ...command, resume: true }))
-                return service.reply({ message: 'Activity refresh started. You can keep writing.' })
-            case 'backfill': {
-                const repository = store.state.repositories.find((item) => item.id === command.repositoryId)
-                if (!repository || repository.removed) throw new Error('Choose a tracked repository.')
-                if (command.since > repository.trackingStart)
-                    throw new Error('Choose a date before the current history start.')
-                void runNative(() =>
-                    service.backfill(command.repositoryId, command.since).catch((error: unknown) => {
-                        store.state.refreshError = error instanceof Error ? error.message : String(error)
-                        store.persist()
+    const commandHandler = (event: IpcMainInvokeEvent, input: unknown) =>
+        Effect.gen(function* () {
+            const command = commandSchema.parse(input)
+            const trusted = BrowserWindow.fromWebContents(event.sender)
+            if (!trusted || event.senderFrame !== trusted.webContents.mainFrame)
+                return yield* Effect.fail(new Error('Unknown desktop window'))
+            if (referenceWindows.has(event.sender.id) && !['state', 'details', 'open'].includes(command.type))
+                return yield* Effect.fail(new Error('Reference windows are read-only'))
+            switch (command.type) {
+                case 'loadWeek':
+                    yield* service.startRefresh({ since: command.since, missingOnly: true })
+                    return service.reply()
+                case 'refresh':
+                    if (command.since) return yield* service.handle(command)
+                    yield* service.startRefresh({ ...command, resume: true })
+                    return service.reply({ message: 'Activity refresh started. You can keep writing.' })
+                case 'backfill': {
+                    const repository = store.state.repositories.find((item) => item.id === command.repositoryId)
+                    if (!repository || repository.removed)
+                        return yield* Effect.fail(new Error('Choose a tracked repository.'))
+                    if (command.since > repository.trackingStart)
+                        return yield* Effect.fail(new Error('Choose a date before the current history start.'))
+                    yield* service.startRefresh({
+                        repositoryId: command.repositoryId,
+                        since: command.since,
+                        resume: true
                     })
-                )
-                return service.reply({ message: 'Older activity is being acquired in the background.' })
-            }
-            case 'details':
-                try {
-                    return await service.handle(command)
-                } catch (error) {
-                    return service.reply({ detailError: error instanceof Error ? error.message : String(error) })
+                    return service.reply({ message: 'Older activity is being acquired in the background.' })
                 }
-            case 'addRepository': {
-                const path = await folder()
-                if (path) await service.addRepository(path)
-                break
-            }
-            case 'addRepositories':
-            case 'importRepositories': {
-                let lastStage = ''
-                let lastSent = 0
-                const progress = (update: RepositoryImportProgress) => {
-                    const finished = update.stage === 'processing' && update.completed === update.total
-                    if (update.stage !== lastStage || finished || Date.now() - lastSent >= 50) {
-                        lastStage = update.stage
-                        lastSent = Date.now()
-                        if (!event.sender.isDestroyed() && !event.sender.isLoadingMainFrame())
-                            event.sender.send('journal:repository-import', update)
-                    }
-                }
-                if (store.state.repositoryImport?.status === 'running')
-                    return service.reply({ message: 'A repository import is already running.' })
-                if (command.type === 'addRepositories') {
-                    progress({ stage: 'selecting' })
-                    const path = await folder()
-                    if (!path) return service.reply()
-                    return await runNative(() => service.scanRepositories(path, progress))
-                }
-                const importing = runNative(async () => {
-                    const reply = await service.importRepositories(command.scanId, command.paths, progress)
-                    if (store.state.settings.refreshMinutes > 0) void runNative(() => service.refresh())
-                    return reply
-                })
-                if (service.reply().state.repositoryImport?.status !== 'running') return await importing
-                void importing.catch((error: unknown) => {
-                    store.state.repositoryImport = {
-                        id: store.state.repositoryImport?.id,
-                        status: 'error',
-                        completed: 0,
-                        total: 0,
-                        message: error instanceof Error ? error.message : String(error)
-                    }
-                    store.persist()
-                })
-                return service.reply({ message: 'Import started. You can close Settings and keep writing.' })
-            }
-            case 'relocate': {
-                const path = await folder()
-                if (path) {
-                    const inspected = await inspectRepository(path)
-                    const repository = store.state.repositories.find((item) => item.id === command.id)
-                    if (!repository) throw new Error('Repository not found')
-                    repository.path = inspected.path
-                    repository.branches = inspected.branches
-                    repository.remotes = inspected.remotes
-                    repository.available = true
-                    repository.removed = false
-                    store.persist()
-                }
-                break
-            }
-            case 'notionStart': {
-                notionPickerGeneration++
-                stopNotionPages?.()
-                availableNotionPages = []
-                const notionAuthorization = await execute(connection.start())
-                try {
-                    await openExternal(notionAuthorization.url)
-                } catch {
-                    return service.reply({
-                        notionAuthorization,
-                        message: 'Could not open your browser. Try Open Notion again.'
-                    })
-                }
-                return service.reply({ notionAuthorization })
-            }
-            case 'notionCancel':
-                await execute(connection.cancel())
-                notionPickerGeneration++
-                stopNotionPages?.()
-                availableNotionPages = []
-                break
-            case 'notionPoll': {
-                const result = await execute(connection.poll())
-                if ('pending' in result) return service.reply({ notionPending: { interval: result.interval } })
-                return service.reply()
-            }
-            case 'notionPages': {
-                if (command.query && command.parentId) throw new Error('Choose a page to expand or enter a search.')
-                if (!command.parentId) stopNotionPages?.()
-                const controller = new AbortController()
-                notionReads.set(command.requestId, controller)
-                const generation = notionPickerGeneration
-                try {
-                    const token = await execute(connection.pendingToken())
-                    controller.signal.throwIfAborted()
-                    if (generation !== notionPickerGeneration) throw new Error('Notion page read cancelled.')
-                    const parent = command.parentId
-                        ? availableNotionPages.find((page) => page.id === command.parentId)
-                        : undefined
-                    if (command.parentId && !parent) throw new Error('Choose an available page to expand.')
-                    const discovery = bindNotion(makeNotion(transport, connection.pendingToken))
-                    const progress = (progress: NotionDiscoveryProgress) => {
-                        if (
-                            !controller.signal.aborted &&
-                            generation === notionPickerGeneration &&
-                            !event.sender.isDestroyed()
+                case 'details': {
+                    const handled = yield* Effect.gen(function* () {
+                        return yield* service.handle(command)
+                    }).pipe(
+                        Effect.catchAll((error) =>
+                            Effect.sync(() => {
+                                return service.reply({
+                                    detailError: error instanceof Error ? error.message : String(error)
+                                })
+                            })
                         )
-                            event.sender.send('journal:notion-discovery', { requestId: command.requestId, progress })
+                    )
+                    return handled
+                }
+                case 'addRepository': {
+                    const path = yield* native(() => folder())
+                    if (path) yield* service.addRepository(path)
+                    break
+                }
+                case 'addRepositories':
+                case 'importRepositories': {
+                    const admitted = yield* Deferred.make<undefined>()
+                    let lastStage = ''
+                    let lastSent = 0
+                    const progress = (update: RepositoryImportProgress) => {
+                        if (update.stage === 'processing') Deferred.unsafeDone(admitted, Effect.succeed(undefined))
+                        const finished = update.stage === 'processing' && update.completed === update.total
+                        if (update.stage !== lastStage || finished || Date.now() - lastSent >= 50) {
+                            lastStage = update.stage
+                            lastSent = Date.now()
+                            if (!event.sender.isDestroyed() && !event.sender.isLoadingMainFrame())
+                                event.sender.send('journal:repository-import', update)
+                        }
                     }
-                    const pages =
-                        command.query || parent
-                            ? await discovery.accessiblePages(progress, controller.signal, {
-                                  query: command.query,
-                                  parent
-                              })
-                            : await notionDiscovery.pages(
-                                  token,
-                                  (signal, notify) =>
-                                      discovery.accessiblePages(notify, AbortSignal.any([signal, controller.signal])),
-                                  progress
-                              )
-                    controller.signal.throwIfAborted()
-                    if (generation !== notionPickerGeneration) throw new Error('Notion page read cancelled.')
-                    const known = new Map(availableNotionPages.map((page) => [page.id, page]))
-                    for (const page of pages) known.set(page.id, page)
-                    availableNotionPages = [...known.values()]
-                    if (parent || command.query) notionDiscovery.rememberAll(token, pages)
-                    return service.reply({ notionPages: pages })
-                } finally {
-                    if (notionReads.get(command.requestId) === controller) notionReads.delete(command.requestId)
+                    if (store.state.repositoryImport?.status === 'running')
+                        return service.reply({ message: 'A repository import is already running.' })
+                    if (command.type === 'addRepositories') {
+                        progress({ stage: 'selecting' })
+                        const path = yield* native(() => folder())
+                        if (!path) return service.reply()
+                        return yield* service.scanRepositories(path, progress)
+                    }
+                    const imported = yield* Deferred.make<Reply, Error>()
+                    yield* work.fork(
+                        service.importRepositories(command.scanId, command.paths, progress).pipe(
+                            Effect.tap(() =>
+                                store.state.settings.refreshMinutes > 0 ? service.startRefresh() : Effect.void
+                            ),
+                            Effect.onExit((exit) =>
+                                Effect.gen(function* () {
+                                    yield* Deferred.succeed(admitted, undefined)
+                                    yield* Deferred.done(imported, exit)
+                                    if (Exit.isFailure(exit)) {
+                                        const error = Cause.squash(exit.cause)
+                                        store.state.repositoryImport = {
+                                            id: store.state.repositoryImport?.id,
+                                            status: 'error',
+                                            completed: 0,
+                                            total: 0,
+                                            message: error instanceof Error ? error.message : String(error)
+                                        }
+                                        store.persist()
+                                    }
+                                })
+                            )
+                        )
+                    )
+                    yield* Deferred.await(admitted)
+                    if (service.reply().state.repositoryImport?.status !== 'running')
+                        return yield* Deferred.await(imported)
+                    return service.reply({ message: 'Import started. You can close Settings and keep writing.' })
                 }
-            }
-            case 'notionChoose': {
-                notionPickerGeneration++
-                stopNotionPages?.()
-                availableNotionPages = []
-                if (await execute(connection.choose())) return service.reply()
-                const notionAuthorization = await execute(connection.start())
-                try {
-                    await openExternal(notionAuthorization.url)
-                } catch {
-                    /* The morph keeps Open Notion available. */
+                case 'relocate': {
+                    const path = yield* native(() => folder())
+                    if (path) {
+                        const inspected = yield* native(() => inspectRepository(path))
+                        const repository = store.state.repositories.find((item) => item.id === command.id)
+                        if (!repository) return yield* Effect.fail(new Error('Repository not found'))
+                        repository.path = inspected.path
+                        repository.branches = inspected.branches
+                        repository.remotes = inspected.remotes
+                        repository.available = true
+                        repository.removed = false
+                        store.persist()
+                    }
+                    break
                 }
-                return service.reply({ notionAuthorization })
-            }
-            case 'notionConfirm': {
-                const previousIdentity = connection.profileKey()
-                const selection = command.selection
-                const page =
-                    selection.kind === 'existing'
-                        ? availableNotionPages.find((page) => page.kind === 'page' && page.id === selection.pageId)
-                        : undefined
-                if (selection.kind === 'existing' && !page) throw new Error('Refresh pages and choose a destination.')
-                // Selection no longer waits for the full content crawl. Cancel
-                // that read before saving so its late result cannot change the picker.
-                notionPickerGeneration++
-                stopNotionPages?.()
-                const destination = await execute(
-                    connection.completeJournal({
+                case 'notionStart': {
+                    notionPickerGeneration++
+                    stopNotionPages?.()
+                    availableNotionPages = []
+                    const notionAuthorization = yield* connection.start()
+                    {
+                        const handled = yield* Effect.gen(function* () {
+                            yield* native(() => openExternal(notionAuthorization.url))
+                        }).pipe(
+                            Effect.catchAll((_error) =>
+                                Effect.sync(() => {
+                                    return service.reply({
+                                        notionAuthorization,
+                                        message: 'Could not open your browser. Try Open Notion again.'
+                                    })
+                                })
+                            )
+                        )
+                        if (handled !== undefined) return handled
+                    }
+                    return service.reply({ notionAuthorization })
+                }
+                case 'notionCancel':
+                    yield* connection.cancel()
+                    notionPickerGeneration++
+                    stopNotionPages?.()
+                    availableNotionPages = []
+                    break
+                case 'notionPoll': {
+                    const result = yield* connection.poll()
+                    if ('pending' in result) return service.reply({ notionPending: { interval: result.interval } })
+                    return service.reply()
+                }
+                case 'notionPages': {
+                    if (command.query && command.parentId)
+                        return yield* Effect.fail(new Error('Choose a page to expand or enter a search.'))
+                    if (!command.parentId) stopNotionPages?.()
+                    const controller = new AbortController()
+                    notionReads.set(command.requestId, controller)
+                    const generation = notionPickerGeneration
+                    {
+                        const handled = yield* Effect.gen(function* () {
+                            const token = yield* connection.pendingToken()
+                            controller.signal.throwIfAborted()
+                            if (generation !== notionPickerGeneration)
+                                return yield* Effect.fail(new Error('Notion page read cancelled.'))
+                            const parent = command.parentId
+                                ? availableNotionPages.find((page) => page.id === command.parentId)
+                                : undefined
+                            if (command.parentId && !parent)
+                                return yield* Effect.fail(new Error('Choose an available page to expand.'))
+                            const discovery = makeNotion(http, connection.pendingToken)
+                            const progress = (progress: NotionDiscoveryProgress) => {
+                                if (
+                                    !controller.signal.aborted &&
+                                    generation === notionPickerGeneration &&
+                                    !event.sender.isDestroyed()
+                                )
+                                    event.sender.send('journal:notion-discovery', {
+                                        requestId: command.requestId,
+                                        progress
+                                    })
+                            }
+                            const pages =
+                                command.query || parent
+                                    ? yield* discovery.accessiblePages(progress, controller.signal, {
+                                          query: command.query,
+                                          parent
+                                      })
+                                    : yield* native(() =>
+                                          notionDiscovery.pages(
+                                              token,
+                                              (signal, notify) =>
+                                                  execute(
+                                                      discovery.accessiblePages(
+                                                          notify,
+                                                          AbortSignal.any([signal, controller.signal])
+                                                      )
+                                                  ),
+                                              progress
+                                          )
+                                      )
+                            controller.signal.throwIfAborted()
+                            if (generation !== notionPickerGeneration)
+                                return yield* Effect.fail(new Error('Notion page read cancelled.'))
+                            const known = new Map(availableNotionPages.map((page) => [page.id, page]))
+                            for (const page of pages) known.set(page.id, page)
+                            availableNotionPages = [...known.values()]
+                            if (parent || command.query) notionDiscovery.rememberAll(token, pages)
+                            return service.reply({ notionPages: pages })
+                        }).pipe(
+                            Effect.ensuring(
+                                Effect.sync(() => {
+                                    if (notionReads.get(command.requestId) === controller)
+                                        notionReads.delete(command.requestId)
+                                })
+                            )
+                        )
+                        return handled
+                    }
+                }
+                case 'notionChoose': {
+                    notionPickerGeneration++
+                    stopNotionPages?.()
+                    availableNotionPages = []
+                    if (yield* connection.choose()) return service.reply()
+                    const notionAuthorization = yield* connection.start()
+                    {
+                        const handled = yield* Effect.gen(function* () {
+                            yield* native(() => openExternal(notionAuthorization.url))
+                        }).pipe(
+                            Effect.catchAll((_error) =>
+                                Effect.sync(() => {
+                                    /* The morph keeps Open Notion available. */
+                                })
+                            )
+                        )
+                        if (handled !== undefined) return handled
+                    }
+                    return service.reply({ notionAuthorization })
+                }
+                case 'notionConfirm': {
+                    const previousIdentity = connection.profileKey()
+                    const selection = command.selection
+                    const page =
+                        selection.kind === 'existing'
+                            ? availableNotionPages.find((page) => page.kind === 'page' && page.id === selection.pageId)
+                            : undefined
+                    if (selection.kind === 'existing' && !page)
+                        return yield* Effect.fail(
+                            new Error('Refresh pages and choose a destination.')
+                            // Selection no longer waits for the full content crawl. Cancel
+                            // that read before saving so its late result cannot change the picker.
+                        )
+                    // Selection no longer waits for the full content crawl. Cancel
+                    // that read before saving so its late result cannot change the picker.
+                    notionPickerGeneration++
+                    stopNotionPages?.()
+                    const destination = yield* connection.completeJournal({
                         title: selection.kind === 'new' ? selection.title : undefined,
                         destination: page
                             ? {
@@ -537,134 +578,155 @@ void app.whenReady().then(() => {
                               }
                             : undefined
                     })
-                )
-                notionDiscovery.remember(await execute(connection.token()), {
-                    ...page,
-                    kind: 'page',
-                    id: destination.id,
-                    title: destination.title || page?.title || 'Untitled',
-                    url: destination.url || page?.url || '',
-                    icon: destination.icon
-                })
-                if (previousIdentity !== connection.profileKey()) profiles.clear('notion')
-                await execute(connection.cancel())
-                break
-            }
-            case 'notionDestination':
-                await execute(connection.refreshDestination().pipe(Effect.catchAll(() => Effect.void)))
-                break
-            case 'connectionProfiles':
-                return service.reply({ connectionProfiles: profiles.snapshot() })
-            case 'refreshConnectionProfile':
-                await profiles.refresh(command.service)
-                return service.reply({ connectionProfiles: profiles.snapshot() })
-            case 'githubStart': {
-                const device = await github.start()
-                try {
-                    await openExternal(device.url)
-                } catch {
-                    return service.reply({
-                        device,
-                        message: 'Could not open your browser. Use Open browser or visit the displayed address.'
+                    notionDiscovery.remember(yield* connection.token(), {
+                        ...page,
+                        kind: 'page',
+                        id: destination.id,
+                        title: destination.title || page?.title || 'Untitled',
+                        url: destination.url || page?.url || '',
+                        icon: destination.icon
                     })
+                    if (previousIdentity !== connection.profileKey()) profiles.clear('notion')
+                    yield* connection.cancel()
+                    break
                 }
-                return service.reply({ device })
-            }
-            case 'githubPoll': {
-                const account = await github.poll()
-                if ('pending' in account) return service.reply({ devicePending: { interval: account.interval } })
-                profiles.clear('github')
-                store.state.settings.githubLogin = account.login
-                for (const repository of store.state.repositories)
-                    repository.emails = [...new Set([...repository.emails, ...account.emails])]
-                store.persist()
-                void profiles.refresh('github')
-                break
-            }
-            case 'disconnect':
-                if (command.service === 'notion') {
-                    notionPickerGeneration++
-                    stopNotionPages?.()
-                    notionDiscovery.clear()
-                    availableNotionPages = []
-                    await execute(connection.disconnect())
-                } else vault.set(command.service, '')
-                profiles.clear(command.service)
-                break
-            case 'export': {
-                const result = await dialog.showSaveDialog(mainWindow, {
-                    defaultPath: 'gitorian-backup.json',
-                    filters: [{ name: 'Tracking backup', extensions: ['json'] }]
-                })
-                if (result.filePath) {
-                    await store.flush()
-                    await writeFile(result.filePath, store.export(), 'utf8')
-                }
-                break
-            }
-            case 'import': {
-                restoring = true
-                const resume = service.prepareToClose()
-                try {
-                    await drain()
-                    const result = await dialog.showOpenDialog(mainWindow, {
-                        properties: ['openFile'],
-                        filters: [{ name: 'Tracking backup', extensions: ['json'] }]
-                    })
-                    if (!result.canceled) {
-                        const confirmation = await dialog.showMessageBox(mainWindow, {
-                            type: 'warning',
-                            buttons: ['Cancel', 'Replace local tracking'],
-                            defaultId: 0,
-                            cancelId: 0,
-                            message: 'Replace local tracking and drafts with this backup?',
-                            detail: 'Export your current data first if you need to keep it.'
-                        })
-                        if (confirmation.response === 1) {
-                            if ((await stat(result.filePaths[0])).size > imageLimits.backup)
-                                throw new Error('The backup exceeds the 512 MiB limit.')
-                            await store.restore(await readFile(result.filePaths[0], 'utf8'))
-                            await store.flush()
-                            vault.set('github', '')
-                            notionPickerGeneration++
-                            stopNotionPages?.()
-                            notionDiscovery.clear()
-                            availableNotionPages = []
-                            await execute(connection.disconnect())
-                            return service.reply({ message: 'Backup imported.' })
-                        }
+                case 'notionDestination':
+                    yield* connection.refreshDestination().pipe(Effect.catchAll(() => Effect.void))
+                    break
+                case 'connectionProfiles':
+                    return service.reply({ connectionProfiles: profiles.snapshot() })
+                case 'refreshConnectionProfile':
+                    yield* native(() => profiles.refresh(command.service))
+                    return service.reply({ connectionProfiles: profiles.snapshot() })
+                case 'githubStart': {
+                    const device = yield* github.start()
+                    {
+                        const handled = yield* Effect.gen(function* () {
+                            yield* native(() => openExternal(device.url))
+                        }).pipe(
+                            Effect.catchAll((_error) =>
+                                Effect.sync(() => {
+                                    return service.reply({
+                                        device,
+                                        message:
+                                            'Could not open your browser. Use Open browser or visit the displayed address.'
+                                    })
+                                })
+                            )
+                        )
+                        if (handled !== undefined) return handled
                     }
-                } finally {
-                    restoring = false
-                    resume()
+                    return service.reply({ device })
                 }
-                break
+                case 'githubPoll': {
+                    const account = yield* github.poll()
+                    if ('pending' in account) return service.reply({ devicePending: { interval: account.interval } })
+                    profiles.clear('github')
+                    store.state.settings.githubLogin = account.login
+                    for (const repository of store.state.repositories)
+                        repository.emails = [...new Set([...repository.emails, ...account.emails])]
+                    store.persist()
+                    yield* work.fork(native(() => profiles.refresh('github')))
+                    break
+                }
+                case 'disconnect':
+                    if (command.service === 'notion') {
+                        notionPickerGeneration++
+                        stopNotionPages?.()
+                        notionDiscovery.clear()
+                        availableNotionPages = []
+                        yield* connection.disconnect()
+                    } else vault.set(command.service, '')
+                    profiles.clear(command.service)
+                    break
+                case 'export': {
+                    const result = yield* native(() =>
+                        dialog.showSaveDialog(mainWindow, {
+                            defaultPath: 'gitorian-backup.json',
+                            filters: [{ name: 'Tracking backup', extensions: ['json'] }]
+                        })
+                    )
+                    if (result.filePath) {
+                        yield* native(() => store.flush())
+                        yield* native(() => writeFile(result.filePath, store.export(), 'utf8'))
+                    }
+                    break
+                }
+                case 'import': {
+                    restoring = true
+                    yield* service.suspend
+                    {
+                        const handled = yield* Effect.gen(function* () {
+                            yield* work.drain
+                            const result = yield* native(() =>
+                                dialog.showOpenDialog(mainWindow, {
+                                    properties: ['openFile'],
+                                    filters: [{ name: 'Tracking backup', extensions: ['json'] }]
+                                })
+                            )
+                            if (!result.canceled) {
+                                const confirmation = yield* native(() =>
+                                    dialog.showMessageBox(mainWindow, {
+                                        type: 'warning',
+                                        buttons: ['Cancel', 'Replace local tracking'],
+                                        defaultId: 0,
+                                        cancelId: 0,
+                                        message: 'Replace local tracking and drafts with this backup?',
+                                        detail: 'Export your current data first if you need to keep it.'
+                                    })
+                                )
+                                if (confirmation.response === 1) {
+                                    if ((yield* native(() => stat(result.filePaths[0]))).size > imageLimits.backup)
+                                        return yield* Effect.fail(new Error('The backup exceeds the 512 MiB limit.'))
+                                    const backup = yield* native(() => readFile(result.filePaths[0], 'utf8'))
+                                    yield* native(() => store.restore(backup))
+                                    yield* native(() => store.flush())
+                                    vault.set('github', '')
+                                    notionPickerGeneration++
+                                    stopNotionPages?.()
+                                    notionDiscovery.clear()
+                                    availableNotionPages = []
+                                    yield* connection.disconnect()
+                                    return service.reply({ message: 'Backup imported.' })
+                                }
+                            }
+                        }).pipe(
+                            Effect.ensuring(
+                                Effect.sync(() => {
+                                    restoring = false
+                                })
+                            )
+                        )
+                        if (handled !== undefined) return handled
+                    }
+                    break
+                }
+                case 'open':
+                    yield* native(() => openExternal(command.url))
+                    break
+                case 'popout':
+                    windowFor(command)
+                    break
+                case 'state': {
+                    const remotes: Record<string, string[]> = {}
+                    for (const repository of store.state.repositories) remotes[repository.id] = repository.remotes ?? []
+                    return { ...service.reply(), remotes }
+                }
+                default:
+                    return yield* service.handle(command)
             }
-            case 'open':
-                await openExternal(command.url)
-                break
-            case 'popout':
-                windowFor(command)
-                break
-            case 'state': {
-                const remotes: Record<string, string[]> = {}
-                for (const repository of store.state.repositories) remotes[repository.id] = repository.remotes ?? []
-                return { ...service.reply(), remotes }
-            }
-            default:
-                return service.handle(command)
-        }
-        return service.reply()
-    }
-    const durableCommand = async (event: IpcMainInvokeEvent, input: unknown) => {
-        if (closing || restoring || updating)
-            throw new Error('Journal is busy; retry after it finishes saving or restoring')
-        return runNative(async (drain) => {
-            const reply = await commandHandler(event, input, drain)
-            await store.flush()
-            return reply
-        })
-    }
+            return service.reply()
+        }).pipe(Effect.scoped)
+    const durableCommand = (event: IpcMainInvokeEvent, input: unknown) =>
+        execute(
+            work.accept(
+                Effect.suspend(() => {
+                    if (closing || restoring || updating)
+                        return Effect.fail(new Error('Journal is busy; retry after it finishes saving or restoring'))
+                    return commandHandler(event, input).pipe(Effect.tap(() => native(() => store.flush())))
+                })
+            )
+        )
     ipcMain.handle('journal:command', durableCommand)
     const updates = new ReplyUpdates()
     const updateRequest = z.object({
@@ -675,7 +737,7 @@ void app.whenReady().then(() => {
         const request = updateRequest.parse(input)
         return updates.pack(await durableCommand(event, request.command), request.base)
     })
-    const refreshIfActive = () => {
+    const refreshIfActive = Effect.gen(function* () {
         if (closing || restoring || updating) return
         const minutes = store.state.settings.refreshMinutes
         const elapsed =
@@ -693,14 +755,14 @@ void app.whenReady().then(() => {
         )
         if (pending) {
             const [source, repositoryId] = pending[0].split(':')
-            void runNative(() => service.refresh({ repositoryId, source: source === 'git' ? 'git' : 'github' }))
+            yield* service.startRefresh({ repositoryId, source: source === 'git' ? 'git' : 'github' })
             return
         }
         if (minutes > 0 && !mainWindow.isDestroyed() && mainWindow.isVisible() && elapsed >= minutes * 60000)
-            void runNative(() => service.refresh())
-    }
-    void execute(work.repeat(5000, Effect.sync(refreshIfActive)))
-    if (store.state.settings.refreshMinutes > 0) void runNative(() => service.refresh())
+            yield* service.startRefresh()
+    })
+    void execute(work.repeat(5000, refreshIfActive))
+    if (store.state.settings.refreshMinutes > 0) void execute(service.startRefresh())
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) mainWindow = windowFor()
     })
@@ -711,14 +773,14 @@ app.on('window-all-closed', () => {
 let closed = false
 let closing = false
 app.on('before-quit', (event) => {
-    if (notionConnection) void execute(notionConnection.cancel())
     stopNotionPages?.()
     if (!store || closed) return
     event.preventDefault()
     if (closing) return
     closing = true
-    const resume = service?.prepareToClose()
+    const resume = holdJournal()
     void (async () => {
+        if (notionConnection) await execute(notionConnection.cancel())
         // Stop producers before sealing the writer queue. Already accepted operations
         // may still checkpoint while their network requests finish.
         await execute(work.shutdown(native(() => store.shutdown())))

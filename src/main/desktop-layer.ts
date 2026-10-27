@@ -6,8 +6,7 @@ import { Notion, makeNotion } from './notion'
 import { NotionConnection, NotionConnectionLive } from './notion-connection'
 import type { ConnectionAdapters } from './notion-connection'
 import { ConnectionState, JournalStore } from './journal-context'
-import { JournalPublishingLive } from './journal-publishing'
-import { ApplicationWorkLive } from './application-work'
+import { JournalModulesLive } from './journal-layer'
 import type { Store } from './store'
 import type { Vault } from './vault'
 
@@ -59,6 +58,6 @@ export function desktopLayer(store: Store, vault: Vault, connection: Omit<Connec
             }))
         )
     ).pipe(Layer.provideMerge(authorization))
-    return Layer.merge(ApplicationWorkLive, JournalPublishingLive).pipe(Layer.provideMerge(providers))
+    return JournalModulesLive.pipe(Layer.provideMerge(providers))
 }
 export type DesktopEnvironment = Layer.Layer.Success<ReturnType<typeof desktopLayer>>

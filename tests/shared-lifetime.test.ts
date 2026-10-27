@@ -1,7 +1,7 @@
 import { Deferred, Effect, Exit, Fiber, Scope } from 'effect'
 import { expect, it } from 'vitest'
 import { makeSharedRequests } from '../src/main/shared-requests'
-import { run } from './transport-fixtures'
+import { run } from './effect-fixtures'
 
 it('retains preparation ownership until scope disposal can release the completed acquisition', async () => {
     const scope = await run(Scope.make())
