@@ -574,3 +574,22 @@ it('checkpoints a volatile page ID before resuming any remote append', async () 
         await app.close()
     }
 })
+
+it('allows correcting an unsupported document after a typed preflight failure', async () => {
+    const app = await journal()
+    try {
+        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        const draft = app.store.state.drafts[0]
+        draft.body = { type: 'doc', content: [{ type: 'unsupported-block' }] }
+        const result = await run(Effect.either(app.publishing.publish(draft.id)))
+        expect(result._tag).toBe('Left')
+        expect(app.remote.requests).toEqual([])
+        expect(app.store.state.saves[0].status).toBe('failed')
+        draft.body = reflection
+        await run(app.publishing.publish(draft.id))
+        expect(app.store.state.saves.at(-1)?.status).toBe('confirmed')
+        expect(app.remote.pages).toHaveLength(1)
+    } finally {
+        await app.close()
+    }
+})
