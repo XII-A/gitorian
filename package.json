@@ -13,6 +13,8 @@
         "start": "electron-vite preview",
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
+        "test:e2e": "playwright test",
+        "test:e2e:report": "playwright show-report .ai-docs/verification/desktop/report",
         "lint": "oxlint --type-aware",
         "lint:fix": "oxlint --type-aware --fix",
         "format": "oxfmt --write .",
@@ -23,7 +25,7 @@
         "package:dir": "pnpm build && electron-builder --dir",
         "smoke": "electron tools/desktop-smoke.mjs",
         "smoke:window-chrome": "electron tools/window-chrome-smoke.mjs",
-        "smoke:repository-import": "electron tools/repository-import-smoke.mjs",
+        "smoke:repository-import": "playwright test repository-import",
         "verify": "node tools/verify.mjs",
         "smoke:history-reader": "electron tools/history-reader-smoke.mjs",
         "smoke:history-motion": "electron tools/history-motion-smoke.mjs",
@@ -115,6 +117,10 @@
         "zod": "4.6.5"
     },
     "devDependencies": {
+        "@playwright/test": "^1.64.1",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@testing-library/react": "^16.3.3",
+        "@testing-library/user-event": "^14.6.8",
         "@types/node": "24.19.1",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",

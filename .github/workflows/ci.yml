@@ -2,7 +2,7 @@ name: CI
 
 on:
     pull_request:
-        branches: [main]
+        branches: [main, 'release/**']
     push:
         branches: [main]
 
@@ -30,3 +30,13 @@ jobs:
             - run: pnpm install --frozen-lockfile
             - run: pnpm check
             - run: pnpm build
+            - run: pnpm test:e2e
+            - name: Desktop test evidence
+              if: always()
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+              with:
+                  name: desktop-test-evidence
+                  path: .ai-docs/verification/desktop/
+                  include-hidden-files: true
+                  if-no-files-found: ignore
+                  retention-days: 7
