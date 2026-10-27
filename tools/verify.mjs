@@ -171,17 +171,20 @@ if (mode === 'doctor') {
             writeFileSync(join(output, 'run.json'), JSON.stringify(report, null, 2))
             child.stdout.on('data', (data) => appendFileSync(join(output, 'stdout.log'), data))
             child.stderr.on('data', (data) => appendFileSync(join(output, 'stderr.log'), data))
-            const timer = setTimeout(() => {
-                report.timedOut = true
-                try {
-                    if (process.platform === 'win32')
-                        execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
-                    else child.kill('SIGKILL')
-                } catch (error) {
-                    report.terminationError = String(error)
-                    child.kill('SIGKILL')
-                }
-            }, 90000)
+            const timer = setTimeout(
+                () => {
+                    report.timedOut = true
+                    try {
+                        if (process.platform === 'win32')
+                            execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
+                        else child.kill('SIGKILL')
+                    } catch (error) {
+                        report.terminationError = String(error)
+                        child.kill('SIGKILL')
+                    }
+                },
+                mode === 'connections' ? 150000 : 90000
+            )
             child.once('error', (error) => {
                 clearTimeout(timer)
                 reject(new Error(String(error)))
