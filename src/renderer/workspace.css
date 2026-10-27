@@ -960,7 +960,10 @@
     padding: 0 var(--space-6) var(--space-4);
     flex: none;
 }
-.ws-activity-filters,
+.ws-activity-filters {
+    padding: 0 var(--space-6) var(--space-4);
+    flex: none;
+}
 .ws-extra-filters {
     display: flex;
     flex-wrap: wrap;

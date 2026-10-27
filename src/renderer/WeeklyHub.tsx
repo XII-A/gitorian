@@ -1,3 +1,4 @@
+import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
@@ -169,7 +170,7 @@ export function WeeklyHub({
         />
     )
     const filters = (
-        <div className="hub-filters" role="group" aria-label="Filter activity">
+        <ActivityFilterStrip className="hub-filters">
             {(['all', 'commit', 'pr'] as const).map((value) => (
                 <Button
                     variant="ghost"
@@ -195,7 +196,7 @@ export function WeeklyHub({
             ))}
             <ActivityDayFilter week={start} value={dayFilter.day} onValueChange={dayFilter.setDay} />
             <ProjectFilter repositories={state.repositories} value={project} onValueChange={setProject} />
-        </div>
+        </ActivityFilterStrip>
     )
     const empty = (
         <div className="hub-empty">

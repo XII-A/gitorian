@@ -3,6 +3,9 @@ export async function checkActivityFilterReset() {
     const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
     const filters = document.querySelector('.ws-activity-filters')
     const originalWidth = filters.style.width
+    const frame = document.querySelector('.ws-frame')
+    const originalColumns = frame.style.gridTemplateColumns
+    frame.style.gridTemplateColumns = '900px minmax(0, 1fr) 320px'
     const waitFor = async (read, description) => {
         for (let attempt = 0; attempt < 50; attempt++) {
             const value = read()
@@ -32,34 +35,65 @@ export async function checkActivityFilterReset() {
             `${label} selection`
         )
     }
-    try {
-        // Measure the unfiltered chips. Put the toolbar just above its first-row wrapping threshold.
-        await pause(800)
-        const css = getComputedStyle(filters)
-        const width =
-            Array.from(filters.children).reduce((total, node) => total + node.getBoundingClientRect().width, 0) +
-            parseFloat(css.columnGap) * (filters.children.length - 1) +
-            parseFloat(css.paddingLeft) +
-            parseFloat(css.paddingRight) +
-            0.25
-        const grouped = []
-        const checkPair = (phase, available) => {
-            filters.style.width = `${available}px`
-            const project = filters.querySelector('.project-filter').getBoundingClientRect()
-            const history = filters.querySelector('.ws-history-chip').getBoundingClientRect()
-            const trigger = filters.querySelector('.project-filter [role="combobox"]').getBoundingClientRect()
-            const bounds = filters.getBoundingClientRect()
-            const together = Math.abs(project.top - history.top) < 1
-            const fits =
-                project.left >= bounds.left &&
-                trigger.right <= history.left + 1 &&
-                history.right <= bounds.right - parseFloat(css.paddingRight) + 1
-            grouped.push({ phase, width: available, together, fits, projectTop: project.top, historyTop: history.top })
-        }
-        for (const available of [280, 320, width - 1, width + 1]) checkPair('idle', available)
+    const observations = []
+    const row = filters.querySelector('.activity-filter-items')
+    const viewport = filters.querySelector('.activity-filter-viewport')
+    const checkRow = async (phase, width) => {
         filters.style.width = `${width}px`
-        document.querySelector('[aria-label="Browse branch history"]').click()
-        await waitFor(() => document.querySelector('[role="dialog"]'), 'open dialog')
+        await pause(80)
+        const chips = Array.from(row.children).map((node) => node.getBoundingClientRect())
+        const sameRow = chips.every((bounds) => Math.abs(bounds.top - chips[0].top) < 1)
+        const overflowing = viewport.scrollWidth > viewport.clientWidth + 1
+        const cues = !!filters.querySelector('[aria-label="Scroll activity filters right"]')
+        const result = { phase, width, sameRow, overflowing, cues, height: filters.getBoundingClientRect().height }
+        observations.push(result)
+        if (!sameRow || overflowing !== cues || (width === 760 && overflowing))
+            throw new Error(`Filter row failed: ${JSON.stringify(result)}`)
+    }
+    const picker = () => filters.querySelector('.project-filter [role="combobox"]')
+    const pickProject = async (label) => {
+        const trigger = picker()
+        trigger.focus()
+        const id = trigger.getAttribute('aria-controls')
+        trigger.click()
+        const option = await waitFor(
+            () =>
+                Array.from(document.getElementById(id)?.querySelectorAll('[role="option"]') ?? []).find(
+                    (node) => node.textContent.trim() === label && !node.closest('[inert]')
+                ),
+            'portaled project option'
+        )
+        if (!(option instanceof HTMLElement)) throw new Error('Project option is unavailable')
+        await pause(500)
+        const bounds = option.getBoundingClientRect()
+        const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+        if (option !== hit && !option.contains(hit))
+            throw new Error('Project menu is clipped or covered by the scrolling toolbar')
+        option.click()
+        await waitFor(
+            () => picker()?.getAttribute('aria-expanded') === 'false',
+            'project menu closed and focus restored'
+        )
+        return document.activeElement === picker()
+    }
+    try {
+        await pause(500)
+        for (const width of [280, 320, 480, 760]) await checkRow('idle', width)
+        filters.style.width = '320px'
+        await pause(100)
+        const before = viewport.scrollLeft
+        filters.querySelector('[aria-label="Scroll activity filters right"]').click()
+        await waitFor(() => viewport.scrollLeft > before + 1, 'scroll arrow moves the filter row')
+        // Focus reveals the trailing control without changing the vertical activity position.
+        const history = filters.querySelector('.ws-history-chip')
+        history.focus()
+        await pause(100)
+        const bounds = history.getBoundingClientRect(),
+            view = viewport.getBoundingClientRect()
+        const focusRevealed = bounds.left >= view.left - 1 && bounds.right <= view.right + 1
+        if (!focusRevealed) throw new Error('Focused history filter remains clipped')
+        history.click()
+        await waitFor(() => document.querySelector('[role="dialog"]'), 'open history dialog')
         await choose('Project', 'developer', 'developer-docs')
         await choose('Branch', 'offline', 'feat/offline-queue')
         const load = await waitFor(
@@ -67,85 +101,50 @@ export async function checkActivityFilterReset() {
                 Array.from(document.querySelectorAll('[role="dialog"] button')).find(
                     (node) => node.textContent === 'Load branch history' && !node.disabled
                 ),
-            'enabled load button'
+            'load history'
         )
         load.click()
-        await waitFor(() => {
-            const dialog = document.querySelector('[role="dialog"]')
-            return !dialog || dialog.getAttribute('data-state') === 'closed'
-        }, 'close dialog')
-        await pause(800)
-        for (const available of [280, 320, width - 1, width + 1]) checkPair('active', available)
+        await waitFor(
+            () =>
+                !document.querySelector('[role="dialog"]') ||
+                document.querySelector('[role="dialog"]').getAttribute('data-state') === 'closed',
+            'history dialog closed'
+        )
+        await pause(500)
+        for (const width of [280, 320, 480, 760]) await checkRow('active-history', width)
         const active = filters.querySelector('.ws-history-chip')
         const nameRetained =
             active.title.includes('feat/offline-queue') &&
             active.getAttribute('aria-label').includes('feat/offline-queue')
-        filters.style.width = `${width}px`
-        const button = document.querySelector('.ws-history-chip')
-        const rows = []
-        const started = performance.now()
-        button.click()
-        await new Promise((resolve) => {
-            const sample = () => {
-                const row = Math.round(button.getBoundingClientRect().top - filters.getBoundingClientRect().top)
-                if (!rows.length || rows.at(-1).row !== row)
-                    rows.push({ row, time: Math.round(performance.now() - started) })
-                if (performance.now() - started < 1200) setTimeout(sample, 16)
-                else resolve()
-            }
-            setTimeout(sample, 0)
-        })
         filters.style.width = '320px'
-        const picker = filters.querySelector('.project-filter [role="combobox"]')
-        picker.click()
-        const option = await waitFor(
-            () =>
-                Array.from(document.querySelectorAll('.project-filter [role="option"]')).find(
-                    (node) => node.textContent.trim() === 'developer-docs'
-                ),
-            'toolbar project option'
-        )
-        if (!(option instanceof HTMLElement)) throw new Error('Project option is unavailable')
-        await pause(400)
-        const optionBounds = option.getBoundingClientRect()
-        const hit = document.elementFromPoint(
-            optionBounds.x + optionBounds.width / 2,
-            optionBounds.y + optionBounds.height / 2
-        )
-        const menuReachable = option === hit || option.contains(hit)
-        option.click()
-        await waitFor(
-            () => picker.title === 'developer-docs' && picker.getAttribute('aria-expanded') === 'false',
-            'toolbar project selected'
-        )
-        await pause(400)
-        checkPair('selected-project', 320)
-        picker.click()
-        const all = await waitFor(
-            () =>
-                Array.from(document.querySelectorAll('.project-filter [role="option"]')).find(
-                    (node) => node.textContent.trim() === 'All Projects'
-                ),
-            'all projects option'
-        )
-        all.click()
-        await waitFor(
-            () => picker.title === 'All projects' && picker.getAttribute('aria-expanded') === 'false',
-            'toolbar project reset'
-        )
+        const height = filters.getBoundingClientRect().height
+        active.focus()
+        active.click()
+        await pause(500)
+        const stableHeight = Math.abs(filters.getBoundingClientRect().height - height) < 1
+        const projectRestoresFocus = await pickProject('developer-docs')
+        const resetRestoresFocus = await pickProject('All Projects')
+        const wheel = new WheelEvent('wheel', { deltaY: 80, bubbles: true, cancelable: true })
+        viewport.dispatchEvent(wheel)
+        const verticalWheelPreserved = !wheel.defaultPrevented
         return {
             passed:
-                menuReachable &&
-                grouped.every((item) => item.together && item.fits) &&
+                focusRevealed &&
                 nameRetained &&
-                rows.length === 1 &&
-                rows[0].row === 0,
-            grouped,
-            menuReachable,
+                stableHeight &&
+                projectRestoresFocus &&
+                resetRestoresFocus &&
+                verticalWheelPreserved,
+            observations,
+            focusRevealed,
             nameRetained,
-            rows
+            stableHeight,
+            projectRestoresFocus,
+            resetRestoresFocus,
+            verticalWheelPreserved
         }
     } finally {
         filters.style.width = originalWidth
+        frame.style.gridTemplateColumns = originalColumns
     }
 }

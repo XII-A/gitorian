@@ -147,6 +147,8 @@ if (mode === 'doctor') {
             )
         for (const file of [
             'src/renderer/ActivityDays.tsx',
+            'src/renderer/ActivityFilterStrip.tsx',
+            'src/renderer/activity-filter-strip.css',
             'src/renderer/GettingStarted.tsx',
             'src/renderer/OnboardingActivityPreview.tsx',
             'src/renderer/OnboardingSetupLayout.tsx',

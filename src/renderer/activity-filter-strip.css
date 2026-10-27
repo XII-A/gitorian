@@ -1,0 +1,36 @@
+.activity-filter-strip {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    min-width: 0;
+    max-width: 100%;
+}
+.activity-filter-scroll {
+    flex: 1;
+    min-width: 0;
+}
+.activity-filter-items {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    width: max-content;
+    padding-block: var(--space-1);
+    padding-inline: var(--space-1);
+}
+.activity-filter-items > * {
+    flex: none;
+}
+.activity-filter-strip .activity-filter-arrow {
+    flex: none;
+    width: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+    padding: 0;
+    border-radius: var(--radius-pill);
+    color: var(--text-secondary);
+}
+@media (pointer: coarse) {
+    .activity-filter-strip .activity-filter-arrow {
+        width: var(--control-height-md);
+        min-height: var(--control-height-md);
+    }
+}

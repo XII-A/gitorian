@@ -1,3 +1,4 @@
+import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
@@ -486,7 +487,7 @@ export function Workspace({
                         week={week}
                         className="ws-week-chart"
                     />
-                    <div className="ws-activity-filters" role="group" aria-label="Filter activity">
+                    <ActivityFilterStrip className="ws-activity-filters">
                         {(['all', 'commit', 'pr'] as const).map((value) => (
                             <Button
                                 key={value}
@@ -571,7 +572,7 @@ export function Workspace({
                                 </span>
                             </Button>
                         </div>
-                    </div>
+                    </ActivityFilterStrip>
                     <ScrollArea
                         className="ws-activity-scroll"
                         viewportClassName="ws-activity-viewport"

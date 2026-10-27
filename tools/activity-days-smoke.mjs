@@ -62,14 +62,18 @@ app.on('browser-window-created', (_, window) => {
         const shot = async (name) => writeFileSync(join(output, name), (await window.webContents.capturePage()).toPNG())
         /** @param {number | 'all'} offset */
         const chooseDay = async (offset) => {
+            const listId = await js(
+                `document.querySelector('.activity-day-filter [role="combobox"]').getAttribute('aria-controls')`
+            )
+            await js(`document.querySelector('.activity-day-filter [role="combobox"]').focus()`)
             await js(`document.querySelector('.activity-day-filter [role="combobox"]').click()`)
-            await wait(`!!document.querySelector('.activity-day-filter [role="option"]')`)
+            await wait(`!document.getElementById(${JSON.stringify(listId)})?.closest('[inert]')`)
             await pause(500)
             await js(
-                `document.querySelectorAll('.activity-day-filter [role="option"]')[${offset === 'all' ? 0 : offset + 1}].click()`
+                `document.getElementById(${JSON.stringify(listId)}).querySelectorAll('[role="option"]')[${offset === 'all' ? 0 : offset + 1}].click()`
             )
             await wait(
-                `document.querySelector('.activity-day-filter [role="combobox"]').getAttribute('aria-expanded')==='false'`
+                `document.querySelector('.activity-day-filter [role="combobox"]')?.getAttribute('aria-expanded')==='false'`
             )
         }
         try {
@@ -109,6 +113,40 @@ app.on('browser-window-created', (_, window) => {
                 }
                 const group = surface === 'hub' ? '.hub-day' : '.ws-day-group'
                 const rows = surface === 'hub' ? '.hub-activity' : '.ws-activity-row'
+                const toolbar = surface === 'hub' ? '.hub-filters' : '.ws-activity-filters'
+                await js(`document.querySelector('${toolbar}').style.width='320px'`)
+                await pause(150)
+                assert.ok(
+                    await js(
+                        `(()=>{const strip=document.querySelector('${toolbar}');const rects=Array.from(strip.querySelector('.activity-filter-items').children).map(n=>n.getBoundingClientRect());return rects.every(r=>Math.abs(r.top-rects[0].top)<1)&&!!strip.querySelector('[aria-label="Scroll activity filters right"]')})()`
+                    ),
+                    `${surface} filters must stay in one row with visible overflow arrows`
+                )
+                const dayList = await js(
+                    `document.querySelector('.activity-day-filter [role="combobox"]').getAttribute('aria-controls')`
+                )
+                await js(
+                    `document.querySelector('.activity-day-filter [role="combobox"]').focus();document.querySelector('.activity-day-filter [role="combobox"]').click()`
+                )
+                await wait(
+                    `!!document.getElementById(${JSON.stringify(dayList)})&&!document.getElementById(${JSON.stringify(dayList)}).closest('[inert]')`
+                )
+                await pause(500)
+                assert.ok(
+                    await js(
+                        `(()=>{const list=document.getElementById(${JSON.stringify(dayList)}),option=list.querySelectorAll('[role="option"]')[7],r=option.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !document.querySelector('${toolbar}').contains(list)&&(hit===option||option.contains(hit))})()`
+                    ),
+                    `${surface} day menu must escape the scroll clip and remain reachable`
+                )
+                await shot(`${surface}-filter-menu.png`)
+                await js(
+                    `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`
+                )
+                await wait(`!!document.querySelector('.activity-day-filter [role="combobox"]')`)
+                await js(
+                    `document.querySelector('${toolbar}').style.width='';document.querySelector('${toolbar} .activity-filter-viewport').scrollLeft=0`
+                )
+                record(`${surface}: single-row scrolling filters and reachable portaled day menu`, true)
                 const mondayGroup = `${group}:has([aria-label*="115 more"])`
                 assert.deepEqual(
                     await js(

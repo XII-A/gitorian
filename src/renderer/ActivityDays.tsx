@@ -44,6 +44,7 @@ export function ActivityDayFilter({
     return (
         <div className="activity-day-filter">
             <MorphSelect
+                portal
                 label="Activity day"
                 hideLabel
                 variant="ghost"
