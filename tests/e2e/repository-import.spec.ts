@@ -47,11 +47,16 @@ test('repository import: selection, cancellation, recovery and durable tracking'
             await chooseFolder(join(folder, name))
             await page.evaluate(() => window.journal.invoke({ type: 'addRepository' }))
         }
-        await page.evaluate(async () => {
-            const { state } = await window.journal.invoke({ type: 'state' })
-            await window.journal.invoke({ type: 'settings', settings: { ...state.settings, refreshMinutes: 0 } })
-            await window.journal.invoke({ type: 'repository', repository: { ...state.repositories[1], removed: true } })
-        })
+        await page.evaluate(
+            async (stoppedPath) => {
+                const { state } = await window.journal.invoke({ type: 'state' })
+                const stopped = state.repositories.find((repository) => repository.path === stoppedPath)
+                if (!stopped) throw new Error('The stopped repository fixture was not imported')
+                await window.journal.invoke({ type: 'settings', settings: { ...state.settings, refreshMinutes: 0 } })
+                await window.journal.invoke({ type: 'repository', repository: { ...stopped, removed: true } })
+            },
+            join(folder, 'archived-tools')
+        )
         writeFileSync(info.outputPath('fixture.json'), JSON.stringify({ folder, names, delayedIO: true }, null, 2))
     })
     await test.step('chooser, discovery and review expose progress', async () => {

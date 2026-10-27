@@ -19,7 +19,7 @@ pnpm check                                 # Required static checks and Vitest s
 
 `pnpm verify repository-import` and `pnpm smoke:repository-import` select the same Playwright scenario. Other `pnpm verify` modes retain their existing harnesses; consult the [feature map](../.agents/skills/verify-gitorian/features/README.md) for native-window, integration, writing, installer and performance coverage. Those specialized tools still serve a purpose.
 
-Windows CI builds once, runs checks and the migrated desktop suite, and uploads desktop evidence even on failure. Electron is already installed by the project: a separate Playwright browser download is unnecessary for this suite. Electron automation is experimental; verify dependency upgrades against the real journey.
+Windows CI runs for every pull request, including stacked PRs targeting feature branches. It builds once, runs checks and the migrated desktop suite, and uploads desktop evidence even on failure. Electron is already installed by the project: a separate Playwright browser download is unnecessary for this suite. Electron automation is experimental; verify dependency upgrades against the real journey.
 
 ## Author a desktop journey
 

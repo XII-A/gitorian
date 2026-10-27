@@ -21,7 +21,7 @@ Preconditions: compiled app, installed Electron, Git on PATH, and no integration
 The owning scenario is `tests/e2e/repository-import.spec.ts`, using the shared Playwright desktop fixture. Run it directly with `pnpm test:e2e repository-import`; add `--debug` for Inspector. Evidence survives reruns under `.ai-docs/verification/desktop/runs/`, and `pnpm test:e2e:report` opens the latest report. Consult [testing](../../../../docs/testing.md) for fixture authoring, traces and cleanup.
 
 - **Open:** `[aria-label="Open settings"]`, then `Add repositories from folder`; capture chooser waiting, scanning, success, and review.
-- **Branding:** the live doctor requires the document title and visible window title to read `Gitorian`; the runner independently reads `gitorian.sqlite` after exit.
+- **Branding:** the live doctor requires the document title and visible window title to read `Gitorian`; the runner independently reads `journal.sqlite` after exit.
 - **Appearance:** launch with Electron's platform theme set to light, then switch dark and back to light. Require the app theme and computed color scheme to remain dark; retain `00-dark-theme-light-platform.png`. This is process-local platform emulation and does not change the user's OS settings.
 - **Select:** `.repository-import-row [role="checkbox"]`; require five eligible checks and one disabled tracked row. Deselect all -> disabled `Import 0 repositories`; Select all -> deselect `playground`.
 - **Search/cancel:** type `website` into `.repository-import-tools input`; require two rows and four total selections. Cancel -> two original stored repositories, no imports.
