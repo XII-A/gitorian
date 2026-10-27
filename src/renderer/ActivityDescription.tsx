@@ -1,9 +1,10 @@
 import { Fragment } from 'react'
-import Markdown from 'react-markdown'
+import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Activity, Repository } from '../shared/model'
 import { markdownUrl } from './activity-details'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
+import { MermaidBlock } from './MermaidBlock'
 
 function DiffBlock({ value }: { value: string }) {
     const lines = value.match(/[^\n]*\n|[^\n]+$/g) ?? []
@@ -40,11 +41,36 @@ function DiffBlock({ value }: { value: string }) {
     )
 }
 
+const DescriptionPre: NonNullable<Components['pre']> = ({ node, children }) => {
+    const code = node?.children[0]
+    const text = code?.type === 'element' ? code.children[0] : undefined
+    if (
+        code?.type === 'element' &&
+        code.tagName === 'code' &&
+        Array.isArray(code.properties.className) &&
+        code.properties.className.includes('language-mermaid') &&
+        (text?.type === 'text' || !text)
+    )
+        return <MermaidBlock source={text?.type === 'text' ? text.value : ''} />
+    return code?.type === 'element' &&
+        code.tagName === 'code' &&
+        Array.isArray(code.properties.className) &&
+        code.properties.className.includes('language-diff') &&
+        text?.type === 'text' ? (
+        <DiffBlock value={text.value} />
+    ) : (
+        <ScrollArea className="hub-detail-code-scroll" orientation="both" maxHeight={360} label="Code block" fade={0}>
+            <pre>{children}</pre>
+        </ScrollArea>
+    )
+}
+
 export function ActivityDescription({ activity, repository }: { activity: Activity; repository?: Repository }) {
     if (activity.kind === 'commit') return <p className="hub-detail-commit-message">{activity.description}</p>
     return (
         <div className="hub-detail-markdown">
             <Markdown
+                key={activity.id}
                 remarkPlugins={[remarkGfm]}
                 skipHtml
                 urlTransform={(url, key) => {
@@ -56,27 +82,7 @@ export function ActivityDescription({ activity, repository }: { activity: Activi
                     return imageUrl.href
                 }}
                 components={{
-                    pre: ({ node, children }) => {
-                        const code = node?.children[0]
-                        const text = code?.type === 'element' ? code.children[0] : undefined
-                        return code?.type === 'element' &&
-                            code.tagName === 'code' &&
-                            Array.isArray(code.properties.className) &&
-                            code.properties.className.includes('language-diff') &&
-                            text?.type === 'text' ? (
-                            <DiffBlock value={text.value} />
-                        ) : (
-                            <ScrollArea
-                                className="hub-detail-code-scroll"
-                                orientation="both"
-                                maxHeight={360}
-                                label="Code block"
-                                fade={0}
-                            >
-                                <pre>{children}</pre>
-                            </ScrollArea>
-                        )
-                    },
+                    pre: DescriptionPre,
                     a: ({ href, children }) =>
                         href ? (
                             <a href={href} target="_blank" rel="noopener noreferrer">
