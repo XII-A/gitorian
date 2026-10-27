@@ -85,6 +85,11 @@ const aliases: Record<string, string> = {
     md: 'markdown',
     cs: 'c#',
     cpp: 'c++',
+    csharp: 'c#',
+    fsharp: 'f#',
+    objectivec: 'objective-c',
+    vbnet: 'vb.net',
+    vbscript: 'visual basic',
     dockerfile: 'docker',
     text: 'plain text',
     txt: 'plain text',
@@ -119,6 +124,9 @@ export function codeLanguageLabel(value: string): string {
                 php: 'PHP',
                 graphql: 'GraphQL',
                 powershell: 'PowerShell',
+                'vb.net': 'VB.NET',
+                jsx: 'JSX',
+                tsx: 'TSX',
                 'plain text': 'Plain text'
             } as Record<string, string>
         )[value] ?? value.charAt(0).toUpperCase() + value.slice(1)

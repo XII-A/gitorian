@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it } from 'vitest'
-import { Editor } from '@tiptap/react'
+import { Editor, EditorContent } from '@tiptap/react'
+import { render, cleanup } from '@testing-library/react'
+import { createElement } from 'react'
 import { journalExtensions } from '../src/renderer/journal-extensions'
 import { journalFromHTML, journalHTML } from '../src/renderer/workspace-model'
 import { plainText } from '../src/shared/notion-format'
@@ -16,7 +18,25 @@ it('retains fenced language and raw whitespace through HTML and editor serializa
 })
 
 let editor: Editor | undefined
-afterEach(() => editor?.destroy())
+afterEach(() => {
+    cleanup()
+    editor?.destroy()
+})
+
+it('highlights selected code languages without serializing decorations or guessing plain and unknown languages', async () => {
+    const writing = open('<pre data-language="typescript"><code>const count: number = 42</code></pre>')
+    render(createElement(EditorContent, { editor: writing }))
+    await expect.poll(() => writing.view.dom.querySelector('.hljs-keyword')?.textContent).toBe('const')
+    expect(writing.getHTML()).not.toContain('hljs-')
+    writing.commands.setTextSelection(2)
+    writing.commands.updateAttributes('codeBlock', { language: null })
+    expect(writing.view.dom.querySelector('[class*="hljs-"]')).toBeNull()
+    writing.commands.updateAttributes('codeBlock', { language: 'custom-language' })
+    expect(writing.view.dom.querySelector('[class*="hljs-"]')).toBeNull()
+    writing.commands.updateAttributes('codeBlock', { language: 'python' })
+    expect(writing.view.dom.querySelector('.hljs-number')?.textContent).toBe('42')
+    expect(writing.state.doc.firstChild?.textContent).toBe('const count: number = 42')
+})
 
 function open(content = '<p>First thought</p>') {
     editor = new Editor({ element: document.createElement('div'), extensions: journalExtensions(), content })

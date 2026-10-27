@@ -19,6 +19,10 @@ export interface FloatingButtonGroupAction {
     id: string
     /** Visible label, and the accessible name when the item shows only its icon. */
     label: string
+    /** A more descriptive accessible name when the visible label needs context. */
+    ariaLabel?: string
+    /** Attach an overlay trigger with asChild, preserving the tray's button and keyboard behavior. */
+    renderTrigger?: (button: ReactElement) => ReactElement
     icon?: ReactNode
     /** Shows only the icon. The label moves into a tooltip and the accessible name. Overrides the group's iconOnly. */
     iconOnly?: boolean
@@ -377,7 +381,7 @@ export function FloatingButtonGroup({
                     reserveLabels = []
                 } = item
                 const iconOnly = !!icon && (item.iconOnly ?? groupIconOnly)
-                const button = (
+                const actionButton = (
                     <button
                         ref={(node) => {
                             if (node) nodes.current.set(id, node)
@@ -389,7 +393,7 @@ export function FloatingButtonGroup({
                         data-active={activeId === id ? '' : undefined}
                         data-icon={icon ? '' : undefined}
                         data-icon-only={iconOnly ? '' : undefined}
-                        aria-label={itemLabel}
+                        aria-label={item.ariaLabel ?? itemLabel}
                         aria-pressed={pressed === undefined ? undefined : pressed}
                         aria-disabled={disabled || undefined}
                         tabIndex={stop === id ? 0 : -1}
@@ -436,7 +440,8 @@ export function FloatingButtonGroup({
                         />
                     </button>
                 )
-                // Tooltips render no wrapper element, so every button stays a direct child of the tray and measures against it.
+                const button = item.renderTrigger ? item.renderTrigger(actionButton) : actionButton
+                // Triggers and tooltips render no wrapper element, so every button measures against the tray.
                 if (!iconOnly && !shortcut) return <Fragment key={id}>{button}</Fragment>
                 const tip = <TipContent label={itemLabel} shortcut={shortcut} />
                 return side === 'top' || side === 'bottom' ? (

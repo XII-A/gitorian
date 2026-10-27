@@ -243,7 +243,17 @@ export const Editor = memo(function Editor({
                     return true
                 }
                 const text = clipboard?.getData('text/plain') ?? ''
-                if (_view.state.selection.$from.parent.type.spec.code) return false
+                const { $from, $to } = _view.state.selection
+                if ($from.parent.type.spec.code) {
+                    // A code-local paste is literal. Replacing several blocks must
+                    // retain their HTML structure instead of flattening into code.
+                    const html = clipboard?.getData('text/html')
+                    if (!$from.sameParent($to) && html && editorRef.current && !readOnly) {
+                        editorRef.current.commands.insertContent(html, { parseOptions: { preserveWhitespace: 'full' } })
+                        return true
+                    }
+                    return false
+                }
                 if (
                     clipboard?.getData('text/html') ||
                     !/(^#{1,4}\s|^\s*[-*+>]\s|^\s*\d+[.)]\s|`|\*\*|\[[^\]]+\]\()/m.test(text)

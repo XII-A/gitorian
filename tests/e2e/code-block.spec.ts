@@ -9,7 +9,13 @@ test('code blocks: language, exact copy, real wrapping and saved edits', async (
     const code = `  const longValue = "${'abcdefghij'.repeat(32)}";`
     const block = page.locator('.journal-code-block').first()
     const pre = block.locator('pre')
-    const language = block.getByRole('combobox', { name: 'Code language' })
+    const language = block.getByRole('button', { name: /^Code language:/ })
+    const search = page.getByRole('combobox', { name: 'Code language', exact: true })
+    const chooseLanguage = async (query: string, label: string) => {
+        await language.click()
+        await search.fill(query)
+        await page.getByRole('option', { name: label, exact: true }).click()
+    }
     await test.step('typed language fence creates editable code with horizontal overflow', async () => {
         await page.getByRole('button', { name: 'Open journal', exact: true }).click()
         await body.click()
@@ -18,21 +24,28 @@ test('code blocks: language, exact copy, real wrapping and saved edits', async (
         await body.pressSequentially('```js ')
         await body.pressSequentially(code)
         await expect(pre).toHaveText(code)
-        await expect(language).toHaveValue('JavaScript')
+        await expect(language).toHaveAccessibleName('Code language: JavaScript')
+        await expect(pre.locator('.hljs-keyword')).toContainText('const')
+        const bounds = await block.boundingBox()
+        const toolbar = await block.getByRole('toolbar', { name: 'Code actions' }).boundingBox()
+        expect(toolbar!.y).toBeGreaterThan(bounds!.y)
+        expect(toolbar!.x + toolbar!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width)
+        expect(toolbar!.x).toBeGreaterThan(bounds!.x + bounds!.width / 2)
         await expect.poll(() => pre.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true)
         await shot('01-code-overflow')
     })
     await test.step('search and change language with keyboard, dismiss without losing editing position', async () => {
+        await chooseLanguage('plain text', 'Plain text')
+        await expect(language).toHaveAccessibleName('Code language: Plain text')
+        await expect(pre.locator('[class*="hljs-"]')).toHaveCount(0)
         await language.click()
-        await language.fill('plain text')
-        await page.getByRole('option', { name: 'Plain text', exact: true }).click()
-        await expect(language).toHaveValue('Plain text')
-        await language.click()
-        await language.fill('typescript')
+        await search.fill('typescript')
         await page.keyboard.press('ArrowDown')
         await page.keyboard.press('Enter')
-        await expect(language).toHaveValue('TypeScript')
+        await expect(language).toHaveAccessibleName('Code language: TypeScript')
+        await expect(pre.locator('.hljs-keyword')).toContainText('const')
         await language.click()
+        await page.keyboard.press('Escape')
         await page.keyboard.press('Escape')
         await expect(language).toBeFocused()
         await pre.click()
@@ -40,6 +53,7 @@ test('code blocks: language, exact copy, real wrapping and saved edits', async (
         await body.press('Enter')
         await body.pressSequentially('\treturn longValue;')
         await expect(pre).toHaveText(`${code}\n\treturn longValue;`)
+        await expect(pre.locator('.hljs-keyword').last()).toHaveText('return')
     })
     await test.step('copy excludes controls and wrapping changes layout without changing code', async () => {
         await block.getByRole('button', { name: 'Copy code', exact: true }).click()
@@ -47,6 +61,7 @@ test('code blocks: language, exact copy, real wrapping and saved edits', async (
             .poll(() => app.evaluate(({ clipboard }) => clipboard.readText()))
             .toBe(`${code}\n\treturn longValue;`)
         await expect(body).toBeFocused()
+        await expect(block.locator('.journal-code-status')).toHaveCSS('position', 'absolute')
         await block.getByRole('button', { name: 'Wrap lines', exact: true }).press('Enter')
         await expect.poll(() => pre.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
         await shot('02-code-wrapped')
@@ -60,7 +75,10 @@ test('code blocks: language, exact copy, real wrapping and saved edits', async (
         await app.evaluate(({ clipboard }) => clipboard.writeText('```custom-language\n  <raw>\n```'))
         await body.press('Control+V')
         const unknown = page.locator('.journal-code-block').nth(1)
-        await expect(unknown.getByRole('combobox', { name: 'Code language' })).toHaveValue('Custom-language')
+        await expect(unknown.getByRole('button', { name: /^Code language:/ })).toHaveAccessibleName(
+            'Code language: Custom-language'
+        )
+        await expect(unknown.locator('[class*="hljs-"]')).toHaveCount(0)
         await unknown.locator('pre').click()
         await body.press('End')
         await app.evaluate(({ clipboard }) => clipboard.writeText(' **literal** /raw'))
@@ -70,18 +88,14 @@ test('code blocks: language, exact copy, real wrapping and saved edits', async (
     })
     await test.step('autosave and reload retain language and independent raw content', async () => {
         // A multiword provider language must also survive the editor's native HTML clipboard path.
-        await language.click()
-        await language.fill('visual basic')
-        await page.getByRole('option', { name: 'Visual basic', exact: true }).click()
+        await chooseLanguage('visual basic', 'Visual basic')
         await pre.click()
         await body.press('Control+A')
         await body.press('Control+C')
         await body.press('Control+V')
-        await expect(language).toHaveValue('Visual basic')
+        await expect(language).toHaveAccessibleName('Code language: Visual basic')
         await expect(page.locator('.journal-code-block')).toHaveCount(2)
-        await language.click()
-        await language.fill('typescript')
-        await page.getByRole('option', { name: 'TypeScript', exact: true }).click()
+        await chooseLanguage('typescript', 'TypeScript')
         await expect
             .poll(async () =>
                 JSON.stringify(
@@ -92,10 +106,43 @@ test('code blocks: language, exact copy, real wrapping and saved edits', async (
         await page.reload()
         if (await page.getByRole('button', { name: 'Open journal', exact: true }).isVisible())
             await page.getByRole('button', { name: 'Open journal', exact: true }).click()
-        await expect(language).toHaveValue('TypeScript')
+        await expect(language).toHaveAccessibleName('Code language: TypeScript')
         await expect(pre).toHaveText(`${code}\n\treturn longValue;`)
         await expect(page.locator('.journal-code-block').nth(1).locator('pre')).toHaveText('  <raw> **literal** /raw')
         await shot('03-code-reloaded')
+        await language.click()
+        await search.fill('python')
+        await shot('04-language-picker')
+        await page.keyboard.press('Escape')
+        await page.keyboard.press('Escape')
+        await pre.click()
+        await body.press('Control+End')
+        await app.evaluate(({ clipboard }) =>
+            clipboard.writeText(
+                [
+                    '```typescript',
+                    '// Turn completed work into a weekly summary.',
+                    'type Task = { title: string; completed: boolean };',
+                    '',
+                    'function summarizeWeek(tasks: Task[]): string {',
+                    '  const completed = tasks.filter(task => task.completed);',
+                    '  return `${completed.length} tasks completed this week`;',
+                    '}',
+                    '',
+                    'const summary = summarizeWeek([',
+                    '  { title: "Polish the editor", completed: true },',
+                    '  { title: "Ship the update", completed: false },',
+                    ']);',
+                    '```'
+                ].join('\n')
+            )
+        )
+        await body.press('Control+V')
+        const showcase = page.locator('.journal-code-block').last()
+        await expect(showcase.locator('pre .hljs-keyword').first()).toHaveText('type')
+        await showcase.hover()
+        await shot('05-floating-controls-and-highlighting')
+        await showcase.screenshot({ path: info.outputPath('06-code-block-detail.png') })
         await desktop.close()
         const db = new DatabaseSync(join(desktop.profile, 'gitorian.sqlite'), { readOnly: true })
         try {
