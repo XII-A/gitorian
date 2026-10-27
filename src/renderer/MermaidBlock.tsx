@@ -200,7 +200,8 @@ export function MermaidBlock({ source }: { source: string }) {
                     items={actions}
                     iconOnly
                     size="sm"
-                    variant="muted"
+                    variant="floating"
+                    shadow={false}
                     tooltipSide="bottom"
                 />
             </div>
