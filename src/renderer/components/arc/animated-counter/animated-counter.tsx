@@ -12,7 +12,7 @@ import {
     type MotionValue,
     type Variants
 } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './animated-counter.module.css'
 
 export interface AnimatedCounterProps {

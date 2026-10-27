@@ -6,7 +6,7 @@ import type { ComponentPropsWithoutRef, RefObject } from 'react'
 import { ChevronLeft as NavArrowLeft, ChevronRight as NavArrowRight } from 'lucide-react'
 import { AnimatePresence, LayoutGroup, animate, motion, useReducedMotion } from 'motion/react'
 import type { AnimationPlaybackControls, Variants } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './tabs.module.css'
 
 type RootProps = ComponentPropsWithoutRef<typeof TabsPrimitive.Root> & { variant?: 'pill' | 'underline' }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { motionTokens } from './components/arc/lib/motion-tokens'
+import { motionTokens } from './components/arc/motion-tokens'
 import { RepositoryScanStatus } from './RepositoryScanStatus'
 import type { Reply, RepositoryImportProgress } from '../shared/model'
 import { Alert } from './components/arc/alert/alert'

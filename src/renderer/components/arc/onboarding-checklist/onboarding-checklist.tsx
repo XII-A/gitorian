@@ -8,7 +8,7 @@ import type { Transition, Variants } from 'motion/react'
 import { ArrowRight, ChevronUp, X } from 'lucide-react'
 import { Button } from '../button/button'
 import { Tooltip } from '../tooltip/tooltip'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './onboarding-checklist.module.css'
 
 export interface OnboardingStep {

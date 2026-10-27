@@ -15,7 +15,7 @@ import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { Transition } from 'motion/react'
 import { ChevronDown } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './timeline.module.css'
 
 export interface TimelineEvent {

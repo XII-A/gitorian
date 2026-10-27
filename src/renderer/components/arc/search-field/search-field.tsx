@@ -3,7 +3,7 @@ import { forwardRef, useId, useRef } from 'react'
 import type { InputHTMLAttributes } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { Search, X as Xmark } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './search-field.module.css'
 export interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
     label: string

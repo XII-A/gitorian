@@ -25,7 +25,7 @@ import {
     type MotionValue,
     type Variants
 } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './bar-chart.module.css'
 
 export interface BarChartDatum {

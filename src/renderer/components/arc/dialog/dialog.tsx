@@ -7,7 +7,7 @@ import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { Transition } from 'motion/react'
 import { X } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import type { CoordinatedSurface } from '../coordinated-surface'
 import styles from './dialog.module.css'
 

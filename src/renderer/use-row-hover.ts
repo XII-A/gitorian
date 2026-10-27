@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import type { PointerEvent, ReactNode } from 'react'
 import { animate, useMotionValue, useReducedMotion } from 'motion/react'
-import { motionTokens } from './components/arc/lib/motion-tokens'
+import { motionTokens } from './components/arc/motion-tokens'
 
 /** Shared by the hub and history so their pointer feedback stays consistent. */
 export function useRowHover(selector: string, children: ReactNode) {
