@@ -1,4 +1,10 @@
-import { providerHttp } from './transport-fixtures'
+import { Effect, ManagedRuntime } from 'effect'
+import { publishingLayer } from '../src/main/publishing-layer'
+import { Http } from '../src/main/http'
+import { NotionRequests } from '../src/main/notion-request'
+import { JournalPublishing } from '../src/main/journal-publishing'
+import { bindNotion, bindPublishing } from './provider-fixtures'
+import { run } from './effect-fixtures'
 import { randomUUID } from 'node:crypto'
 import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -45,20 +51,29 @@ export async function journal() {
     const directory = await mkdtemp(join(tmpdir(), 'gitorian-test-'))
     const store = new Store(join(directory, 'tracking.sqlite'))
     const remote = transport()
-    const http = providerHttp(remote.fetch)
+    const connections = () => ({ github: remote.github, notion: true, protectedStorage: true })
+    const runtime = ManagedRuntime.make(
+        publishingLayer({
+            store,
+            fetcher: (...args) => remote.fetch(...args),
+            notionToken: () => Effect.succeed('test-token'),
+            connections
+        })
+    )
+    const http = runtime.runSync(Http)
+    const nativeNotion = runtime.runSync(Notion)
+    const requests = runtime.runSync(NotionRequests)
+    const publishing = runtime.runSync(JournalPublishing)
+    const publishingCommands = bindPublishing(publishing)
     const github = new GitHub(
-        http,
+        { request: <T>(...args: Parameters<Http['request']>) => run(http.request<T>(...args)) },
         () => 'test-token',
         (token) => {
             remote.token = token
         }
     )
-    const notion = new Notion(http, () => 'test-token')
-    const service = new JournalService(store, github, notion, () => ({
-        github: remote.github,
-        notion: true,
-        protectedStorage: true
-    }))
+    const notion = bindNotion(nativeNotion)
+    const service = new JournalService(store, github, notion, connections, publishingCommands)
     store.state.settings.githubLogin = 'me'
     store.state.settings.destination = { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' }
     return {
@@ -68,7 +83,12 @@ export async function journal() {
         service,
         github,
         notion,
+        nativeNotion,
+        requests,
+        publishing,
+        publishingCommands,
         close: async () => {
+            await runtime.dispose()
             store.close()
             await removeFixture(directory)
         }

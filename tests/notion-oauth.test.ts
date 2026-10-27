@@ -1,8 +1,7 @@
-import { providerHttp } from './transport-fixtures'
+import { notionClient, transportClient, run } from './effect-fixtures'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { createOAuthHandler } from '../services/notion-oauth/src/handler'
-import { Notion } from '../src/main/notion'
 import type { Destination } from '../src/shared/model'
 import type { JournalSetup } from '../src/main/notion-connection'
 import { NotionConnection } from '../src/main/notion-connection'
@@ -531,16 +530,18 @@ it.each([
                 : response(confirm ? {} : { results: [], has_more: false, next_cursor: null })
         )
     )
-    const notion = new Notion(providerHttp(api), (refresh, rejected) => app.connection.pendingToken(refresh, rejected))
+    const notion = notionClient(transportClient(api), (refresh, rejected) =>
+        app.connection.pendingToken(refresh, rejected)
+    )
     if (confirm) {
         await expect(
             app.connection.completeJournal((setup, checkpoint) =>
-                notion.prepareJournal(setup, checkpoint, { ...selectedPage, id: 'another-page' })
+                run(notion.prepareJournal(setup, checkpoint, { ...selectedPage, id: 'another-page' }))
             )
         ).resolves.toMatchObject({ id: 'another-page' })
         expect(app.session().refresh_token).toBe('refresh-two')
     } else {
-        await expect(notion.accessiblePages()).resolves.toEqual([])
+        await expect(run(notion.accessiblePages())).resolves.toEqual([])
         expect(await app.connection.pendingToken()).toBe('access-two')
     }
     expect(

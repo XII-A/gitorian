@@ -1,10 +1,11 @@
+import { Effect, Fiber } from 'effect'
+import { run } from './effect-fixtures'
 import { describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/main/store'
 import { commandSchema, coveredEntries, inbox, weekOf } from '../src/shared/model'
 import { journal, workspace } from './fixtures'
 import type { JournalNode } from '../src/shared/model'
 import { toNotion } from '../src/shared/notion-format'
-
 const reflection: JournalNode = {
     type: 'doc',
     content: [
@@ -24,6 +25,75 @@ const reflection: JournalNode = {
     ]
 }
 describe('local journal workflow through application commands', () => {
+    it('keeps verification recoverable when its confirmation checkpoint fails', async () => {
+        const app = await journal()
+        try {
+            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            const draft = app.store.state.drafts[0]
+            app.remote.loseCreateResponse = true
+            await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('Connection lost')
+            const save = app.store.state.saves[0]
+            const persist = app.store.persist.bind(app.store)
+            let fail = true
+            vi.spyOn(app.store, 'persist').mockImplementation(() => {
+                if (fail && save.status === 'confirmed') throw new Error('Confirmation checkpoint failed')
+                return persist()
+            })
+            await expect(app.service.handle({ type: 'reconcile', saveId: save.id })).rejects.toThrow(
+                'Confirmation checkpoint failed'
+            )
+            expect(save.status).toBe('unknown')
+            expect(draft.publishedEntryId).toBeUndefined()
+            expect(app.store.state.entries).toEqual([])
+            expect(app.store.state.coverage).toEqual([])
+            fail = false
+            await app.service.handle({ type: 'reconcile', saveId: save.id })
+            expect(save.status).toBe('confirmed')
+            expect(app.remote.pages).toHaveLength(1)
+        } finally {
+            await app.close()
+        }
+    })
+    it('waits for the uncertain outcome checkpoint before reporting a lost publishing response', async () => {
+        const app = await journal()
+        let release!: () => void
+        const outcome = new Promise<void>((resolve) => {
+            release = resolve
+        })
+        let finished = false
+        let publishing: Promise<void> | undefined
+        try {
+            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            app.remote.loseCreateResponse = true
+            const flush = vi
+                .spyOn(app.store, 'flush')
+                .mockImplementation(() =>
+                    app.store.state.saves.some((save) => save.status === 'unknown') ? outcome : Promise.resolve()
+                )
+            publishing = app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id }).then(
+                () => {
+                    finished = true
+                },
+                (error: unknown) => {
+                    finished = true
+                    expect(error).toBeInstanceOf(Error)
+                }
+            )
+            await vi.waitFor(() => expect(app.store.state.saves[0].status).toBe('unknown'))
+            expect(finished).toBe(false)
+            expect(flush).toHaveBeenCalled()
+            release()
+            await publishing
+            expect(app.remote.pages).toHaveLength(1)
+            await app.service.handle({ type: 'reconcile', saveId: app.store.state.saves[0].id })
+            expect(app.store.state.saves[0].status).toBe('confirmed')
+            expect(app.remote.pages).toHaveLength(1)
+        } finally {
+            release()
+            await publishing
+            await app.close()
+        }
+    })
     it('waits for durable publish intent before sending a Notion create request', async () => {
         const app = await journal()
         try {
@@ -238,7 +308,6 @@ describe('local journal workflow through application commands', () => {
         }
     })
 })
-
 it('reuses a weekly draft and republishes edits to the same Notion page', async () => {
     const app = await journal()
     try {
@@ -278,44 +347,52 @@ it('reuses a weekly draft and republishes edits to the same Notion page', async 
         await app.close()
     }
 })
-
 it('verifies an interrupted republish without duplicating the page or its writing', async () => {
     const app = await journal()
     try {
         await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
         const draft = app.store.state.drafts[0]
+        const updated: JournalNode = {
+            type: 'doc',
+            content: Array.from({ length: 120 }, (_, index) => ({
+                type: 'paragraph',
+                content: [{ type: 'text', text: `Paragraph ${index}` }]
+            }))
+        }
         await app.service.handle({ type: 'publish', draftId: draft.id })
-        await app.service.handle({ type: 'draft', draft: { ...draft, title: 'Updated title', body: reflection } })
+        await app.service.handle({ type: 'draft', draft: { ...draft, title: 'Updated title', body: updated } })
         app.remote.loseAppendResponse = true
         await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('after commit')
         const save = app.store.state.saves.at(-1)!
         expect(save.status).toBe('unknown')
         await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('uncertain save')
-        await app.service.handle({ type: 'reconcile', saveId: save.id })
+        await Promise.all([
+            app.service.handle({ type: 'reconcile', saveId: save.id }),
+            app.service.handle({ type: 'reconcile', saveId: save.id })
+        ])
         expect(save.status).toBe('confirmed')
         expect(app.remote.pages).toHaveLength(1)
-        expect(app.remote.pages[0].blocks).toHaveLength(reflection.content!.length)
+        expect(app.remote.pages[0].blocks).toHaveLength(updated.content!.length)
         expect(await app.notion.refreshEntry(draft.publishedEntryId!)).toMatchObject({
             title: 'Updated title',
-            body: reflection
+            body: updated
         })
     } finally {
         await app.close()
     }
 })
-
 it('keeps the weekly page linked when writing changes during a publish', async () => {
     const app = await journal()
     try {
         await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
         const draft = app.store.state.drafts[0]
-        const publish = app.notion.publish.bind(app.notion)
-        vi.spyOn(app.notion, 'publish').mockImplementationOnce(async (save, checkpoint) => {
+        const fetcher = app.remote.fetch
+        vi.spyOn(app.remote, 'fetch').mockImplementationOnce(async (...args) => {
             await app.service.handle({
                 type: 'draft',
                 draft: { ...draft, title: 'Newer local writing', body: reflection }
             })
-            return publish(save, checkpoint)
+            return fetcher(...args)
         })
         await app.service.handle({ type: 'publish', draftId: draft.id })
         expect(draft.publishedEntryId).toBe(app.remote.pages[0].id)
@@ -323,6 +400,176 @@ it('keeps the weekly page linked when writing changes during a publish', async (
         await app.service.handle({ type: 'publish', draftId: draft.id })
         expect(app.remote.pages).toHaveLength(1)
         expect(app.store.state.entries[0]).toMatchObject({ title: 'Newer local writing', body: reflection })
+    } finally {
+        await app.close()
+    }
+})
+it('keeps a rejected intent checkpoint retryable without dispatching a remote write', async () => {
+    const app = await journal()
+    try {
+        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        const draft = app.store.state.drafts[0]
+        const persist = app.store.persist.bind(app.store)
+        let fail = true
+        vi.spyOn(app.store, 'persist').mockImplementation(() => {
+            if (fail && app.store.state.saves.length) throw new Error('Intent checkpoint failed')
+            return persist()
+        })
+        await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow(
+            'Intent checkpoint failed'
+        )
+        expect(app.remote.pages).toHaveLength(0)
+        expect(app.store.state.saves[0].status).toBe('failed')
+        fail = false
+        await app.service.handle({ type: 'publish', draftId: draft.id })
+        expect(app.remote.pages).toHaveLength(1)
+        expect(app.store.state.saves.at(-1)?.status).toBe('confirmed')
+    } finally {
+        await app.close()
+    }
+})
+it('durably exposes an interrupted remote publish for verification without restarting', async () => {
+    const app = await journal()
+    let entered = false
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+        release = resolve
+    })
+    const fetcher = app.remote.fetch
+    let fiber: Fiber.RuntimeFiber<unknown, Error> | undefined
+    try {
+        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        const draft = app.store.state.drafts[0]
+        vi.spyOn(app.remote, 'fetch').mockImplementationOnce(async (...args) => {
+            const response = await fetcher(...args)
+            entered = true
+            await gate
+            return response
+        })
+        fiber = Effect.runFork(app.publishing.publish(draft.id))
+        await vi.waitFor(() => expect(entered).toBe(true))
+        await Effect.runPromise(Fiber.interrupt(fiber))
+        const save = app.store.state.saves[0]
+        expect(save.status).toBe('unknown')
+        expect(app.remote.pages).toHaveLength(1)
+        await app.service.handle({ type: 'reconcile', saveId: save.id })
+        expect(save.status).toBe('confirmed')
+        expect(app.remote.pages).toHaveLength(1)
+    } finally {
+        release()
+        if (fiber) await Effect.runPromise(Fiber.interrupt(fiber))
+        await app.close()
+    }
+})
+it.each(['failure', 'interruption'] as const)(
+    'checkpoints resumed replacement progress before remote mutation after %s',
+    async (mode) => {
+        const app = await journal()
+        let release!: () => void
+        const gate = new Promise<void>((resolve) => {
+            release = resolve
+        })
+        let allow = false
+        let first: Fiber.RuntimeFiber<unknown, Error> | undefined
+        let stopping: Promise<unknown> | undefined
+        let retry: Promise<unknown> | undefined
+        try {
+            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            const draft = app.store.state.drafts[0]
+            await app.service.handle({ type: 'publish', draftId: draft.id })
+            const save = {
+                ...structuredClone(app.store.state.saves[0]),
+                id: 'interrupted-update',
+                status: 'unknown' as const,
+                updateExisting: true,
+                title: 'Updated',
+                body: reflection,
+                replacedBlockIds: undefined
+            }
+            app.store.state.saves.push(save)
+            app.store.persist()
+            await app.store.flush()
+            const flush = app.store.flush.bind(app.store)
+            const checkpoint = vi
+                .spyOn(app.store, 'flush')
+                .mockImplementation(() =>
+                    allow
+                        ? flush()
+                        : mode === 'failure'
+                          ? Promise.reject(new Error('Progress checkpoint unavailable'))
+                          : gate
+                )
+            const start = app.remote.requests.length
+            const verify = () => app.publishing.reconcile(save.id)
+            if (mode === 'failure') {
+                await expect(run(verify())).rejects.toThrow('Progress checkpoint unavailable')
+                expect(save.replacedBlockIds).toBeDefined()
+                await expect(run(verify())).rejects.toThrow('Progress checkpoint unavailable')
+            } else {
+                first = Effect.runFork(verify())
+                await vi.waitFor(() => expect(checkpoint).toHaveBeenCalled())
+                let settled = false
+                stopping = Effect.runPromise(Fiber.interrupt(first)).then(() => {
+                    settled = true
+                })
+                await new Promise((resolve) => setTimeout(resolve, 0))
+                expect(settled).toBe(false)
+                retry = run(verify()).catch((error: unknown) => error)
+                await vi.waitFor(() => expect(checkpoint).toHaveBeenCalledTimes(2))
+            }
+            expect(app.remote.requests.slice(start).filter((request) => request.method !== 'GET')).toEqual([])
+            allow = true
+            release()
+            if (stopping) await stopping
+            if (retry) await retry
+            else await run(verify())
+            expect(save.status).toBe('confirmed')
+            expect(app.remote.pages).toHaveLength(1)
+            expect(app.store.state.entries[0].body).toEqual(reflection)
+        } finally {
+            release()
+            if (first) await Effect.runPromise(Fiber.interrupt(first))
+            if (stopping) await stopping
+            if (retry) await retry
+            await app.close()
+        }
+    }
+)
+it('checkpoints a volatile page ID before resuming any remote append', async () => {
+    const app = await journal()
+    try {
+        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        const draft = app.store.state.drafts[0]
+        draft.body = {
+            type: 'doc',
+            content: Array.from({ length: 250 }, (_, index) => ({
+                type: 'paragraph',
+                content: [{ type: 'text', text: `Writing ${index}` }]
+            }))
+        }
+        const persist = app.store.persist.bind(app.store)
+        let unavailable = true
+        vi.spyOn(app.store, 'persist').mockImplementation(() => {
+            if (unavailable && app.store.state.saves.some((save) => save.entryId))
+                throw new Error('Page checkpoint unavailable')
+            return persist()
+        })
+        await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow(
+            'Page checkpoint unavailable'
+        )
+        const save = app.store.state.saves[0]
+        expect(save.status).toBe('unknown')
+        expect(app.remote.pages[0].blocks).toHaveLength(100)
+        const start = app.remote.requests.length
+        await expect(app.service.handle({ type: 'reconcile', saveId: save.id })).rejects.toThrow(
+            'Page checkpoint unavailable'
+        )
+        expect(app.remote.requests.slice(start).filter((request) => request.method !== 'GET')).toHaveLength(0)
+        unavailable = false
+        await app.service.handle({ type: 'reconcile', saveId: save.id })
+        expect(save.status).toBe('confirmed')
+        expect(app.remote.pages).toHaveLength(1)
+        expect(app.remote.pages[0].blocks).toHaveLength(250)
     } finally {
         await app.close()
     }
