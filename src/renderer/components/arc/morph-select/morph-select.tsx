@@ -75,7 +75,7 @@ export interface MorphSelectProps {
     className?: string
     /** Local toolbar variants keep the resting trigger consistent with activity chips. */
     variant?: 'surface' | 'ghost'
-    size?: 'sm' | 'md'
+    size?: 'xs' | 'sm' | 'md'
     /** Replaces the flat options with an Arc TreeView. Give the tree this context's id. */
     renderTree?: (context: MorphSelectTreeContext) => ReactNode
     /** Full selected value for truncated toolbar labels. */
@@ -770,6 +770,7 @@ export function MorphSelect({
                     <motion.div
                         className={styles.searchRow}
                         inert={!showSearch || undefined}
+                        aria-hidden={!showSearch || undefined}
                         initial={false}
                         animate={
                             showSearch

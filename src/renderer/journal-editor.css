@@ -273,17 +273,25 @@
 }
 .journal-code-block:hover .journal-code-tools,
 .journal-code-block:focus-within .journal-code-tools,
-.journal-code-tools[data-open] {
+.journal-code-tools:has([data-open]) {
     opacity: 1;
+}
+.journal-code-scroll {
+    border-radius: inherit;
 }
 .journal-editor .tiptap .journal-code-block pre {
     margin: 0;
-    padding-top: var(--space-12);
+    box-sizing: border-box;
+    width: max-content;
+    min-width: 100%;
+    padding: var(--space-6);
+    overflow: visible;
     white-space: pre;
     overflow-wrap: normal;
     tab-size: 4;
 }
 .journal-editor .tiptap .journal-code-block[data-wrapped] pre {
+    width: 100%;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }

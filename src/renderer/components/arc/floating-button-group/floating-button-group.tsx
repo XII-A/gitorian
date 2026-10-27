@@ -10,7 +10,7 @@ import { Tooltip } from '../tooltip/tooltip'
 import styles from './floating-button-group.module.css'
 
 export type FloatingButtonGroupVariant = 'muted' | 'floating'
-export type FloatingButtonGroupSize = 'sm' | 'md'
+export type FloatingButtonGroupSize = 'xs' | 'sm' | 'md'
 export type FloatingButtonGroupOrientation = 'horizontal' | 'vertical'
 
 export interface FloatingButtonGroupAction {
@@ -19,10 +19,6 @@ export interface FloatingButtonGroupAction {
     id: string
     /** Visible label, and the accessible name when the item shows only its icon. */
     label: string
-    /** A more descriptive accessible name when the visible label needs context. */
-    ariaLabel?: string
-    /** Attach an overlay trigger with asChild, preserving the tray's button and keyboard behavior. */
-    renderTrigger?: (button: ReactElement) => ReactElement
     icon?: ReactNode
     /** Shows only the icon. The label moves into a tooltip and the accessible name. Overrides the group's iconOnly. */
     iconOnly?: boolean
@@ -50,6 +46,10 @@ export interface FloatingButtonGroupProps {
     /** muted sits quietly on a page; floating raises the tray with the floating shadow for overlays such as a selection toolbar. */
     variant?: FloatingButtonGroupVariant
     size?: FloatingButtonGroupSize
+    /** Compact property pickers can share the tray while keeping their own keyboard navigation. */
+    startContent?: ReactNode
+    /** Disable the floating tray's shadow for overlays on a muted surface. */
+    shadow?: boolean
     orientation?: FloatingButtonGroupOrientation
     /** Shows every item as an icon only, with its label in a tooltip. Items with their own iconOnly win. */
     iconOnly?: boolean
@@ -168,6 +168,8 @@ export function FloatingButtonGroup({
     label,
     variant = 'muted',
     size = 'md',
+    startContent,
+    shadow = true,
     orientation = 'horizontal',
     iconOnly: groupIconOnly = false,
     tooltipSide,
@@ -351,6 +353,7 @@ export function FloatingButtonGroup({
             aria-label={label}
             aria-orientation={orientation}
             data-variant={variant}
+            data-shadowless={!shadow || undefined}
             onKeyDown={onKeyDown}
             onBlur={onBlur}
         >
@@ -360,6 +363,7 @@ export function FloatingButtonGroup({
                 style={{ x, y, width, height, opacity, scale }}
                 aria-hidden="true"
             />
+            {startContent}
             {items.map((item, position) => {
                 if (!isAction(item))
                     return (
@@ -381,7 +385,7 @@ export function FloatingButtonGroup({
                     reserveLabels = []
                 } = item
                 const iconOnly = !!icon && (item.iconOnly ?? groupIconOnly)
-                const actionButton = (
+                const button = (
                     <button
                         ref={(node) => {
                             if (node) nodes.current.set(id, node)
@@ -393,7 +397,7 @@ export function FloatingButtonGroup({
                         data-active={activeId === id ? '' : undefined}
                         data-icon={icon ? '' : undefined}
                         data-icon-only={iconOnly ? '' : undefined}
-                        aria-label={item.ariaLabel ?? itemLabel}
+                        aria-label={itemLabel}
                         aria-pressed={pressed === undefined ? undefined : pressed}
                         aria-disabled={disabled || undefined}
                         tabIndex={stop === id ? 0 : -1}
@@ -440,8 +444,7 @@ export function FloatingButtonGroup({
                         />
                     </button>
                 )
-                const button = item.renderTrigger ? item.renderTrigger(actionButton) : actionButton
-                // Triggers and tooltips render no wrapper element, so every button measures against the tray.
+                // Tooltips render no wrapper element, so every button measures against the tray.
                 if (!iconOnly && !shortcut) return <Fragment key={id}>{button}</Fragment>
                 const tip = <TipContent label={itemLabel} shortcut={shortcut} />
                 return side === 'top' || side === 'bottom' ? (
