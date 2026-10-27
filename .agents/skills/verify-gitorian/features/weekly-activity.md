@@ -2,6 +2,10 @@
 
 Review the selected week's work, load older history, and recover failed sources without hiding healthy repositories.
 
+## Acquisition ownership
+
+`ActivityAcquisition` owns Effect coalescing, source serialization and FIFO batch admission. Preserve the existing acquisition and week-history behavior tests: five projects must each receive a first batch before a large project continues; an explicit retry queues behind active acquisition and duplicate retries share work. Run `pnpm verify github-import` and `pnpm verify repository-import` for desktop source failure/retry, import-triggered refresh and durable state. User pause remains a persisted checkpoint decision; it does not discard completed batches or imply that an already running external request was aborted.
+
 ## Sub-features
 
 - `activity.week`: selecting an earlier week loads its real Git commits.

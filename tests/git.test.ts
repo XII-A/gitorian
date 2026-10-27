@@ -1,3 +1,4 @@
+import { run } from './effect-fixtures'
 import { expect, it } from 'vitest'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -8,7 +9,6 @@ import { workspace } from './fixtures'
 import { inbox, weekOf } from '../src/shared/model'
 import { parseDiff } from 'react-diff-view'
 import { hasCachedDetails } from '../src/renderer/activity-cache'
-
 it('chooses a GitHub fetch source using upstream, origin, then another named remote', async () => {
     const app = await workspace()
     try {
@@ -26,12 +26,10 @@ it('chooses a GitHub fetch source using upstream, origin, then another named rem
         await app.close()
     }
 })
-
 it('recognizes the GitHub SSH URL form used by automatic repository sources', () => {
     expect(githubRemote('ssh://git@github.com/team/project.git')).toBe('team/project')
     expect(githubRemote('ssh://git@example.com/team/project.git')).toBeUndefined()
 })
-
 it('loads first-parent merge changes and replaces cached combined patches', async () => {
     const app = await workspace()
     try {
@@ -55,7 +53,7 @@ it('loads first-parent merge changes and replaces cached combined patches', asyn
         app.store.state.activities.push(activity)
         app.store.state.diffs[activity.id] = combined
         expect(hasCachedDetails(app.store.state, activity)).toBe(false)
-        const reply = await app.service.handle({ type: 'details', activityId: activity.id })
+        const reply = await run(app.service.handle({ type: 'details', activityId: activity.id }))
         expect(reply.diff).toMatch(/^diff --git /)
         expect(
             parseDiff(reply.diff!)
@@ -76,7 +74,6 @@ it('loads first-parent merge changes and replaces cached combined patches', asyn
         await app.close()
     }
 })
-
 it('preserves old and new rename paths and filenames containing whitespace in commit details', async () => {
     const app = await workspace()
     try {
@@ -104,7 +101,6 @@ it('preserves old and new rename paths and filenames containing whitespace in co
         await app.close()
     }
 })
-
 it('uses author dates after rewriting commits and compares ordinary branches against development', async () => {
     const app = await workspace()
     try {
@@ -122,41 +118,44 @@ it('uses author dates after rewriting commits and compares ordinary branches aga
         expect(new Date(introduced[0].date).toISOString()).toBe('2025-01-06T12:00:00.000Z')
         const before = await app.git('status', '--porcelain')
         const refs = await app.git('show-ref')
-        await app.service.handle({
-            type: 'history',
-            repositoryId: app.repository.id,
-            branch: 'feature',
-            view: 'introduced',
-            author: 'first',
-            since: ''
-        })
-        await app.service.handle({ type: 'details', activityId: introduced[0].id })
+        await run(
+            app.service.handle({
+                type: 'history',
+                repositoryId: app.repository.id,
+                branch: 'feature',
+                view: 'introduced',
+                author: 'first',
+                since: ''
+            })
+        )
+        await run(app.service.handle({ type: 'details', activityId: introduced[0].id }))
         expect(await app.git('status', '--porcelain')).toBe(before)
         expect(await app.git('show-ref')).toBe(refs)
     } finally {
         await app.close()
     }
 })
-
 it('retains captured metadata, diffs and journal associations after a branch is deleted', async () => {
     const app = await workspace()
     try {
         await app.git('checkout', '-b', 'temporary')
         await app.git('commit', '--allow-empty', '-m', 'Temporary work')
-        await app.service.handle({ type: 'refresh' })
+        await run(app.service.handle({ type: 'refresh' }))
         const activity = app.store.state.activities.find((item) => item.title === 'Temporary work')!
-        await app.service.handle({ type: 'details', activityId: activity.id })
-        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
-        await app.service.handle({
-            type: 'select',
-            draftId: app.store.state.drafts[0].id,
-            activityId: activity.id,
-            included: true
-        })
-        await app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id })
+        await run(app.service.handle({ type: 'details', activityId: activity.id }))
+        await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
+        await run(
+            app.service.handle({
+                type: 'select',
+                draftId: app.store.state.drafts[0].id,
+                activityId: activity.id,
+                included: true
+            })
+        )
+        await run(app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id }))
         await app.git('checkout', 'development')
         await app.git('branch', '-D', 'temporary')
-        await app.service.handle({ type: 'refresh' })
+        await run(app.service.handle({ type: 'refresh' }))
         expect(activity.deletedBranches).toContain('temporary')
         expect(app.store.state.coverage[0].activityId).toBe(activity.id)
         expect(app.store.state.diffs).toHaveProperty(activity.id)
@@ -164,7 +163,6 @@ it('retains captured metadata, diffs and journal associations after a branch is 
         await app.close()
     }
 })
-
 it('keeps other authors searchable without admitting their history to the personal inbox', async () => {
     const app = await workspace()
     try {
@@ -176,35 +174,41 @@ it('keeps other authors searchable without admitting their history to the person
             '-m',
             'Other author work'
         )
-        await app.service.handle({
-            type: 'history',
-            repositoryId: app.repository.id,
-            branch: 'development',
-            view: 'history',
-            author: '',
-            since: ''
-        })
+        await run(
+            app.service.handle({
+                type: 'history',
+                repositoryId: app.repository.id,
+                branch: 'development',
+                view: 'history',
+                author: '',
+                since: ''
+            })
+        )
         const other = app.store.state.activities.find((item) => item.title === 'Other author work')!
         expect(other).toBeDefined()
-        const filtered = await app.service.handle({
-            type: 'history',
-            repositoryId: app.repository.id,
-            branch: 'development',
-            view: 'history',
-            author: ['missing@example.com', ' OTHER@EXAMPLE.COM '],
-            since: ''
-        })
+        const filtered = await run(
+            app.service.handle({
+                type: 'history',
+                repositoryId: app.repository.id,
+                branch: 'development',
+                view: 'history',
+                author: ['missing@example.com', ' OTHER@EXAMPLE.COM '],
+                since: ''
+            })
+        )
         expect(filtered.activityIds).toEqual([other.id])
         expect(
             inbox(app.store.state, weekOf(new Date(), app.store.state.settings)).some((item) => item.id === other.id)
         ).toBe(false)
-        await app.service.handle({ type: 'newDraft', week: weekOf(new Date(), app.store.state.settings) })
-        await app.service.handle({
-            type: 'select',
-            draftId: app.store.state.drafts[0].id,
-            activityId: other.id,
-            included: true
-        })
+        await run(app.service.handle({ type: 'newDraft', week: weekOf(new Date(), app.store.state.settings) }))
+        await run(
+            app.service.handle({
+                type: 'select',
+                draftId: app.store.state.drafts[0].id,
+                activityId: other.id,
+                included: true
+            })
+        )
         expect(
             inbox(app.store.state, weekOf(new Date(), app.store.state.settings)).some((item) => item.id === other.id)
         ).toBe(true)
@@ -212,7 +216,6 @@ it('keeps other authors searchable without admitting their history to the person
         await app.close()
     }
 })
-
 it('uses the linked PR target when browsing a remote-tracking branch', async () => {
     const app = await workspace()
     try {
@@ -222,15 +225,17 @@ it('uses the linked PR target when browsing a remote-tracking branch', async () 
         await app.git('remote', 'add', 'origin', 'https://github.com/example/project.git')
         await app.git('update-ref', 'refs/remotes/origin/feature', await app.git('rev-parse', 'feature'))
         app.remote.github = true
-        await app.service.handle({ type: 'refresh' })
-        const reply = await app.service.handle({
-            type: 'history',
-            repositoryId: app.repository.id,
-            branch: 'origin/feature',
-            view: 'introduced',
-            author: '',
-            since: ''
-        })
+        await run(app.service.handle({ type: 'refresh' }))
+        const reply = await run(
+            app.service.handle({
+                type: 'history',
+                repositoryId: app.repository.id,
+                branch: 'origin/feature',
+                view: 'introduced',
+                author: '',
+                since: ''
+            })
+        )
         expect(reply.message).toBe('Comparison: main')
         expect(reply.activityIds).toHaveLength(2)
         expect(app.repository.base).toBe('development')

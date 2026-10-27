@@ -1,10 +1,10 @@
-import { Effect, ManagedRuntime } from 'effect'
-import { publishingLayer } from '../src/main/publishing-layer'
-import { Http } from '../src/main/http'
 import { NotionRequests } from '../src/main/notion-request'
-import { JournalPublishing } from '../src/main/journal-publishing'
-import { bindNotion, bindPublishing, bindGitHub } from './provider-fixtures'
-import { githubClient } from './effect-fixtures'
+import { Effect, ManagedRuntime } from 'effect'
+import { journalLayer } from '../src/main/journal-layer'
+import { JournalService } from '../src/main/service'
+import { GitHub } from '../src/main/github'
+import { Notion } from '../src/main/notion'
+import { run } from './effect-fixtures'
 import { randomUUID } from 'node:crypto'
 import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -12,9 +12,6 @@ import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { Store } from '../src/main/store'
-import { Notion } from '../src/main/notion'
-
-import { JournalService } from '../src/main/service'
 import type { NotionBlock } from '../src/shared/notion-format'
 import { afterAll } from 'vitest'
 const execute = promisify(execFile)
@@ -51,31 +48,24 @@ export async function journal() {
     const directory = await mkdtemp(join(tmpdir(), 'gitorian-test-'))
     const store = new Store(join(directory, 'tracking.sqlite'))
     const remote = transport()
-    const connections = () => ({ github: remote.github, notion: true, protectedStorage: true })
     const runtime = ManagedRuntime.make(
-        publishingLayer({
+        journalLayer({
             store,
             fetcher: (...args) => remote.fetch(...args),
+            githubCredential: () => 'test-token',
+            setGitHubCredential: (token) => {
+                remote.token = token
+            },
             notionToken: () => Effect.succeed('test-token'),
-            connections
+            connections: () => ({ github: remote.github, notion: true, protectedStorage: true })
         })
     )
-    const http = runtime.runSync(Http)
-    const nativeNotion = runtime.runSync(Notion)
-    const requests = runtime.runSync(NotionRequests)
-    const publishing = runtime.runSync(JournalPublishing)
-    const publishingCommands = bindPublishing(publishing)
-    const github = bindGitHub(
-        await githubClient(
-            http,
-            () => 'test-token',
-            (token) => {
-                remote.token = token
-            }
-        )
-    )
-    const notion = bindNotion(nativeNotion)
-    const service = new JournalService(store, github, notion, connections, publishingCommands)
+    const [service, github, notion, requests] = await Promise.all([
+        runtime.runPromise(JournalService),
+        runtime.runPromise(GitHub),
+        runtime.runPromise(Notion),
+        runtime.runPromise(NotionRequests)
+    ])
     store.state.settings.githubLogin = 'me'
     store.state.settings.destination = { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' }
     return {
@@ -85,10 +75,7 @@ export async function journal() {
         service,
         github,
         notion,
-        nativeNotion,
         requests,
-        publishing,
-        publishingCommands,
         close: async () => {
             await runtime.dispose()
             store.close()
@@ -103,7 +90,7 @@ export async function workspace() {
         // Copy a pristine real repository, never hardlink it or share mutable refs.
         // Each scenario still owns its checkout, SQLite store, and transport state.
         await cp(await (gitTemplate ??= createGitTemplate()), app.directory, { recursive: true })
-        await app.service.addRepository(app.directory)
+        await run(app.service.addRepository(app.directory))
         const repository = app.store.state.repositories[0]
         repository.remote = 'https://github.com/example/project.git'
         return { ...app, git, repository }

@@ -28,10 +28,12 @@ describe('local journal workflow through application commands', () => {
     it('keeps verification recoverable when its confirmation checkpoint fails', async () => {
         const app = await journal()
         try {
-            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             const draft = app.store.state.drafts[0]
             app.remote.loseCreateResponse = true
-            await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('Connection lost')
+            await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow(
+                'Connection lost'
+            )
             const save = app.store.state.saves[0]
             const persist = app.store.persist.bind(app.store)
             let fail = true
@@ -39,7 +41,7 @@ describe('local journal workflow through application commands', () => {
                 if (fail && save.status === 'confirmed') throw new Error('Confirmation checkpoint failed')
                 return persist()
             })
-            await expect(app.service.handle({ type: 'reconcile', saveId: save.id })).rejects.toThrow(
+            await expect(run(app.service.handle({ type: 'reconcile', saveId: save.id }))).rejects.toThrow(
                 'Confirmation checkpoint failed'
             )
             expect(save.status).toBe('unknown')
@@ -47,7 +49,7 @@ describe('local journal workflow through application commands', () => {
             expect(app.store.state.entries).toEqual([])
             expect(app.store.state.coverage).toEqual([])
             fail = false
-            await app.service.handle({ type: 'reconcile', saveId: save.id })
+            await run(app.service.handle({ type: 'reconcile', saveId: save.id }))
             expect(save.status).toBe('confirmed')
             expect(app.remote.pages).toHaveLength(1)
         } finally {
@@ -63,14 +65,14 @@ describe('local journal workflow through application commands', () => {
         let finished = false
         let publishing: Promise<void> | undefined
         try {
-            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             app.remote.loseCreateResponse = true
             const flush = vi
                 .spyOn(app.store, 'flush')
                 .mockImplementation(() =>
                     app.store.state.saves.some((save) => save.status === 'unknown') ? outcome : Promise.resolve()
                 )
-            publishing = app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id }).then(
+            publishing = run(app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id })).then(
                 () => {
                     finished = true
                 },
@@ -85,7 +87,7 @@ describe('local journal workflow through application commands', () => {
             release()
             await publishing
             expect(app.remote.pages).toHaveLength(1)
-            await app.service.handle({ type: 'reconcile', saveId: app.store.state.saves[0].id })
+            await run(app.service.handle({ type: 'reconcile', saveId: app.store.state.saves[0].id }))
             expect(app.store.state.saves[0].status).toBe('confirmed')
             expect(app.remote.pages).toHaveLength(1)
         } finally {
@@ -97,14 +99,14 @@ describe('local journal workflow through application commands', () => {
     it('waits for durable publish intent before sending a Notion create request', async () => {
         const app = await journal()
         try {
-            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             app.store.state.drafts[0].title = 'Durable intent'
             let release: (() => void) | undefined
             const commit = new Promise<void>((resolve) => {
                 release = resolve
             })
             vi.spyOn(app.store, 'flush').mockReturnValueOnce(commit)
-            const publishing = app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id })
+            const publishing = run(app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id }))
             await Promise.resolve()
             expect(app.remote.pages).toHaveLength(0)
             release?.()
@@ -117,13 +119,15 @@ describe('local journal workflow through application commands', () => {
     it('refuses ambiguous matching pages after a lost creation response', async () => {
         const app = await journal()
         try {
-            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             const draft = app.store.state.drafts[0]
             app.remote.loseCreateResponse = true
-            await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('Connection lost')
+            await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow(
+                'Connection lost'
+            )
             app.remote.pages.push({ ...structuredClone(app.remote.pages[0]), id: 'another-page' })
             await expect(
-                app.service.handle({ type: 'reconcile', saveId: app.store.state.saves[0].id })
+                run(app.service.handle({ type: 'reconcile', saveId: app.store.state.saves[0].id }))
             ).rejects.toThrow('More than one matching')
             expect(app.store.state.saves[0].status).toBe('unknown')
             expect(app.store.state.coverage).toEqual([])
@@ -134,23 +138,27 @@ describe('local journal workflow through application commands', () => {
     it('recovers a formatted draft and captured selection after layout changes and restart', async () => {
         const app = await workspace()
         try {
-            await app.service.handle({ type: 'refresh' })
+            await run(app.service.handle({ type: 'refresh' }))
             const activity = app.store.state.activities[0]
-            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             const draft = app.store.state.drafts[0]
-            await app.service.handle({ type: 'draft', draft: { ...draft, body: reflection } })
-            await app.service.handle({ type: 'select', draftId: draft.id, activityId: activity.id, included: true })
-            await app.service.handle({
-                type: 'settings',
-                settings: {
-                    ...app.store.state.settings,
-                    layout: {
-                        order: ['draft', 'details', 'activity'],
-                        hidden: ['activity'],
-                        sizes: { draft: 60, details: 40 }
+            await run(app.service.handle({ type: 'draft', draft: { ...draft, body: reflection } }))
+            await run(
+                app.service.handle({ type: 'select', draftId: draft.id, activityId: activity.id, included: true })
+            )
+            await run(
+                app.service.handle({
+                    type: 'settings',
+                    settings: {
+                        ...app.store.state.settings,
+                        layout: {
+                            order: ['draft', 'details', 'activity'],
+                            hidden: ['activity'],
+                            sizes: { draft: 60, details: 40 }
+                        }
                     }
-                }
-            })
+                })
+            )
             expect(app.service.reply().state.coverage).toEqual([])
             app.store.close()
             const reopened = new Store(`${app.directory}/tracking.sqlite`)
@@ -166,39 +174,47 @@ describe('local journal workflow through application commands', () => {
         const app = await workspace()
         try {
             expect(app.repository.trackingStart).toBe(weekOf(new Date(), app.store.state.settings))
-            await app.service.handle({
-                type: 'history',
-                repositoryId: app.repository.id,
-                branch: 'development',
-                view: 'history',
-                author: '',
-                since: ''
-            })
+            await run(
+                app.service.handle({
+                    type: 'history',
+                    repositoryId: app.repository.id,
+                    branch: 'development',
+                    view: 'history',
+                    author: '',
+                    since: ''
+                })
+            )
             const activity = app.store.state.activities[0]
             activity.date = '2025-01-01T12:00:00Z'
             expect(inbox(app.store.state, '2026-10-05')).toEqual([])
-            await app.service.handle({
-                type: 'disposition',
-                activityId: activity.id,
-                disposition: 'deferred',
-                until: '2026-10-12'
-            })
+            await run(
+                app.service.handle({
+                    type: 'disposition',
+                    activityId: activity.id,
+                    disposition: 'deferred',
+                    until: '2026-10-12'
+                })
+            )
             expect(inbox(app.store.state, '2026-10-05')).toEqual([])
             expect(inbox(app.store.state, '2026-10-12').map((item) => item.id)).toEqual([activity.id])
-            await app.service.handle({
-                type: 'disposition',
-                activityId: activity.id,
-                disposition: 'dismissed',
-                reason: 'Already understood'
-            })
+            await run(
+                app.service.handle({
+                    type: 'disposition',
+                    activityId: activity.id,
+                    disposition: 'dismissed',
+                    reason: 'Already understood'
+                })
+            )
             expect(inbox(app.store.state, '2026-10-12')).toEqual([])
             expect(app.service.reply().state.activities[0].reason).toBe('Already understood')
-            await app.service.handle({
-                type: 'disposition',
-                activityId: activity.id,
-                disposition: 'deferred',
-                until: '2026-10-12'
-            })
+            await run(
+                app.service.handle({
+                    type: 'disposition',
+                    activityId: activity.id,
+                    disposition: 'deferred',
+                    until: '2026-10-12'
+                })
+            )
             expect(inbox(app.store.state, '2026-10-12')).toHaveLength(1)
             expect(app.store.state.coverage).toEqual([])
         } finally {
@@ -208,19 +224,25 @@ describe('local journal workflow through application commands', () => {
     it('preserves pending coverage across an ambiguous save and verifies before any retry', async () => {
         const app = await workspace()
         try {
-            await app.service.handle({ type: 'refresh' })
+            await run(app.service.handle({ type: 'refresh' }))
             const activity = app.store.state.activities[0]
-            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             const draft = app.store.state.drafts[0]
-            await app.service.handle({ type: 'draft', draft: { ...draft, body: reflection } })
-            await app.service.handle({ type: 'select', draftId: draft.id, activityId: activity.id, included: true })
+            await run(app.service.handle({ type: 'draft', draft: { ...draft, body: reflection } }))
+            await run(
+                app.service.handle({ type: 'select', draftId: draft.id, activityId: activity.id, included: true })
+            )
             app.remote.loseCreateResponse = true
-            await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('Connection lost')
+            await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow(
+                'Connection lost'
+            )
             expect(app.service.reply().state.coverage).toEqual([])
             expect(app.store.state.saves[0].status).toBe('unknown')
             expect(app.store.state.drafts[0].body).toEqual(reflection)
-            await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('uncertain save')
-            await app.service.handle({ type: 'reconcile', saveId: app.store.state.saves[0].id })
+            await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow(
+                'uncertain save'
+            )
+            await run(app.service.handle({ type: 'reconcile', saveId: app.store.state.saves[0].id }))
             expect(app.remote.pages).toHaveLength(1)
             expect(coveredEntries(app.store.state, activity)).toHaveLength(1)
             expect(app.store.state.saves[0].status).toBe('confirmed')
@@ -231,15 +253,15 @@ describe('local journal workflow through application commands', () => {
     it('retains a failed draft and supports a deliberate retry after a confirmed rejection', async () => {
         const app = await journal()
         try {
-            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             const draft = app.store.state.drafts[0]
             app.remote.failCreate = true
-            await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('400')
+            await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow('400')
             expect(app.store.state.saves[0].status).toBe('failed')
             expect(app.store.state.drafts).toHaveLength(1)
             expect(app.store.state.coverage).toEqual([])
             app.remote.failCreate = false
-            await app.service.handle({ type: 'publish', draftId: draft.id })
+            await run(app.service.handle({ type: 'publish', draftId: draft.id }))
             expect(app.remote.pages).toHaveLength(1)
         } finally {
             await app.close()
@@ -248,10 +270,10 @@ describe('local journal workflow through application commands', () => {
     it('exports tracking and journal text without credentials, source patches, or repository contents', async () => {
         const app = await workspace()
         try {
-            await app.service.handle({ type: 'refresh' })
-            await app.service.handle({ type: 'details', activityId: app.store.state.activities[0].id })
-            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
-            await app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id })
+            await run(app.service.handle({ type: 'refresh' }))
+            await run(app.service.handle({ type: 'details', activityId: app.store.state.activities[0].id }))
+            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
+            await run(app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id }))
             const published = structuredClone(app.store.state.entries[0])
             const unrelated = { ...published, id: 'unrelated' }
             app.store.state.entries.push(unrelated)
@@ -282,10 +304,10 @@ describe('local journal workflow through application commands', () => {
     it('restores legacy feature data without retaining groups or losing journal activity', async () => {
         const app = await workspace()
         try {
-            await app.service.handle({ type: 'refresh' })
-            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            await run(app.service.handle({ type: 'refresh' }))
+            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             const draft = app.store.state.drafts[0]
-            await app.service.handle({ type: 'draft', draft: { ...draft, body: reflection } })
+            await run(app.service.handle({ type: 'draft', draft: { ...draft, body: reflection } }))
             const activities = structuredClone(app.store.state.activities)
             const feature = { id: 'old-group', name: 'Old group', archived: false, members: [activities[0].id] }
             const backup = { ...JSON.parse(app.store.export()).state, features: [feature] }
@@ -312,24 +334,24 @@ it('reuses a weekly draft and republishes edits to the same Notion page', async 
     const app = await journal()
     try {
         const week = '2026-10-05'
-        await app.service.handle({ type: 'newDraft', week })
+        await run(app.service.handle({ type: 'newDraft', week }))
         const draft = app.store.state.drafts[0]
-        await app.service.handle({ type: 'newDraft', week })
+        await run(app.service.handle({ type: 'newDraft', week }))
         expect(app.store.state.drafts).toHaveLength(1)
-        await app.service.handle({ type: 'publish', draftId: draft.id })
+        await run(app.service.handle({ type: 'publish', draftId: draft.id }))
         const entryId = draft.publishedEntryId
-        await app.service.handle({ type: 'newDraft', week })
+        await run(app.service.handle({ type: 'newDraft', week }))
         expect(app.store.state.drafts).toHaveLength(1)
-        await app.service.handle({ type: 'draft', draft: { ...draft, title: 'Revised week', body: reflection } })
-        await app.service.handle({ type: 'publish', draftId: draft.id })
+        await run(app.service.handle({ type: 'draft', draft: { ...draft, title: 'Revised week', body: reflection } }))
+        await run(app.service.handle({ type: 'publish', draftId: draft.id }))
         expect(app.remote.pages).toHaveLength(1)
         expect(draft.publishedEntryId).toBe(entryId)
         expect(app.store.state.entries).toHaveLength(1)
         expect(app.store.state.entries[0]).toMatchObject({ id: entryId, title: 'Revised week', body: reflection })
         expect(app.remote.pages[0].blocks).toHaveLength(reflection.content!.length)
         expect(JSON.stringify(app.remote.pages[0].blocks)).not.toContain('Published with Gitorian')
-        expect(toNotion((await app.notion.refreshEntry(entryId!)).body)).toEqual(toNotion(reflection))
-        await app.service.handle({ type: 'newDraft', week: '2026-10-12' })
+        expect(toNotion((await run(app.notion.refreshEntry(entryId!))).body)).toEqual(toNotion(reflection))
+        await run(app.service.handle({ type: 'newDraft', week: '2026-10-12' }))
         expect(app.store.state.drafts.filter((item) => item.week === week)).toEqual([draft])
         await app.store.flush()
         const reopened = new Store(`${app.directory}/tracking.sqlite`)
@@ -350,7 +372,7 @@ it('reuses a weekly draft and republishes edits to the same Notion page', async 
 it('verifies an interrupted republish without duplicating the page or its writing', async () => {
     const app = await journal()
     try {
-        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         const draft = app.store.state.drafts[0]
         const updated: JournalNode = {
             type: 'doc',
@@ -359,21 +381,21 @@ it('verifies an interrupted republish without duplicating the page or its writin
                 content: [{ type: 'text', text: `Paragraph ${index}` }]
             }))
         }
-        await app.service.handle({ type: 'publish', draftId: draft.id })
-        await app.service.handle({ type: 'draft', draft: { ...draft, title: 'Updated title', body: updated } })
+        await run(app.service.handle({ type: 'publish', draftId: draft.id }))
+        await run(app.service.handle({ type: 'draft', draft: { ...draft, title: 'Updated title', body: updated } }))
         app.remote.loseAppendResponse = true
-        await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('after commit')
+        await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow('after commit')
         const save = app.store.state.saves.at(-1)!
         expect(save.status).toBe('unknown')
-        await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow('uncertain save')
+        await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow('uncertain save')
         await Promise.all([
-            app.service.handle({ type: 'reconcile', saveId: save.id }),
-            app.service.handle({ type: 'reconcile', saveId: save.id })
+            run(app.service.handle({ type: 'reconcile', saveId: save.id })),
+            run(app.service.handle({ type: 'reconcile', saveId: save.id }))
         ])
         expect(save.status).toBe('confirmed')
         expect(app.remote.pages).toHaveLength(1)
         expect(app.remote.pages[0].blocks).toHaveLength(updated.content!.length)
-        expect(await app.notion.refreshEntry(draft.publishedEntryId!)).toMatchObject({
+        expect(await run(app.notion.refreshEntry(draft.publishedEntryId!))).toMatchObject({
             title: 'Updated title',
             body: updated
         })
@@ -384,30 +406,33 @@ it('verifies an interrupted republish without duplicating the page or its writin
 it('keeps the weekly page linked when writing changes during a publish', async () => {
     const app = await journal()
     try {
-        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         const draft = app.store.state.drafts[0]
         const fetcher = app.remote.fetch
         vi.spyOn(app.remote, 'fetch').mockImplementationOnce(async (...args) => {
-            await app.service.handle({
-                type: 'draft',
-                draft: { ...draft, title: 'Newer local writing', body: reflection }
-            })
+            await run(
+                app.service.handle({
+                    type: 'draft',
+                    draft: { ...draft, title: 'Newer local writing', body: reflection }
+                })
+            )
             return fetcher(...args)
         })
-        await app.service.handle({ type: 'publish', draftId: draft.id })
+        await run(app.service.handle({ type: 'publish', draftId: draft.id }))
         expect(draft.publishedEntryId).toBe(app.remote.pages[0].id)
         expect(draft.body).toEqual(reflection)
-        await app.service.handle({ type: 'publish', draftId: draft.id })
+        await run(app.service.handle({ type: 'publish', draftId: draft.id }))
         expect(app.remote.pages).toHaveLength(1)
         expect(app.store.state.entries[0]).toMatchObject({ title: 'Newer local writing', body: reflection })
     } finally {
         await app.close()
     }
 })
+
 it('keeps a rejected intent checkpoint retryable without dispatching a remote write', async () => {
     const app = await journal()
     try {
-        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         const draft = app.store.state.drafts[0]
         const persist = app.store.persist.bind(app.store)
         let fail = true
@@ -415,19 +440,20 @@ it('keeps a rejected intent checkpoint retryable without dispatching a remote wr
             if (fail && app.store.state.saves.length) throw new Error('Intent checkpoint failed')
             return persist()
         })
-        await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow(
+        await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow(
             'Intent checkpoint failed'
         )
         expect(app.remote.pages).toHaveLength(0)
         expect(app.store.state.saves[0].status).toBe('failed')
         fail = false
-        await app.service.handle({ type: 'publish', draftId: draft.id })
+        await run(app.service.handle({ type: 'publish', draftId: draft.id }))
         expect(app.remote.pages).toHaveLength(1)
         expect(app.store.state.saves.at(-1)?.status).toBe('confirmed')
     } finally {
         await app.close()
     }
 })
+
 it('durably exposes an interrupted remote publish for verification without restarting', async () => {
     const app = await journal()
     let entered = false
@@ -438,7 +464,7 @@ it('durably exposes an interrupted remote publish for verification without resta
     const fetcher = app.remote.fetch
     let fiber: Fiber.RuntimeFiber<unknown, Error> | undefined
     try {
-        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         const draft = app.store.state.drafts[0]
         vi.spyOn(app.remote, 'fetch').mockImplementationOnce(async (...args) => {
             const response = await fetcher(...args)
@@ -446,13 +472,13 @@ it('durably exposes an interrupted remote publish for verification without resta
             await gate
             return response
         })
-        fiber = Effect.runFork(app.publishing.publish(draft.id))
+        fiber = Effect.runFork(app.service.handle({ type: 'publish', draftId: draft.id }))
         await vi.waitFor(() => expect(entered).toBe(true))
         await Effect.runPromise(Fiber.interrupt(fiber))
         const save = app.store.state.saves[0]
         expect(save.status).toBe('unknown')
         expect(app.remote.pages).toHaveLength(1)
-        await app.service.handle({ type: 'reconcile', saveId: save.id })
+        await run(app.service.handle({ type: 'reconcile', saveId: save.id }))
         expect(save.status).toBe('confirmed')
         expect(app.remote.pages).toHaveLength(1)
     } finally {
@@ -461,6 +487,7 @@ it('durably exposes an interrupted remote publish for verification without resta
         await app.close()
     }
 })
+
 it.each(['failure', 'interruption'] as const)(
     'checkpoints resumed replacement progress before remote mutation after %s',
     async (mode) => {
@@ -474,9 +501,9 @@ it.each(['failure', 'interruption'] as const)(
         let stopping: Promise<unknown> | undefined
         let retry: Promise<unknown> | undefined
         try {
-            await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             const draft = app.store.state.drafts[0]
-            await app.service.handle({ type: 'publish', draftId: draft.id })
+            await run(app.service.handle({ type: 'publish', draftId: draft.id }))
             const save = {
                 ...structuredClone(app.store.state.saves[0]),
                 id: 'interrupted-update',
@@ -500,7 +527,7 @@ it.each(['failure', 'interruption'] as const)(
                           : gate
                 )
             const start = app.remote.requests.length
-            const verify = () => app.publishing.reconcile(save.id)
+            const verify = () => app.service.handle({ type: 'reconcile' as const, saveId: save.id })
             if (mode === 'failure') {
                 await expect(run(verify())).rejects.toThrow('Progress checkpoint unavailable')
                 expect(save.replacedBlockIds).toBeDefined()
@@ -538,7 +565,7 @@ it.each(['failure', 'interruption'] as const)(
 it('checkpoints a volatile page ID before resuming any remote append', async () => {
     const app = await journal()
     try {
-        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         const draft = app.store.state.drafts[0]
         draft.body = {
             type: 'doc',
@@ -554,19 +581,19 @@ it('checkpoints a volatile page ID before resuming any remote append', async () 
                 throw new Error('Page checkpoint unavailable')
             return persist()
         })
-        await expect(app.service.handle({ type: 'publish', draftId: draft.id })).rejects.toThrow(
+        await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow(
             'Page checkpoint unavailable'
         )
         const save = app.store.state.saves[0]
         expect(save.status).toBe('unknown')
         expect(app.remote.pages[0].blocks).toHaveLength(100)
         const start = app.remote.requests.length
-        await expect(app.service.handle({ type: 'reconcile', saveId: save.id })).rejects.toThrow(
+        await expect(run(app.service.handle({ type: 'reconcile', saveId: save.id }))).rejects.toThrow(
             'Page checkpoint unavailable'
         )
         expect(app.remote.requests.slice(start).filter((request) => request.method !== 'GET')).toHaveLength(0)
         unavailable = false
-        await app.service.handle({ type: 'reconcile', saveId: save.id })
+        await run(app.service.handle({ type: 'reconcile', saveId: save.id }))
         expect(save.status).toBe('confirmed')
         expect(app.remote.pages).toHaveLength(1)
         expect(app.remote.pages[0].blocks).toHaveLength(250)
@@ -578,15 +605,15 @@ it('checkpoints a volatile page ID before resuming any remote append', async () 
 it('allows correcting an unsupported document after a typed preflight failure', async () => {
     const app = await journal()
     try {
-        await app.service.handle({ type: 'newDraft', week: '2026-10-05' })
+        await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         const draft = app.store.state.drafts[0]
         draft.body = { type: 'doc', content: [{ type: 'unsupported-block' }] }
-        const result = await run(Effect.either(app.publishing.publish(draft.id)))
+        const result = await run(Effect.either(app.service.handle({ type: 'publish', draftId: draft.id })))
         expect(result._tag).toBe('Left')
         expect(app.remote.requests).toEqual([])
         expect(app.store.state.saves[0].status).toBe('failed')
         draft.body = reflection
-        await run(app.publishing.publish(draft.id))
+        await run(app.service.handle({ type: 'publish', draftId: draft.id }))
         expect(app.store.state.saves.at(-1)?.status).toBe('confirmed')
         expect(app.remote.pages).toHaveLength(1)
     } finally {

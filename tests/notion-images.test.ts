@@ -2,7 +2,7 @@ import { DurabilityError } from '../src/main/durability-error'
 import { HttpError, TransportError } from '../src/main/http'
 import { run } from './effect-fixtures'
 import { Effect, ManagedRuntime } from 'effect'
-import { publishingLayer } from '../src/main/publishing-layer'
+import { journalLayer } from '../src/main/journal-layer'
 import { Notion } from '../src/main/notion'
 import { JournalPublishing } from '../src/main/journal-publishing'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -147,10 +147,12 @@ async function setup() {
         updatedAt: save.createdAt
     })
     const runtime = ManagedRuntime.make(
-        publishingLayer({
+        journalLayer({
             store,
             fetcher,
             imageDownload: download,
+            githubCredential: () => '',
+            setGitHubCredential: vi.fn(),
             notionToken: () => Effect.succeed('private-token'),
             connections: () => ({ github: false, notion: true, protectedStorage: false })
         })
