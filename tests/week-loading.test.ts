@@ -170,7 +170,9 @@ it('shows real partial Git results while loading and clears the button when all 
         index.mockRestore()
         await Promise.all(apps.map((entry) => entry.close()))
     }
-})
+    // This scenario creates four native stores and indexes a full 2,000-commit Git page.
+    // Keep its behavioral assertions unchanged while allowing slower Windows CI fixture I/O.
+}, 60000)
 it('automatically rehydrates the same week when its journal timezone changes without rereading Git', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
     const app = await workspace()
