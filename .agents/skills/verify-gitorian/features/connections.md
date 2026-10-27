@@ -1,8 +1,17 @@
 # Connection controls
 
-After authorization, explicitly activate the Journal page combobox before checking its popup tree. Automatic popup focus timing is outside this backend journey. The combined two-provider journey has a 150-second process budget; individual action deadlines and failure/cleanup requirements remain unchanged.
+The restart-pair assertion reconstructs the real scoped connection module from a read-only SQLite destination snapshot and the encrypted Vault, then disposes that lifetime. It performs no authorization or publishing.
 
-Transport owns credential-scoped lanes, shared reads, safe retries and response cleanup. Verify foreground priority, cancelled discovery without late UI changes, and persisted credential-scoped pauses. Uncertain writes remain unretried.
+`NotionConnection` now owns each callback listener and expiration fiber in an Effect scope; token exchange/rotation share cached Effects. Preserve the OAuth scenarios for cancellation during exchange, late refresh after disconnect, shared rotation and inactive credential-slot activation. Run the combined connections desktop journey to prove real loopback callbacks, cancel/retry, durable destination setup and reconnect without duplicate creation. Provider exchanges remain simulated.
+
+Transport retries and response-reader cleanup are Effect-owned in `http.ts` and `notion-rate-limit.ts`. Preserve the transport/acquisition/discovery tests for credential-scoped pauses, conditional reads, bounded safe-read retries, cancellation during Retry-After and foreground priority. The Notion desktop journey must still retry only the rejected child read, retain completed discovery work and cancel held reads without late UI changes. Uncertain writes remain unretried.
+
+
+After authorization, explicitly activate the Journal page combobox before checking its popup tree. The harness drives this user action rather than relying on a zero-delay focus callback racing the arriving morph face. Automatic popup focus timing is not asserted by this backend journey.
+
+
+The combined two-provider journey has a 150-second overall process budget; individual action waits retain their existing deadlines. Other verification modes use 90 seconds. Late Notion recovery and reconnect assertions must complete before success; an overall timeout remains a failed run requiring cleanup evidence.
+
 
 Run `pnpm build`, `pnpm verify doctor`, then `pnpm verify connections`. The runner owns a temporary journal-only profile and retains screenshots, actions, HTTP traces, process exit, independent SQLite evidence, and cleanup results under `.ai-docs/verification/connections-*/`.
 

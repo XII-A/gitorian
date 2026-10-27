@@ -1,6 +1,5 @@
-import { providerHttp } from './transport-fixtures'
+import { githubClient, transportClient, run } from './effect-fixtures'
 import { afterEach, expect, it, vi } from 'vitest'
-import { GitHub } from '../src/main/github'
 import { sampleState } from '../src/renderer/workspace-sample'
 // Failure modes: discarded refresh credentials, simultaneous repository refreshes,
 // rotation after a restart, and a disconnect while rotation is in flight.
@@ -46,27 +45,27 @@ it('renews an expired device credential after restart for multiple repositories 
         )
     }
     vi.stubGlobal('fetch', transport)
-    const create = () =>
-        new GitHub(
-            providerHttp(transport),
+    const create = async () =>
+        await githubClient(
+            await transportClient(transport),
             () => stored,
             (value) => {
                 stored = value
             }
         )
-    const signin = create()
-    await signin.start()
+    const signin = await create()
+    await run(signin.start())
     vi.advanceTimersByTime(1000)
-    await signin.poll()
+    await run(signin.poll())
     vi.advanceTimersByTime(9 * 60 * 60 * 1000)
     const state = sampleState('2026-10-05')
-    const reopened = create()
+    const reopened = await create()
     await expect(
-        Promise.all(state.repositories.slice(0, 2).map((repo) => reopened.files(repo, state.activities[8])))
+        Promise.all(state.repositories.slice(0, 2).map((repo) => run(reopened.files(repo, state.activities[8]))))
     ).resolves.toEqual([[], []])
     expect(rotations).toBe(1)
     vi.advanceTimersByTime(9 * 60 * 60 * 1000)
-    await expect(create().files(state.repositories[0], state.activities[8])).resolves.toEqual([])
+    await expect(run((await create()).files(state.repositories[0], state.activities[8]))).resolves.toEqual([])
     expect(rotations).toBe(2)
 })
 afterEach(() => {
@@ -103,23 +102,26 @@ it('respects GitHub device polling intervals and discovers identities after auth
             return json({ login: 'journal-author' })
         })
     vi.stubGlobal('fetch', transport)
-    const github = new GitHub(
-        providerHttp(transport),
+    const github = await githubClient(
+        await transportClient(transport),
         () => token,
         (value) => {
             token = value
         }
     )
-    const device = await github.start()
+    const device = await run(github.start())
     expect(device).toEqual({ code: 'ABCD-EFGH', url: 'https://github.com/login/device', interval: 5 })
     expect(JSON.stringify(device)).not.toContain('private-device-code')
-    expect(await github.poll()).toEqual({ pending: true, interval: 5 })
+    expect(await run(github.poll())).toEqual({ pending: true, interval: 5 })
     expect(attempts).toBe(0)
     vi.advanceTimersByTime(5000)
-    expect(await github.poll()).toEqual({ pending: true, interval: 5 })
+    expect(await run(github.poll())).toEqual({ pending: true, interval: 5 })
     authorized = true
     vi.advanceTimersByTime(5000)
-    expect(await github.poll()).toEqual({ login: 'journal-author', emails: ['one@example.com', 'two@example.com'] })
+    expect(await run(github.poll())).toEqual({
+        login: 'journal-author',
+        emails: ['one@example.com', 'two@example.com']
+    })
     expect(token).toBe('private-token')
     expect(
         requests
@@ -147,18 +149,18 @@ it('renews once on an early 401, including a diff request, while preserving lega
         )
     }
     vi.stubGlobal('fetch', transport)
-    const github = new GitHub(
-        providerHttp(transport),
+    const github = await githubClient(
+        await transportClient(transport),
         () => stored,
         (value) => {
             stored = value
         }
     )
     const repo = sampleState('2026-10-05').repositories[0]
-    expect((await github.commitDetails(repo, 'a'.repeat(40))).diff).toBe('fixture diff')
+    expect((await run(github.commitDetails(repo, 'a'.repeat(40)))).diff).toBe('fixture diff')
     expect(rotations).toBe(1)
     stored = 'legacy-token'
-    await github.commitDetails(repo, 'b'.repeat(40))
+    await run(github.commitDetails(repo, 'b'.repeat(40)))
     expect(rotations).toBe(1)
 })
 it('keeps credentials on a temporary renewal failure and permits retry', async () => {
@@ -169,17 +171,17 @@ it('keeps credentials on a temporary renewal failure and permits retry', async (
         .mockRejectedValueOnce(new TypeError('fetch failed'))
         .mockResolvedValueOnce(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
     vi.stubGlobal('fetch', exchange)
-    const github = new GitHub(
-        providerHttp(() => Promise.resolve(Response.json([]))),
+    const github = await githubClient(
+        await transportClient(() => Promise.resolve(Response.json([]))),
         () => stored,
         (value) => {
             stored = value
         }
     )
     const state = sampleState('2026-10-05')
-    await expect(github.files(state.repositories[0], state.activities[8])).rejects.toThrow('fetch failed')
+    await expect(run(github.files(state.repositories[0], state.activities[8]))).rejects.toThrow('fetch failed')
     expect(stored).toBe(original)
-    await expect(github.files(state.repositories[0], state.activities[8])).resolves.toEqual([])
+    await expect(run(github.files(state.repositories[0], state.activities[8]))).resolves.toEqual([])
     expect(exchange).toHaveBeenCalledTimes(2)
 })
 it('does not restore a disconnected credential when a renewal completes late', async () => {
@@ -193,15 +195,16 @@ it('does not restore a disconnected credential when a renewal completes late', a
             })
     )
     const api = vi.fn<typeof fetch>()
-    const github = new GitHub(
-        providerHttp(api),
+    const github = await githubClient(
+        await transportClient(api),
         () => stored,
         (value) => {
             stored = value
         }
     )
     const state = sampleState('2026-10-05')
-    const pending = github.files(state.repositories[0], state.activities[8])
+    const pending = run(github.files(state.repositories[0], state.activities[8]))
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
     stored = ''
     finish(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
     await expect(pending).rejects.toThrow('connection changed')
@@ -216,12 +219,12 @@ it('backs off after a rate limit without issuing repeated requests', async () =>
             attempts++
             return new Response('{}', { status: 429, headers: { 'retry-after': '30' } })
         })
-    const http = providerHttp(transport)
-    await expect(http.request('https://api.notion.com/v1/users/me', 'private-token')).rejects.toThrow('429')
-    await expect(http.request('https://api.notion.com/v1/users/me', 'private-token')).rejects.toThrow('rate limit')
+    const http = await transportClient(transport)
+    await expect(run(http.request('https://api.notion.com/v1/users/me', 'private-token'))).rejects.toThrow('429')
+    await expect(run(http.request('https://api.notion.com/v1/users/me', 'private-token'))).rejects.toThrow('rate limit')
     expect(attempts).toBe(1)
     vi.advanceTimersByTime(30000)
-    await expect(http.request('https://api.notion.com/v1/users/me', 'private-token')).rejects.toThrow('429')
+    await expect(run(http.request('https://api.notion.com/v1/users/me', 'private-token'))).rejects.toThrow('429')
     expect(attempts).toBe(2)
 })
 it('keeps polling GitHub after slow_down and reports expiry without connecting', async () => {
@@ -248,19 +251,180 @@ it('keeps polling GitHub after slow_down and reports expiry without connecting',
             )
         })
     vi.stubGlobal('fetch', transport)
-    const github = new GitHub(providerHttp(transport), () => '', setToken)
-    await github.start()
+    const github = await githubClient(await transportClient(transport), () => '', setToken)
+    await run(github.start())
     vi.advanceTimersByTime(5000)
-    expect(await github.poll()).toEqual({ pending: true, interval: 10 })
+    expect(await run(github.poll())).toEqual({ pending: true, interval: 10 })
     vi.advanceTimersByTime(5000)
-    expect(await github.poll()).toEqual({ pending: true, interval: 5 })
+    expect(await run(github.poll())).toEqual({ pending: true, interval: 5 })
     expect(attempts).toBe(1)
     vi.advanceTimersByTime(5000)
-    await expect(github.poll()).rejects.toThrow('expired')
+    await expect(run(github.poll())).rejects.toThrow('expired')
     expect(setToken).not.toHaveBeenCalled()
 })
 it('explains disabled GitHub device flow before attempting browser authorization', async () => {
     vi.stubGlobal('fetch', () => Promise.resolve(new Response(JSON.stringify({ error: 'device_flow_disabled' }))))
-    const github = new GitHub(providerHttp(), () => '', vi.fn())
-    await expect(github.start()).rejects.toThrow('GitHub sign-in is unavailable')
+    const github = await githubClient(await transportClient(), () => '', vi.fn())
+    await expect(run(github.start())).rejects.toThrow('GitHub sign-in is unavailable')
+})
+import { Effect, Exit, Fiber, Layer, ManagedRuntime, Scheduler } from 'effect'
+import { GitHub, GitHubLive } from '../src/main/github'
+import { HttpLive } from '../src/main/http'
+
+it('keeps a shared GitHub renewal alive when its first caller is interrupted', async () => {
+    let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: 1 })
+    let finish!: (response: Response) => void
+    const exchange = vi.fn<typeof fetch>(
+        () =>
+            new Promise((resolve) => {
+                finish = resolve
+            })
+    )
+    const api = vi.fn<typeof fetch>(() => Promise.resolve(Response.json([])))
+    const github = await githubClient(
+        await transportClient(api),
+        () => stored,
+        (value) => {
+            stored = value
+        },
+        exchange
+    )
+    const state = sampleState('2026-10-05')
+    const first = Effect.runFork(github.files(state.repositories[0], state.activities[8]))
+    let second: Fiber.RuntimeFiber<unknown, Error> | undefined
+    try {
+        await vi.waitFor(() => expect(exchange).toHaveBeenCalledTimes(1))
+        second = Effect.runFork(github.files(state.repositories[1], state.activities[8]))
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        await run(Fiber.interrupt(first))
+        finish(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
+        expect(Exit.isSuccess(await run(Fiber.await(second)))).toBe(true)
+        expect(JSON.parse(stored)).toMatchObject({ access_token: 'new', refresh_token: 'next' })
+        expect(exchange).toHaveBeenCalledTimes(1)
+    } finally {
+        finish?.(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
+        await run(Fiber.interrupt(first))
+        if (second) await run(Fiber.interrupt(second))
+    }
+})
+it('settles an accepted credential rotation before disposing GitHub ownership', async () => {
+    let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: 1 })
+    let finish!: (response: Response) => void
+    const exchange = vi.fn<typeof fetch>(
+        () =>
+            new Promise((resolve) => {
+                finish = resolve
+            })
+    )
+    const runtime = ManagedRuntime.make(
+        GitHubLive(
+            () => stored,
+            (value) => {
+                stored = value
+            },
+            exchange
+        ).pipe(Layer.provide(HttpLive(() => Promise.resolve(Response.json([])))))
+    )
+    const github = await runtime.runPromise(GitHub)
+    const state = sampleState('2026-10-05')
+    const reader = Effect.runFork(github.files(state.repositories[0], state.activities[8]))
+    let closing: Promise<void> | undefined
+    try {
+        await vi.waitFor(() => expect(exchange).toHaveBeenCalledTimes(1))
+        let disposed = false
+        closing = runtime.dispose().then(() => {
+            disposed = true
+        })
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(disposed).toBe(false)
+        finish(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
+        await closing
+        expect(JSON.parse(stored)).toMatchObject({ access_token: 'new', refresh_token: 'next' })
+        await expect(run(github.start())).rejects.toThrow(/closed/i)
+        expect(exchange).toHaveBeenCalledTimes(1)
+    } finally {
+        finish?.(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
+        await run(Fiber.interrupt(reader))
+        await closing
+        await runtime.dispose()
+    }
+})
+it('aborts an owned GitHub device request when its scope closes', async () => {
+    let signal: AbortSignal | undefined
+    const exchange: typeof fetch = (_url, init) => {
+        signal = init?.signal ?? undefined
+        return new Promise(() => {
+            /* Native request stays pending until its owning scope aborts it. */
+        })
+    }
+    const runtime = ManagedRuntime.make(
+        GitHubLive(() => '', vi.fn(), exchange).pipe(Layer.provide(HttpLive(() => Promise.resolve(Response.json([])))))
+    )
+    const github = await runtime.runPromise(GitHub)
+    const request = Effect.runFork(github.start())
+    try {
+        await vi.waitFor(() => expect(signal).toBeDefined())
+        await runtime.dispose()
+        expect(signal?.aborted).toBe(true)
+        expect(Exit.isFailure(await run(Fiber.await(request)))).toBe(true)
+    } finally {
+        await run(Fiber.interrupt(request))
+        await runtime.dispose()
+    }
+})
+it('does not save a rotated credential after disconnect wins a scheduler yield', async () => {
+    let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: 1 })
+    let responseReady = false
+    let disconnected = false
+    let savedAfterDisconnect = false
+    let yieldForDisconnect = false
+    const scheduler = Scheduler.make(
+        (task) => queueMicrotask(task),
+        (fiber) => {
+            if (yieldForDisconnect) {
+                yieldForDisconnect = false
+                return 0
+            }
+            return Scheduler.defaultShouldYield(fiber)
+        }
+    )
+    const github = await githubClient(
+        await transportClient(() => Promise.resolve(Response.json([]))),
+        () => {
+            if (responseReady) {
+                responseReady = false
+                yieldForDisconnect = true
+                queueMicrotask(() => {
+                    stored = ''
+                    disconnected = true
+                })
+            }
+            return stored
+        },
+        (value) => {
+            if (disconnected) savedAfterDisconnect = true
+            stored = value
+        },
+        () => {
+            responseReady = true
+            return Promise.resolve(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
+        }
+    )
+    const state = sampleState('2026-10-05')
+    await run(github.files(state.repositories[0], state.activities[8]).pipe(Effect.withScheduler(scheduler)))
+    expect(disconnected).toBe(true)
+    expect(savedAfterDisconnect).toBe(false)
+    expect(stored).toBe('')
+})
+it('returns malformed saved GitHub credentials through the typed failure channel', async () => {
+    const api = vi.fn<typeof fetch>()
+    const github = await githubClient(await transportClient(api), () => '{invalid', vi.fn())
+    const state = sampleState('2026-10-05')
+    const result = await run(
+        github
+            .files(state.repositories[0], state.activities[8])
+            .pipe(Effect.catchTag('GitHubFailure', () => Effect.succeed('recoverable credential failure')))
+    )
+    expect(result).toBe('recoverable credential failure')
+    expect(api).not.toHaveBeenCalled()
 })

@@ -1,13 +1,16 @@
 import { JournalError } from './journal-context'
 import { DurabilityError } from './durability-error'
+import { GitHubFailure } from './github'
+import type { GitHubError } from './github'
 import { isNotionError } from './notion'
 import type { NotionError } from './notion'
 import { WorkBusy, WorkClosed } from './application-work'
-export type JournalFailure = JournalError | DurabilityError | NotionError | WorkBusy | WorkClosed
+export type JournalFailure = JournalError | DurabilityError | GitHubError | NotionError | WorkBusy | WorkClosed
 export function toJournalFailure(error: unknown): JournalFailure {
     if (
         error instanceof JournalError ||
         error instanceof DurabilityError ||
+        error instanceof GitHubFailure ||
         error instanceof WorkBusy ||
         error instanceof WorkClosed ||
         isNotionError(error)

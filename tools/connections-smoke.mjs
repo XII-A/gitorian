@@ -1,3 +1,4 @@
+import { Effect, Layer, ManagedRuntime } from 'effect'
 import { onboardingJourney } from './onboarding-journey.mjs'
 import { app, shell, clipboard, nativeTheme, ipcMain } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -13,8 +14,11 @@ import { DatabaseSync } from 'node:sqlite'
 import { pathToFileURL } from 'node:url'
 import { tsImport } from 'tsx/esm/api'
 const { createOAuthHandler } = await tsImport('../services/notion-oauth/src/handler.ts', import.meta.url)
-const { NotionConnection } = await tsImport('../src/main/notion-connection.ts', import.meta.url)
+const { NotionConnection, makeNotionConnection } = await tsImport('../src/main/notion-connection.ts', import.meta.url)
 const { NotionSetupStore } = await tsImport('../src/main/notion-setup.ts', import.meta.url)
+const { Http, HttpLive } = await tsImport('../src/main/http.ts', import.meta.url)
+const { makeNotion } = await tsImport('../src/main/notion.ts', import.meta.url)
+const { initialState } = await tsImport('../src/shared/model.ts', import.meta.url)
 const { Vault } = await tsImport('../src/main/vault.ts', import.meta.url)
 const nativeFetch = globalThis.fetch
 
@@ -92,18 +96,47 @@ const assertRestartPair = async (id, access) => {
     const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
     const destination = row ? JSON.parse(row.json).destination : undefined
     db.close()
-    const restarted = new NotionConnection(
-        new Vault(join(directory, 'profile')),
-        oauthOrigin,
-        globalThis.fetch,
-        new NotionSetupStore(join(directory, 'profile', 'notion-setup.json')),
-        destination
+    const state = initialState()
+    state.settings.destination = destination
+    const readonlyStore = {
+        state,
+        persist: () => {
+            throw new Error('Restart inspection must not submit a journal write')
+        },
+        flush: () => Promise.reject(new Error('Restart inspection must not flush journal writes'))
+    }
+    const runtime = ManagedRuntime.make(
+        Layer.scoped(
+            NotionConnection,
+            Effect.gen(function* () {
+                const http = yield* Http
+                return yield* makeNotionConnection(
+                    {
+                        vault: new Vault(join(directory, 'profile')),
+                        origin: oauthOrigin,
+                        fetcher: globalThis.fetch,
+                        recovery: new NotionSetupStore(join(directory, 'profile', 'notion-setup.json'))
+                    },
+                    readonlyStore,
+                    (getToken) => makeNotion(http, getToken)
+                )
+            })
+        ).pipe(Layer.provide(HttpLive(globalThis.fetch)))
     )
-    if (destination?.id !== id || restarted.connected() !== !!id || (access && (await restarted.token()) !== access))
-        throw new Error('Restart did not select a matching committed destination and credential pair')
-    record({
-        restartPair: { id: destination?.id, slot: destination?.credentialSlot, connected: restarted.connected() }
-    })
+    try {
+        const restarted = await runtime.runPromise(NotionConnection)
+        if (
+            destination?.id !== id ||
+            restarted.connected() !== !!id ||
+            (access && (await runtime.runPromise(restarted.token())) !== access)
+        )
+            throw new Error('Restart did not select a matching committed destination and credential pair')
+        record({
+            restartPair: { id: destination?.id, slot: destination?.credentialSlot, connected: restarted.connected() }
+        })
+    } finally {
+        await runtime.dispose()
+    }
 }
 const sendWrite = Worker.prototype.postMessage
 Worker.prototype.postMessage = function (message, ...args) {

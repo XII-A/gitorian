@@ -3,8 +3,8 @@ import { publishingLayer } from '../src/main/publishing-layer'
 import { Http } from '../src/main/http'
 import { NotionRequests } from '../src/main/notion-request'
 import { JournalPublishing } from '../src/main/journal-publishing'
-import { bindNotion, bindPublishing } from './provider-fixtures'
-import { run } from './effect-fixtures'
+import { bindNotion, bindPublishing, bindGitHub } from './provider-fixtures'
+import { githubClient } from './effect-fixtures'
 import { randomUUID } from 'node:crypto'
 import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -13,7 +13,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { Store } from '../src/main/store'
 import { Notion } from '../src/main/notion'
-import { GitHub } from '../src/main/github'
+
 import { JournalService } from '../src/main/service'
 import type { NotionBlock } from '../src/shared/notion-format'
 import { afterAll } from 'vitest'
@@ -65,12 +65,14 @@ export async function journal() {
     const requests = runtime.runSync(NotionRequests)
     const publishing = runtime.runSync(JournalPublishing)
     const publishingCommands = bindPublishing(publishing)
-    const github = new GitHub(
-        { request: <T>(...args: Parameters<Http['request']>) => run(http.request<T>(...args)) },
-        () => 'test-token',
-        (token) => {
-            remote.token = token
-        }
+    const github = bindGitHub(
+        await githubClient(
+            http,
+            () => 'test-token',
+            (token) => {
+                remote.token = token
+            }
+        )
     )
     const notion = bindNotion(nativeNotion)
     const service = new JournalService(store, github, notion, connections, publishingCommands)

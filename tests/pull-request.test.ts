@@ -1,6 +1,5 @@
-import { providerHttp } from './transport-fixtures'
+import { transportClient, githubClient, run } from './effect-fixtures'
 import { describe, expect, it, vi } from 'vitest'
-import { GitHub } from '../src/main/github'
 import { activitySchema } from '../src/shared/model'
 import { pullRequestContext } from '../src/renderer/pull-request'
 import { sampleState } from '../src/renderer/workspace-sample'
@@ -29,7 +28,7 @@ describe('pull request status acquisition', () => {
             head: { ref: 'feature/work', sha: 'head-sha' }
         }
         const dates = ['2026-10-02T10:00:00Z', '2026-10-06T10:00:00Z', '2026-10-08T10:00:00Z']
-        const http = providerHttp((input) => {
+        const http = await transportClient((input) => {
             const url = input instanceof Request ? input.url : String(input)
             const result = url.includes('/pulls?')
                 ? [pull]
@@ -41,8 +40,8 @@ describe('pull request status acquisition', () => {
                   : []
             return Promise.resolve(new Response(JSON.stringify(result)))
         })
-        const github = new GitHub(http, () => 'test', vi.fn())
-        const activities = await github.activities(repository, 'me', [])
+        const github = await githubClient(http, () => 'test', vi.fn())
+        const activities = await run(github.activities(repository, 'me', []))
         const canonical = activities.find((item) => item.kind === 'pr')!
         expect(activitySchema.parse(canonical).pullRequest).toEqual({
             status: expected,
@@ -69,8 +68,8 @@ describe('pull request status acquisition', () => {
             base: { ref: 'main', sha: 'base' },
             head: { ref: 'feature', sha: 'head' }
         }
-        const github = new GitHub(
-            providerHttp((input) => {
+        const github = await githubClient(
+            await transportClient((input) => {
                 const url = input instanceof Request ? input.url : String(input)
                 return Promise.resolve(
                     new Response(JSON.stringify(url.includes('/pulls?') ? [{ ...pull, draft }] : []))
@@ -80,10 +79,10 @@ describe('pull request status acquisition', () => {
             vi.fn()
         )
         const versions: Record<string, string> = {}
-        expect((await github.activities(repository, 'me', [], { versions }))[0].pullRequest?.status).toBe('draft')
+        expect((await run(github.activities(repository, 'me', [], { versions })))[0].pullRequest?.status).toBe('draft')
         draft = false
-        expect((await github.activities(repository, 'me', [], { versions }))[0].pullRequest?.status).toBe('open')
-        expect(await github.activities(repository, 'me', [], { versions })).toEqual([])
+        expect((await run(github.activities(repository, 'me', [], { versions })))[0].pullRequest?.status).toBe('open')
+        expect(await run(github.activities(repository, 'me', [], { versions }))).toEqual([])
     })
 })
 describe('legacy PR context', () => {

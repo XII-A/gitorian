@@ -1,16 +1,7 @@
 import type { Effect } from 'effect'
 import type { Notion } from './notion'
 /** Read and setup operations consumed by the remaining Promise journal and desktop callers. */
-type Operations = Pick<
-    Notion,
-    | 'prepareJournal'
-    | 'accessiblePages'
-    | 'destinationIcon'
-    | 'describeDestination'
-    | 'profile'
-    | 'verifyDestination'
-    | 'refreshEntry'
->
+type Operations = Pick<Notion, 'accessiblePages' | 'profile' | 'refreshEntry'>
 export type ProviderNotion = {
     [K in keyof Operations]: (
         ...args: Parameters<Operations[K]>
