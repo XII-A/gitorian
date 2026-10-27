@@ -6,7 +6,8 @@ import { ReplyUpdates } from '../shared/state-updates'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, writeFile, stat } from 'node:fs/promises'
-import { Effect } from 'effect'
+import { ApplicationWork, ApplicationWorkLive } from './application-work'
+import { Cause, Effect, Exit, ManagedRuntime, Runtime } from 'effect'
 import { commandSchema } from '../shared/model'
 import type { RepositoryImportProgress, NotionDiscoveryProgress } from '../shared/model'
 import { Store } from './store'
@@ -53,15 +54,28 @@ let updating = false
 let notionConnection: NotionConnection | undefined
 let stopNotionPages: (() => void) | undefined
 const referenceWindows = new Set<number>()
-const work = new Set<Promise<unknown>>()
-function track<T>(promise: Promise<T>): Promise<T> {
-    work.add(promise)
-    void promise
-        .finally(() => work.delete(promise))
-        .catch(() => {
-            // The command caller or background task owns its error presentation.
-        })
-    return promise
+const runtime = ManagedRuntime.make(ApplicationWorkLive)
+const work = runtime.runSync(ApplicationWork)
+const native = <A>(operation: () => Promise<A>) => Effect.tryPromise({ try: operation, catch: (error) => error })
+function execute<A, E>(operation: Effect.Effect<A, E, ApplicationWork>): Promise<A> {
+    const result = runtime.runPromiseExit(operation).then((exit) => {
+        if (Exit.isSuccess(exit)) return exit.value
+        throw Cause.squash(exit.cause)
+    })
+    void result.catch(() => {
+        /* Detached desktop work is observed; awaiters retain the original failure. */
+    })
+    return result
+}
+function runNative<A>(operation: (drain: () => Promise<void>) => Promise<A>): Promise<A> {
+    return execute(
+        work.accept(
+            Effect.gen(function* () {
+                const accepted = yield* Effect.runtime<ApplicationWork>()
+                return yield* native(() => operation(() => Runtime.runPromise(accepted)(work.drain)))
+            })
+        )
+    )
 }
 function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
     const window = new BrowserWindow({
@@ -172,39 +186,36 @@ void app.whenReady().then(() => {
             : new Response(null, { status: 404 })
     })
     ipcMain.handle('journal:image-choose', (event, input: unknown) =>
-        track(
-            (async () => {
-                const window = BrowserWindow.fromWebContents(event.sender)
-                if (
-                    !window ||
-                    event.senderFrame !== window.webContents.mainFrame ||
-                    referenceWindows.has(event.sender.id) ||
-                    closing ||
-                    restoring ||
-                    updating
-                )
-                    throw new Error('Choose an editable journal window.')
-                const request = z.object({ restoreId: z.string().optional() }).parse(input)
-                if (request.restoreId !== store.state.restoreId)
+        runNative(async () => {
+            const window = BrowserWindow.fromWebContents(event.sender)
+            if (
+                !window ||
+                event.senderFrame !== window.webContents.mainFrame ||
+                referenceWindows.has(event.sender.id) ||
+                closing ||
+                restoring ||
+                updating
+            )
+                throw new Error('Choose an editable journal window.')
+            const request = z.object({ restoreId: z.string().optional() }).parse(input)
+            if (request.restoreId !== store.state.restoreId)
+                throw new Error('The journal changed. Insert the image again.')
+            const result = await dialog.showOpenDialog(window, {
+                title: 'Choose journal images',
+                properties: ['openFile', 'multiSelections'],
+                filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }]
+            })
+            if (result.canceled) return []
+            if (result.filePaths.length > imageLimits.batch) throw new Error('Choose up to 10 images at a time.')
+            const ids: string[] = []
+            for (const path of result.filePaths) {
+                if (closing || restoring || window.isDestroyed())
                     throw new Error('The journal changed. Insert the image again.')
-                const result = await dialog.showOpenDialog(window, {
-                    title: 'Choose journal images',
-                    properties: ['openFile', 'multiSelections'],
-                    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }]
-                })
-                if (result.canceled) return []
-                if (result.filePaths.length > imageLimits.batch) throw new Error('Choose up to 10 images at a time.')
-                const ids: string[] = []
-                for (const path of result.filePaths) {
-                    if (closing || restoring || window.isDestroyed())
-                        throw new Error('The journal changed. Insert the image again.')
-                    if ((await stat(path)).size > imageLimits.bytes)
-                        throw new Error('Choose an image smaller than 5 MB.')
-                    ids.push(await store.importImage(await readFile(path), request.restoreId))
-                }
-                return ids
-            })()
-        )
+                if ((await stat(path)).size > imageLimits.bytes) throw new Error('Choose an image smaller than 5 MB.')
+                ids.push(await store.importImage(await readFile(path), request.restoreId))
+            }
+            return ids
+        })
     )
     ipcMain.handle('journal:image-import', (event, input: unknown) => {
         const window = BrowserWindow.fromWebContents(event.sender)
@@ -224,7 +235,7 @@ void app.whenReady().then(() => {
             })
             .parse(input)
         if (request.restoreId !== store.state.restoreId) throw new Error('The journal changed. Insert the image again.')
-        return track(store.importImage(request.bytes, request.restoreId))
+        return runNative(() => store.importImage(request.bytes, request.restoreId))
     })
     const vault = new Vault(app.getPath('userData'))
     store.state.transportPauses ??= {}
@@ -282,7 +293,7 @@ void app.whenReady().then(() => {
             updating = true
             const resume = service.prepareToClose()
             try {
-                while (work.size) await Promise.allSettled([...work])
+                await execute(work.drain)
                 await store.flush()
             } catch (error) {
                 updating = false
@@ -312,7 +323,7 @@ void app.whenReady().then(() => {
         if (!mainWindow.isDestroyed()) mainWindow.webContents.send('journal:app-update-state', state)
     })
     appUpdates.start()
-    const commandHandler = async (event: IpcMainInvokeEvent, input: unknown) => {
+    const commandHandler = async (event: IpcMainInvokeEvent, input: unknown, drain: () => Promise<void>) => {
         const command = commandSchema.parse(input)
         const trusted = BrowserWindow.fromWebContents(event.sender)
         if (!trusted || event.senderFrame !== trusted.webContents.mainFrame) throw new Error('Unknown desktop window')
@@ -320,18 +331,18 @@ void app.whenReady().then(() => {
             throw new Error('Reference windows are read-only')
         switch (command.type) {
             case 'loadWeek':
-                void track(service.refresh({ since: command.since, missingOnly: true }))
+                void runNative(() => service.refresh({ since: command.since, missingOnly: true }))
                 return service.reply()
             case 'refresh':
-                if (command.since) return track(service.handle(command))
-                void track(service.refresh({ ...command, resume: true }))
+                if (command.since) return runNative(() => service.handle(command))
+                void runNative(() => service.refresh({ ...command, resume: true }))
                 return service.reply({ message: 'Activity refresh started. You can keep writing.' })
             case 'backfill': {
                 const repository = store.state.repositories.find((item) => item.id === command.repositoryId)
                 if (!repository || repository.removed) throw new Error('Choose a tracked repository.')
                 if (command.since > repository.trackingStart)
                     throw new Error('Choose a date before the current history start.')
-                void track(
+                void runNative(() =>
                     service.backfill(command.repositoryId, command.since).catch((error: unknown) => {
                         store.state.refreshError = error instanceof Error ? error.message : String(error)
                         store.persist()
@@ -369,15 +380,15 @@ void app.whenReady().then(() => {
                     progress({ stage: 'selecting' })
                     const path = await folder()
                     if (!path) return service.reply()
-                    return await track(service.scanRepositories(path, progress))
+                    return await runNative(() => service.scanRepositories(path, progress))
                 }
-                const importing = service.importRepositories(command.scanId, command.paths, progress)
+                const importing = runNative(async () => {
+                    const reply = await service.importRepositories(command.scanId, command.paths, progress)
+                    if (store.state.settings.refreshMinutes > 0) void runNative(() => service.refresh())
+                    return reply
+                })
                 if (service.reply().state.repositoryImport?.status !== 'running') return await importing
-                void track(
-                    importing.then(() => {
-                        if (store.state.settings.refreshMinutes > 0) void track(service.refresh())
-                    })
-                ).catch((error: unknown) => {
+                void importing.catch((error: unknown) => {
                     store.state.repositoryImport = {
                         id: store.state.repositoryImport?.id,
                         status: 'error',
@@ -614,11 +625,10 @@ void app.whenReady().then(() => {
                 break
             }
             case 'import': {
-                const priorWork = [...work]
                 restoring = true
                 const resume = service.prepareToClose()
                 try {
-                    await Promise.allSettled(priorWork)
+                    await drain()
                     const result = await dialog.showOpenDialog(mainWindow, {
                         properties: ['openFile'],
                         filters: [{ name: 'Tracking backup', extensions: ['json'] }]
@@ -664,20 +674,18 @@ void app.whenReady().then(() => {
                 return { ...service.reply(), remotes }
             }
             default:
-                return Effect.runPromise(service.execute(command))
+                return service.handle(command)
         }
         return service.reply()
     }
-    const durableCommand: typeof commandHandler = async (event, input) => {
+    const durableCommand = async (event: IpcMainInvokeEvent, input: unknown) => {
         if (closing || restoring || updating)
             throw new Error('Journal is busy; retry after it finishes saving or restoring')
-        return track(
-            (async () => {
-                const reply = await commandHandler(event, input)
-                await store.flush()
-                return reply
-            })()
-        )
+        return runNative(async (drain) => {
+            const reply = await commandHandler(event, input, drain)
+            await store.flush()
+            return reply
+        })
     }
     ipcMain.handle('journal:command', durableCommand)
     const updates = new ReplyUpdates()
@@ -707,14 +715,14 @@ void app.whenReady().then(() => {
         )
         if (pending) {
             const [source, repositoryId] = pending[0].split(':')
-            void track(service.refresh({ repositoryId, source: source === 'git' ? 'git' : 'github' }))
+            void runNative(() => service.refresh({ repositoryId, source: source === 'git' ? 'git' : 'github' }))
             return
         }
         if (minutes > 0 && !mainWindow.isDestroyed() && mainWindow.isVisible() && elapsed >= minutes * 60000)
-            void track(service.refresh())
+            void runNative(() => service.refresh())
     }
-    setInterval(refreshIfActive, 5000).unref()
-    if (store.state.settings.refreshMinutes > 0) void track(service.refresh())
+    void execute(work.repeat(5000, Effect.sync(refreshIfActive)))
+    if (store.state.settings.refreshMinutes > 0) void runNative(() => service.refresh())
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) mainWindow = windowFor()
     })
@@ -735,8 +743,8 @@ app.on('before-quit', (event) => {
     void (async () => {
         // Stop producers before sealing the writer queue. Already accepted operations
         // may still checkpoint while their network requests finish.
-        while (work.size) await Promise.allSettled([...work])
-        await store.shutdown()
+        await execute(work.shutdown(native(() => store.shutdown())))
+        await runtime.dispose()
     })()
         .then(() => {
             closed = true
