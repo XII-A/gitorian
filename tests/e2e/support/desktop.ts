@@ -16,6 +16,20 @@ interface Desktop {
     close: () => Promise<void>
 }
 
+async function within<T>(operation: Promise<T>, milliseconds: number, message: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+        return await Promise.race([
+            operation,
+            new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error(message)), milliseconds)
+            })
+        ])
+    } finally {
+        clearTimeout(timer)
+    }
+}
+
 export const test = base.extend<{ desktop: Desktop; desktopEntry: string }>({
     desktopEntry: ['out/main/index.js', { option: true }],
     desktop: async ({ desktopEntry }, use, info) => {
@@ -31,6 +45,7 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string }>({
             build: {},
             pid: undefined as number | undefined,
             exit: undefined as number | null | undefined,
+            signal: undefined as NodeJS.Signals | null | undefined,
             passed: false,
             cleanup: { removed: false },
             evidenceRetained: false,
@@ -46,35 +61,43 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string }>({
         let shutdownError: Error | undefined
         const close = async () => {
             if (!app || closed) return
-            let traceError: unknown
-            if (tracing) {
-                try {
-                    await app.context().tracing.stop({ path: info.outputPath('trace.zip') })
-                } catch (error) {
-                    traceError = error
-                }
-                tracing = false
-            }
             const child = app.process()
-            const timer = setTimeout(() => {
-                if (child.exitCode !== null || !child.pid) return
-                try {
-                    if (process.platform === 'win32')
-                        execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
-                    else child.kill('SIGKILL')
-                } catch (error) {
-                    report.error += `\nProcess termination: ${String(error)}`
-                    child.kill('SIGKILL')
-                }
-            }, 10_000)
+            const alive = () => child.exitCode === null && child.signalCode === null
             try {
-                await app.close()
-                report.exit = child.exitCode
-                expect(report.exit, 'Electron must exit cleanly').toBe(0)
-                if (traceError) throw new Error('Cannot save Electron trace', { cause: traceError })
+                // The deadline includes trace export: it can stall before Electron is asked to quit.
+                await within(
+                    (async () => {
+                        if (tracing) {
+                            await app.context().tracing.stop({ path: info.outputPath('trace.zip') })
+                            tracing = false
+                        }
+                        await app.close()
+                    })(),
+                    10_000,
+                    'Electron trace/close exceeded the shutdown deadline'
+                )
+                expect(child.exitCode, 'Electron must exit cleanly').toBe(0)
+            } catch (error) {
+                if (alive() && child.pid) {
+                    const exited = new Promise<void>((done) => child.once('exit', () => done()))
+                    try {
+                        if (process.platform === 'win32')
+                            execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+                                windowsHide: true,
+                                timeout: 5000,
+                                stdio: 'ignore'
+                            })
+                        else child.kill('SIGKILL')
+                        await within(exited, 5000, 'Owned Electron process did not exit after termination')
+                    } catch (terminationError) {
+                        report.error += `\nProcess termination: ${String(terminationError)}`
+                    }
+                }
+                throw error
             } finally {
-                clearTimeout(timer)
-                closed = child.exitCode !== null || child.signalCode !== null
+                closed = !alive()
+                report.exit = child.exitCode
+                report.signal = child.signalCode
             }
         }
         try {
@@ -186,7 +209,10 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string }>({
         }
         if (shutdownError) throw shutdownError
         expect(report.cleanup.removed, `Owned profile was not removed: ${scratch}`).toBe(true)
-        expect(report.evidenceRetained, 'Desktop evidence must survive cleanup').toBe(true)
+        if (info.status === info.expectedStatus) {
+            expect(report.evidenceRetained, 'Desktop evidence must survive cleanup').toBe(true)
+            expect(report.exit, 'Electron must exit cleanly').toBe(0)
+        }
     }
 })
 

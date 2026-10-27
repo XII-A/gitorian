@@ -1,5 +1,9 @@
 import { defineConfig } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
+import { resolve } from 'node:path'
+
+// Retain failure selection across runs while keeping each run's evidence immutable.
+process.env.PLAYWRIGHT_LAST_RUN_OUTPUT_FILE ??= resolve('.ai-docs/verification/desktop/.last-run.json')
 
 export default defineConfig({
     testDir: './tests/e2e',
