@@ -13,6 +13,7 @@ export function useRowHover(selector: string, children: ReactNode) {
     const width = useMotionValue(0)
     const height = useMotionValue(0)
     const opacity = useMotionValue(0)
+    const targets = useRef<number[]>([])
 
     const hide = useCallback(() => {
         if (!active.current) return
@@ -20,7 +21,7 @@ export function useRowHover(selector: string, children: ReactNode) {
         animate(opacity, 0, { duration: reduced ? 0 : motionTokens.duration.fast })
     }, [opacity, reduced])
     const position = useCallback(
-        (row: HTMLButtonElement, instant: boolean) => {
+        (row: HTMLButtonElement, mode: 'instant' | 'animate' | 'sync') => {
             if (!root.current) return
             const bounds = root.current.getBoundingClientRect()
             const rect = row.getBoundingClientRect()
@@ -30,8 +31,12 @@ export function useRowHover(selector: string, children: ReactNode) {
                 [width, rect.width],
                 [height, rect.height]
             ] as const
-            for (const [value, target] of dimensions) {
-                if (instant || reduced) value.jump(target)
+            for (const [index, [value, target]] of dimensions.entries()) {
+                // Disclosing a day resizes the list on every frame. Unchanged
+                // row geometry must not cancel a hover spring with jump().
+                if (mode === 'sync' && !reduced && targets.current[index] === target) continue
+                targets.current[index] = target
+                if (reduced || mode === 'instant' || (mode === 'sync' && !value.isAnimating())) value.jump(target)
                 else animate(value, target, motionTokens.spring.morph)
             }
         },
@@ -42,8 +47,9 @@ export function useRowHover(selector: string, children: ReactNode) {
         if (!row || !row.isConnected || row.closest('[inert]') || !root.current?.contains(row)) {
             // Opacity alone leaves transformed decorations in the scroll overflow.
             active.current = null
+            targets.current = []
             for (const value of [x, y, width, height, opacity]) value.jump(0)
-        } else position(row, true)
+        } else position(row, 'sync')
     }, [x, y, width, height, opacity, position])
     const hover = (event: PointerEvent<HTMLDivElement>) => {
         if (event.pointerType === 'touch' || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
@@ -54,7 +60,7 @@ export function useRowHover(selector: string, children: ReactNode) {
         }
         if (row === active.current) return
         active.current = row
-        position(row, opacity.get() === 0)
+        position(row, opacity.get() === 0 ? 'instant' : 'animate')
         animate(opacity, 1, { duration: reduced ? 0 : motionTokens.duration.instant })
     }
 

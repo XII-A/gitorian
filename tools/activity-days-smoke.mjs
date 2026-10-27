@@ -193,6 +193,44 @@ app.on('browser-window-created', (_, window) => {
                 const beforeSummary =
                     surface === 'hub' ? await js(`document.querySelector('.hub-stats').textContent`) : null
                 await pause(600)
+                // Hover between the unchanged preview rows while a day changes height.
+                // A resize elsewhere in the list must not cancel the shared glide.
+                /** @type {Array<{phase: string, start: number, target: number, frames: Array<{time: number, y: number}>}>} */
+                const hoverDuringDisclosure = await js(`(async()=>{
+                    const group=document.querySelector('${group}:has([aria-label*="2 more"])');
+                    group.scrollIntoView({block:'start',behavior:'instant'});
+                    const rows=group.querySelectorAll('${rows}'), trigger=group.querySelector('.activity-day-toggle');
+                    const highlight=group.closest('.activity-hover').querySelector('.activity-hover-highlight');
+                    const hover=row=>row.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerType:'mouse'}));
+                    const y=()=>highlight.getBoundingClientRect().top;
+                    hover(rows[0]); await new Promise(r=>setTimeout(r,200));
+                    const observations=[];
+                    for(const phase of ['expand','collapse']){
+                        trigger.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1}));
+                        await new Promise(r=>setTimeout(r,50));
+                        hover(rows[0]); await new Promise(r=>setTimeout(r,50));
+                        const start=y(), target=rows[1].getBoundingClientRect().top, frames=[];
+                        hover(rows[1]);
+                        await new Promise(resolve=>{const began=performance.now();const sample=()=>{
+                            frames.push({time:performance.now()-began,y:y()});
+                            if(performance.now()-began<250)requestAnimationFrame(sample);else resolve();
+                        };requestAnimationFrame(sample)});
+                        observations.push({phase,start,target,frames});
+                        await new Promise(r=>setTimeout(r,650));
+                    }
+                    return observations;
+                })()`)
+                writeFileSync(
+                    join(output, `${surface}-disclosure-hover.json`),
+                    JSON.stringify(hoverDuringDisclosure, null, 2)
+                )
+                for (const observation of hoverDuringDisclosure)
+                    assert.ok(
+                        observation.frames.filter(
+                            (frame) => frame.y > observation.start + 1 && frame.y < observation.target - 1
+                        ).length >= 3,
+                        `${surface}: row hover must glide during ${observation.phase}, rather than snap on a list resize`
+                    )
                 await js(`document.querySelector('${mondayGroup}').scrollIntoView({block:'start'})`)
                 await shot(`${surface}-previews.png`)
                 await js(`document.querySelector('${mondayGroup} .activity-day-toggle').click()`)
