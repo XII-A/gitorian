@@ -462,7 +462,7 @@ export function WorkspaceDraft({
                     {recoveryConflict ? 'Saved writing changed elsewhere. Choose which copy to keep.' : status}
                 </span>
                 {recoveryConflict && (
-                    <>
+                    <div className="ws-recovery-actions" role="group" aria-label="Resolve writing conflict">
                         <Button
                             variant="ghost"
                             size="sm"
@@ -498,7 +498,7 @@ export function WorkspaceDraft({
                         >
                             Keep saved writing
                         </Button>
-                    </>
+                    </div>
                 )}
                 {dirty.current && status.startsWith('Could not') && (
                     <Button className="ws-retry-saving" variant="ghost" size="sm" onClick={persist}>
