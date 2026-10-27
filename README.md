@@ -1,6 +1,5 @@
-<h1 align="center">
+<h1 align="left">
   <img src="resources/icon.png" alt="Gitorian app icon" width="96" height="96">
-  <br>
   <br>
   Gitorian
 </h1>
