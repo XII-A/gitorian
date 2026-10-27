@@ -52,5 +52,3 @@ You can change the destination to an existing parent page or database data sourc
 - Notion conversion supports a subset of its content model; complex blocks may not round-trip exactly. Publishing can modify remote page content. Review uncertain publish results in Notion before retrying.
 - Backups are manual. There is no built-in synchronization of the local database across devices, and published entries are separate from unfinished local drafts.
 - Tagged releases are built into drafts for installation verification before manual publication. In-app updates are available for packaged Windows installs starting with 0.1.5; the first installation and other platforms use manual downloads.
-
-
