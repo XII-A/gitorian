@@ -1,5 +1,51 @@
 .activity-row-list {
     container: activity-list / inline-size;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.activity-day-rows {
+    min-width: 0;
+    scroll-margin-top: var(--space-4);
+}
+.activity-day-rows .activity-row-list > li:first-child > .activity-row::after,
+.activity-day-toggle::after {
+    content: '';
+    position: absolute;
+    left: calc(var(--space-4) + var(--activity-node-size) / 2);
+    top: 0;
+    width: 1px;
+    height: var(--space-3);
+    background: var(--activity-line-color);
+    pointer-events: none;
+}
+.activity-day-rows > .activity-row-list > li:first-child > .activity-row::after {
+    content: none;
+}
+.activity-day-rows .activity-day-toggle {
+    display: grid;
+    grid-template-columns: var(--activity-node-size) minmax(0, 1fr);
+    align-items: center;
+    min-height: var(--control-height-lg);
+    padding: var(--space-3) var(--space-4);
+    gap: var(--space-3);
+    color: var(--text-secondary);
+    border-radius: var(--radius-control);
+    font-size: var(--text-sm);
+    font-weight: 400;
+}
+.activity-day-filter {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    --radius-control: var(--radius-pill);
+}
+.activity-day-toggle-label {
+    display: grid;
+    justify-items: start;
+}
+.activity-day-toggle-label > span {
+    grid-area: 1 / 1;
 }
 .activity-hover {
     position: relative;

@@ -29,8 +29,21 @@
     transition: color var(--duration-fast) var(--ease-standard);
 }
 .trigger:focus-visible {
-    outline: none;
     background: var(--surface-muted);
+}
+.plain,
+.plain .item {
+    border: 0;
+}
+.plain .item {
+    display: flex;
+    flex-direction: column;
+}
+.plain .panelInner {
+    padding: 0;
+}
+.plain .trigger {
+    justify-content: flex-start;
 }
 @media (hover: hover) and (pointer: fine) {
     .trigger:hover {

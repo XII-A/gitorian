@@ -39,7 +39,7 @@ export function useRowHover(selector: string, children: ReactNode) {
     )
     const sync = useCallback(() => {
         const row = active.current
-        if (!row || !row.isConnected || !root.current?.contains(row)) {
+        if (!row || !row.isConnected || row.closest('[inert]') || !root.current?.contains(row)) {
             // Opacity alone leaves transformed decorations in the scroll overflow.
             active.current = null
             for (const value of [x, y, width, height, opacity]) value.jump(0)
@@ -48,7 +48,7 @@ export function useRowHover(selector: string, children: ReactNode) {
     const hover = (event: PointerEvent<HTMLDivElement>) => {
         if (event.pointerType === 'touch' || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
         const row = event.target instanceof Element ? event.target.closest<HTMLButtonElement>(selector) : null
-        if (!row || row.disabled || !event.currentTarget.contains(row)) {
+        if (!row || row.disabled || row.closest('[inert]') || !event.currentTarget.contains(row)) {
             hide()
             return
         }

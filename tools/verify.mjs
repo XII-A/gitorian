@@ -38,12 +38,13 @@ if (
         'hub-dialog',
         'app-updates',
         'github-import',
-        'activity-filters'
+        'activity-filters',
+        'activity-days'
     ].includes(mode) ||
     process.argv.length !== 3
 ) {
     console.error(
-        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | app-updates | github-import | activity-filters (run pnpm build first)'
+        'Usage: pnpm verify doctor | repository-import | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | app-updates | github-import | activity-filters | activity-days (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -145,6 +146,7 @@ if (mode === 'doctor') {
                 readFileSync(join(root, 'tools/onboarding-disclosure-journey.mjs'))
             )
         for (const file of [
+            'src/renderer/ActivityDays.tsx',
             'src/renderer/GettingStarted.tsx',
             'src/renderer/OnboardingActivityPreview.tsx',
             'src/renderer/OnboardingSetupLayout.tsx',
@@ -198,6 +200,19 @@ if (mode === 'doctor') {
         if (result.code !== 0 || report.timedOut) throw new Error(`Electron journey failed: ${JSON.stringify(result)}`)
         const journey = JSON.parse(readFileSync(join(output, 'journey.json'), 'utf8'))
         if (!journey.passed) throw new Error('The journey did not report success')
+        if (mode === 'activity-days') {
+            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
+            try {
+                const activities = db
+                    .prepare("SELECT json FROM state_records WHERE collection='activities'")
+                    .all()
+                    .map((row) => JSON.parse(String(row.json)))
+                if (activities.length !== 132) throw new Error('Day navigation changed persisted activity')
+                writeFileSync(join(output, 'persisted-activities.json'), JSON.stringify(activities, null, 2))
+            } finally {
+                db.close()
+            }
+        }
         if (mode === 'line-statistics') {
             const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
             try {
@@ -298,7 +313,8 @@ if (mode === 'doctor') {
             mode !== 'hub-dialog' &&
             mode !== 'app-updates' &&
             mode !== 'github-import' &&
-            mode !== 'activity-filters'
+            mode !== 'activity-filters' &&
+            mode !== 'activity-days'
         ) {
             const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
             try {
@@ -383,16 +399,32 @@ if (mode === 'doctor') {
                       'persisted-drafts.json',
                       'journey.json'
                   ]
-                : mode === 'activity-counts' || mode === 'github-import' || mode === 'activity-filters'
+                : mode === 'activity-counts' ||
+                    mode === 'github-import' ||
+                    mode === 'activity-filters' ||
+                    mode === 'activity-days'
                   ? [
                         'actions.jsonl',
                         mode === 'activity-counts'
                             ? 'activity-counts.png'
                             : mode === 'github-import'
                               ? 'automatic-prs.png'
-                              : 'grouped-filters.png',
+                              : mode === 'activity-days'
+                                ? 'activity-days.png'
+                                : 'grouped-filters.png',
                         'journey.json',
                         ...(mode === 'activity-counts' ? ['summary-counter-motion.json'] : []),
+                        ...(mode === 'activity-days'
+                            ? [
+                                  'persisted-activities.json',
+                                  'hub-previews.png',
+                                  'workspace-previews.png',
+                                  'hub-collapse-motion.json',
+                                  'workspace-collapse-motion.json',
+                                  'hub-collapsed.png',
+                                  'workspace-collapsed.png'
+                              ]
+                            : []),
                         ...(mode === 'github-import'
                             ? [
                                   'connected-with-activity.png',

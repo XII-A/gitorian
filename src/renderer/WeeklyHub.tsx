@@ -22,6 +22,7 @@ import { ProjectFilter } from './ProjectFilter'
 import { ActivityChart } from './ActivityChart'
 import { ActivityRow } from './ActivityRow'
 import { ActivityHover } from './ActivityHover'
+import { ActivityDayFilter, ActivityDayRows, groupActivityDays, useActivityDays } from './ActivityDays'
 import { HubActivityDialog, type HubActivityDialogHandle } from './HubActivityDialog'
 import landscape from './assets/week-landscape.jpg'
 import './hub.css'
@@ -140,6 +141,7 @@ export function WeeklyHub({
     const currentWeek = weekOf(new Date(), state.settings)
     const [start, setStart] = useState(initialWeek || currentWeek)
     const end = offsetDay(start, 6)
+    const dayFilter = useActivityDays(start)
     const [project, setProject] = useState('all')
     const [tab, setTab] = useState<'all' | 'commit' | 'pr'>('all')
     const detailDialog = useRef<HubActivityDialogHandle>(null)
@@ -154,12 +156,13 @@ export function WeeklyHub({
     const visible = projectItems.filter(
         (item) => tab === 'all' || (tab === 'commit' ? item.kind === 'commit' : item.kind !== 'commit')
     )
+    const dayGroups = groupActivityDays(visible, state.settings.timezone, dayFilter.day)
     const period = `${formatDate(start)} – ${formatDate(end, { month: 'short', day: 'numeric', year: 'numeric' })}`
-    const row = (item: Activity, index: number, dayItems: Activity[]) => (
+    const row = (item: Activity, connected: boolean) => (
         <ActivityRow
             activity={item}
             repositoryName={state.repositories.find((repo) => repo.id === item.repositoryId)?.name ?? 'Repository'}
-            connected={index < dayItems.length - 1}
+            connected={connected}
             className={`hub-activity hub-kind-${item.kind}`}
             key={item.id}
             onClick={() => detailDialog.current?.open(item)}
@@ -190,6 +193,7 @@ export function WeeklyHub({
                     />
                 </Button>
             ))}
+            <ActivityDayFilter week={start} value={dayFilter.day} onValueChange={dayFilter.setDay} />
             <ProjectFilter repositories={state.repositories} value={project} onValueChange={setProject} />
         </div>
     )
@@ -223,6 +227,7 @@ export function WeeklyHub({
                         ? (() => {
                               setTab('all')
                               setProject('all')
+                              dayFilter.setDay('all')
                           })()
                         : state.repositories.some((repo) => !repo.removed)
                           ? void refresh()
@@ -454,18 +459,9 @@ export function WeeklyHub({
                                                     <h2>Activity this week</h2>
                                                 </div>
                                                 {filters}
-                                                {visible.length ? (
+                                                {dayGroups.length ? (
                                                     <ActivityHover>
-                                                        {[
-                                                            ...new Set(
-                                                                visible.map((item) =>
-                                                                    localDate(
-                                                                        new Date(item.date),
-                                                                        state.settings.timezone
-                                                                    )
-                                                                )
-                                                            )
-                                                        ].map((day) => (
+                                                        {dayGroups.map(([day, dayItems]) => (
                                                             <section className="hub-day" key={day}>
                                                                 <div className="hub-day-date">
                                                                     <strong>
@@ -473,20 +469,34 @@ export function WeeklyHub({
                                                                     </strong>
                                                                     <span>{formatDate(day)}</span>
                                                                 </div>
-                                                                <div className="hub-day-work activity-row-list">
-                                                                    {visible
-                                                                        .filter(
-                                                                            (item) =>
-                                                                                localDate(
-                                                                                    new Date(item.date),
-                                                                                    state.settings.timezone
-                                                                                ) === day
-                                                                        )
-                                                                        .map(row)}
-                                                                </div>
+                                                                <ActivityDayRows
+                                                                    day={day}
+                                                                    items={dayItems}
+                                                                    focused={dayFilter.day !== 'all'}
+                                                                    expanded={dayFilter.expanded.has(day)}
+                                                                    onExpandedChange={(open) =>
+                                                                        dayFilter.toggle(day, open)
+                                                                    }
+                                                                    renderRow={row}
+                                                                />
                                                             </section>
                                                         ))}
                                                     </ActivityHover>
+                                                ) : dayFilter.day !== 'all' ? (
+                                                    <div className="hub-empty">
+                                                        <h3>
+                                                            No matching activity for{' '}
+                                                            {formatDate(dayFilter.day, { weekday: 'long' })}
+                                                        </h3>
+                                                        <p>Choose another day or adjust the activity filters.</p>
+                                                        <Button
+                                                            variant="secondary"
+                                                            size="sm"
+                                                            onClick={() => dayFilter.setDay('all')}
+                                                        >
+                                                            Show all days
+                                                        </Button>
+                                                    </div>
                                                 ) : (
                                                     empty
                                                 )}

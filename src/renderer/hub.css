@@ -180,6 +180,10 @@
     color: var(--text-secondary);
 }
 .hub-filters {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--background);
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -208,9 +212,6 @@
 }
 .hub-filters > button > span {
     font-variant-numeric: tabular-nums;
-}
-.hub-filters > .project-filter {
-    margin-inline-start: auto;
 }
 .hub-project-summary {
     padding: var(--space-6);

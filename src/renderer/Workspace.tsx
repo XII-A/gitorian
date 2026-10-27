@@ -23,6 +23,7 @@ import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
 import { ActivityChart } from './ActivityChart'
 import { WorkspaceActivityList } from './WorkspaceActivityList'
+import { ActivityDayFilter, useActivityDays } from './ActivityDays'
 import { ProjectFilter } from './ProjectFilter'
 import { hasCachedDetails } from './activity-cache'
 import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
@@ -65,6 +66,7 @@ export function Workspace({
     onSettings
 }: Props) {
     const [week, setWeek] = useState(initialWeek)
+    const dayFilter = useActivityDays(week)
     const writingWeek = useRef(initialWrite ? initialWeek : undefined)
     useEffect(() => {
         if (week !== initialWeek) writingWeek.current = undefined
@@ -82,7 +84,7 @@ export function Workspace({
     useLayoutEffect(() => {
         // A new result set starts at the top before paint. Background refreshes keep their position.
         activityViewport.current?.scrollTo({ top: 0, behavior: 'instant' })
-    }, [week, project, branch, kind, authors])
+    }, [week, project, branch, kind, authors, dayFilter.day])
     const [searchExpanded, setSearchExpanded] = useState(false)
     const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('details')
     const [publishTarget, setPublishTarget] = useState<HTMLElement | null>(null)
@@ -220,10 +222,11 @@ export function Workspace({
         if (!initialActivity || initialInspected.current) return
         const activity = realState.activities.find((item) => item.id === initialActivity)
         if (activity) {
+            dayFilter.setDay(localDate(new Date(activity.date), state.settings.timezone))
             initialInspected.current = true
             void inspect(activity)
         }
-    }, [initialActivity, realState.activities, inspect])
+    }, [initialActivity, realState.activities, inspect, dayFilter, state.settings.timezone])
     const selected = state.activities.find((item) => item.id === selectedId)
     const activityState = useMemo(
         () => ({
@@ -322,12 +325,13 @@ export function Workspace({
     const { refresh, refreshing } = useActivityRefresh(run, week, offsetDay(week, 6), state.settings.timezone)
     const loadingWeek = useWeekHistory(state, run, week, sample)
     const emptyActivityAction = useCallback(() => {
+        dayFilter.setDay('all')
         setProject('all')
         setBranch('all')
         setKind('all')
         setAuthors([])
         if (!items.length) void refresh()
-    }, [items.length, refresh])
+    }, [items.length, refresh, dayFilter])
     const browse = async () => {
         if (project === 'all' || branch === 'all') return
         setHistoryBusy(true)
@@ -469,7 +473,10 @@ export function Workspace({
                             suggestionsLabel="This week"
                             onSelect={(result) => {
                                 const item = items.find((activity) => activity.id === result.id)
-                                if (item) void inspect(item, 'details')
+                                if (item) {
+                                    dayFilter.setDay(localDate(new Date(item.date), state.settings.timezone))
+                                    void inspect(item, 'details')
+                                }
                             }}
                         />
                     </div>
@@ -505,6 +512,7 @@ export function Workspace({
                                 </span>
                             </Button>
                         ))}
+                        <ActivityDayFilter week={week} value={dayFilter.day} onValueChange={dayFilter.setDay} />
                         <div className="ws-filter-scope">
                             <ProjectFilter
                                 repositories={state.repositories}
@@ -573,6 +581,7 @@ export function Workspace({
                     >
                         <WorkspaceActivityList
                             activities={visible}
+                            dayFilter={dayFilter}
                             repositories={state.repositories}
                             timezone={state.settings.timezone}
                             selectedId={selectedId}
