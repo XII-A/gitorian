@@ -14,6 +14,37 @@ test('emoji: formatter, colon search, dismissal, persistence', async ({ desktop 
     await body.click()
     await body.press('Control+A')
     await body.press('Backspace')
+    await test.step('footer menus lock writing scroll and formatter emoji fits', async () => {
+        await body.pressSequentially(Array.from({ length: 35 }, (_, i) => 'Line ' + String(i)).join('\n') + '\n')
+        const writing = page.getByRole('region', { name: 'Entry writing space', exact: true })
+        for (const trigger of ['/', ':', '/emoji']) {
+            await body.pressSequentially(trigger)
+            if (trigger === '/emoji') await page.getByRole('option', { name: 'Emoji', exact: true }).click()
+            const panel = page.locator('.ws-block-menu')
+            await expect(panel).toBeVisible()
+            if (trigger !== '/') {
+                await expect.poll(async () => (await panel.boundingBox())?.height ?? 0).toBeGreaterThan(250)
+                const bounds = (await panel.boundingBox())!
+                expect(bounds.y).toBeGreaterThanOrEqual(0)
+                expect(bounds.y + bounds.height).toBeLessThanOrEqual(
+                    page.viewportSize()?.height ?? (await page.evaluate(() => innerHeight))
+                )
+            }
+            const offset = await writing.evaluate((el) => el.scrollTop)
+            await writing.hover({ position: { x: 10, y: 10 } })
+            await page.mouse.wheel(0, -500)
+            await page.waitForTimeout(100)
+            expect(await writing.evaluate((el) => el.scrollTop)).toBe(offset)
+            if (trigger === '/emoji') await shot('footer-formatter-emoji')
+            await body.press('Escape')
+            await writing.hover({ position: { x: 10, y: 10 } })
+            await page.mouse.wheel(0, -300)
+            await expect.poll(() => writing.evaluate((el) => el.scrollTop)).toBeLessThan(offset)
+            await body.press('Backspace')
+        }
+        await body.press('Control+A')
+        await body.press('Backspace')
+    })
     await page.evaluate(() => {
         const samples: { trigger: string; ms: number; peakOptions: number }[] = []
         Object.assign(window, { emojiOpenSamples: samples })
