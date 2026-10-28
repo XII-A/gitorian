@@ -3,7 +3,6 @@ import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
-import { readableError } from './background-work'
 import { sourceProblems } from './background-work'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
@@ -47,7 +46,6 @@ interface Props {
     state: State
     notionConnected: boolean
     run: (command: Command) => Promise<Reply | undefined>
-    error: string
     initialWeek: string
     initialActivity?: string
     initialWrite?: boolean
@@ -59,7 +57,6 @@ export function Workspace({
     state: realState,
     notionConnected,
     run: realRun,
-    error,
     initialWeek,
     initialActivity,
     initialWrite = false,
@@ -462,14 +459,6 @@ export function Workspace({
                             <WorkspaceIcon name="close" />
                         </Button>
                     </div>
-                )}
-                {!sample && error && (
-                    <Alert tone="danger" title="Activity could not be refreshed">
-                        <p>{readableError(error)}</p>
-                        <Button variant="secondary" size="sm" onClick={refresh}>
-                            Retry refresh
-                        </Button>
-                    </Alert>
                 )}
                 <div className="ws-frame" data-inspecting={!!inspector}>
                     <aside className="ws-activity" aria-label="Weekly activity">

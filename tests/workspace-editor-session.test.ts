@@ -7,8 +7,9 @@ import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
 import { sampleState } from '../src/renderer/workspace-sample'
 import type { Command, Reply } from '../src/shared/model'
 
+const notifications = vi.hoisted(() => ({ toast: vi.fn(), dismiss: vi.fn(), update: vi.fn() }))
 vi.mock('../src/renderer/components/arc/toast-stack/toast-stack', () => ({
-    useToastStack: () => ({ toast: vi.fn(), dismiss: vi.fn() })
+    useToastStack: () => notifications
 }))
 
 it('keeps actual editor revisions through idle saves, title edits, citations, in-flight writes and pagehide', async () => {

@@ -3,11 +3,13 @@ import { test, expect } from './support/desktop'
 function sampleSkyEntry() {
     const frames: number[] = []
     Object.assign(window, { skyEntryFrames: frames })
-    const end = performance.now() + 1600
     const sample = () => {
         const canvas = document.querySelector('.hub-header-sky canvas')
-        if (canvas) frames.push(Number(getComputedStyle(canvas).opacity))
-        if (performance.now() < end) requestAnimationFrame(sample)
+        const opacity = canvas ? Number(getComputedStyle(canvas).opacity) : 0
+        if (canvas) frames.push(opacity)
+        // Shader compilation on software GPUs can outlast a fixed startup window.
+        // Observe the actual entry through completion; Playwright bounds the assertion.
+        if (!canvas?.hasAttribute('data-ready') || opacity < 1) requestAnimationFrame(sample)
     }
     requestAnimationFrame(sample)
 }
@@ -16,7 +18,7 @@ test('header sky follows local time, respects reduced motion and survives route 
     const { page, shot } = desktop
     const sky = page.locator('.header-atmosphere')
     await page.addInitScript(sampleSkyEntry)
-    await page.clock.install({ time: new Date('2026-10-28T12:00:00') })
+    await page.clock.setFixedTime(new Date('2026-10-28T12:00:00'))
     await page.reload()
     await expect(sky).toHaveAttribute('data-phase', 'day')
     await expect(sky).toHaveAttribute('aria-hidden', 'true')
@@ -57,7 +59,7 @@ test('header sky follows local time, respects reduced motion and survives route 
     expect(motion, 'Cloud motion must be visible after downsampling away shader grain').toBeGreaterThan(1)
     await expect(page.getByRole('toolbar', { name: 'Sky preview' })).toHaveCount(0)
     const setHour = async (hour: number) => {
-        await page.clock.setSystemTime(new Date(2026, 9, 28, hour))
+        await page.clock.setFixedTime(new Date(2026, 9, 28, hour))
         await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     }
     await setHour(23)
@@ -102,11 +104,11 @@ test('header sky follows local time, respects reduced motion and survives route 
         [3, 'night'],
         [6, 'dawn']
     ] as const) {
-        await page.clock.setSystemTime(new Date(2026, 9, 28, hour))
+        await page.clock.setFixedTime(new Date(2026, 9, 28, hour))
         await page.evaluate(() => window.dispatchEvent(new Event('focus')))
         await expect(sky).toHaveAttribute('data-phase', phase)
     }
-    await page.clock.setSystemTime(new Date('2026-10-28T19:00:00'))
+    await page.clock.setFixedTime(new Date('2026-10-28T19:00:00'))
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     await expect(sky).toHaveAttribute('data-phase', 'dusk')
     await page.emulateMedia({ reducedMotion: 'reduce' })

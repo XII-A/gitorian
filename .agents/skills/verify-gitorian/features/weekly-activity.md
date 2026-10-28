@@ -49,3 +49,9 @@ Run `pnpm verify activity-days` after a build. The disposable real Git fixture c
 - Retain `actions.jsonl`, hub/workspace preview screenshots, `activity-days.png`, `journey.json` and `run.json` with successful exit and cleanup. This fixture proves real Git acquisition and desktop interaction; no external integration is used.
 
 Workspace navigation requests a bounded `view` for the selected week and follows activity-page cursors. Metadata and event dates live in relational tables in `journal.sqlite`; patch bodies load separately. Check `tests/week-history.test.ts` for cached-history/timezone behavior and `tests/database-integrity.test.ts` for atomic batch/checkpoint rejection.
+
+## Workspace command rejection
+
+Run `pnpm test:e2e workspace-errors` after `pnpm build`. The owning journey imports a disposable real Git repository, opens its workspace and rejects refresh at Electron IPC handler registration. Refresh activity must show one Arc toast, ?Could not refresh activity?, with Retry refresh and no header Alert. Repeated failure updates the same toast; removing the rejection and selecting Retry refresh recovers and dismisses it. Inspector diff rejection must remain inline without a command toast. Git, SQLite, preload and renderer stay real; only command rejection is injected. No accounts or publishing are used. Retain numbered PNGs, fixture.json, source.patch, trace, actions and run.json with passed/cleanup success.
+
+Command-boundary notifications own workspace foreground failures only. Loaded-state polling is silent, successful acquisition source warnings stay with BackgroundNotifications, and draft, history-dialog and inspector recovery stay with their surfaces. Other foreground rejections offer Retry action for the original command rather than retrying refresh.
