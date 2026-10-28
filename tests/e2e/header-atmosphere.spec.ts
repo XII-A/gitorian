@@ -3,15 +3,25 @@ import { test, expect } from './support/desktop'
 function sampleSkyEntry() {
     const frames: number[] = []
     Object.assign(window, { skyEntryFrames: frames })
-    const sample = () => {
-        const canvas = document.querySelector('.hub-header-sky canvas')
-        const opacity = canvas ? Number(getComputedStyle(canvas).opacity) : 0
-        if (canvas) frames.push(opacity)
-        // Shader compilation on software GPUs can outlast a fixed startup window.
-        // Observe the actual entry through completion; Playwright bounds the assertion.
-        if (!canvas?.hasAttribute('data-ready') || opacity < 1) requestAnimationFrame(sample)
-    }
-    requestAnimationFrame(sample)
+    // Capture the real CSS transition as soon as the ready canvas enters style
+    // calculation. Sampling its timeline avoids imposing a frame-rate floor on CI.
+    const observer = new MutationObserver(() => {
+        const canvas = document.querySelector('.hub-header-sky canvas[data-ready="true"]')
+        if (!canvas) return
+        const animation = canvas
+            .getAnimations()
+            .find((animation) => animation instanceof CSSTransition && animation.transitionProperty === 'opacity')
+        if (!animation) return
+        animation.pause()
+        const duration = Number(animation.effect!.getComputedTiming().duration)
+        for (const fraction of [0.25, 0.75]) {
+            animation.currentTime = duration * fraction
+            frames.push(Number(getComputedStyle(canvas).opacity))
+        }
+        animation.play()
+        observer.disconnect()
+    })
+    observer.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-ready'] })
 }
 
 test('header sky follows local time, respects reduced motion and survives route changes', async ({ desktop }) => {
@@ -30,9 +40,10 @@ test('header sky follows local time, respects reduced motion and survives route 
                 const frames = await page.evaluate<number[]>('window.skyEntryFrames')
                 return frames.filter((opacity) => opacity > 0 && opacity < 1).length
             },
-            { message: 'Startup sky must blend through intermediate opacity frames' }
+            { message: 'Startup sky transition must interpolate opacity' }
         )
         .toBeGreaterThan(1)
+    expect(await page.evaluate<boolean>('window.skyEntryFrames[1] > window.skyEntryFrames[0]')).toBe(true)
     await expect(sky.locator('canvas')).toHaveCSS('opacity', '1')
     await expect(sky).toHaveCSS('height', '400px')
     await shot('00-hub-day-sky')
@@ -147,9 +158,10 @@ test('header sky follows local time, respects reduced motion and survives route 
                 const frames = await page.evaluate<number[]>('window.skyEntryFrames')
                 return frames.filter((opacity) => opacity > 0 && opacity < 1).length
             },
-            { message: 'Returning to hub must blend the ready sky into place' }
+            { message: 'Returning hub transition must interpolate opacity' }
         )
         .toBeGreaterThan(1)
+    expect(await page.evaluate<boolean>('window.skyEntryFrames[1] > window.skyEntryFrames[0]')).toBe(true)
     await shot('02-return-hub')
     for (let visit = 0; visit < 30; visit++) {
         await page.getByRole('button', { name: 'Open journal', exact: true }).click()
