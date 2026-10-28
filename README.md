@@ -71,6 +71,7 @@ pnpm dev
 `pnpm dev` watches the main process, preload, and renderer. Development uses the application data directory too; back up existing data before experimenting with storage changes.
 
 ```sh
+pnpm verify:release # Final check, compile and desktop verification
 pnpm check        # TypeScript, lint, formatting, and unit/integration tests
 pnpm build        # Production compilation
 pnpm test:e2e     # Real Electron journeys (after build)

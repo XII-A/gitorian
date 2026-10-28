@@ -14,8 +14,7 @@ const electron = require('electron')
 const mode = process.argv[2]
 // Migrated journeys have one owner; keep the existing verification entry point discoverable.
 if (['repository-import', 'writing-checklist'].includes(mode) && process.argv.length === 3) {
-    const cli = require.resolve('@playwright/test/cli')
-    const child = spawn(process.execPath, [cli, 'test', mode], {
+    const child = spawn(process.execPath, ['tools/verification.mjs', 'desktop', mode], {
         cwd: root,
         stdio: 'inherit',
         windowsHide: true
