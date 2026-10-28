@@ -73,10 +73,10 @@ importers:
         version: 0.9.12
       drizzle-orm:
         specifier: 1.0.0-rc.5
-        version: 1.0.0-rc.5(effect@3.22.2)(zod@4.6.5)
+        version: 1.0.0-rc.5(effect@3.22.4)(zod@4.6.5)
       effect:
-        specifier: 3.22.2
-        version: 3.22.2
+        specifier: 3.22.4
+        version: 3.22.4
       electron-updater:
         specifier: 6.8.9
         version: 6.8.9
@@ -158,7 +158,7 @@ importers:
         version: 5.1.4(vite@7.3.7(@types/node@24.19.1)(jiti@2.7.0)(tsx@4.23.15))
       drizzle-kit:
         specifier: 1.0.0-rc.5
-        version: 1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(effect@3.22.2)(zod@4.6.5))
+        version: 1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(effect@3.22.4)(zod@4.6.5))
       electron:
         specifier: 44.5.1
         version: 44.5.1
@@ -199,8 +199,8 @@ importers:
   services/notion-oauth:
     dependencies:
       effect:
-        specifier: 3.22.2
-        version: 3.22.2
+        specifier: 3.22.4
+        version: 3.22.4
     devDependencies:
       esbuild:
         specifier: 0.25.12
@@ -3117,8 +3117,8 @@ packages:
   duplexer2@0.1.4:
     resolution: {integrity: sha512-asLFVfWWtJ90ZyOUHMqk7/S2w2guQKxUI2itj3d92ADHhxUSbCMGi1f1cBcJ7xM1To+pE/Khbwo1yuNbMEPKeA==}
 
-  effect@3.22.2:
-    resolution: {integrity: sha512-fm1CQXCs7GTMwpadZxwU5rnAb2bN6mbQpknq/pXBGCzSKkosNYb9k0wsoL0TfB10rSa5xOEZJjo77u/KLXSANg==}
+  effect@3.22.4:
+    resolution: {integrity: sha512-RNshu7AXVxxDh6aS4lothhJ+QoZ4xSykbWNaaVdvDN72RMyVwhCGdALkyl1TbEydgAmRIdD1eTyJqBUGwSBGDA==}
 
   ejs@3.1.10:
     resolution: {integrity: sha512-UeJmFfOrAQS8OJWPZ4qtgHyWExa088/MtK5UEyoJGFH67cDEXkZSviOiKRCZ4Xij0zxI3JECgYs3oKx+AizQBA==}
@@ -7404,13 +7404,13 @@ snapshots:
 
   dotenv@16.6.1: {}
 
-  drizzle-kit@1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(effect@3.22.2)(zod@4.6.5)):
+  drizzle-kit@1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(effect@3.22.4)(zod@4.6.5)):
     optionalDependencies:
-      drizzle-orm: 1.0.0-rc.5(effect@3.22.2)(zod@4.6.5)
+      drizzle-orm: 1.0.0-rc.5(effect@3.22.4)(zod@4.6.5)
 
-  drizzle-orm@1.0.0-rc.5(effect@3.22.2)(zod@4.6.5):
+  drizzle-orm@1.0.0-rc.5(effect@3.22.4)(zod@4.6.5):
     optionalDependencies:
-      effect: 3.22.2
+      effect: 3.22.4
       zod: 4.6.5
 
   dunder-proto@1.0.1:
@@ -7423,7 +7423,7 @@ snapshots:
     dependencies:
       readable-stream: 2.3.8
 
-  effect@3.22.2:
+  effect@3.22.4:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 3.23.2
