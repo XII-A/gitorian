@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
-import { Grid2X2, Clock, Smile, Leaf, Coffee, Trophy, Plane, Lightbulb, Shapes, Flag } from 'lucide-react'
+import { Grid2X2, Clock, Smile, Leaf, Coffee, Trophy, Plane, Lightbulb, Shapes } from 'lucide-react'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/arc/tabs/tabs'
 import atlas from './assets/emoji-atlas.json'
@@ -13,7 +13,7 @@ const glyphPositions = Object.fromEntries(
     ])
 )
 
-const icons = [Grid2X2, Clock, Smile, Leaf, Coffee, Trophy, Plane, Lightbulb, Shapes, Flag]
+const icons = [Grid2X2, Clock, Smile, Leaf, Coffee, Trophy, Plane, Lightbulb, Shapes]
 type Row = { label: string } | { start: number; items: EmojiResult[] }
 export function EmojiPicker({
     results,

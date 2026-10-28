@@ -3,6 +3,12 @@ import { test, expect } from './support/desktop'
 
 test('emoji: formatter, colon search, dismissal, persistence', async ({ desktop }, info) => {
     const { page, shot } = desktop
+    await page.evaluate(() =>
+        localStorage.setItem(
+            'gitorian:emoji-history:v1',
+            JSON.stringify([{ emoji: '\u{1f1f8}\u{1f1fe}', count: 4, last: Date.now() }])
+        )
+    )
     await page.getByRole('button', { name: 'Open journal', exact: true }).click()
     const body = page.getByRole('textbox', { name: 'Journal body', exact: true })
     await body.click()
@@ -59,6 +65,12 @@ test('emoji: formatter, colon search, dismissal, persistence', async ({ desktop 
     })
     await body.pressSequentially(':')
     await expect(page.getByRole('option').first()).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Flags', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('option', { name: 'syria', exact: true })).toHaveCount(0)
+    await page.getByRole('tab', { name: 'Recent', exact: true }).click()
+    await expect(page.getByRole('option')).toHaveCount(0)
+    await expect(page.getByText('Your picked emoji will appear here.')).toBeVisible()
+    await page.getByRole('tab', { name: 'All emoji', exact: true }).click()
     await body.press('Escape')
     await body.press('Backspace')
     await body.pressSequentially('Shipped :rocket')
@@ -208,7 +220,7 @@ test('emoji: formatter, colon search, dismissal, persistence', async ({ desktop 
     await shot('02-formatter-emoji-picker')
     await page.getByRole('option', { name: 'smile', exact: true }).click()
     await expect(body).toContainText('\u{1f604}')
-    await body.pressSequentially(' :zzzznotanemoji')
+    await body.pressSequentially(' :syria')
     await expect(page.getByText('No emoji found. Try another name.')).toBeVisible()
     await body.press('Escape')
     await expect(page.getByRole('dialog', { name: 'Choose emoji' })).toHaveCount(0)

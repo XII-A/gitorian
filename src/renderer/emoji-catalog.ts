@@ -9,8 +9,7 @@ export const emojiCategories = [
     { id: 'activity', label: 'Activities' },
     { id: 'travel', label: 'Travel' },
     { id: 'objects', label: 'Objects' },
-    { id: 'symbols', label: 'Symbols' },
-    { id: 'flags', label: 'Flags' }
+    { id: 'symbols', label: 'Symbols' }
 ] as const
 export type EmojiCategory = (typeof emojiCategories)[number]['id']
 export interface EmojiUse {
@@ -26,15 +25,17 @@ const categoryMap: Record<string, EmojiCategory> = {
     Activities: 'activity',
     'Travel & Places': 'travel',
     Objects: 'objects',
-    Symbols: 'symbols',
-    Flags: 'flags'
+    Symbols: 'symbols'
 }
 const normalize = (text: string) => text.toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ')
-const catalog = gemoji.map((item) => ({
-    ...item,
-    section: categoryMap[item.category] ?? 'objects',
-    search: normalize([item.description, ...item.names, ...item.tags].join(' '))
-}))
+// Keep flags out of browsing, search, and saved picks until they have supported artwork.
+const catalog = gemoji
+    .filter((item) => item.category !== 'Flags')
+    .map((item) => ({
+        ...item,
+        section: categoryMap[item.category] ?? 'objects',
+        search: normalize([item.description, ...item.names, ...item.tags].join(' '))
+    }))
 const byEmoji = new Map(catalog.map((item) => [item.emoji, item]))
 export type EmojiResult = (typeof catalog)[number]
 export const emojiHistoryKey = 'gitorian:emoji-history:v1'
