@@ -303,7 +303,14 @@ app.on('browser-window-created', (_, initial) => {
             const mainTransactionExecs = sqliteExecs.filter(
                 (row) => row.start >= mainTicks[0] && ['BEGIN IMMEDIATE', 'COMMIT', 'ROLLBACK'].includes(row.sql)
             )
+            const headerAtmosphere = await js(`(() => {
+                const sky = document.querySelector('.header-atmosphere')
+                const canvas = sky?.querySelector('canvas')
+                return { renderer: sky?.dataset.renderer, phase: sky?.dataset.phase,
+                    width: canvas?.width, height: canvas?.height, visible: !document.hidden }
+            })()`)
             const summary = {
+                headerAtmosphere,
                 label,
                 setup,
                 churn,

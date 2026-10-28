@@ -254,18 +254,23 @@ function makeJournal() {
                                         })
                                     )
                                 )
-                                completed++
+                                const finished = ++completed
+                                // Publish before yielding so concurrent completions cannot skip a count.
+                                onProgress?.({
+                                    stage: 'processing',
+                                    completed: finished,
+                                    total: discovered.paths.length
+                                })
                                 yield* local(() =>
                                     store.saveProgress({
                                         repositoryImport: {
                                             id: importId,
                                             status: 'running',
-                                            completed,
+                                            completed: finished,
                                             total: discovered.paths.length
                                         }
                                     })
                                 )
-                                onProgress?.({ stage: 'processing', completed, total: discovered.paths.length })
                             }),
                         { concurrency: 2, discard: true }
                     )

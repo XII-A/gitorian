@@ -1,0 +1,55 @@
+.header-atmosphere {
+    --sky-0: #11192e;
+    --sky-1: #383c62;
+    --sky-2: #747b99;
+    --sky-3: #29324d;
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-enter);
+    background:
+        radial-gradient(ellipse at 25% 45%, color-mix(in srgb, var(--sky-2) 50%, transparent), transparent 65%),
+        linear-gradient(var(--sky-0), var(--sky-1));
+}
+.header-atmosphere[data-phase] {
+    opacity: 1;
+    @starting-style {
+        opacity: 0;
+    }
+}
+.header-atmosphere canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity var(--duration-standard) var(--ease-enter);
+}
+.header-atmosphere canvas[data-ready='true'] {
+    opacity: 1;
+    @starting-style {
+        opacity: 0;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .header-atmosphere,
+    .header-atmosphere canvas {
+        transition-duration: var(--duration-fast);
+    }
+}
+.header-atmosphere::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle, rgb(255 255 255 / 0.035) 0.6px, transparent 1px) 0 0 / 7px 7px,
+        linear-gradient(to bottom, color-mix(in oklab, var(--background) 42%, transparent), var(--background));
+}
+.hub-header-sky {
+    height: 400px;
+}
+.workspace-header-sky {
+    height: 110px;
+}

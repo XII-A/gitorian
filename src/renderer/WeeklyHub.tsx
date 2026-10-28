@@ -25,7 +25,7 @@ import { ActivityRow } from './ActivityRow'
 import { ActivityHover } from './ActivityHover'
 import { ActivityDayFilter, ActivityDayRows, groupActivityDays, useActivityDays } from './ActivityDays'
 import { HubActivityDialog, type HubActivityDialogHandle } from './HubActivityDialog'
-import landscape from './assets/week-landscape.jpg'
+import { HeaderAtmosphere } from './HeaderAtmosphere'
 import './hub.css'
 import { offsetDay, rangeActivities, journalWeek } from './hub-model'
 import { Tooltip } from './components/arc/tooltip/tooltip'
@@ -280,9 +280,7 @@ export function WeeklyHub({
                 <a className="hub-skip" href="#hub-content">
                     Skip to weekly overview
                 </a>
-                <div className="hub-atmosphere" aria-hidden="true">
-                    <img src={landscape} alt="" />
-                </div>
+                <HeaderAtmosphere surface="hub" />
                 <nav className="hub-topbar" aria-label="Date range and journal controls">
                     <div className="hub-date-controls">
                         <DateRangePicker
