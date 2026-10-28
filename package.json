@@ -111,6 +111,7 @@
         "gitdiff-parser": "0.3.1",
         "lowlight": "^3.3.0",
         "lucide-react": "1.52.0",
+        "mermaid": "^12.2.0",
         "motion": "14.0.0",
         "react": "19.3.0",
         "react-diff-view": "3.3.3",

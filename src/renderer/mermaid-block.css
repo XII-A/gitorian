@@ -1,0 +1,62 @@
+.activity-mermaid-render-host *,
+.activity-mermaid-render-host *::before,
+.activity-mermaid-render-host *::after {
+    animation: none !important;
+    transition: none !important;
+}
+
+.activity-mermaid {
+    min-width: 0;
+    margin-bottom: var(--space-4);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    background: var(--surface-muted);
+}
+.activity-mermaid-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border-bottom: 1px solid var(--border-subtle);
+}
+.activity-mermaid-canvas {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-4);
+}
+.hub-detail-markdown .activity-mermaid-canvas img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0;
+    border: 0;
+    outline: none;
+    border-radius: 0;
+    background: none;
+}
+.activity-mermaid-canvas[data-actual-size='true'] {
+    width: max-content;
+    min-width: 100%;
+}
+.hub-detail-markdown .activity-mermaid-canvas[data-actual-size='true'] img {
+    max-width: none;
+}
+.hub-detail-markdown .activity-mermaid pre {
+    margin: 0;
+    min-width: max-content;
+    overflow: visible;
+    border-radius: 0;
+}
+.activity-mermaid-loading {
+    min-height: 200px;
+    margin: var(--space-4);
+}
+.hub-detail-markdown .activity-mermaid-error {
+    margin: 0;
+    padding: var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
