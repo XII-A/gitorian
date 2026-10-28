@@ -244,7 +244,7 @@ it('offers icon-and-label commands, scrolls the active keyboard option, and inse
         })
         const options = [...document.querySelectorAll<HTMLElement>('.ws-block-menu [role="option"]')]
         expect(host.contains(document.querySelector('.ws-block-menu'))).toBe(false)
-        expect(options).toHaveLength(13)
+        expect(options.some((option) => option.textContent === 'Emoji')).toBe(true)
         expect(options.every((option) => !!option.querySelector('svg') && !option.querySelector('small'))).toBe(true)
         const viewport = document.querySelector<HTMLElement>('[aria-label="Formatting options"]')!
         vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 250, 100))

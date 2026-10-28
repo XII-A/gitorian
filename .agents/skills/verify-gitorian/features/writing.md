@@ -89,3 +89,11 @@ Run `pnpm build`, `pnpm verify doctor`, then `pnpm test:e2e workspace-save-error
 The sky journey fixes only wall-clock time, leaving animation scheduling real. Entry verification captures the actual ready-canvas CSS transition and checks increasing intermediate opacity at 25% and 75% of its timeline. It imposes no minimum frame rate or shader startup deadline beyond the journey assertion timeout.
 
 The sky journey verifies visible cloud movement while the renderer remains animated. On slow machines it requires the static CSS sky, hidden canvas and zero continuing shader draws. On faster machines it deliberately blocks animation frames to exercise that same fallback before continuing writing and route recovery.
+
+## Emoji
+
+Run `pnpm test:e2e emoji` in a disposable journal profile. Type `:rocket`, choose with Enter, then open `/emoji` from the formatter: it becomes a literal `:` with editing focus retained. Type to search, use the Arc category tabs, and check Recent ordering after repeated picks and renderer reload. Verify insertion replaces the trigger, unmatched queries show recovery copy, Escape retains text, and both inserted emoji survive autosave and reopening after reload. The journey retains browse, filtered, and inserted screenshots. Emoji are ordinary Unicode text, so existing save/export paths apply.
+
+The grid virtualizes rows with two-row overscan. The journey bounds mounted options below 160, scrolls with the pointer over the grid, and checks that scrolling advances without snapping back. Category controls stay above the scrolling content, with a 16px group gap. It checks picker bounds at 390, 768, 1024 and 1440 pixels and captures the RTL mirror.
+
+Emoji cold-open verification measures from the colon key (and formatter Enter) to the next frame containing options, retains `emoji-open-timing.json`, and requires less than 200ms and fewer than 160 mounted options throughout opening. The ScrollArea height has an explicit fallback before Radix publishes its placement variables; without it the initial viewport can expand to the whole catalog. Category tests require an evenly filled strip and transparent hovered/focused tabs.

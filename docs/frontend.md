@@ -105,6 +105,8 @@ Arc `Select` supports a local `variant="ghost"` for filter chips and `contentMin
 
 The project chip follows PRs & reviews, shows the available project count at rest, and shows the selected project name when filtered. The Filters chip is icon-only and opens deliberate branch/history loading. Feature collection, definition, grouping, and filtering are outside the app scope. The shared model, backend commands, details controls, and sample data no longer contain feature groups.
 
+Arc `TabsList` supports a local `fullWidth` option that distributes its triggers evenly across the available strip. The emoji picker uses it with underline tabs. Formatter option styles target only `role="option"`, so they do not add filled selection backgrounds to nested tabs.
+
 Arc `TabsList` supports a local `edgeToEdge` option: the strip spans its pane with square outer corners while individual tabs retain their shared control radius. Related items reuse the activity row styles. Both writing and inspector footers use `--workspace-footer-height` (64px).
 
 Activity details in the hub and workspace share `ChangeStatistics` and `ChangeCounts`. Totals open an Arc Popover with a category table; signs and accessible labels preserve the meaning of the addition/deletion colors. The shared `change-statistics` module owns path classification, complete totals, and parsed-patch line counting. File metadata retains counts independently of patch display limits; older metadata without counts reloads through the existing details command. Binary counts are excluded when identified, and unknown counts stay unavailable rather than becoming zero. Keep the selected file's path and counts visible in the Diff tab in both docked and detached inspectors.
