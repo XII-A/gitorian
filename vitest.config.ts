@@ -13,6 +13,5 @@ export default defineConfig({
         }
     ],
     // Domain scenarios own native database workers; bound simultaneous profiles and Git processes.
-    // Threads retain per-file isolation without spawning a process for every test file.
-    test: { include: ['tests/**/*.test.ts'], pool: 'threads', maxWorkers: 4, testTimeout: 20000 }
+    test: { include: ['tests/**/*.test.ts'], maxWorkers: 4, testTimeout: 20000 }
 })
