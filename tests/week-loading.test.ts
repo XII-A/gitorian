@@ -13,7 +13,6 @@ import { workspace } from './fixtures'
 import * as gitModule from '../src/main/git'
 import { rangeActivities } from '../src/renderer/hub-model'
 import { Button } from '../src/renderer/components/arc/button/button'
-import { execFileSync } from 'node:child_process'
 Object.defineProperty(Element.prototype, 'animate', { value: undefined, configurable: true })
 it('scopes the button to unfinished sources needed for the selected week across four repositories', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -86,7 +85,7 @@ it('scopes the button to unfinished sources needed for the selected week across 
         })
     }
 })
-it('shows real partial Git results while loading and clears the button when all four repositories finish', async () => {
+it('shows persisted partial activity while one source is gated and clears loading when it finishes', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
     const apps = await Promise.all(Array.from({ length: 4 }, () => workspace()))
     const app = apps[0]
@@ -97,39 +96,41 @@ it('shows real partial Git results while loading and clears the button when all 
     const gate = new Promise<void>((resolve) => {
         release = resolve
     })
-    let secondBatch = false
+    const secondBatch = Promise.withResolvers<undefined>()
+    let firstBatch: Awaited<ReturnType<typeof gitModule.indexCommits>> | undefined
     const original = gitModule.indexCommits
     const index = vi.spyOn(gitModule, 'indexCommits').mockImplementation(async (...args) => {
-        if (args[0].id === app.repository.id && args[3]) {
-            secondBatch = true
+        if (args[0].id !== app.repository.id) return original(...args)
+        if (args[3]) {
+            secondBatch.resolve(undefined)
             await gate
+            return firstBatch!
         }
-        return original(...args)
+        firstBatch = await original(...args)
+        const partial = firstBatch.items.find((item) => item.title.startsWith('Pending source'))!
+        return { refs: firstBatch.refs, items: [partial], history: [partial], nextOffset: 1 }
     })
     let pending: Promise<unknown> | undefined
     try {
-        // A real history larger than one acquisition page, with non-monotonic
-        // author dates relative to the fixture's recently authored initial commit.
-        let input = ''
-        for (let i = 1; i <= 2000; i++) {
-            input += `commit refs/heads/archive\nmark :${i}\ncommitter Journal author <first@example.com> ${1791244800 + i} +0000\ndata 4\nWork\n${i > 1 ? `from :${i - 1}\n` : ''}\n`
-        }
-        execFileSync('git', ['fast-import', '--quiet'], { cwd: app.directory, input, windowsHide: true })
+        // Native full-page parsing belongs to git.test.ts. This scenario owns
+        // partial persisted results and the loading UI through the existing index seam.
+        await app.git('commit', '--allow-empty', '--date=2026-10-06T12:00:00Z', '-m', 'Pending source first activity')
+        await app.git('commit', '--allow-empty', '--date=2026-10-07T12:00:00Z', '-m', 'Pending source second activity')
         for (const other of apps.slice(1)) {
             await other.git('commit', '--allow-empty', '--date=2026-10-06T12:00:00Z', '-m', 'Small repository work')
             await execute(app.service.addRepository(other.directory))
         }
         pending = execute(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
+        await secondBatch.promise
         await vi.waitFor(
             async () => {
-                expect(secondBatch).toBe(true)
                 const saved = await journalState(app.store)
                 const completed = saved.repositories.filter(
                     (repository) => saved.acquisition?.[`git:${repository.id}`]?.historySince === '2026-10-05'
                 )
                 expect(completed).toHaveLength(3)
             },
-            { timeout: 10000 }
+            { timeout: 5000 }
         )
         const command = (command: Parameters<typeof app.service.handle>[0]) => execute(app.service.handle(command))
         function Harness({ value }: { value: State }) {
@@ -144,16 +145,21 @@ it('shows real partial Git results while loading and clears the button when all 
         }
         const render = () =>
             act(async () => {
-                root.render(createElement(Harness, { value: (await run(app.service.reply())).state }))
+                root.render(
+                    createElement(Harness, {
+                        value: (await run(app.service.reply({}, { since: '2026-10-05', until: '2026-10-11' }))).state
+                    })
+                )
                 await Promise.resolve()
             })
         await render()
-        expect(rangeActivities(await journalState(app.store), '2026-10-05', '2026-10-11').length).toBeGreaterThan(3)
+        expect(host.querySelector('p')?.textContent).toBe('4 activities')
         expect(host.querySelector('button')?.getAttribute('aria-busy')).toBe('true')
         release()
         await pending
         await render()
         expect(host.querySelector('button')?.hasAttribute('aria-busy')).toBe(false)
+        expect(host.querySelector('p')?.textContent).toBe('5 activities')
         expect(
             Object.values((await journalState(app.store)).acquisition ?? {}).every(
                 (status) => status.status === 'idle' && !status.windowEnd
@@ -170,9 +176,7 @@ it('shows real partial Git results while loading and clears the button when all 
         index.mockRestore()
         await Promise.all(apps.map((entry) => entry.close()))
     }
-    // This scenario creates four native stores and indexes a full 2,000-commit Git page.
-    // Keep its behavioral assertions unchanged while allowing slower Windows CI fixture I/O.
-}, 60000)
+})
 it('automatically rehydrates the same week when its journal timezone changes without rereading Git', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
     const app = await workspace()
