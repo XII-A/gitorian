@@ -9,6 +9,7 @@
     "sortPackageJson": false,
     "ignorePatterns": [
         "/.ai-docs",
+        "/.reference",
         "/dist",
         "/coverage",
         "/node_modules",

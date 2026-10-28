@@ -1,0 +1,8 @@
+{
+    "js/ts.tsdk.path": "node_modules/typescript/lib",
+    "js/ts.tsdk.promptToUseWorkspaceVersion": true,
+    "typescript.preferences.autoImportFileExcludePatterns": [".reference/**"],
+    "javascript.preferences.autoImportFileExcludePatterns": [".reference/**"],
+    "files.watcherExclude": { "**/.reference/**": true },
+    "search.exclude": { "**/.reference/**": true }
+}
