@@ -21,14 +21,16 @@ export function filterWorkspaceActivity(
     start: string,
     filters: { project: string; branch: string; kind: string; search: string; authors?: string[] }
 ) {
-    return rangeActivities(state, start, offsetDay(start, 6)).filter(
+    return rangeActivities(state, start, offsetDay(start, 6), filters.kind === 'previous').filter(
         (activity) =>
             (filters.project === 'all' || activity.repositoryId === filters.project) &&
             (filters.branch === 'all' || activity.branches.includes(filters.branch)) &&
             (!filters.authors?.length ||
                 filters.authors.some((author) => activity.author.toLowerCase().includes(author.toLowerCase()))) &&
-            (filters.kind === 'all' ||
-                (filters.kind === 'commit' ? activity.kind === 'commit' : activity.kind !== 'commit')) &&
+            (filters.kind === 'previous'
+                ? activity.previousSource
+                : filters.kind === 'all' ||
+                  (filters.kind === 'commit' ? activity.kind === 'commit' : activity.kind !== 'commit')) &&
             `${activity.title} ${activity.sha ?? ''} ${activity.description}`
                 .toLowerCase()
                 .includes(filters.search.toLowerCase())

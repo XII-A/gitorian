@@ -15,15 +15,18 @@ export function filesFromDiff(diff: string): Activity['files'] | undefined {
         const files = markBinaryDiffs(parser.parse(diff), diff)
         if (files.length !== headers.length) return undefined
         const statuses = { add: 'added', delete: 'removed', modify: 'modified', rename: 'renamed', copy: 'copied' }
-        return files.map((file) => {
+        const sections = diff.split(/(?=^diff --git )/m).filter(Boolean)
+        return files.map((file, index) => {
+            const renamed = /^rename from (.+)$/m.exec(sections[index]) && /^rename to (.+)$/m.exec(sections[index])
             // Binary and empty files may have no ---/+++ markers, so their
             // creation/deletion is expressed only through the mode headers.
-            const status =
-                file.type === 'modify' && file.newMode && !file.oldMode
-                    ? 'added'
-                    : file.type === 'modify' && file.oldMode && !file.newMode
-                      ? 'removed'
-                      : statuses[file.type]
+            const status = renamed
+                ? 'renamed'
+                : file.type === 'modify' && file.newMode && !file.oldMode
+                  ? 'added'
+                  : file.type === 'modify' && file.oldMode && !file.newMode
+                    ? 'removed'
+                    : statuses[file.type]
             return {
                 name: status === 'removed' ? file.oldPath : file.newPath,
                 status,

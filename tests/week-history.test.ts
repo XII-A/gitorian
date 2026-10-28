@@ -122,7 +122,7 @@ it('reuses out-of-range author history after restart, and skips acquisition for 
             app.github,
             app.notion,
             () => ({
-                github: false,
+                remote: false,
                 notion: false,
                 protectedStorage: false
             }),

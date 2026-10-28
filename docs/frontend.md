@@ -168,3 +168,9 @@ Header icon sizing belongs to `.hub-utility-icons`; the text-bearing Continue se
 ## Emoji rendering
 
 The workspace picker retains native scroll content and lets Chromium skip offscreen rows using `content-visibility: auto` and fixed row sizes. Avoid returning to React-driven row mounting during scrolling: it can leave the compositor ahead of the rendered window. Picker glyphs use one bundled lossless WebP atlas, while inserted content remains Unicode. `tools/generate-emoji-atlas.mjs` captures Segoe UI Emoji on Windows in a disposable Electron profile; regenerate both atlas assets after changing the catalog. The atlas is decoded when the editor mounts so first opening remains responsive. Category tabs keep their color-only interaction states; emoji option hover and selection use the local semantic `--emoji-highlight` mix. Verify with `pnpm test:e2e emoji`, including the cold-open and CPU-throttled scroll measurements.
+
+## Provider account UI
+
+Settings Connections lists independent GitHub and GitLab accounts. Reuse `ConnectionSignIn` for device codes and deliberate account-specific disconnect confirmation. `ProviderConnections` owns attempt IDs, polling, cancellation, retry targets and late-result rejection. Credentials never enter renderer state. Account metadata and bounded cached identities remain available offline.
+
+Repository Settings shows Automatic matching and an account override. Account assignment applies immediately; author filters remain separate. Save a changed remote before overriding its account. A reconnect or an unrelated Settings save must preserve authoritative account/project metadata. Provider labels distinguish GitLab merge requests and review comments, and links open the originating provider.

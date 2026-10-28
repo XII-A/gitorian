@@ -27,7 +27,7 @@ const repository: Repository = {
 const activity = (id: string): Activity => ({
     id,
     repositoryId: repository.id,
-    kind: 'pr',
+    kind: 'change-request',
     title: id,
     date: '2026-10-26T12:00:00Z',
     author: 'fixture',
@@ -54,14 +54,14 @@ it('rolls back an entire acquisition batch and checkpoint on a dangling reposito
     const { database } = await fixture()
     const batch = {
         activities: [activity('valid'), { ...activity('invalid'), repositoryId: 'missing' }],
-        checkpoint: { key: 'github:repository', value: { status: 'idle' as const, page: 2 } }
+        checkpoint: { key: 'remote:repository', value: { status: 'idle' as const, page: 2 } }
     }
     await expect(database.applyAcquisitionBatch(batch)).rejects.toThrow()
     expect(await database.activity('valid')).toBeUndefined()
-    expect(database.config.acquisition['github:repository']).toBeUndefined()
+    expect(database.config.acquisition['remote:repository']).toBeUndefined()
     await database.applyAcquisitionBatch({ ...batch, activities: [activity('valid')] })
     expect((await database.activity('valid'))?.title).toBe('valid')
-    expect(database.config.acquisition['github:repository'].page).toBe(2)
+    expect(database.config.acquisition['remote:repository'].page).toBe(2)
 })
 
 it('rejects a revision from another activity, deduplicates coverage, and permits only one unresolved publication', async () => {
@@ -69,7 +69,7 @@ it('rejects a revision from another activity, deduplicates coverage, and permits
     await database.applyAcquisitionBatch({ activities: [activity('a'), activity('b')] })
     await database.recordActivityDetails(activity('a'), 'patch', {
         id: 'revision-a',
-        prId: 'a',
+        activityId: 'a',
         base: 'base',
         head: 'head',
         diff: 'patch'
@@ -160,7 +160,7 @@ it('collects expired unreferenced caches while preserving document images and se
     for (const id of ['a', 'b'])
         await database.recordActivityDetails(activity(id), `patch-${id}`, {
             id: `revision-${id}`,
-            prId: id,
+            activityId: id,
             base: 'base',
             head: 'head',
             diff: `patch-${id}`

@@ -145,7 +145,7 @@ export function ActivityChart({
                         <dd>{counts.commits}</dd>
                     </div>
                     <div>
-                        <dt>PRs</dt>
+                        <dt>Requests</dt>
                         <dd>{counts.prs}</dd>
                     </div>
                     <div>

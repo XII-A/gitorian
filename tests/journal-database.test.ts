@@ -75,10 +75,8 @@ it('keeps account identity and destination authoritative when a stale preference
     try {
         const stale = database.config.settings
         await database.setDestination({ kind: 'page', id: 'new', titleProperty: 'Name', dateProperty: '' })
-        await database.setGitHubLogin('new-account')
         await database.saveSettings({ ...stale, refreshMinutes: 0 })
         expect(database.config.settings.destination?.id).toBe('new')
-        expect(database.config.settings.githubLogin).toBe('new-account')
     } finally {
         await database.close()
     }

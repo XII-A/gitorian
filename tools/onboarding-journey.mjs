@@ -416,14 +416,14 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         await wait(`!!${setupCard}`)
         await actStep('accounts')
         await wait(
-            `!!document.querySelector('[aria-label="GitHub connection"]') && !document.querySelector('.hub-setup-popover')`
+            `!!document.querySelector('[aria-label="GitHub accounts"]') && !document.querySelector('.hub-setup-popover')`
         )
     } else {
         await shot('05-inline-setup')
         await actStep('accounts')
     }
-    await click('Connect GitHub')
-    await wait(`window.journal.invoke({type:'state'}).then(r=>r.connections.github)`)
+    await click('Add GitHub account')
+    await wait(`window.journal.invoke({type:'state'}).then(r=>r.connections.remote)`)
     await closeSettings()
     await resume()
     await wait(`document.querySelector('[role="progressbar"]').getAttribute('aria-valuenow')==='0'`)

@@ -14,6 +14,7 @@ interface Desktop {
     chooseFolder: (path: string, delay?: number) => Promise<void>
     shot: (name: string) => Promise<void>
     close: () => Promise<void>
+    restart: () => Promise<{ app: ElectronApplication; page: Page }>
 }
 
 async function within<T>(operation: Promise<T>, milliseconds: number, message: string): Promise<T> {
@@ -47,6 +48,7 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string; deskto
             pid: undefined as number | undefined,
             exit: undefined as number | null | undefined,
             signal: undefined as NodeJS.Signals | null | undefined,
+            previousProcesses: [] as { pid: number | undefined; exit: number | null | undefined }[],
             passed: false,
             cleanup: { removed: false },
             evidenceRetained: false,
@@ -69,7 +71,13 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string; deskto
                 await within(
                     (async () => {
                         if (tracing) {
-                            await app.context().tracing.stop({ path: info.outputPath('trace.zip') })
+                            await app.context().tracing.stop({
+                                path: info.outputPath(
+                                    report.previousProcesses.length
+                                        ? `trace-restart-${report.previousProcesses.length}.zip`
+                                        : 'trace.zip'
+                                )
+                            })
                             tracing = false
                         }
                         await app.close()
@@ -111,7 +119,7 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string; deskto
             )
             writeFileSync(
                 info.outputPath('source.patch'),
-                execFileSync('git', ['diff', '--binary', 'HEAD'], { windowsHide: true })
+                execFileSync('git', ['diff', '--binary', 'HEAD'], { windowsHide: true, maxBuffer: 32 * 1024 * 1024 })
             )
             const env: Record<string, string> = { GITORIAN_E2E_PROFILE: profile, GITORIAN_DEV_PROFILE: profile }
             for (const [key, value] of Object.entries(process.env))
@@ -145,7 +153,7 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string; deskto
             expect(doctor.state.state.repositories.map((repository) => repository.id).sort()).toEqual(
                 [...desktopRepositoryIds].sort()
             )
-            expect(doctor.state.connections.github).toBe(false)
+            expect(doctor.state.connections.remote).toBe(false)
             expect(doctor.state.connections.notion).toBe(false)
             await use({
                 app,
@@ -153,6 +161,28 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string; deskto
                 scratch,
                 profile,
                 close,
+                restart: async () => {
+                    await close()
+                    report.previousProcesses.push({ pid: report.pid, exit: report.exit })
+                    closed = false
+                    app = await _electron.launch({ args: [desktopEntry], env, timeout: 30_000 })
+                    report.pid = app.process().pid
+                    report.exit = undefined
+                    report.signal = undefined
+                    save()
+                    for (const [stream, file] of [
+                        [app.process().stdout, 'stdout.log'],
+                        [app.process().stderr, 'stderr.log']
+                    ] as const)
+                        stream?.on('data', (data: Buffer) => appendFileSync(info.outputPath(file), data))
+                    await app.context().tracing.start({ screenshots: true, snapshots: true, sources: true })
+                    tracing = true
+                    page = await app.firstWindow()
+                    await expect(page.getByRole('button', { name: 'Open settings', exact: true })).toBeVisible()
+                    expect(await app.evaluate(({ app }) => app.getPath('userData'))).toBe(profile)
+                    expect(page.url()).toBe(pathToFileURL(resolve('out/renderer/index.html')).href)
+                    return { app, page }
+                },
                 chooseFolder: async (path, delay = 0) => {
                     await app!.evaluate(
                         ({ dialog }, choice) => {

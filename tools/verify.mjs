@@ -13,12 +13,19 @@ const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
 // Migrated journeys have one owner; keep the existing verification entry point discoverable.
-if (['repository-import', 'writing-checklist'].includes(mode) && process.argv.length === 3) {
-    const child = spawn(process.execPath, ['tools/verification.mjs', 'desktop', mode], {
-        cwd: root,
-        stdio: 'inherit',
-        windowsHide: true
-    })
+if (
+    ['repository-import', 'writing-checklist', 'provider-accounts', 'github-import'].includes(mode) &&
+    process.argv.length === 3
+) {
+    const child = spawn(
+        process.execPath,
+        ['tools/verification.mjs', 'desktop', mode === 'github-import' ? 'provider-accounts' : mode],
+        {
+            cwd: root,
+            stdio: 'inherit',
+            windowsHide: true
+        }
+    )
     const code = await new Promise((done, reject) => {
         child.once('error', reject)
         child.once('close', done)
@@ -35,6 +42,20 @@ const runner =
             : mode
 const disclosureMode = mode === 'onboarding-disclosure'
 const onboardingMode = mode === 'onboarding' || disclosureMode
+if (mode === 'connections' && process.argv.length === 3) {
+    for (const args of [
+        ['tools/verification.mjs', 'desktop', 'provider-accounts'],
+        ['tools/verify.mjs', 'notion']
+    ]) {
+        const child = spawn(process.execPath, args, { cwd: root, stdio: 'inherit', windowsHide: true })
+        const code = await new Promise((done, reject) => {
+            child.once('error', reject)
+            child.once('close', done)
+        })
+        if (code !== 0) process.exit(code ?? 1)
+    }
+    process.exit(0)
+}
 const connectionMode = mode === 'connections' || mode === 'notion'
 if (
     ![
@@ -50,14 +71,13 @@ if (
         'activity-counts',
         'hub-dialog',
         'app-updates',
-        'github-import',
         'activity-filters',
         'activity-days'
     ].includes(mode) ||
     process.argv.length !== 3
 ) {
     console.error(
-        'Usage: pnpm verify doctor | repository-import | writing-checklist | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | app-updates | github-import | activity-filters | activity-days (run pnpm build first)'
+        'Usage: pnpm verify doctor | repository-import | writing-checklist | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | app-updates | provider-accounts | activity-filters | activity-days (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -237,7 +257,7 @@ if (mode === 'doctor') {
                 writeFileSync(join(output, 'persisted-activities.json'), JSON.stringify(activities, null, 2))
                 const fixture = JSON.parse(readFileSync(join(output, 'fixture.json'), 'utf8'))
                 const inspected = activities.filter((activity) =>
-                    [fixture.commitId, fixture.prId].includes(activity.id)
+                    [fixture.commitId, fixture.changeRequestId].includes(activity.id)
                 )
                 for (const activity of inspected) {
                     const stats = activity.files.map((file) => file.lineStats).filter(Boolean)
@@ -250,33 +270,6 @@ if (mode === 'doctor') {
                         throw new Error('Persisted line statistics differ from the fixture')
                 }
                 if (inspected.length !== 2) throw new Error('Expected commit and PR metadata to persist')
-            } finally {
-                db.close()
-            }
-        }
-        if (mode === 'github-import') {
-            const db = new DatabaseSync(join(scratch, 'profile', 'journal.sqlite'), { readOnly: true })
-            try {
-                const records = (collection) =>
-                    collection === 'activities' ? activityEvidence(db) : db.prepare('SELECT * FROM repositories').all()
-                const repositories = records('repositories')
-                const activities = records('activities')
-                const settings = JSON.parse(String(db.prepare('SELECT settings AS json FROM journal').get()?.json))
-                writeFileSync(
-                    join(output, 'persisted-github-activity.json'),
-                    JSON.stringify({ repositories, activities, refreshMinutes: settings.refreshMinutes }, null, 2)
-                )
-                if (
-                    repositories.length !== 2 ||
-                    repositories.find((repo) => repo.name === 'before')?.remote !==
-                        'https://github.com/fixture/before.git' ||
-                    repositories.find((repo) => repo.name === 'after')?.remote !== '' ||
-                    settings.refreshMinutes !== 0 ||
-                    activities.filter((a) => a.kind === 'pr').length !== 2 ||
-                    activities.filter((a) => a.kind === 'review').length !== 2 ||
-                    activities.filter((a) => a.kind === 'commit' && a.title.startsWith('Local work')).length !== 2
-                )
-                    throw new Error('Imported sources and GitHub activity were not persisted')
             } finally {
                 db.close()
             }
@@ -345,13 +338,7 @@ if (mode === 'doctor') {
                     if (
                         'githubClientId' in settings ||
                         settings.destination?.id !== 'fixture-private-journal' ||
-                        settings.destination?.kind !== 'page' ||
-                        settings.githubLogin !==
-                            (mode === 'notion'
-                                ? ''
-                                : process.env.GITORIAN_VERIFY_MOTION === 'stress'
-                                  ? 'gitorian-fixture-with-a-long-github-name'
-                                  : 'gitorian-fixture')
+                        settings.destination?.kind !== 'page'
                     )
                         throw new Error('Persisted account settings differ from the authorized identity')
                 }
@@ -387,19 +374,14 @@ if (mode === 'doctor') {
                       'persisted-drafts.json',
                       'journey.json'
                   ]
-                : mode === 'activity-counts' ||
-                    mode === 'github-import' ||
-                    mode === 'activity-filters' ||
-                    mode === 'activity-days'
+                : mode === 'activity-counts' || mode === 'activity-filters' || mode === 'activity-days'
                   ? [
                         'actions.jsonl',
                         mode === 'activity-counts'
                             ? 'activity-counts.png'
-                            : mode === 'github-import'
-                              ? 'automatic-prs.png'
-                              : mode === 'activity-days'
-                                ? 'activity-days.png'
-                                : 'grouped-filters.png',
+                            : mode === 'activity-days'
+                              ? 'activity-days.png'
+                              : 'grouped-filters.png',
                         'journey.json',
                         ...(mode === 'activity-counts' ? ['summary-counter-motion.json'] : []),
                         ...(mode === 'activity-days'
@@ -411,15 +393,6 @@ if (mode === 'doctor') {
                                   'workspace-collapse-motion.json',
                                   'hub-collapsed.png',
                                   'workspace-collapsed.png'
-                              ]
-                            : []),
-                        ...(mode === 'github-import'
-                            ? [
-                                  'connected-with-activity.png',
-                                  'source-failure.png',
-                                  'persisted-prs.png',
-                                  'persisted-github-activity.json',
-                                  'http-requests.json'
                               ]
                             : [])
                     ]

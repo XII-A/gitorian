@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { AppUpdateState } from './app-updates'
 import type { StateCursor, UpdateReply } from './state-updates'
+import { providerAccountSchema, providerSchema } from './provider-accounts'
 
 export const documentSchema: z.ZodType<JournalNode> = z.lazy(() =>
     z.object({
@@ -25,6 +26,10 @@ export const repositorySchema = z.object({
     name: z.string(),
     path: z.string(),
     remote: z.string(),
+    accountId: z.uuid().optional(),
+    providerProjectId: z.string().regex(/^\d+$/).optional(),
+    accountGeneration: z.number().int().nonnegative().optional(),
+    assignment: z.enum(['automatic', 'explicit']).optional(),
     base: z.string(),
     trackingStart: z.iso.date(),
     emails: z.array(z.string()),
@@ -37,14 +42,14 @@ export const repositorySchema = z.object({
 export const activitySchema = z.object({
     id: z.string(),
     repositoryId: z.string(),
-    kind: z.enum(['commit', 'pr', 'review', 'opened', 'merged']),
+    kind: z.enum(['commit', 'change-request', 'review', 'opened', 'merged']),
     title: z.string(),
     date: dayOrInstant,
     author: z.string(),
     branches: z.array(z.string()),
     sha: z.string().optional(),
-    prId: z.string().optional(),
-    pullRequest: z
+    changeRequestId: z.string().optional(),
+    changeRequest: z
         .object({
             status: z.enum(['open', 'draft', 'closed', 'merged']).optional(),
             openedAt: z.string(),
@@ -73,6 +78,29 @@ export const activitySchema = z.object({
     fingerprint: z.string().optional(),
     integrationSha: z.string().optional(),
     sourceVersion: z.string().optional(),
+    revisionSource: z
+        .object({
+            base: z.string(),
+            head: z.string(),
+            mergedAt: z.string().nullable(),
+            integrationSha: z.string().nullable()
+        })
+        .optional(),
+    localQualified: z.boolean().optional(),
+    previousSource: z.boolean().optional(),
+    remoteSource: z
+        .object({
+            provider: providerSchema,
+            host: z.string(),
+            path: z.string(),
+            projectId: z.string().optional(),
+            number: z.number().int().positive().optional(),
+            eventId: z.string(),
+            configuration: z.string(),
+            accountId: z.string().optional(),
+            sessionGeneration: z.number().optional()
+        })
+        .optional(),
     filesLoaded: z.boolean().optional(),
     disposition: z.enum(['inbox', 'deferred', 'dismissed']),
     deferUntil: z.string().optional(),
@@ -113,6 +141,7 @@ export const stateSchema = z.object({
     version: z.literal(1),
     restoreId: z.string().optional(),
     repositories: z.array(repositorySchema),
+    accounts: z.array(providerAccountSchema.omit({ credentialKey: true })).default([]),
     activities: z.array(activitySchema),
     drafts: z.array(draftSchema),
     entries: z.array(entrySchema),
@@ -120,7 +149,7 @@ export const stateSchema = z.object({
     revisions: z.array(
         z.object({
             id: z.string(),
-            prId: z.string(),
+            activityId: z.string(),
             base: z.string(),
             head: z.string(),
             fingerprint: z.string().optional(),
@@ -154,7 +183,6 @@ export const stateSchema = z.object({
         timezone: z.string(),
         refreshMinutes: z.number().min(0).max(1440),
         template: documentSchema,
-        githubLogin: z.string(),
         destination: destinationSchema.optional(),
         layout: z.object({
             order: z.array(z.enum(['activity', 'details', 'draft'])),
@@ -223,6 +251,7 @@ export function initialState(): State {
     return {
         version: 1,
         repositories: [],
+        accounts: [],
         activities: [],
         drafts: [],
         entries: [],
@@ -235,7 +264,6 @@ export function initialState(): State {
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             refreshMinutes: 10,
             template: emptyDocument,
-            githubLogin: '',
             layout: structuredClone(defaultLayout)
         }
     }
@@ -272,7 +300,8 @@ export function coveredEntries(state: State, activity: Activity): Entry[] {
         .filter(
             (link) =>
                 link.activityId === activity.id &&
-                (activity.kind !== 'pr' || (activity.revision !== undefined && link.revision === activity.revision))
+                (activity.kind !== 'change-request' ||
+                    (activity.revision !== undefined && link.revision === activity.revision))
         )
         .map((link) => link.entryId)
     return state.entries.filter((entry) => ids.includes(entry.id))
@@ -329,12 +358,12 @@ export const commandSchema = z.discriminatedUnion('type', [
         type: z.literal('refresh'),
         since: z.iso.date().optional(),
         repositoryId: z.string().optional(),
-        source: z.enum(['git', 'github', 'notion']).optional()
+        source: z.enum(['git', 'remote', 'notion']).optional()
     }),
     z.object({ type: z.literal('backfill'), repositoryId: z.string(), since: z.iso.date() }),
     z.object({
         type: z.literal('stopWork'),
-        source: z.enum(['git', 'github', 'repositories']),
+        source: z.enum(['git', 'remote', 'repositories']),
         repositoryId: z.string().optional()
     }),
     z.object({
@@ -379,17 +408,25 @@ export const commandSchema = z.discriminatedUnion('type', [
         ])
     }),
     z.object({ type: z.literal('connectionProfiles') }),
-    z.object({ type: z.literal('refreshConnectionProfile'), service: z.enum(['github', 'notion']) }),
-    z.object({ type: z.literal('githubStart') }),
-    z.object({ type: z.literal('githubPoll') }),
-    z.object({ type: z.literal('disconnect'), service: z.enum(['github', 'notion']) }),
+    z.object({ type: z.literal('providerBegin'), provider: providerSchema, accountId: z.uuid().optional() }),
+    z.object({ type: z.literal('providerPoll'), attemptId: z.uuid() }),
+    z.object({ type: z.literal('providerCancel'), attemptId: z.uuid() }),
+    z.object({ type: z.literal('providerDisconnect'), accountId: z.uuid() }),
+    z.object({
+        type: z.literal('providerAssign'),
+        repositoryId: z.string(),
+        accountId: z.uuid().optional(),
+        automatic: z.boolean().optional()
+    }),
+    z.object({ type: z.literal('refreshConnectionProfile'), service: z.literal('notion') }),
+    z.object({ type: z.literal('disconnect'), service: z.literal('notion') }),
     z.object({ type: z.literal('export') }),
     z.object({ type: z.literal('import') }),
     z.object({ type: z.literal('open'), url: z.url() }),
     z.object({ type: z.literal('popout'), kind: z.enum(['entry', 'activity']), id: z.string() })
 ])
 export type Command = z.infer<typeof commandSchema>
-export type ConnectionService = 'github' | 'notion'
+export type ConnectionService = 'notion'
 export type ConnectionProfiles = Partial<Record<ConnectionService, ConnectionProfile>>
 export interface ConnectionProfile {
     name: string
@@ -438,11 +475,12 @@ export interface Reply {
     diff?: string
     activityIds?: string[]
     device?: { code: string; url: string; interval: number }
+    providerAttempt?: { id: string; code: string; url: string; interval: number }
     devicePending?: { interval: number }
     notionAuthorization?: { url: string; interval: number }
     notionPending?: { interval: number }
     notionPages?: NotionPage[]
-    connections: { github: boolean; notion: boolean; protectedStorage: boolean }
+    connections: { remote: boolean; notion: boolean; protectedStorage: boolean }
     message?: string
     detailError?: string
 }

@@ -155,10 +155,9 @@ async function setup() {
             store,
             fetcher,
             imageDownload: download,
-            githubCredential: () => '',
-            setGitHubCredential: vi.fn(),
+            vault: { get: () => '', set: vi.fn(), protected: () => false },
             notionToken: () => Effect.succeed('private-token'),
-            connections: () => ({ github: false, notion: true, protectedStorage: false })
+            connections: () => ({ remote: false, notion: true, protectedStorage: false })
         })
     )
     cleanup.push(() => runtime.dispose())

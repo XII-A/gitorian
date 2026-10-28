@@ -18,13 +18,7 @@ it('retains rename paths from GitHub PR and commit metadata through state valida
             )
         )
     )
-    const github = await githubClient(
-        http,
-        () => 'test-token',
-        () => {
-            throw new Error('This metadata fixture must not change authentication')
-        }
-    )
+    const github = await githubClient(http, () => 'test-token')
     const expected = [
         {
             name: 'src/new.ts',
@@ -52,13 +46,7 @@ it('includes every metadata page in PR and remote commit line totals without req
         }))
         return Promise.resolve(new Response(JSON.stringify(url.pathname.includes('/pulls/') ? files : { files })))
     })
-    const github = await githubClient(
-        http,
-        () => 'fixture-token',
-        () => {
-            throw new Error('File metadata must not change authentication')
-        }
-    )
+    const github = await githubClient(http, () => 'fixture-token')
     for (const files of [
         await run(github.files(state.repositories[0], state.activities[8])),
         (await run(github.commitDetails(state.repositories[0], 'a'.repeat(40), false))).files

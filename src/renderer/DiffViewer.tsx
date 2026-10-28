@@ -13,6 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './components/arc/popove
 import { presentationTokens, selectedSource } from './diff-presentation'
 import { ChangeCounts } from './ChangeStatistics'
 import { diffLineStats } from '../shared/change-statistics'
+import { providerName, type Provider } from '../shared/provider-accounts'
 
 function DiffEmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
     return (
@@ -31,10 +32,12 @@ function DiffEmptyState({ title, description, action }: { title: string; descrip
 export function DiffViewer({
     text,
     initialSplit = false,
+    provider,
     onOpenSource
 }: {
     text: string
     initialSplit?: boolean
+    provider?: Provider
     onOpenSource?: () => void
 }) {
     const [mode, setMode] = useState(initialSplit ? 'split' : 'unified')
@@ -89,7 +92,7 @@ export function DiffViewer({
         text.length > 2_000_000 || /^(Diff is too large\.|GitHub could not provide this diff)/.test(text)
     const sourceAction = onOpenSource && (
         <Button variant="secondary" size="sm" onClick={onOpenSource}>
-            Open on GitHub
+            {provider ? `Open on ${providerName(provider)}` : 'Open source'}
         </Button>
     )
     if (unavailable)
@@ -97,7 +100,7 @@ export function DiffViewer({
             <DiffEmptyState
                 title={
                     text.includes('406')
-                        ? 'GitHub could not provide these changes'
+                        ? `${provider ? providerName(provider) : 'The provider'} could not provide these changes`
                         : 'These changes are too large to display here'
                 }
                 description="The activity is retained in your journal. View the changes at the source."

@@ -64,7 +64,7 @@ it('compares against the latest saved settings and ignores refreshed metadata an
     saved.settings.template = template
     const local = { ...saved.settings, refreshMinutes: saved.settings.refreshMinutes + 1 }
     expect(hasUnsavedSettings(local, [], saved)).toBe(true)
-    saved.settings = { ...local, githubLogin: 'signed-in', layout: { ...local.layout, hidden: ['details'] } }
+    saved.settings = { ...local, layout: { ...local.layout, hidden: ['details'] } }
     expect(hasUnsavedSettings(local, [], saved)).toBe(false)
     expect(
         hasUnsavedSettings(
@@ -206,10 +206,8 @@ it('uses a saved Arc template for new drafts without changing existing writing',
 })
 it('discards obsolete OAuth app settings from old journals without losing account or writing', () => {
     const saved = initialState()
-    saved.settings.githubLogin = 'existing-author'
     const restored = stateSchema.parse({ ...saved, settings: { ...saved.settings, githubClientId: 'old-user-app' } })
     expect(restored.settings).not.toHaveProperty('githubClientId')
-    expect(restored.settings.githubLogin).toBe('existing-author')
     expect(restored.settings.template).toEqual(saved.settings.template)
 })
 it('reports invalid timezone settings through the recoverable journal failure channel', async () => {

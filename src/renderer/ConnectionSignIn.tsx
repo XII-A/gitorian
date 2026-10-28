@@ -44,9 +44,11 @@ export function ConnectionSignIn({
     onStart,
     onCancel,
     onOpen,
-    onDisconnect
+    onDisconnect,
+    disconnectLabel,
+    disconnectPrompt
 }: {
-    provider: 'GitHub' | 'Notion'
+    provider: 'GitHub' | 'GitLab' | 'Notion'
     device?: { url: string; interval: number; code?: string }
     feedback?: ConnectionFeedback
     notice?: string
@@ -54,6 +56,8 @@ export function ConnectionSignIn({
     openingBrowser: boolean
     disabled: boolean
     connected: boolean
+    disconnectLabel?: string
+    disconnectPrompt?: ReactNode
     /** A reversible connected action that uses the same morph for editing instead of disconnecting. */
     connectedAction?: { label: ReactNode; name: string; onActivate: () => void | Promise<void> }
     identity?: ReactNode
@@ -145,10 +149,12 @@ export function ConnectionSignIn({
                     label={phase === 'connected' ? (connectedAction?.label ?? 'Disconnect') : 'Connect'}
                     actionLabel={
                         phase === 'connected'
-                            ? (connectedAction?.name ?? `Disconnect ${provider}`)
+                            ? (connectedAction?.name ?? disconnectLabel ?? `Disconnect ${provider}`)
                             : `Connect ${provider}`
                     }
-                    prompt={<span className="settings-disconnect-question">Disconnect {provider}?</span>}
+                    prompt={
+                        disconnectPrompt ?? <span className="settings-disconnect-question">Disconnect {provider}?</span>
+                    }
                     confirmLabel="Disconnect"
                     confirmMode={phase === 'connected' && !connectedAction ? 'hold' : 'immediate'}
                     variant={phase === 'connected' && connectedAction ? 'outline' : 'secondary'}
@@ -209,7 +215,9 @@ export function ConnectionSignIn({
                                         notice
                                             ? provider === 'GitHub'
                                                 ? 'Browser unavailable. Visit github.com/login/device to enter the code.'
-                                                : 'Browser unavailable. Try opening Notion again.'
+                                                : provider === 'GitLab'
+                                                  ? 'Browser unavailable. Visit gitlab.com/oauth/device to enter the code.'
+                                                  : 'Browser unavailable. Try opening Notion again.'
                                             : undefined
                                     }
                                 >

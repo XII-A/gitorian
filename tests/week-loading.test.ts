@@ -20,7 +20,6 @@ it('scopes the button to unfinished sources needed for the selected week across 
     const root = createRoot(host)
     const command = vi.fn(() => Promise.resolve(undefined))
     const state = sampleState('2026-10-05')
-    state.settings.githubLogin = ''
     state.repositories = Array.from({ length: 4 }, (_, index) => ({ ...state.repositories[0], id: `repo-${index}` }))
     state.acquisition = {}
     for (const repository of state.repositories) {
@@ -195,7 +194,6 @@ it('automatically rehydrates the same week when its journal timezone changes wit
         })
     try {
         await app.store.saveSettings({ ...app.store.config.settings, timezone: 'UTC' })
-        await app.store.setGitHubLogin('')
         await app.git('commit', '--allow-empty', '--date=2026-10-04T22:00:00Z', '-m', 'Timezone boundary')
         await execute(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
         await render()

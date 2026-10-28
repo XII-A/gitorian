@@ -1,4 +1,5 @@
-import { useConnectionProfile } from './useConnectionProfile'
+import { ProviderConnections } from './ProviderConnections'
+import { providerRemote } from '../shared/provider-accounts'
 import { RepositoryImportReview } from './RepositoryImportReview'
 import { Alert } from './components/arc/alert/alert'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -14,7 +15,6 @@ import { DatePicker } from './components/arc/date-picker/date-picker'
 import { TagInput } from './components/arc/tag-input/tag-input'
 import { ImportProgressLabel } from './ImportProgressLabel'
 import { Folder, RefreshCw } from 'lucide-react'
-import { ConnectionSignIn, connectionFailure, type ConnectionFeedback } from './ConnectionSignIn'
 import { NotionSignIn } from './NotionSignIn'
 import { Switch } from './components/arc/switch/switch'
 import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
@@ -54,14 +54,6 @@ export function Settings({
         return () => query.removeEventListener('change', update)
     }, [])
     const [repositories, setRepositories] = useState(state.repositories)
-    const [device, setDevice] = useState<Reply['device']>()
-    const [githubFeedback, setGithubFeedback] = useState<ConnectionFeedback>()
-    const { profile: githubIdentity } = useConnectionProfile(
-        'github',
-        connections.github || githubFeedback?.kind === 'authorizing' || githubFeedback?.kind === 'success'
-    )
-    const [githubNotice, setGithubNotice] = useState('')
-    const githubAttempt = useRef(0)
     const [error, setError] = useState('')
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState('')
@@ -134,6 +126,10 @@ export function Settings({
                     return {
                         ...item,
                         ...edited,
+                        accountId: item.accountId,
+                        providerProjectId: item.providerProjectId,
+                        accountGeneration: item.accountGeneration,
+                        assignment: item.assignment,
                         path: item.path,
                         available: item.available,
                         branches: item.branches,
@@ -143,64 +139,6 @@ export function Settings({
             ),
         [state.repositories]
     )
-    useEffect(() => {
-        if (!device) return
-        const attempt = githubAttempt.current
-        let cancelled = false
-        let timer: ReturnType<typeof setTimeout>
-        const poll = async () => {
-            try {
-                const result = await window.journal.invoke({ type: 'githubPoll' })
-                if (cancelled || githubAttempt.current !== attempt) return
-                if (result.devicePending) timer = setTimeout(() => void poll(), result.devicePending.interval * 1000)
-                else {
-                    setDevice(undefined)
-                    setGithubNotice('')
-                    setGithubFeedback({ kind: 'authorizing', login: result.state.settings.githubLogin })
-                    setSettings((current) => ({ ...current, githubLogin: result.state.settings.githubLogin }))
-                    setRepositories((local) =>
-                        result.state.repositories.map((item) => {
-                            const edited = local.find((old) => old.id === item.id)
-                            return edited
-                                ? { ...item, ...edited, emails: [...new Set([...item.emails, ...edited.emails])] }
-                                : item
-                        })
-                    )
-                }
-            } catch (failure) {
-                if (!cancelled && githubAttempt.current === attempt) {
-                    setGithubFeedback(connectionFailure(failure))
-                    setDevice(undefined)
-                    setGithubNotice('')
-                }
-            }
-        }
-        timer = setTimeout(() => void poll(), device.interval * 1000)
-        return () => {
-            cancelled = true
-            clearTimeout(timer)
-        }
-    }, [device, run])
-    useEffect(() => {
-        if (githubFeedback?.kind !== 'authorizing' && githubFeedback?.kind !== 'success') return
-        let cancelled = false
-        const timer = setTimeout(
-            () => {
-                if (githubFeedback.kind === 'authorizing') {
-                    setGithubFeedback({ kind: 'success', login: githubFeedback.login })
-                    return
-                }
-                void run({ type: 'state' }).then(() => {
-                    if (!cancelled) setGithubFeedback(undefined)
-                })
-            },
-            githubFeedback.kind === 'authorizing' ? 450 : 900
-        )
-        return () => {
-            cancelled = true
-            clearTimeout(timer)
-        }
-    }, [githubFeedback, run])
     const notionDestination = useCallback((destination: State['settings']['destination']) => {
         setSettings((current) => ({ ...current, destination }))
     }, [])
@@ -220,25 +158,6 @@ export function Settings({
     useEffect(() => {
         mergeRepositories(state.repositories)
     }, [state.repositories, mergeRepositories])
-    const startSignIn = () =>
-        action('github', async () => {
-            const attempt = ++githubAttempt.current
-            setGithubNotice('')
-            setGithubFeedback(undefined)
-            try {
-                const result = await invoke({ type: 'githubStart' })
-                if (githubAttempt.current !== attempt) return
-                if (!result.device) throw new Error('GitHub did not provide a sign-in code')
-                setDevice(result.device)
-                setGithubFeedback(undefined)
-                if (result.message)
-                    setGithubNotice(
-                        'Your browser could not be opened. Use Open GitHub, or visit github.com/login/device.'
-                    )
-            } catch (failure) {
-                if (githubAttempt.current === attempt) setGithubFeedback(connectionFailure(failure))
-            }
-        })
     const repositoryFields = (repository: Repository) => (
         <div className="settings-fields settings-repository-fields">
             <div className="settings-actions settings-repository-actions">
@@ -312,8 +231,50 @@ export function Settings({
                     <span>Fetch activity from this date</span>
                 </span>
             </Button>
+            {providerRemote(repository.remote) && (
+                <div className="settings-provider-assignment">
+                    <Select
+                        label="Account"
+                        disabled={
+                            !!busy ||
+                            repository.remote !== state.repositories.find((r) => r.id === repository.id)?.remote
+                        }
+                        value={repository.accountId ?? 'automatic'}
+                        onValueChange={(id) =>
+                            action('assign', async () => {
+                                const result = await invoke({
+                                    type: 'providerAssign',
+                                    repositoryId: repository.id,
+                                    automatic: id === 'automatic',
+                                    accountId: id === 'automatic' ? undefined : id
+                                })
+                                mergeRepositories(result.state.repositories)
+                                setStatus(
+                                    result.state.repositories.find((r) => r.id === repository.id)?.accountId
+                                        ? 'Account selected.'
+                                        : 'Choose an account to refresh this repository.'
+                                )
+                            })
+                        }
+                        options={[
+                            { value: 'automatic', label: 'Automatic matching' },
+                            ...state.accounts
+                                .filter((a) => a.provider === providerRemote(repository.remote)?.provider)
+                                .map((a) => ({
+                                    value: a.id,
+                                    label: `@${a.username}${a.status === 'disconnected' || a.status === 'reconnect' ? ' (reconnect)' : ''}`
+                                }))
+                        ]}
+                    />
+                    <p className="settings-hint">
+                        {repository.accountId
+                            ? `${repository.assignment === 'explicit' ? 'Selected' : 'Automatically matched'} account. Local author email filters stay unchanged.`
+                            : 'Choose an account if more than one can access this repository. Local Git tracking continues.'}
+                    </p>
+                </div>
+            )}
             <Select
-                label="GitHub remote"
+                label="Remote"
                 value={repository.remote || '__local__'}
                 options={[
                     { value: '__local__', label: 'Local only' },
@@ -476,98 +437,7 @@ export function Settings({
                                     )}
                                 </TabsContent>
                                 <TabsContent value="connections" className="settings-content">
-                                    <section className="settings-section" aria-label="GitHub connection">
-                                        <div className="settings-section-heading settings-github-heading">
-                                            <h3 className="settings-connection-title">
-                                                <span
-                                                    className="settings-connection-logo settings-connection-logo--github"
-                                                    aria-hidden="true"
-                                                />
-                                                GitHub
-                                            </h3>
-                                            <div className="settings-github-controls">
-                                                <ConnectionSignIn
-                                                    provider="GitHub"
-                                                    identity={
-                                                        connections.github ||
-                                                        githubFeedback?.kind === 'success' ||
-                                                        githubFeedback?.kind === 'authorizing' ? (
-                                                            <span className="settings-github-identity">
-                                                                {settings.githubLogin && (
-                                                                    <span
-                                                                        className="settings-github-avatar"
-                                                                        aria-hidden="true"
-                                                                    >
-                                                                        {settings.githubLogin.slice(0, 1).toUpperCase()}
-                                                                        {githubIdentity?.avatarUrl && (
-                                                                            <img
-                                                                                src={githubIdentity.avatarUrl}
-                                                                                width={32}
-                                                                                height={32}
-                                                                                alt=""
-                                                                                onLoad={(event) => {
-                                                                                    event.currentTarget.dataset.loaded =
-                                                                                        'true'
-                                                                                }}
-                                                                                onError={(event) => {
-                                                                                    event.currentTarget.hidden = true
-                                                                                }}
-                                                                            />
-                                                                        )}
-                                                                    </span>
-                                                                )}
-                                                                <span title={settings.githubLogin}>
-                                                                    {settings.githubLogin || 'Connected'}
-                                                                </span>
-                                                            </span>
-                                                        ) : undefined
-                                                    }
-                                                    connected={connections.github}
-                                                    onDisconnect={async () => {
-                                                        setBusy('disconnect-github')
-                                                        setError('')
-                                                        try {
-                                                            await invoke({ type: 'disconnect', service: 'github' })
-                                                            setSettings((current) => ({ ...current, githubLogin: '' }))
-                                                            setStatus('GitHub disconnected.')
-                                                        } finally {
-                                                            setBusy('')
-                                                        }
-                                                    }}
-                                                    device={device}
-                                                    feedback={githubFeedback}
-                                                    notice={githubNotice}
-                                                    pending={busy === 'github'}
-                                                    openingBrowser={busy === 'browser'}
-                                                    disabled={!!busy && busy !== 'github' && busy !== 'browser'}
-                                                    onStart={startSignIn}
-                                                    onOpen={() =>
-                                                        action('browser', async () => {
-                                                            if (!device) return
-                                                            const attempt = githubAttempt.current
-                                                            try {
-                                                                await invoke({ type: 'open', url: device.url })
-                                                                if (githubAttempt.current === attempt)
-                                                                    setGithubNotice('')
-                                                            } catch {
-                                                                if (githubAttempt.current === attempt)
-                                                                    setGithubNotice(
-                                                                        'Your browser could not be opened. Visit github.com/login/device and enter this code.'
-                                                                    )
-                                                            }
-                                                        })
-                                                    }
-                                                    onCancel={() => {
-                                                        githubAttempt.current++
-                                                        setDevice(undefined)
-                                                        setGithubFeedback(undefined)
-                                                        setGithubNotice('')
-                                                        setStatus('')
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-                                    </section>
+                                    <ProviderConnections state={state} refresh={run} />
                                     <section className="settings-section" aria-label="Notion connection">
                                         <div className="settings-section-heading settings-github-heading">
                                             <h3 className="settings-connection-title">
@@ -591,7 +461,7 @@ export function Settings({
                                                 />
                                             </div>
                                         </div>
-                                        {(connections.github || connections.notion) &&
+                                        {(connections.remote || connections.notion) &&
                                             !connections.protectedStorage && (
                                                 <p className="settings-hint">
                                                     Credentials are kept for this session only.
@@ -745,7 +615,7 @@ export function Settings({
                                     <p role="status">{status || 'Changes apply when saved.'}</p>
                                 )}
                             </div>
-                            <Button disabled={!!busy || !!device} loading={busy === 'save'} onClick={save}>
+                            <Button disabled={!!busy} loading={busy === 'save'} onClick={save}>
                                 Save settings
                             </Button>
                         </footer>

@@ -17,12 +17,12 @@ const entrySchema = z.object({
         .optional()
 })
 type Entry = z.infer<typeof entrySchema>
-const cacheSchema = z.object({ github: entrySchema.optional(), notion: entrySchema.optional() })
+const cacheSchema = z.object({ notion: entrySchema.optional() })
 
 /** Disposable, bounded profile data. Credentials and journal backups never enter this file. */
 export class ConnectionProfileCache {
     private entries: Partial<Record<ConnectionService, Entry>> = {}
-    private versions = { github: 0, notion: 0 }
+    private versions = { notion: 0 }
     private pending = new Map<ConnectionService, { scope: string; promise: Promise<ConnectionProfile | undefined> }>()
     constructor(
         private readonly path: string,
@@ -46,7 +46,7 @@ export class ConnectionProfileCache {
     }
     snapshot(): ConnectionProfiles {
         const result: ConnectionProfiles = {}
-        for (const service of ['github', 'notion'] as const) {
+        for (const service of ['notion'] as const) {
             const entry = this.entries[service]
             if (entry && entry.scope === this.scope(service)) result[service] = this.profile(entry)
         }

@@ -19,7 +19,7 @@ const state = () => {
 }
 const reply = (value = state()): Reply => ({
     state: value,
-    connections: { github: true, notion: false, protectedStorage: false }
+    connections: { remote: true, notion: false, protectedStorage: false }
 })
 function Harness({
     run,

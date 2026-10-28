@@ -23,7 +23,7 @@ it('manual refresh extends history using durable Git bodies and unchanged PR ver
         const reply = await run(app.service.handle(commandSchema.parse({ type: 'refresh', since: '2020-01-01' })))
         expect(reply.state.repositories[0].trackingStart).toBe('2020-01-01')
         expect((await journalState(app.store)).activities.some((item) => item.kind === 'commit')).toBe(true)
-        expect((await journalState(app.store)).activities.some((item) => item.kind === 'pr')).toBe(true)
+        expect((await journalState(app.store)).activities.some((item) => item.kind === 'change-request')).toBe(true)
         expect(index.mock.calls.at(-1)?.[1]).toEqual(refs)
         expect(index.mock.calls.at(-1)?.[5]).toHaveLength(1)
         expect(reply.state.acquisition?.[`git:${app.repository.id}`].since).toBe('2020-01-01')

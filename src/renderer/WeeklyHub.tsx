@@ -144,7 +144,7 @@ export function WeeklyHub({
     const end = offsetDay(start, 6)
     const dayFilter = useActivityDays(start)
     const [project, setProject] = useState('all')
-    const [tab, setTab] = useState<'all' | 'commit' | 'pr'>('all')
+    const [tab, setTab] = useState<'all' | 'commit' | 'change-request'>('all')
     const detailDialog = useRef<HubActivityDialogHandle>(null)
     const { refresh, refreshing: busy } = useActivityRefresh(run, start, end, state.settings.timezone)
     const loadingWeek = useWeekHistory(state, run, start)
@@ -171,7 +171,7 @@ export function WeeklyHub({
     )
     const filters = (
         <ActivityFilterStrip className="hub-filters">
-            {(['all', 'commit', 'pr'] as const).map((value) => (
+            {(['all', 'commit', 'change-request'] as const).map((value) => (
                 <Button
                     variant="ghost"
                     size="sm"
@@ -181,7 +181,7 @@ export function WeeklyHub({
                     aria-pressed={tab === value}
                     onClick={() => setTab(value)}
                 >
-                    {value === 'all' ? 'All activity' : value === 'commit' ? 'Commits' : 'Pull requests & reviews'}
+                    {value === 'all' ? 'All activity' : value === 'commit' ? 'Commits' : 'Requests & reviews'}
                     <AnimatedCounter
                         variant="inline"
                         value={
@@ -217,7 +217,7 @@ export function WeeklyHub({
                       ? 'Activity will appear here as your repositories finish loading.'
                       : state.repositories.some((repo) => !repo.removed)
                         ? 'No activity in this date range. Refresh your repositories or choose another range.'
-                        : 'Connect a repository to gather your commits and pull requests here.'}
+                        : 'Connect a repository to gather your commits, requests and reviews here.'}
             </p>
             <Button
                 variant="secondary"
@@ -258,7 +258,7 @@ export function WeeklyHub({
                 <strong>
                     <AnimatedCounter variant="inline" value={prs.length} />
                 </strong>
-                <span>PRs & reviews</span>
+                <span>Requests & reviews</span>
             </div>
             <div>
                 <strong>

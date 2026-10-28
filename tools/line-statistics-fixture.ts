@@ -43,7 +43,6 @@ const now = new Date().toISOString()
 const state = initialState()
 state.settings.refreshMinutes = 0
 state.settings.timezone = 'Europe/Istanbul'
-state.settings.githubLogin = 'fixture-author'
 const repository: Repository = {
     id: 'line-fixture',
     name: 'retry-scheduler',
@@ -91,9 +90,9 @@ const commit: Activity = {
 const pr: Activity = {
     ...commit,
     id: `${repository.id}:pr:42`,
-    kind: 'pr',
+    kind: 'change-request',
     sha: undefined,
-    prId: `${repository.id}:pr:42`,
+    changeRequestId: `${repository.id}:pr:42`,
     title: '#42 Keep queued uploads safe across reconnects',
     author: 'fixture-author',
     url: 'https://github.com/gitorian-fixture/retry-scheduler/pull/42',
@@ -101,7 +100,7 @@ const pr: Activity = {
     filesLoaded: false,
     description:
         '## Reliable offline recovery\n\nPreserve pending uploads and retry them safely when connectivity returns. Includes regression coverage and reconnect evaluations.',
-    pullRequest: { status: 'open', openedAt: now, commitDates: [now] },
+    changeRequest: { status: 'open', openedAt: now, commitDates: [now] },
     base: 'main',
     head: sha
 }
@@ -114,7 +113,7 @@ const fixture = {
     repositoryPath: resolve(repositoryPath),
     sha,
     commitId: commit.id,
-    prId: pr.id,
+    changeRequestId: pr.id,
     expected: { additions: 647, deletions: 45 },
     githubFiles: files
         .filter((file) => file.lineStats !== null)

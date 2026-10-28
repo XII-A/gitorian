@@ -23,7 +23,7 @@ export function GettingStarted({
                 {
                     id: 'accounts',
                     title: 'Connect accounts',
-                    description: 'Connect GitHub for pull requests and Notion to publish your entries.',
+                    description: 'Connect GitHub or GitLab for activity, and Notion to publish your entries.',
                     actionLabel: 'Connect',
                     onAction: () => onSettings('connections')
                 },

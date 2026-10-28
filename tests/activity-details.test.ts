@@ -25,7 +25,7 @@ describe('pull request lifecycle presentation', () => {
     it('shows lifecycle milestones newest first with timezone-aware accessible times', () => {
         const pull = {
             ...activity,
-            pullRequest: {
+            changeRequest: {
                 status: 'merged' as const,
                 openedAt: '2026-10-05T10:00:00Z',
                 commitDates: ['2026-10-06T10:00:00Z', '2026-10-08T10:00:00Z'],
@@ -58,7 +58,7 @@ describe('pull request lifecycle presentation', () => {
     it('shows closed without merging and avoids duplicated opening/commit timestamps', () => {
         const pull = {
             ...activity,
-            pullRequest: {
+            changeRequest: {
                 status: 'closed' as const,
                 openedAt: activity.date,
                 commitDates: [activity.date],
@@ -229,6 +229,18 @@ describe('activity descriptions', () => {
         expect(markdownUrl('#discussion', activity, repository)).toBe(`${activity.url}#discussion`)
         expect(markdownUrl('https://user:pass@github.com/example', activity, repository)).toBe('')
         expect(markdownUrl('javascript:alert(1)', activity, repository)).toBe('')
+        const source = {
+            provider: 'gitlab' as const,
+            host: 'gitlab.com' as const,
+            path: 'team/sub/project',
+            eventId: '1',
+            configuration: '',
+            accountId: 'account',
+            sessionGeneration: 1
+        }
+        expect(markdownUrl('docs/guide.md', { ...activity, base: 'main', remoteSource: source }, repository)).toBe(
+            'https://gitlab.com/team/sub/project/-/blob/main/docs/guide.md'
+        )
         expect(
             markdownUrl('README.md', activity, { ...repository, remote: 'git@github.com:example/project.git' })
         ).toBe('https://github.com/example/project/blob/main/README.md')
@@ -330,11 +342,11 @@ describe('activity files', () => {
 describe('activity row pull request references', () => {
     it.each(['0ae81df3-9fec-41d5-8c51-42132f609746:pr:602', 'sample/pr/602'])(
         'shows the PR number without the internal ID for %s',
-        (prId) => {
+        (changeRequestId) => {
             const activity = {
                 ...sampleState('2026-10-05').activities[0],
-                kind: 'pr' as const,
-                prId,
+                kind: 'change-request' as const,
+                changeRequestId,
                 title: '#602 Release background survey exports and organization integration isolation'
             }
             const container = document.createElement('div')
@@ -343,7 +355,7 @@ describe('activity row pull request references', () => {
             )
             expect(container.querySelector('.activity-row-reference')?.textContent).toBe('#602')
             expect(container.querySelector('.activity-row-title')?.textContent).toBe(activity.title)
-            expect(container.textContent).not.toContain(prId)
+            expect(container.textContent).not.toContain(changeRequestId)
         }
     )
 })

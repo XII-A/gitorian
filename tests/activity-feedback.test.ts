@@ -52,7 +52,7 @@ it('renders the real empty-result toast after the refresh button completes', asy
         expect(run).toHaveBeenCalledExactlyOnceWith({ type: 'refresh', since: '2026-10-05' })
         await act(async () => {
             await Promise.resolve()
-            finish({ state, connections: { github: false, notion: false, protectedStorage: false } })
+            finish({ state, connections: { remote: false, notion: false, protectedStorage: false } })
             await new Promise((resolve) => setTimeout(resolve, 50))
         })
         expect(host.textContent).toContain('No activity found')
@@ -74,7 +74,6 @@ it('loads missing weeks silently, keeps cached weeks immediate and does not relo
     const root = createRoot(host)
     const run = vi.fn(() => Promise.resolve(undefined))
     const state = sampleState('2026-10-05')
-    state.settings.githubLogin = ''
     state.acquisition = {}
     for (const repository of state.repositories)
         state.acquisition[`git:${repository.id}`] = {
@@ -121,7 +120,7 @@ it('shows only source failures and closes the dialog when they clear', async () 
     const repository = state.repositories[0]
     state.acquisition = {
         [`git:${repository.id}`]: { status: 'running' },
-        [`github:${repository.id}`]: { status: 'error', error: 'HTTP 401' },
+        [`remote:${repository.id}`]: { status: 'error', error: 'HTTP 401' },
         [`git:${state.repositories[1].id}`]: { status: 'cancelled', error: 'Paused by you', windowEnd: '2026-10-10' },
         'git:removed': { status: 'error', error: 'Removed repository' }
     }
@@ -150,7 +149,7 @@ it('shows only source failures and closes the dialog when they clear', async () 
             settings.click()
         })
         expect(onSettings).toHaveBeenCalledTimes(1)
-        state.acquisition[`github:${repository.id}`] = { status: 'idle' }
+        state.acquisition[`remote:${repository.id}`] = { status: 'idle' }
         await render()
         expect(onOpenChange).toHaveBeenCalledWith(false)
     } finally {

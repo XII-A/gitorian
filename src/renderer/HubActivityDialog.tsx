@@ -10,6 +10,7 @@ import { PullRequestStatus } from './PullRequestLifecycle'
 import { isPullRequest } from './pull-request'
 import './activity-details.css'
 import { hasFileStatistics } from '../shared/change-statistics'
+import { activityProvider } from './activity-details'
 
 export interface HubActivityDialogHandle {
     open: (activity: Activity) => void
@@ -95,10 +96,10 @@ export function HubActivityDialog({
     // Loaded files belong to the stored record; keep the hub's date-range placement and unified PR type.
     const activity =
         loaded && selected && isPullRequest(selected)
-            ? { ...loaded, kind: 'pr' as const, title: selected.title, date: selected.date }
+            ? { ...loaded, kind: 'change-request' as const, title: selected.title, date: selected.date }
             : loaded
     const kind = activity?.kind === 'commit' ? 'Commit' : 'Review'
-    const pullNumber = activity?.prId?.match(/(?:^|[:/])(\d+)$/)?.[1]
+    const pullNumber = activity?.changeRequestId?.match(/(?:^|[:/])(\d+)$/)?.[1]
     const reference =
         activity?.kind === 'commit' ? activity.sha?.slice(0, 7) : pullNumber ? `#${pullNumber}` : undefined
     const Icon = activity?.kind === 'commit' ? GitCommitHorizontal : GitPullRequest
@@ -159,7 +160,7 @@ export function HubActivityDialog({
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >
-                                    View on GitHub
+                                    View on {activityProvider(activity) === 'gitlab' ? 'GitLab' : 'GitHub'}
                                     <ExternalLink size={16} strokeWidth={1.5} aria-hidden="true" />
                                 </a>
                             )}

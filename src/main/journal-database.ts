@@ -6,6 +6,8 @@ import { imageIdPattern, imageLimits } from '../shared/images'
 import { stateSchema } from '../shared/model'
 import type { Activity, Destination, Draft, Entry, Repository, Selection, State } from '../shared/model'
 import type { JournalImage } from '../shared/images'
+import type { ProviderAccount } from '../shared/provider-accounts'
+import { upgradeJournalBackup } from '../shared/journal-upgrade'
 
 type Operation = Exclude<keyof JournalEngine, 'close'>
 type Result<K extends Operation> = ReturnType<JournalEngine[K]>
@@ -83,6 +85,42 @@ export class JournalDatabase {
     saveRepository(repository: Repository, generation = this.generation) {
         return this.request('saveRepository', repository, generation)
     }
+    updateRepositorySettings(repository: Repository, generation = this.generation) {
+        return this.request('updateRepositorySettings', repository, generation)
+    }
+    updateRepositoryLocation(
+        location: Parameters<JournalEngine['updateRepositoryLocation']>[0],
+        generation = this.generation
+    ) {
+        return this.request('updateRepositoryLocation', location, generation)
+    }
+    assignProviderAccount(
+        repositoryId: string,
+        configuration: string,
+        assignment: Parameters<JournalEngine['assignProviderAccount']>[2],
+        generation = this.generation
+    ) {
+        return this.request('assignProviderAccount', repositoryId, configuration, assignment, generation)
+    }
+    prepareProviderAccount(account: ProviderAccount, generation = this.generation) {
+        return this.request('prepareProviderAccount', account, generation)
+    }
+    activateProviderAccount(id: string, expected: number, generation = this.generation) {
+        return this.request('activateProviderAccount', id, expected, generation)
+    }
+    finishProviderAccount(id: string, generation = this.generation) {
+        return this.request('finishProviderAccount', id, generation)
+    }
+    finishCredentialCleanup(key: string, generation = this.generation) {
+        return this.request('finishCredentialCleanup', key, generation)
+    }
+    disconnectProviderAccount(
+        id: string,
+        generation = this.generation,
+        status: 'disconnected' | 'reconnect' = 'disconnected'
+    ) {
+        return this.request('disconnectProviderAccount', id, generation, status)
+    }
     saveSettings(settings: State['settings'], generation = this.generation) {
         return this.request('saveSettings', settings, generation)
     }
@@ -151,9 +189,6 @@ export class JournalDatabase {
     entryHistory(query: string, cursor?: { date: string; id: string }) {
         return this.request('entryHistory', query, cursor)
     }
-    setGitHubLogin(login: string, generation = this.generation) {
-        return this.request('setGitHubLogin', login, generation)
-    }
     repositoryUnavailable(id: string, configuration: string, generation = this.generation) {
         return this.request('repositoryUnavailable', id, configuration, generation)
     }
@@ -179,9 +214,9 @@ export class JournalDatabase {
         if (Buffer.byteLength(json) > imageLimits.backup)
             throw new DatabaseError('invalid', 'The backup exceeds the 512 MiB limit.')
         const input = JSON.parse(json) as { backupVersion: number; state: unknown; images: Record<string, unknown>[] }
-        if (input.backupVersion !== 3 || !Array.isArray(input.images))
+        if (![3, 4].includes(input.backupVersion) || !Array.isArray(input.images))
             throw new DatabaseError('invalid', 'Unsupported journal backup format')
-        const state = stateSchema.parse(input.state)
+        const state = stateSchema.parse(input.backupVersion === 3 ? upgradeJournalBackup(input.state) : input.state)
         const images: JournalImage[] = [],
             ids = new Set<string>()
         for (const value of input.images) {

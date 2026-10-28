@@ -48,7 +48,7 @@ const state = {
 contextBridge.exposeInMainWorld('journal', {
     invoke: async (command) => ({
         state,
-        connections: { github: false, notion: false, protectedStorage: false },
+        connections: { remote: false, notion: false, protectedStorage: false },
         ...(command.type === 'entryHistory'
             ? {
                   entryPage: {

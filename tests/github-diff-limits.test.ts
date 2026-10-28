@@ -13,13 +13,13 @@ it('finishes remote acquisition when GitHub refuses an old PR diff with 406', as
         }
         app.remote.authorDate = '2026-09-29T10:00:00Z'
         app.remote.diffStatus = 406
-        await run(app.service.refresh({ source: 'github' }))
-        const status = (await journalState(app.store)).acquisition?.[`github:${app.repository.id}`]
+        await run(app.service.refresh({ source: 'remote' }))
+        const status = (await journalState(app.store)).acquisition?.[`remote:${app.repository.id}`]
         expect(status?.error).toBeUndefined()
         expect(status?.lastSuccess).toBeDefined()
         expect(status?.windowEnd).toBeUndefined()
         expect(status?.versions?.['1']).toBeDefined()
-        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         expect((await app.store.activity(pr.id))!.revision).toBeDefined()
         expect((await app.store.activity(pr.id))!.fingerprint).toBeUndefined()
         const details = await run(app.service.handle({ type: 'details', activityId: pr.id }))
@@ -27,8 +27,12 @@ it('finishes remote acquisition when GitHub refuses an old PR diff with 406', as
         expect(details.diff).toContain('406')
         expect((await app.store.activity(pr.id))!.files[0].name).toBe('a.ts')
         const start = app.remote.requests.length
-        await run(app.service.refresh({ source: 'github' }))
-        expect(app.remote.requests.slice(start)).toHaveLength(1)
+        await run(app.service.refresh({ source: 'remote' }))
+        expect(
+            app.remote.requests
+                .slice(start)
+                .filter((request) => /\/(commits|reviews|files|compare)(?:[/?]|$)/.test(request.url))
+        ).toHaveLength(0)
     } finally {
         await app.close()
     }
@@ -41,15 +45,15 @@ it('does not reuse an old comparison fingerprint when a changed PR diff returns 
             app.repository.trackingStart = '2026-10-05'
             await app.store.saveRepository(app.repository)
         }
-        await run(app.service.refresh({ source: 'github' }))
-        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+        await run(app.service.refresh({ source: 'remote' }))
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         await run(app.service.handle({ type: 'details', activityId: pr.id }))
         const previous = pr.revision
         expect((await app.store.activity(pr.id))!.fingerprint).toBeDefined()
         app.remote.head = 'e'.repeat(40)
         app.remote.diffStatus = 406
-        await run(app.service.refresh({ source: 'github' }))
-        expect((await journalState(app.store)).acquisition?.[`github:${app.repository.id}`].error).toBeUndefined()
+        await run(app.service.refresh({ source: 'remote' }))
+        expect((await journalState(app.store)).acquisition?.[`remote:${app.repository.id}`].error).toBeUndefined()
         expect((await app.store.activity(pr.id))!.revision).not.toBe(previous)
         expect((await app.store.activity(pr.id))!.fingerprint).toBeUndefined()
         expect((await journalState(app.store)).diffs[pr.id]).toContain('406')

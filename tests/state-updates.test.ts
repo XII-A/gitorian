@@ -7,7 +7,7 @@ import { sampleState } from '../src/renderer/workspace-sample'
 import type { Reply, State } from '../src/shared/model'
 
 function reply(state = sampleState('2026-10-12')): Reply {
-    return { state, connections: { github: false, notion: false, protectedStorage: false } }
+    return { state, connections: { remote: false, notion: false, protectedStorage: false } }
 }
 
 it('snapshots mutable state without retaining mutable objects and reuses unchanged large branch arrays', () => {
@@ -75,7 +75,7 @@ it('applies additions, deletions, reordering, removed optional fields and change
         ...reply(shareSnapshot(old.state, state)),
         diff: 'details',
         message: 'Saved',
-        connections: { ...old.connections, github: true }
+        connections: { ...old.connections, remote: true }
     }
     const packed = cache.pack(next, stateCursor(old.state))
     expect(expandReply(structuredClone(packed), old.state)).toEqual(next)
@@ -128,14 +128,14 @@ it('falls back to complete snapshots if a caller supplies different content unde
 it('skips equal-version state polls but accepts account changes, new snapshots and restores', () => {
     const current: Reply = {
         state: { ...initialState(), snapshotVersion: 2, restoreId: 'one' },
-        connections: { github: false, notion: false, protectedStorage: true }
+        connections: { remote: false, notion: false, protectedStorage: true }
     }
     const equal = structuredClone(current)
     expect(unchangedStateReply(current, equal, { type: 'state' })).toBe(true)
     expect(
         unchangedStateReply(
             current,
-            { ...equal, connections: { ...equal.connections, github: true } },
+            { ...equal, connections: { ...equal.connections, remote: true } },
             { type: 'state' }
         )
     ).toBe(false)
@@ -150,17 +150,21 @@ it('skips equal-version state polls but accepts account changes, new snapshots a
 
 it('does not discard detail payloads or trust unversioned state as unchanged', () => {
     const state = initialState()
-    const current: Reply = { state, connections: { github: false, notion: false, protectedStorage: true } }
+    const current: Reply = { state, connections: { remote: false, notion: false, protectedStorage: true } }
     expect(unchangedStateReply(current, structuredClone(current), { type: 'state' })).toBe(false)
     state.snapshotVersion = 1
-    expect(unchangedStateReply(current, { ...current, diff: 'new patch' }, { type: 'details', activityId: 'pr' })).toBe(
-        false
-    )
+    expect(
+        unchangedStateReply(
+            current,
+            { ...current, diff: 'new patch' },
+            { type: 'details', activityId: 'change-request' }
+        )
+    ).toBe(false)
 })
 
 it('only skips detail loading for matching PR revisions or explicitly loaded metadata', () => {
     const state = sampleState('2026-10-05')
-    const activity = state.activities.find((item) => item.kind === 'pr')!
+    const activity = state.activities.find((item) => item.kind === 'change-request')!
     state.diffs[activity.id] = 'cached patch'
     activity.revision = 'new'
     activity.diffRevision = 'old'

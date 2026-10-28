@@ -204,7 +204,7 @@ app.on('browser-window-created', (_, window) => {
             if (
                 doctor.profile !== join(scratch, 'profile') ||
                 !doctor.url.startsWith(pathToFileURL(resolve('out/renderer/index.html')).href) ||
-                initial.connections.github ||
+                initial.connections.remote ||
                 initial.connections.notion
             )
                 throw new Error('Doctor rejected profile, build, or disconnected integration state')

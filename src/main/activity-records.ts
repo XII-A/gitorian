@@ -3,9 +3,10 @@ import type { JournalFailure } from './journal-errors'
 import { makeSharedRequests } from './shared-requests'
 import { randomUUID } from 'node:crypto'
 import { Context, Effect, Layer } from 'effect'
-import { GitHub } from './github'
-import { ConnectionState, JournalError, JournalStore } from './journal-context'
-import { commitDetails, githubRemote } from './git'
+import { RemoteContributions } from './remote-contributions'
+import { remoteConfiguration, providerRemote } from '../shared/provider-accounts'
+import { JournalError, JournalStore } from './journal-context'
+import { commitDetails } from './git'
 import { filesFromDiff } from './diff-files'
 import { hasFileStatistics } from '../shared/change-statistics'
 import { isCombinedDiff } from '../shared/diff-format'
@@ -33,8 +34,28 @@ export const ActivityRecordsLive = Layer.scoped(
     ActivityRecords,
     Effect.gen(function* () {
         const store = yield* JournalStore
-        const github = yield* GitHub
-        const connections = (yield* ConnectionState).snapshot
+        const github = yield* RemoteContributions
+        const lease = (activity: Activity) => {
+            if (!activity.remoteSource) return activity
+            const repository = store.config.repositories.find((r) => r.id === activity.repositoryId)
+            const account = store.config.accounts.find((a) => a.id === repository?.accountId)
+            if (
+                !repository ||
+                !account ||
+                account.provider !== activity.remoteSource.provider ||
+                account.host !== activity.remoteSource.host
+            )
+                return activity
+            return {
+                ...activity,
+                remoteSource: {
+                    ...activity.remoteSource,
+                    configuration: remoteConfiguration(repository),
+                    accountId: account.id,
+                    sessionGeneration: account.generation
+                }
+            }
+        }
         const sharedDetails = yield* makeSharedRequests<string, undefined, Error>(
             () => new JournalError('Activity records are closed')
         )
@@ -49,7 +70,8 @@ export const ActivityRecordsLive = Layer.scoped(
         ): Effect.Effect<string, Error> =>
             Effect.gen(function* () {
                 const generation = store.generation
-                const activity = yield* local(() => store.activity(activityId))
+                const stored = yield* local(() => store.activity(activityId))
+                const activity = stored && lease(stored)
                 if (!activity) return yield* Effect.fail(new JournalError('Work is no longer available'))
                 const repository = store.config.repositories.find((r) => r.id === activity.repositoryId)
                 if (!repository) return yield* Effect.fail(new JournalError('Repository is no longer available'))
@@ -75,7 +97,7 @@ export const ActivityRecordsLive = Layer.scoped(
                     store.recordActivityDetails(
                         activity,
                         retain ? snapshot.diff : undefined,
-                        { id, prId: activity.id, ...snapshot, diff: retain ? snapshot.diff : '' },
+                        { id, activityId: activity.id, ...snapshot, diff: retain ? snapshot.diff : '' },
                         generation
                     )
                 )
@@ -83,14 +105,16 @@ export const ActivityRecordsLive = Layer.scoped(
             })
         const loadDetails = (activity: Activity, includeDiff: boolean): Effect.Effect<void, Error> =>
             Effect.gen(function* () {
+                const readLease = activity.remoteSource
                 const generation = store.generation
                 const repository = store.config.repositories.find((r) => r.id === activity.repositoryId)
                 if (!repository) return yield* Effect.fail(new JournalError('Repository is no longer available'))
                 let diff: string | undefined
-                if (activity.kind === 'pr') {
+                if (activity.kind === 'change-request') {
                     if (includeDiff) {
                         yield* capture(activity.id)
-                        activity = (yield* local(() => store.activity(activity.id)))!
+                        const refreshed = (yield* local(() => store.activity(activity.id)))!
+                        activity = { ...refreshed, remoteSource: readLease ?? refreshed.remoteSource }
                     }
                     if (!hasFileStatistics(activity)) activity.files = yield* github.files(repository, activity)
                 } else if (activity.sha) {
@@ -102,7 +126,7 @@ export const ActivityRecordsLive = Layer.scoped(
                     ).pipe(
                         Effect.catchAll(
                             (localError): Effect.Effect<{ diff: string; files: Activity['files'] }, Error> => {
-                                if (!githubRemote(repository.remote) || !connections().github)
+                                if (!providerRemote(repository.remote) || !repository.accountId)
                                     return Effect.fail(
                                         new JournalError(
                                             'Local changes are unavailable (' +
@@ -110,25 +134,36 @@ export const ActivityRecordsLive = Layer.scoped(
                                                 '). Locate the repository, or connect GitHub and select its remote in Settings.'
                                         )
                                     )
-                                return github.commitDetails(repository, sha, includeDiff)
+                                return github.commitDetails(
+                                    activity.remoteSource
+                                        ? {
+                                              ...repository,
+                                              remote: `https://${activity.remoteSource.host}/${activity.remoteSource.path}`,
+                                              providerProjectId: activity.remoteSource.projectId
+                                          }
+                                        : repository,
+                                    sha,
+                                    includeDiff
+                                )
                             }
                         )
                     )
                     if (includeDiff) diff = details.diff
                     activity.files = details.files
-                } else if (activity.prId) activity.files = yield* github.files(repository, activity)
+                } else if (activity.changeRequestId) activity.files = yield* github.files(repository, activity)
                 activity.filesLoaded = true
                 yield* local(() => store.recordActivityDetails(activity, diff, undefined, generation))
             })
         const details = (activityId: string, includeDiff: boolean): Effect.Effect<{ diff?: string }, Error> =>
             Effect.gen(function* () {
-                const activity = yield* local(() => store.activity(activityId))
+                const stored = yield* local(() => store.activity(activityId))
+                const activity = stored && lease(stored)
                 if (!activity) return yield* Effect.fail(new JournalError('Work is no longer available'))
                 const patch = includeDiff ? yield* local(() => store.patch(activity.id)) : undefined
                 const cached = includeDiff
                     ? patch !== undefined &&
                       !isCombinedDiff(patch) &&
-                      (activity.kind !== 'pr' || activity.diffRevision === activity.revision)
+                      (activity.kind !== 'change-request' || activity.diffRevision === activity.revision)
                     : hasFileStatistics(activity)
                 if (!cached)
                     yield* sharedDetails(
@@ -136,6 +171,10 @@ export const ActivityRecordsLive = Layer.scoped(
                             store.generation,
                             activity.id,
                             activity.sourceVersion ?? activity.sha ?? '',
+                            remoteConfiguration(store.config.repositories.find((r) => r.id === activity.repositoryId)!),
+                            activity.remoteSource?.sessionGeneration,
+                            activity.remoteSource?.projectId,
+                            activity.remoteSource?.path,
                             includeDiff
                         ]),
                         Effect.succeed(loadDetails(activity, includeDiff).pipe(Effect.as(undefined)))

@@ -1,3 +1,4 @@
+import { providerRemote } from '../shared/provider-accounts'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
@@ -36,7 +37,7 @@ export async function inspectRepository(path: string): Promise<{
     path: string
     name: string
     remotes: string[]
-    githubRemote: string
+    selectedRemote: string
     base: string
     email: string
     branches: string[]
@@ -56,7 +57,7 @@ export async function inspectRepository(path: string): Promise<{
             return { name, url }
         })
         .filter((remote) => remote.url)
-    const candidates = fetchRemotes.filter((remote) => githubRemote(remote.url))
+    const candidates = fetchRemotes.filter((remote) => providerRemote(remote.url))
     const selected =
         candidates.find((remote) => remote.name === 'upstream') ??
         candidates.find((remote) => remote.name === 'origin') ??
@@ -83,7 +84,7 @@ export async function inspectRepository(path: string): Promise<{
         path: root,
         name: basename(root),
         remotes: [...new Set(fetchRemotes.map((remote) => remote.url))],
-        githubRemote: selected?.url ?? '',
+        selectedRemote: selected?.url ?? '',
         base,
         email: email.trim(),
         branches: branchNames
@@ -135,8 +136,8 @@ export async function commits(
                 repositoryId: repository.id,
                 kind: 'commit',
                 sha,
-                url: githubRemote(repository.remote)
-                    ? `https://github.com/${githubRemote(repository.remote)}/commit/${sha}`
+                url: providerRemote(repository.remote)
+                    ? `https://${providerRemote(repository.remote)!.host}/${providerRemote(repository.remote)!.path}/${providerRemote(repository.remote)!.provider === 'gitlab' ? '-/commit' : 'commit'}/${sha}`
                     : undefined,
                 date,
                 author,
