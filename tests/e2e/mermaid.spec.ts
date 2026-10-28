@@ -79,8 +79,9 @@ test('mermaid: shared details, source, recovery, themes and inert diagrams', asy
     })
     await test.step('prepare synthetic PR metadata through the real backup boundary', async () => {
         const backup = join(desktop.scratch, 'fixture.json')
-        writeFileSync(backup, JSON.stringify(state))
-        writeFileSync(info.outputPath('fixture.json'), JSON.stringify(state, null, 2))
+        const fixture = { backupVersion: 3, state, images: [] }
+        writeFileSync(backup, JSON.stringify(fixture))
+        writeFileSync(info.outputPath('fixture.json'), JSON.stringify(fixture, null, 2))
         await desktop.chooseFolder(backup)
         await app.evaluate(({ dialog }) => {
             dialog.showMessageBox = () => Promise.resolve({ response: 1, checkboxChecked: false })
@@ -230,10 +231,10 @@ test('mermaid: shared details, source, recovery, themes and inert diagrams', asy
         const reply = await page.evaluate(() => window.journal.invoke({ type: 'state' }))
         expect(reply.state.activities.find((item) => item.id === 'valid')?.description).toBe(description)
         await desktop.close()
-        const db = new DatabaseSync(join(desktop.profile, 'gitorian.sqlite'), { readOnly: true })
+        const db = new DatabaseSync(join(desktop.profile, 'journal.sqlite'), { readOnly: true })
         try {
-            const rows = db.prepare("SELECT json FROM state_records WHERE collection='activities' AND id='valid'").all()
-            expect(JSON.parse(String(rows[0].json)).description).toBe(description)
+            const rows = db.prepare("SELECT description FROM activities WHERE id='valid'").all()
+            expect(rows[0]?.description).toBe(description)
             writeFileSync(info.outputPath('persisted-activity.json'), JSON.stringify(rows, null, 2))
         } finally {
             db.close()
