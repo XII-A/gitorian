@@ -2,6 +2,8 @@
 
 Read [frontend conventions](docs/frontend.md) before changing renderer UI.
 
+Read [backend conventions](src/main/README.md) before changing main-process services, application work or native adapters. Read [Effect patterns](docs/effect.md) when writing Effect code or changing its tooling.
+
 ## Testing
 
 Read [testing](docs/testing.md) when adding or migrating tests, choosing a runner, or debugging a failed journey.

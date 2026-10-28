@@ -11,7 +11,8 @@
         "dev:oauth": "pnpm --filter @gitorian/notion-oauth dev",
         "build": "pnpm typecheck && electron-vite build && pnpm --filter @gitorian/notion-oauth build",
         "start": "electron-vite preview",
-        "typecheck": "tsc --noEmit",
+        "typecheck": "effect-tsgo tsc@7.0.2 --noEmit",
+        "effect:reference": "node tools/effect-reference.mjs",
         "test": "vitest run",
         "test:e2e": "playwright test",
         "test:e2e:report": "playwright show-report .ai-docs/verification/desktop/report",
@@ -124,6 +125,8 @@
         "zod": "4.6.5"
     },
     "devDependencies": {
+        "@effect/language-service": "0.87.5",
+        "@effect/tsgo": "0.62.0",
         "@playwright/test": "^1.64.1",
         "@testing-library/jest-dom": "^7.0.1",
         "@testing-library/react": "^16.3.3",
