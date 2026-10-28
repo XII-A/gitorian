@@ -69,3 +69,8 @@ For release typing latency, run `pnpm smoke:writing:release`. It shares the deve
 ## Block-first selection
 
 Run pnpm test:e2e select-all for paragraph, multiline code and list text selection, repeated escalation, caret reset, empty-block document selection and replacement/undo through native keyboard input. The shared journal extension also supplies template editing. Code-block whole-document clipboard round trips explicitly press Select All twice.
+
+## Autosave failure feedback
+
+Run `pnpm build`, `pnpm verify doctor`, then `pnpm test:e2e workspace-save-errors draft-recovery`.
+`workspace-save-errors` owns journal-only autosave rejection: its Electron IPC registration fixture rejects only the selected draft command, retaining real renderer, preload and SQLite. From hub Open journal, type "Writing that could not be saved". Require one persistent **Could not save writing** toast with **Retry saving**, no footer error, recovery storage containing later edits, and a retry that still fails without losing input. Remove the injected rejection and retry; require the toast to disappear, normal saved status, reload retention and independent post-exit SQLite evidence. Keep numbered PNGs, source.patch, actions, trace, persisted-drafts.json and successful run.json with cleanup.removed. The conflict dialog remains owned by draft-recovery; inspector diff errors remain inline.

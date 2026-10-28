@@ -50,6 +50,7 @@ export function WorkspaceDraft({
 }: Props) {
     const [draft, setDraft] = useState<Draft>()
     const [status, setStatus] = useState('')
+    const [saveIssue, setSaveIssue] = useState<{ kind: 'save' | 'recovery' }>()
     const [recoveryConflict, setRecoveryConflict] = useState<WritingConflict>()
     const conflict = useRef<WritingConflict | undefined>(undefined)
     const [conflictChoice, setConflictChoice] = useState('')
@@ -65,7 +66,7 @@ export function WorkspaceDraft({
     const editor = useRef<EditorHandle>(null)
     const bodySnapshot = useRef<EditorSnapshot | undefined>(undefined)
     const wordTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-    const { toast, dismiss } = useToastStack()
+    const { toast, dismiss, update } = useToastStack()
     const latest = useRef<Draft | undefined>(undefined)
     const dirty = useRef(false)
     const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -88,7 +89,7 @@ export function WorkspaceDraft({
         try {
             localStorage.setItem(storageKey, JSON.stringify(conflict.current?.recovery ?? snapshot()))
         } catch {
-            if (mounted.current) setStatus('Recovery storage is unavailable. Saving to the journal…')
+            if (mounted.current) setSaveIssue((issue) => (issue?.kind === 'save' ? issue : { kind: 'recovery' }))
         }
     }, [storageKey, sample, snapshot])
     const showConflict = useCallback(
@@ -98,6 +99,7 @@ export function WorkspaceDraft({
             checkpoint.current = undefined
             conflict.current = { saved, recovery }
             setRecoveryConflict(conflict.current)
+            setSaveIssue(undefined)
             setConflictChoice('')
             setConflictError('')
             cache()
@@ -129,10 +131,10 @@ export function WorkspaceDraft({
                     showConflict(saved, snapshot()!)
                     return false
                 }
-                if (mounted.current)
-                    setStatus(
-                        'Could not save to the journal. Retry saving; a recovery copy is kept when browser storage is available.'
-                    )
+                if (mounted.current) {
+                    setStatus('')
+                    setSaveIssue({ kind: 'save' })
+                }
                 return false
             }
             if (latest.current) {
@@ -146,7 +148,11 @@ export function WorkspaceDraft({
                 } catch {
                     /* The backend has saved the draft. */
                 }
-                if (mounted.current) setStatus(sample ? 'Sample saved on this device' : 'Saved on this device')
+                if (mounted.current) {
+                    setSaveIssue(undefined)
+                    dismiss('workspace-save')
+                    setStatus(sample ? 'Sample saved on this device' : 'Saved on this device')
+                }
             }
             return true
         })()
@@ -154,7 +160,29 @@ export function WorkspaceDraft({
         const result = await request
         if (pending.current === request) pending.current = undefined
         return result
-    }, [run, storageKey, sample, snapshot, showConflict, state.restoreId])
+    }, [run, storageKey, sample, snapshot, showConflict, state.restoreId, dismiss])
+    useEffect(() => {
+        if (!saveIssue || recoveryConflict) {
+            dismiss('workspace-save')
+            return
+        }
+        toast({
+            id: 'workspace-save',
+            type: 'error',
+            title: saveIssue.kind === 'save' ? 'Could not save writing' : 'Recovery storage is unavailable',
+            ...(saveIssue.kind === 'recovery' ? { description: 'Save writing to the journal before closing.' } : {}),
+            duration: Infinity,
+            action: {
+                label: 'Retry saving',
+                onClick: () => {
+                    // Keep recovery available until the write is acknowledged.
+                    update('workspace-save', {})
+                    void persist()
+                }
+            }
+        })
+    }, [saveIssue, recoveryConflict, persist, toast, dismiss, update])
+    useEffect(() => () => dismiss('workspace-save'), [dismiss])
     const choose = useCallback(
         (item: Draft) => {
             let recovered = item
@@ -555,11 +583,6 @@ export function WorkspaceDraft({
                     {status && !recoveryConflict && <WorkspaceIcon name="check" width="14" height="14" />}
                     {!recoveryConflict && status}
                 </span>
-                {!recoveryConflict && dirty.current && status.startsWith('Could not') && (
-                    <Button className="ws-retry-saving" variant="ghost" size="sm" onClick={persist}>
-                        Retry saving
-                    </Button>
-                )}
                 {needsNotion ? (
                     <Button className="ws-notion-connect" variant="ghost" size="sm" onClick={onSettings}>
                         Connect Notion in settings
