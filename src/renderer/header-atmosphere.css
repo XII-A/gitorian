@@ -31,17 +31,3 @@
 .workspace-header-sky {
     height: 110px;
 }
-.header-sky-preview {
-    position: fixed;
-    right: var(--space-4);
-    bottom: calc(64px + var(--space-4));
-    z-index: 40;
-    max-width: calc(100% - var(--space-8));
-}
-.header-sky-motion {
-    align-self: center;
-    padding-inline: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
-    white-space: nowrap;
-}

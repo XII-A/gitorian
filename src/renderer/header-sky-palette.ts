@@ -7,20 +7,9 @@ const palettes = {
     dusk: ['#373b64', '#b17d73', '#c5a3a2', '#655b7c']
 } as const satisfies Record<string, SkyPalette>
 
-export type SkyPhase = keyof typeof palettes
-
 // Local wall time intentionally follows the computer, not the journal's date grouping.
-export function headerSkyPalette(now: Date, preview: SkyPhase | 'auto' = 'auto') {
+export function headerSkyPalette(now: Date) {
     const hour = now.getHours() + now.getMinutes() / 60
-    const phase =
-        preview === 'auto'
-            ? hour < 5 || hour >= 21
-                ? 'night'
-                : hour < 8
-                  ? 'dawn'
-                  : hour < 17
-                    ? 'day'
-                    : 'dusk'
-            : preview
+    const phase = hour < 5 || hour >= 21 ? 'night' : hour < 8 ? 'dawn' : hour < 17 ? 'day' : 'dusk'
     return { phase, colors: palettes[phase] }
 }

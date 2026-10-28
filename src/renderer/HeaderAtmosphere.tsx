@@ -1,40 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import type { createHeaderSky } from './header-sky'
 import { headerSkyPalette } from './header-sky-palette'
-import type { SkyPhase } from './header-sky-palette'
-import { DropdownMenu } from './components/arc/dropdown-menu/dropdown-menu'
-import { FloatingButtonGroup } from './components/arc/floating-button-group/floating-button-group'
 import './header-atmosphere.css'
-
-// Session-only preview survives hub/workspace navigation and never changes journal settings.
-let previewTheme: SkyPhase | 'auto' = 'auto'
-const previewChoices = [
-    { value: 'auto', label: 'Automatic' },
-    { value: 'dawn', label: 'Dawn' },
-    { value: 'day', label: 'Day' },
-    { value: 'dusk', label: 'Dusk' },
-    { value: 'night', label: 'Night' }
-] as const
 
 /** Owns decorative rendering; neither journal state nor editor renders drive the sky. */
 export function HeaderAtmosphere({ surface }: { surface: 'hub' | 'workspace' }) {
     const root = useRef<HTMLDivElement>(null)
-    const [preview, setPreview] = useState(previewTheme)
-    const applyPreview = useRef<(() => void) | undefined>(undefined)
-    const [motion, setMotion] = useState('Starting sky')
     useEffect(() => {
         const element = root.current!
         const reduce = window.matchMedia('(prefers-reduced-motion: reduce)')
-        const status = new MutationObserver(() => {
-            setMotion(
-                surface === 'hub' && reduce.matches
-                    ? 'Reduced motion'
-                    : element.dataset.renderer === 'animated'
-                      ? 'Animation on'
-                      : 'Static sky'
-            )
-        })
-        status.observe(element, { attributes: true, attributeFilter: ['data-renderer'] })
         let disposed = false
         let visible = false
         let failed = false
@@ -42,7 +16,7 @@ export function HeaderAtmosphere({ surface }: { surface: 'hub' | 'workspace' }) 
         let engine: ReturnType<typeof createHeaderSky> = null
         let canvas: HTMLCanvasElement | undefined
         let timer = 0
-        let appearance = headerSkyPalette(new Date(), previewTheme)
+        let appearance = headerSkyPalette(new Date())
         const stop = () => {
             generation++
             engine?.destroy()
@@ -82,7 +56,7 @@ export function HeaderAtmosphere({ surface }: { surface: 'hub' | 'workspace' }) 
         }
         const updateTime = () => {
             window.clearTimeout(timer)
-            appearance = headerSkyPalette(new Date(), previewTheme)
+            appearance = headerSkyPalette(new Date())
             element.dataset.phase = appearance.phase
             appearance.colors.forEach((color, i) => element.style.setProperty(`--sky-${i}`, color))
             engine?.setPalette(appearance.colors)
@@ -93,7 +67,6 @@ export function HeaderAtmosphere({ surface }: { surface: 'hub' | 'workspace' }) 
             void sync()
         }
         const focus = () => updateTime()
-        applyPreview.current = updateTime
         const observer = new IntersectionObserver(([entry]) => {
             const next = entry?.isIntersecting ?? false
             if (next !== visible) {
@@ -109,7 +82,6 @@ export function HeaderAtmosphere({ surface }: { surface: 'hub' | 'workspace' }) 
         return () => {
             disposed = true
             observer.disconnect()
-            status.disconnect()
             reduce.removeEventListener('change', resume)
             document.removeEventListener('visibilitychange', resume)
             window.removeEventListener('focus', focus)
@@ -118,39 +90,11 @@ export function HeaderAtmosphere({ surface }: { surface: 'hub' | 'workspace' }) 
         }
     }, [surface])
     return (
-        <>
-            <div
-                ref={root}
-                className={`header-atmosphere ${surface}-header-sky`}
-                aria-hidden="true"
-                data-renderer="static"
-            />
-            <div className="header-sky-preview">
-                <FloatingButtonGroup
-                    label="Sky preview"
-                    variant="floating"
-                    size="sm"
-                    items={[]}
-                    startContent={
-                        <>
-                            <DropdownMenu
-                                label={`Sky: ${previewChoices.find((choice) => choice.value === preview)!.label}`}
-                                items={previewChoices.map((choice) => ({
-                                    label: choice.label,
-                                    onSelect: () => {
-                                        previewTheme = choice.value
-                                        setPreview(choice.value)
-                                        applyPreview.current?.()
-                                    }
-                                }))}
-                            />
-                            <span className="header-sky-motion" role="status">
-                                {motion}
-                            </span>
-                        </>
-                    }
-                />
-            </div>
-        </>
+        <div
+            ref={root}
+            className={`header-atmosphere ${surface}-header-sky`}
+            aria-hidden="true"
+            data-renderer="static"
+        />
     )
 }

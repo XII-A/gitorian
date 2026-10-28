@@ -32,16 +32,14 @@ test('header sky follows local time, respects reduced motion and survives route 
     const motion = before.reduce((sum, value, i) => sum + Math.abs(value - after[i]), 0) / before.length
     console.info(`Visible sky change over four seconds: ${motion}`)
     expect(motion, 'Cloud motion must be visible after downsampling away shader grain').toBeGreaterThan(1)
-    let choice = 'Automatic'
-    for (const next of ['Dawn', 'Day', 'Dusk', 'Night']) {
-        await page.getByRole('button', { name: `Sky: ${choice}`, exact: true }).click()
-        await page.getByRole('menuitem', { name: next, exact: true }).click()
-        await expect(sky).toHaveAttribute('data-phase', next.toLowerCase())
-        choice = next
+    await expect(page.getByRole('toolbar', { name: 'Sky preview' })).toHaveCount(0)
+    const setHour = async (hour: number) => {
+        await page.clock.setSystemTime(new Date(2026, 9, 28, hour))
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     }
+    await setHour(23)
     await page.getByRole('button', { name: 'Open journal', exact: true }).click()
     await expect(sky).toHaveAttribute('data-phase', 'night')
-    await expect(page.getByRole('button', { name: 'Sky: Night', exact: true })).toBeVisible()
     await expect(sky).toHaveCSS('height', '110px')
     await expect(sky).toHaveAttribute('data-renderer', 'static')
     await expect(sky.locator('canvas')).toBeVisible()
@@ -63,20 +61,20 @@ test('header sky follows local time, respects reduced motion and survives route 
             })
     )
     expect(workspaceDraws, 'Workspace must schedule no continuous shader draws').toBe(0)
-    for (const next of ['Dawn', 'Day', 'Dusk', 'Night']) {
-        await page.getByRole('button', { name: `Sky: ${choice}`, exact: true }).click()
-        await page.getByRole('menuitem', { name: next, exact: true }).click()
-        await expect(sky).toHaveAttribute('data-phase', next.toLowerCase())
+    for (const [hour, phase] of [
+        [6, 'dawn'],
+        [12, 'day'],
+        [19, 'dusk'],
+        [23, 'night']
+    ] as const) {
+        await setHour(hour)
+        await expect(sky).toHaveAttribute('data-phase', phase)
         await expect(sky).toHaveAttribute('data-renderer', 'static')
         await page.getByRole('button', { name: 'Hub', exact: true }).hover()
-        await shot(`workspace-${next.toLowerCase()}-breadcrumb`)
-        choice = next
+        await shot(`workspace-${phase}-breadcrumb`)
     }
-    await shot('03-workspace-night-preview')
+    await expect(page.getByRole('toolbar', { name: 'Sky preview' })).toHaveCount(0)
     await page.getByRole('button', { name: 'Hub', exact: true }).click()
-    await page.getByRole('button', { name: 'Sky: Night', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Automatic', exact: true }).click()
-    await expect(sky).toHaveAttribute('data-phase', 'day')
     for (const [hour, phase] of [
         [3, 'night'],
         [6, 'dawn']
@@ -111,6 +109,7 @@ test('header sky follows local time, respects reduced motion and survives route 
     await page.evaluate(() => {
         document.querySelector('canvas')!.getContext('webgl')!.getExtension('WEBGL_lose_context')!.loseContext()
     })
+    await expect(sky.locator('canvas')).toHaveCount(0)
     await expect(sky).toHaveAttribute('data-renderer', 'static')
     await expect(body).toContainText('A calm sky leaves writing responsive.')
     await page.getByRole('button', { name: 'Hub', exact: true }).click()

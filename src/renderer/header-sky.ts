@@ -128,7 +128,7 @@ void main() {
   float mu = dot(dir, sunDir);
 
   // Storm palettes (cloud darker than the horizon) mute the sun.
-  float storm = smoothstep(0.02, -0.12, luma(u_c3) - luma(u_c2));
+  float storm = 1.0 - smoothstep(-0.12, 0.02, luma(u_c3) - luma(u_c2));
   float sunAmt = 1.0 - storm * 0.75;
   vec3 sunTint = mix(vec3(1.0, 0.96, 0.88), u_c3, 0.3);
 
@@ -197,7 +197,7 @@ void main() {
 
   // Lightning, lit from inside the clouds it hits.
   if (u_glass > 0.5) {
-    float pane = smoothstep(0.50, 0.22, length(glassLocal));
+    float pane = 1.0 - smoothstep(0.22, 0.50, length(glassLocal));
     col *= mix(0.93, 1.0, pane);
     vec2 hl = glassLocal - vec2(-0.16, 0.18);
     col += exp(-dot(hl, hl) * 55.0) * 0.035;
