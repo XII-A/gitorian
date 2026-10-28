@@ -1,9 +1,17 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { Grid2X2, Clock, Smile, Leaf, Coffee, Trophy, Plane, Lightbulb, Shapes, Flag } from 'lucide-react'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/arc/tabs/tabs'
+import atlas from './assets/emoji-atlas.json'
 import { emojiCategories, type EmojiCategory, type EmojiResult } from './emoji-catalog'
+
+const glyphSize = `${atlas.columns * 40}px ${atlas.rows * 40}px`
+const glyphPositions = Object.fromEntries(
+    Object.entries(atlas.indices).map(([emoji, index]) => [
+        emoji,
+        `${-(index % atlas.columns) * 40}px ${-Math.floor(index / atlas.columns) * 40}px`
+    ])
+)
 
 const icons = [Grid2X2, Clock, Smile, Leaf, Coffee, Trophy, Plane, Lightbulb, Shapes, Flag]
 type Row = { label: string } | { start: number; items: EmojiResult[] }
@@ -39,21 +47,10 @@ export function EmojiPicker({
         }
         return next
     }, [results])
-    const virtual = useVirtualizer({
-        count: rows.length,
-        getScrollElement: () => viewport.current,
-        estimateSize: (index) => ('label' in rows[index] ? 32 : 44),
-        overscan: 2
-    })
     useLayoutEffect(() => {
-        viewport.current?.scrollTo({ top: 0 })
-    }, [results])
-    useLayoutEffect(() => {
-        const row = rows.findIndex(
-            (item) => 'start' in item && active >= item.start && active < item.start + item.items.length
-        )
-        if (row >= 0) virtual.scrollToIndex(active === 0 ? 0 : row, { align: active === 0 ? 'start' : 'auto' })
-    }, [active, rows, virtual])
+        if (active === 0) viewport.current?.scrollTo({ top: 0 })
+        else viewport.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+    }, [active, rows])
     return (
         <Tabs
             value={category}
@@ -99,20 +96,13 @@ export function EmojiPicker({
                     maxHeight="min(280px, calc(var(--radix-popover-content-available-height, 368px) - 88px))"
                     fade={12}
                 >
-                    <div
-                        role="listbox"
-                        id={`${id}-emoji-options`}
-                        aria-label="Emoji"
-                        className="journal-emoji-rows"
-                        style={{ height: virtual.getTotalSize() }}
-                    >
-                        {virtual.getVirtualItems().map((row) => {
-                            const data = rows[row.index]
+                    <div role="listbox" id={`${id}-emoji-options`} aria-label="Emoji" className="journal-emoji-rows">
+                        {rows.map((data, rowIndex) => {
                             return (
                                 <div
-                                    key={row.key}
+                                    key={rowIndex}
                                     className={'label' in data ? 'journal-emoji-section' : 'journal-emoji-grid'}
-                                    style={{ position: 'absolute', insetInline: 0, top: row.start, height: row.size }}
+                                    style={{ height: 'label' in data ? 32 : 44 }}
                                 >
                                     {'label' in data
                                         ? data.label
@@ -133,7 +123,14 @@ export function EmojiPicker({
                                                       onMouseDown={(event) => event.preventDefault()}
                                                       onClick={() => onChoose(item.emoji)}
                                                   >
-                                                      {item.emoji}
+                                                      <span
+                                                          className="journal-emoji-glyph"
+                                                          aria-hidden="true"
+                                                          style={{
+                                                              backgroundSize: glyphSize,
+                                                              backgroundPosition: glyphPositions[item.emoji]
+                                                          }}
+                                                      />
                                                   </button>
                                               )
                                           })}

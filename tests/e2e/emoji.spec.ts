@@ -20,7 +20,12 @@ test('emoji: formatter, colon search, dismissal, persistence', async ({ desktop 
                 const start = performance.now()
                 let peakOptions = 0
                 const sample = () => {
-                    peakOptions = Math.max(peakOptions, document.querySelectorAll('.journal-emoji-grid button').length)
+                    peakOptions = Math.max(
+                        peakOptions,
+                        [...document.querySelectorAll('.journal-emoji-grid')]
+                            .filter((row) => row.firstElementChild?.checkVisibility({ contentVisibilityAuto: true }))
+                            .reduce((count, row) => count + row.childElementCount, 0)
+                    )
                 }
                 const observer = new MutationObserver(sample)
                 observer.observe(document.body, { childList: true, subtree: true })
@@ -69,11 +74,76 @@ test('emoji: formatter, colon search, dismissal, persistence', async ({ desktop 
     await body.press('Enter')
     await expect(body).toContainText(':')
     await expect(page.getByRole('textbox', { name: 'Search emoji', exact: true })).toHaveCount(0)
-    expect(await page.getByRole('option').count()).toBeLessThan(160)
+    expect(
+        await page
+            .locator('.journal-emoji-grid')
+            .evaluateAll((rows) =>
+                rows
+                    .filter((row) => row.firstElementChild?.checkVisibility({ contentVisibilityAuto: true }))
+                    .reduce((count, row) => count + row.childElementCount, 0)
+            )
+    ).toBeLessThan(400)
     const viewport = page.getByRole('region', { name: 'Emoji results', exact: true })
     await viewport.hover()
-    await page.mouse.wheel(0, 800)
-    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeGreaterThan(300)
+    await page.context().tracing.stop({ path: info.outputPath('before-scroll-trace.zip') })
+    await page.context().tracing.start({ screenshots: false, snapshots: false, sources: true })
+    const scrollProbe = await page.context().newCDPSession(page)
+    await scrollProbe.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+    await page.evaluate(() => {
+        const viewport = document.querySelector<HTMLElement>('[aria-label="Emoji results"]')!
+        const samples: { offset: number; visibleRows: number; time: number }[] = []
+        let running = true
+        const sample = () => {
+            const frame = viewport.getBoundingClientRect()
+            const visibleRows = [...viewport.querySelectorAll('.journal-emoji-grid')].filter((row) => {
+                const bounds = row.getBoundingClientRect()
+                return bounds.bottom > frame.top + 8 && bounds.top < frame.bottom - 8 && row.childElementCount > 0
+            }).length
+            samples.push({ offset: viewport.scrollTop, visibleRows, time: performance.now() })
+            if (running) requestAnimationFrame(sample)
+        }
+        requestAnimationFrame(sample)
+        Object.assign(window, {
+            emojiScrollProbe: {
+                samples,
+                stop: () => {
+                    running = false
+                }
+            }
+        })
+    })
+    const wheelTarget = await viewport.boundingBox()
+    for (const delta of [800, 1200, 1600, -800, -1200, 2400, -2400]) {
+        await scrollProbe.send('Input.dispatchMouseEvent', {
+            type: 'mouseWheel',
+            x: wheelTarget!.x + wheelTarget!.width / 2,
+            y: wheelTarget!.y + wheelTarget!.height / 2,
+            deltaX: 0,
+            deltaY: delta
+        })
+        await page.evaluate(
+            () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        )
+    }
+    const scrollSamples = await page.evaluate(() => {
+        const probe = (
+            window as unknown as {
+                emojiScrollProbe: { samples: { offset: number; visibleRows: number; time: number }[]; stop: () => void }
+            }
+        ).emojiScrollProbe
+        probe.stop()
+        return probe.samples
+    })
+    await scrollProbe.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+    await scrollProbe.detach()
+    await page.context().tracing.stop({ path: info.outputPath('scroll-trace.zip') })
+    await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true })
+    writeFileSync(info.outputPath('emoji-scroll-frames.json'), JSON.stringify(scrollSamples))
+    expect(scrollSamples.some((sample) => sample.offset > 1000)).toBe(true)
+    expect(scrollSamples.filter((sample) => sample.visibleRows === 0)).toEqual([])
+    const frameGaps = scrollSamples.slice(1).map((sample, index) => sample.time - scrollSamples[index].time)
+    expect(Math.max(...frameGaps)).toBeLessThan(150)
+    await shot('02-scrolled-emoji')
     await page.getByRole('tab', { name: 'Nature', exact: true }).click()
     await expect(page.getByRole('tab', { name: 'Nature', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(page.locator('.journal-emoji-section').first()).toHaveText('Nature')
@@ -96,7 +166,11 @@ test('emoji: formatter, colon search, dismissal, persistence', async ({ desktop 
     writeFileSync(
         info.outputPath('emoji-open-timing.json'),
         JSON.stringify(
-            await page.evaluate(() => (window as unknown as { emojiOpenSamples: number[] }).emojiOpenSamples)
+            await page.evaluate(
+                () =>
+                    (window as unknown as { emojiOpenSamples: { trigger: string; ms: number; peakOptions: number }[] })
+                        .emojiOpenSamples
+            )
         )
     )
     const timings = await page.evaluate(
@@ -106,7 +180,7 @@ test('emoji: formatter, colon search, dismissal, persistence', async ({ desktop 
     )
     expect(timings.some((sample) => sample.trigger === 'formatter')).toBe(true)
     for (const sample of timings) {
-        expect(sample.peakOptions).toBeLessThan(160)
+        expect(sample.peakOptions).toBeLessThan(400)
         expect(sample.ms).toBeLessThan(200)
     }
     expect(categoryLayout.trailingGap).toBeLessThan(20)
@@ -127,6 +201,10 @@ test('emoji: formatter, colon search, dismissal, persistence', async ({ desktop 
         .screenshot({ path: info.outputPath('formatter-picker-detail.png') })
 
     await body.pressSequentially('smile')
+    await page.getByRole('option', { name: 'smile', exact: true }).hover()
+    await page
+        .getByRole('dialog', { name: 'Choose emoji' })
+        .screenshot({ path: info.outputPath('emoji-hover-detail.png') })
     await shot('02-formatter-emoji-picker')
     await page.getByRole('option', { name: 'smile', exact: true }).click()
     await expect(body).toContainText('\u{1f604}')

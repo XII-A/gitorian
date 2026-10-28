@@ -163,6 +163,9 @@ export const Editor = memo(function Editor({
     const [emojiHistory, setEmojiHistory] = useState<EmojiUse[]>([])
     const emojiHistoryRef = useRef<EmojiUse[]>([])
     useEffect(() => {
+        const glyphs = new Image()
+        glyphs.src = new URL('./assets/emoji-atlas.webp', import.meta.url).href
+        void glyphs.decode().catch(() => undefined)
         const history = readEmojiHistory()
         emojiHistoryRef.current = history
         setEmojiHistory(history)
