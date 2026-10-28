@@ -1,8 +1,6 @@
 # Testing
 
-Automate consequential behavior: activity descriptions and PR metadata, writing/editing, failure/recovery, persistence, repository acquisition and external-provider contracts. Give each outcome one owning scenario at the module interface. Use real Electron journeys when native input, clipboard, preload or persistence is essential; use Vitest for domain/storage and inexpensive DOM behavior.
-
-Review shader appearance, animation timing, hover geometry, input transitions and visual polish manually before a PR. These are not automated release gates. Retain automated keyboard selection, cancellation, editing and focus outcomes when they protect user actions. Test count is not a target; each scenario must name a distinct failure it catches.
+For scenario selection, coverage, isolation, and handoff requirements, follow [coding standards](../CODING_STANDARDS.md).
 
 ## Run and debug
 
