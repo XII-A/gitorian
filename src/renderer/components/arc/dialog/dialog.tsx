@@ -51,6 +51,8 @@ export interface DialogContentProps extends ComponentPropsWithoutRef<typeof Dial
     backdrop?: 'blur' | 'dim' | 'none'
     /** Content-only reader surfaces keep an accessible title without visible dialog controls. */
     hideHeader?: boolean
+    /** Hide the close affordance when a decision must be submitted before leaving. */
+    showCloseButton?: boolean
     /** Allow a portalled companion to share its parent modal focus and scroll boundary. */
     registerAsBranch?: boolean
     /** Use a horizontal entrance and exit for a reader beside another surface. */
@@ -102,6 +104,7 @@ export function DialogContent({
     onPointerDownOutside,
     backdrop = 'blur',
     hideHeader = false,
+    showCloseButton = true,
     motionPreset = 'scale',
     ...props
 }: DialogContentProps) {
@@ -147,9 +150,11 @@ export function DialogContent({
                             </DialogPrimitive.Description>
                         ) : null}
                     </div>
-                    <DialogPrimitive.Close className={styles.close} aria-label="Close dialog">
-                        <X size={16} strokeWidth={1.75} aria-hidden="true" />
-                    </DialogPrimitive.Close>
+                    {showCloseButton && (
+                        <DialogPrimitive.Close className={styles.close} aria-label="Close dialog">
+                            <X size={16} strokeWidth={1.75} aria-hidden="true" />
+                        </DialogPrimitive.Close>
+                    )}
                 </div>
             )}
             <div className={styles.body} data-arc-dialog-body>

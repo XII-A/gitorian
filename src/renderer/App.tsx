@@ -62,9 +62,9 @@ function JournalApp() {
             setError('')
             return result
         } catch (failure) {
-            if (['publish', 'reconcile'].includes(command.type)) {
-                // The writing pane owns actionable publishing toasts. Refresh save state
-                // even when the command failed, so uncertain writes stay blocked.
+            if (['draft', 'publish', 'reconcile'].includes(command.type)) {
+                // The writing pane owns save recovery. A refreshed snapshot is not
+                // a draftSaved acknowledgment; it lets the pane detect stale versions.
                 try {
                     const refreshed = await window.journal.invoke({ type: 'state' })
                     startTransition(() => setReply((current) => reconcileReply(current, refreshed, { type: 'state' })))

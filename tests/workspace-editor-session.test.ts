@@ -27,7 +27,13 @@ it('keeps actual editor revisions through idle saves, title edits, citations, in
     const run = vi.fn((command: Command) => {
         saved.push(structuredClone(command))
         return new Promise<Reply>((resolve) => {
-            finish = resolve
+            finish = (reply) =>
+                resolve({
+                    ...reply,
+                    ...(command.type === 'draft'
+                        ? { draftSaved: { id: command.draft.id, version: command.draft.version + 1 } }
+                        : {})
+                })
         })
     })
     const props = {
