@@ -2,6 +2,8 @@
 
 ## Header atmosphere
 
+Startup and workspace-to-hub entry blend the palette background in over Arc's 160ms token, then blend the first completed shader frame over its fallback with the 240ms enter token. No sky geometry moves. The desktop journey samples actual computed canvas opacity on both entry paths and requires intermediate frames before settling; reduced motion retains the static fallback with a short opacity reveal. The workspace still schedules no continuous shader draws.
+
 The hub sky extends 400px and animates; the workspace retains 110px and renders a frozen shader frame, redrawing only for actual palette or size changes. The desktop journey requires zero workspace shader draws over an idle interval and captures breadcrumb contrast under all four clock-controlled themes. Its foreground chevron remains independent of breadcrumb hover/focus color. Reduced motion still uses the CSS fallback. Route cycling expects an animated hub and a static workspace.
 
 

@@ -1,14 +1,37 @@
 import { test, expect } from './support/desktop'
 
+function sampleSkyEntry() {
+    const frames: number[] = []
+    Object.assign(window, { skyEntryFrames: frames })
+    const end = performance.now() + 1600
+    const sample = () => {
+        const canvas = document.querySelector('.hub-header-sky canvas')
+        if (canvas) frames.push(Number(getComputedStyle(canvas).opacity))
+        if (performance.now() < end) requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+}
+
 test('header sky follows local time, respects reduced motion and survives route changes', async ({ desktop }) => {
     const { page, shot } = desktop
     const sky = page.locator('.header-atmosphere')
+    await page.addInitScript(sampleSkyEntry)
     await page.clock.install({ time: new Date('2026-10-28T12:00:00') })
     await page.reload()
     await expect(sky).toHaveAttribute('data-phase', 'day')
     await expect(sky).toHaveAttribute('aria-hidden', 'true')
     await expect(sky.locator('canvas')).toBeVisible()
     await expect(sky).toHaveAttribute('data-renderer', 'animated')
+    await expect
+        .poll(
+            async () => {
+                const frames = await page.evaluate<number[]>('window.skyEntryFrames')
+                return frames.filter((opacity) => opacity > 0 && opacity < 1).length
+            },
+            { message: 'Startup sky must blend through intermediate opacity frames' }
+        )
+        .toBeGreaterThan(1)
+    await expect(sky.locator('canvas')).toHaveCSS('opacity', '1')
     await expect(sky).toHaveCSS('height', '400px')
     await shot('00-hub-day-sky')
     // Compare downsampled rendered pixels: subpixel shader grain cannot pass as cloud motion.
@@ -112,9 +135,19 @@ test('header sky follows local time, respects reduced motion and survives route 
     await expect(sky.locator('canvas')).toHaveCount(0)
     await expect(sky).toHaveAttribute('data-renderer', 'static')
     await expect(body).toContainText('A calm sky leaves writing responsive.')
+    await page.evaluate(sampleSkyEntry)
     await page.getByRole('button', { name: 'Hub', exact: true }).click()
     await expect(sky).toHaveCount(1)
     await expect(sky).toHaveAttribute('data-renderer', 'animated')
+    await expect
+        .poll(
+            async () => {
+                const frames = await page.evaluate<number[]>('window.skyEntryFrames')
+                return frames.filter((opacity) => opacity > 0 && opacity < 1).length
+            },
+            { message: 'Returning to hub must blend the ready sky into place' }
+        )
+        .toBeGreaterThan(1)
     await shot('02-return-hub')
     for (let visit = 0; visit < 30; visit++) {
         await page.getByRole('button', { name: 'Open journal', exact: true }).click()

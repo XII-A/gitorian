@@ -443,6 +443,7 @@ export function createHeaderSky(canvas: HTMLCanvasElement, colors: SkyPalette, a
         gl.uniform3fv(uC4, palette[3])
         gl.uniform2f(uMouse, 0.5, 0.5)
         gl.drawArrays(gl.TRIANGLES, 0, 6)
+        if (!canvas.dataset.ready) canvas.dataset.ready = 'true'
         const renderer = animated ? 'animated' : 'static'
         if (root.dataset.renderer !== renderer) root.dataset.renderer = renderer
         if (animated) {
