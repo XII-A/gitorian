@@ -10,18 +10,33 @@ if (!process.env.GITORIAN_E2E_PROFILE) throw new Error('An owned desktop test pr
 app.setPath('userData', process.env.GITORIAN_E2E_PROFILE)
 nativeTheme.themeSource = 'light'
 
-// Slow real discovery/inspection so transient states can be observed. Results remain real.
-const pause = (ms) => new Promise((done) => setTimeout(done, ms))
+// Hold only the operation whose transient UI the journey is observing.
+// Releasing the hold resumes real filesystem/Git work without slowing every command.
+let hold
+app.on('gitorian-e2e-hold-io', (kind) => {
+    if (hold) throw new Error('Release the previous import I/O hold first')
+    let release
+    const pending = new Promise((done) => {
+        release = done
+    })
+    hold = { kind, pending, release }
+})
+const releaseIO = () => {
+    hold?.release()
+    hold = undefined
+}
+app.on('gitorian-e2e-release-io', releaseIO)
+app.on('before-quit', releaseIO)
 const readDirectory = fsPromises.readdir
 fsPromises.readdir = async (...args) => {
-    await pause(5)
+    if (hold?.kind === 'discovery') await hold.pending
     return await readDirectory(...args)
 }
 const execute = childProcess.execFile
 const executeAsync = promisify(execute)
 childProcess.execFile = (...args) => execute(...args)
 childProcess.execFile[promisify.custom] = async (...args) => {
-    await pause(750)
+    if (hold?.kind === 'inspection') await hold.pending
     return await executeAsync(...args)
 }
 syncBuiltinESMExports()

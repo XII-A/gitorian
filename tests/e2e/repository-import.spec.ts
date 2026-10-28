@@ -42,8 +42,6 @@ test('repository import: selection, cancellation, recovery and durable tracking'
             mkdirSync(path, { recursive: true })
             execFileSync('git', ['init', '-b', 'main'], { cwd: path, windowsHide: true, stdio: 'ignore' })
         }
-        for (let index = 0; index < 300; index++)
-            mkdirSync(join(folder, 'scan-fixture', String(index)), { recursive: true })
         for (const name of names.slice(0, 2)) {
             await chooseFolder(join(folder, name))
             await page.evaluate(() => window.journal.invoke({ type: 'addRepository' }))
@@ -60,9 +58,10 @@ test('repository import: selection, cancellation, recovery and durable tracking'
             },
             await realpath(stoppedPath)
         )
-        writeFileSync(info.outputPath('fixture.json'), JSON.stringify({ folder, names, delayedIO: true }, null, 2))
+        writeFileSync(info.outputPath('fixture.json'), JSON.stringify({ folder, names, controlledIO: true }, null, 2))
     })
     await test.step('chooser, discovery and review expose progress', async () => {
+        await app.evaluate(({ app }) => app.emit('gitorian-e2e-hold-io', 'discovery'))
         await chooseFolder(folder, 1800)
         await page.getByRole('button', { name: 'Open settings', exact: true }).click()
         await expect(add).toBeVisible()
@@ -72,6 +71,7 @@ test('repository import: selection, cancellation, recovery and durable tracking'
         await shot('02-folder-selection')
         await expect(scan('loading')).toContainText('Scanning')
         await shot('03-scanning')
+        await app.evaluate(({ app }) => app.emit('gitorian-e2e-release-io'))
         await expect(scan('success')).toBeVisible()
         await shot('03b-scan-success')
         await expect(rows).toHaveCount(6)
@@ -141,9 +141,11 @@ test('repository import: selection, cancellation, recovery and durable tracking'
                 .toBe(true)
         }
         await page.setViewportSize({ width: 1280, height: 900 })
+        await app.evaluate(({ app }) => app.emit('gitorian-e2e-hold-io', 'inspection'))
         await page.getByRole('button', { name: 'Import 4 repositories', exact: true }).click()
         await expect(page.locator('.settings-import-button')).toContainText('Processing repositories')
         await shot('07-importing')
+        await app.evaluate(({ app }) => app.emit('gitorian-e2e-release-io'))
         await expect.poll(async () => (await state()).state.repositoryImport?.status).toBe('done')
         await expect(add).toBeVisible()
         await shot('08-complete')
@@ -170,9 +172,11 @@ test('repository import: selection, cancellation, recovery and durable tracking'
         await page.getByRole('button', { name: 'Back to Settings', exact: true }).click()
         await expect(add).toBeVisible()
         await page.emulateMedia({ reducedMotion: 'reduce' })
+        await app.evaluate(({ app }) => app.emit('gitorian-e2e-hold-io', 'discovery'))
         await chooseFolder(folder)
         await add.click()
         await expect(scan('loading').locator('svg')).toHaveCSS('animation-name', 'none')
+        await app.evaluate(({ app }) => app.emit('gitorian-e2e-release-io'))
         await expect(scan('success')).toBeVisible()
         await cancel.click()
         // Observe past the delayed result transition to catch review reopening after cancellation.
