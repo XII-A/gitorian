@@ -1,0 +1,128 @@
+import { test, expect } from './support/desktop'
+
+test('header sky follows local time, respects reduced motion and survives route changes', async ({ desktop }) => {
+    const { page, shot } = desktop
+    const sky = page.locator('.header-atmosphere')
+    await page.clock.install({ time: new Date('2026-10-28T12:00:00') })
+    await page.reload()
+    await expect(sky).toHaveAttribute('data-phase', 'day')
+    await expect(sky).toHaveAttribute('aria-hidden', 'true')
+    await expect(sky.locator('canvas')).toBeVisible()
+    await expect(sky).toHaveAttribute('data-renderer', 'animated')
+    await expect(sky).toHaveCSS('height', '400px')
+    await shot('00-hub-day-sky')
+    // Compare downsampled rendered pixels: subpixel shader grain cannot pass as cloud motion.
+    const skyPixels = async () => {
+        const png = await sky.screenshot({ animations: 'disabled' })
+        return page.evaluate(async (base64) => {
+            const image = new Image()
+            image.src = `data:image/png;base64,${base64}`
+            await image.decode()
+            const canvas = document.createElement('canvas')
+            canvas.width = 96
+            canvas.height = 8
+            const context = canvas.getContext('2d')!
+            context.drawImage(image, 0, 0, 96, 8)
+            return Array.from(context.getImageData(0, 0, 96, 8).data)
+        }, png.toString('base64'))
+    }
+    const before = await skyPixels()
+    await page.waitForTimeout(4000)
+    const after = await skyPixels()
+    const motion = before.reduce((sum, value, i) => sum + Math.abs(value - after[i]), 0) / before.length
+    console.info(`Visible sky change over four seconds: ${motion}`)
+    expect(motion, 'Cloud motion must be visible after downsampling away shader grain').toBeGreaterThan(1)
+    let choice = 'Automatic'
+    for (const next of ['Dawn', 'Day', 'Dusk', 'Night']) {
+        await page.getByRole('button', { name: `Sky: ${choice}`, exact: true }).click()
+        await page.getByRole('menuitem', { name: next, exact: true }).click()
+        await expect(sky).toHaveAttribute('data-phase', next.toLowerCase())
+        choice = next
+    }
+    await page.getByRole('button', { name: 'Open journal', exact: true }).click()
+    await expect(sky).toHaveAttribute('data-phase', 'night')
+    await expect(page.getByRole('button', { name: 'Sky: Night', exact: true })).toBeVisible()
+    await expect(sky).toHaveCSS('height', '110px')
+    await expect(sky).toHaveAttribute('data-renderer', 'static')
+    await expect(sky.locator('canvas')).toBeVisible()
+    await skyPixels() // Let initial drawing and breadcrumb entry settle.
+    const workspaceDraws = await sky.locator('canvas').evaluate(
+        (canvas: HTMLCanvasElement) =>
+            new Promise<number>((resolve) => {
+                const gl = canvas.getContext('webgl')!
+                const original = gl.drawArrays.bind(gl)
+                let draws = 0
+                gl.drawArrays = (...args) => {
+                    draws++
+                    original(...args)
+                }
+                setTimeout(() => {
+                    gl.drawArrays = original
+                    resolve(draws)
+                }, 1200)
+            })
+    )
+    expect(workspaceDraws, 'Workspace must schedule no continuous shader draws').toBe(0)
+    for (const next of ['Dawn', 'Day', 'Dusk', 'Night']) {
+        await page.getByRole('button', { name: `Sky: ${choice}`, exact: true }).click()
+        await page.getByRole('menuitem', { name: next, exact: true }).click()
+        await expect(sky).toHaveAttribute('data-phase', next.toLowerCase())
+        await expect(sky).toHaveAttribute('data-renderer', 'static')
+        await page.getByRole('button', { name: 'Hub', exact: true }).hover()
+        await shot(`workspace-${next.toLowerCase()}-breadcrumb`)
+        choice = next
+    }
+    await shot('03-workspace-night-preview')
+    await page.getByRole('button', { name: 'Hub', exact: true }).click()
+    await page.getByRole('button', { name: 'Sky: Night', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Automatic', exact: true }).click()
+    await expect(sky).toHaveAttribute('data-phase', 'day')
+    for (const [hour, phase] of [
+        [3, 'night'],
+        [6, 'dawn']
+    ] as const) {
+        await page.clock.setSystemTime(new Date(2026, 9, 28, hour))
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+        await expect(sky).toHaveAttribute('data-phase', phase)
+    }
+    await page.clock.setSystemTime(new Date('2026-10-28T19:00:00'))
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(sky).toHaveAttribute('data-phase', 'dusk')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect(sky).toHaveAttribute('data-renderer', 'static')
+    await page.getByRole('button', { name: 'Open journal', exact: true }).click()
+    await expect(sky).toHaveCount(1)
+    await expect(sky).toHaveAttribute('data-phase', 'dusk')
+    const body = page.getByRole('textbox', { name: 'Journal body', exact: true })
+    await body.click()
+    await body.pressSequentially('A calm sky leaves writing responsive.')
+    await expect(body).toContainText('A calm sky leaves writing responsive.')
+    await shot('01-workspace-dusk-static')
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await expect(sky).toHaveAttribute('data-renderer', 'static')
+    await expect(sky.locator('canvas')).toBeVisible()
+    const dimensions = await sky.locator('canvas').evaluate((canvas: HTMLCanvasElement) => ({
+        pixels: canvas.width * canvas.height,
+        width: canvas.width,
+        cssWidth: canvas.clientWidth
+    }))
+    expect(dimensions.pixels).toBeLessThanOrEqual(600_000)
+    expect(dimensions.width).toBeLessThanOrEqual(dimensions.cssWidth)
+    await page.evaluate(() => {
+        document.querySelector('canvas')!.getContext('webgl')!.getExtension('WEBGL_lose_context')!.loseContext()
+    })
+    await expect(sky).toHaveAttribute('data-renderer', 'static')
+    await expect(body).toContainText('A calm sky leaves writing responsive.')
+    await page.getByRole('button', { name: 'Hub', exact: true }).click()
+    await expect(sky).toHaveCount(1)
+    await expect(sky).toHaveAttribute('data-renderer', 'animated')
+    await shot('02-return-hub')
+    for (let visit = 0; visit < 30; visit++) {
+        await page.getByRole('button', { name: 'Open journal', exact: true }).click()
+        await expect(sky).toHaveAttribute('data-renderer', 'static')
+        await expect(sky.locator('canvas')).toHaveCount(1)
+        await page.getByRole('button', { name: 'Hub', exact: true }).click()
+        await expect(sky).toHaveAttribute('data-renderer', 'animated')
+        await expect(sky.locator('canvas')).toHaveCount(1)
+    }
+})

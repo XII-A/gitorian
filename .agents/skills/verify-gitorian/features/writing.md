@@ -1,5 +1,15 @@
 # Writing
 
+## Header atmosphere
+
+The hub sky extends 400px and animates; the workspace retains 110px and renders a frozen shader frame, redrawing only for actual palette or size changes. The desktop journey requires zero workspace shader draws over an idle interval and captures breadcrumb contrast under all four preview themes. Its foreground chevron remains independent of breadcrumb hover/focus color. Reduced motion still uses the CSS fallback. Route cycling expects an animated hub and a static workspace.
+
+The bottom-right floating Sky preview menu offers Automatic, Dawn, Day, Dusk and Night. Overrides survive hub/workspace navigation for the current renderer session; Automatic restores computer-local time. The toolbar reports Animation on, Reduced motion or Static sky. The header journey compares four-second downsampled screenshots to reject imperceptible cloud drift, exercises every preview choice and checks workspace preview persistence. Motion speed does not increase the capped draw frequency or backing resolution.
+
+After `pnpm build`, run `pnpm test:e2e header-atmosphere`. The disposable journal-only desktop journey controls computer-local time, requires day/dusk colors in the real hub and workspace, verifies static reduced motion, types into the journal, simulates WebGL loss and returns to the hub. The atmosphere follows today's computer clock independently of the journal timezone or selected week. No weather requests or location preferences exist. Hidden/offscreen headers dispose their renderer; context failure remains static until route remount. The canvas is capped at DPR 1, 600,000 pixels and at most 20 draws/second, with a static fallback after sustained slow scheduling.
+
+Retain screenshots, actions, trace and run.json with zero exit and cleanup.removed. `pnpm smoke:writing:release` also records header renderer/phase/backing dimensions alongside the existing saved-body and input-latency guards; a static result cannot establish animated performance. It is an isolated offscreen Electron replay, not physical GPU power measurement.
+
 Start or resume a weekly entry, edit structured writing, cite work, and recover local writing without a Notion connection.
 
 `JournalPublishing` owns durable intent, confirmation, uncertain-outcome persistence and marker reconciliation using Effect. Preserve the journal/revision/Notion behavior tests, including the gated uncertain-outcome checkpoint: a lost response must not reach the caller before that recovery record is durable, and reconciliation must find the original page without another creation. Run `pnpm verify publishing` for the real Electron publish/update/rejection flow and post-exit SQLite evidence. Simulated HTTP is the provider adapter; this journey authorizes no live publishing.

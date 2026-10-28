@@ -29,7 +29,7 @@ import { ActivityDayFilter, useActivityDays } from './ActivityDays'
 import { ProjectFilter } from './ProjectFilter'
 import { hasCachedDetails } from './activity-cache'
 import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
-import landscape from './assets/week-landscape.jpg'
+import { HeaderAtmosphere } from './HeaderAtmosphere'
 import './workspace.css'
 import { useActivityRefresh } from './use-activity-refresh'
 import { useWeekHistory } from './use-week-history'
@@ -381,9 +381,7 @@ export function Workspace({
                 data-layout="three-panes"
                 data-focus={focus}
             >
-                <div className="ws-atmosphere" aria-hidden="true">
-                    <img src={landscape} alt="" />
-                </div>
+                <HeaderAtmosphere surface="workspace" />
                 <header className="ws-topbar" aria-label="Date range and journal controls">
                     <div className="ws-heading">
                         <div ref={breadcrumb}>

@@ -48,32 +48,6 @@
     color: var(--text-secondary);
     text-wrap: pretty;
 }
-.hub-atmosphere {
-    position: absolute;
-    inset: 0 0 auto;
-    height: 400px;
-    z-index: -1;
-    overflow: hidden;
-    pointer-events: none;
-}
-.hub-atmosphere img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: center 46%;
-    opacity: 0.3;
-    filter: saturate(0.45);
-}
-.hub-atmosphere::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-        to bottom,
-        color-mix(in oklab, var(--background) 25%, transparent),
-        var(--background) 98%
-    );
-}
 .hub-topbar {
     max-width: 1440px;
     margin-inline: auto;
