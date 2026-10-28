@@ -17,7 +17,7 @@ Start or resume a weekly entry, edit structured writing, cite work, and recover 
 
 ## How to get to it (user POV)
 
-From the hub use `Write this week’s entry` or `Open journal` to create or resume the current week's draft. An empty week reached inside the workspace offers `Start this week’s entry`. In the workspace, edit Entry title and Journal body; inspect activity and use its citation action.
+From the hub use `Write this weekâ€™s entry` or `Open journal` to create or resume the current week's draft. An empty week reached inside the workspace offers `Start this weekâ€™s entry`. In the workspace, edit Entry title and Journal body; inspect activity and use its citation action.
 
 ## Driving it with Electron
 
@@ -65,3 +65,7 @@ Database evidence uses `journal.sqlite`, with relational `drafts` (`body` JSON, 
 Run `pnpm build`, `pnpm verify doctor`, then `pnpm test:e2e draft-recovery`. This owning journey uses a journal-only disposable profile and real IPC/SQLite. Older recovery data and a second writer are explicit fixture setup; a temporary SQLite trigger simulates write failure. Require blocked dismissal, keyboard focus containment and return, selection without submission, both confirmed choices, failure/retry in the dialog, unresolved reload, another writer during resolution, and durable post-exit writing. Check dialog bounds at desktop, 1000px, 768px and 390px window widths. Retain `conflict-dialog.png`, numbered screenshots, fixture details, persisted-drafts.json, trace, actions and successful run.json with clean exit and cleanup. Reload keeps the main process running; it is not a full process restart. `tests/workspace-writing.test.ts` retains focused in-flight save/acknowledgment behavior.
 
 For release typing latency, run `pnpm smoke:writing:release`. It shares the development replay but loads the built renderer, retains the CPU profiles and JSON timing report, checks the persisted body against the editor, and requires p95 dispatch-to-ack under 33 ms, no application long tasks and no main-thread SQLite transactions. Development React profiling overhead remains visible in `pnpm smoke:writing`; do not relabel a failed development run as passing.
+
+## Block-first selection
+
+Run pnpm test:e2e select-all for paragraph, multiline code and list text selection, repeated escalation, caret reset, empty-block document selection and replacement/undo through native keyboard input. The shared journal extension also supplies template editing. Code-block whole-document clipboard round trips explicitly press Select All twice.

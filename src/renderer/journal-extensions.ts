@@ -4,7 +4,7 @@ import type { JournalNode } from '../shared/model'
 import StarterKit from '@tiptap/starter-kit'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
-import { Plugin } from '@tiptap/pm/state'
+import { Plugin, TextSelection } from '@tiptap/pm/state'
 import { moveToggleBlock } from './toggle-indentation'
 import { JournalImageNode, ImageImportPositions } from './journal-images'
 import { JournalCodeBlock } from './journal-code-block'
@@ -231,7 +231,31 @@ const DashTypography = Extension.create({
     }
 })
 
+const BlockSelectAll = Extension.create({
+    name: 'blockSelectAll',
+    priority: 1100,
+    addKeyboardShortcuts() {
+        return {
+            'Mod-a': () => {
+                const { selection } = this.editor.state
+                const { $from, $to, from, to } = selection
+                if (
+                    selection instanceof TextSelection &&
+                    $from.sameParent($to) &&
+                    $from.parent.isTextblock &&
+                    $from.parent.content.size > 0 &&
+                    (from !== $from.start() || to !== $from.end())
+                ) {
+                    return this.editor.commands.setTextSelection({ from: $from.start(), to: $from.end() })
+                }
+                return this.editor.commands.selectAll()
+            }
+        }
+    }
+})
+
 export const journalExtensions = () => [
+    BlockSelectAll,
     JournalImageNode,
     ImageImportPositions,
     JournalCodeBlock,

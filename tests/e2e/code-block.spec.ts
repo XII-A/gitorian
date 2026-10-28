@@ -152,6 +152,7 @@ test('code blocks: language, exact copy, real wrapping and saved edits', async (
         await chooseLanguage('visual basic', 'Visual basic')
         await pre.click()
         await body.press('Control+A')
+        await body.press('Control+A')
         await body.press('Control+C')
         await body.press('Control+V')
         await expect(language).toContainText('Visual basic')
