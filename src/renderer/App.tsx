@@ -12,7 +12,7 @@ import type { Activity } from '../shared/model'
 import { journalWeek } from './hub-model'
 import { AcquisitionStatus } from './AcquisitionStatus'
 import { BackgroundNotifications } from './BackgroundNotifications'
-import { ToastStack, ToastStackProvider } from './components/arc/toast-stack/toast-stack'
+import { ToastStack, ToastStackProvider, useToastStack } from './components/arc/toast-stack/toast-stack'
 import { reconcileReply } from './activity-cache'
 import { expandReply, stateCursor } from '../shared/state-updates'
 import { WindowTitleBar } from './WindowTitleBar'
@@ -45,39 +45,65 @@ function JournalApp() {
     const [workspaceWriting, setWorkspaceWriting] = useState(false)
     const [reference, setReference] = useState<{ kind: string; id: string }>()
     const [sourcesOpen, setSourcesOpen] = useState(false)
+    const { toast, update, dismiss } = useToastStack()
+    const workspaceVisible = useRef(false)
+    workspaceVisible.current = screen === 'workspace' && !settingsOpen && !reference
     const polling = useRef(false)
     const currentReply = useRef(reply)
     currentReply.current = reply
-    const run = useCallback(async (command: Command): Promise<Reply | undefined> => {
-        try {
-            const base = currentReply.current?.state
-            const result = window.journal.updates
-                ? expandReply(await window.journal.updates(command, base && stateCursor(base)), base)
-                : await window.journal.invoke(command)
-            startTransition(() => setReply((current) => reconcileReply(current, result, command)))
-            if ('remotes' in result) {
-                const next = result.remotes as Record<string, string[]>
-                setRemotes((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next))
-            }
-            setError('')
-            return result
-        } catch (failure) {
-            if (['draft', 'publish', 'reconcile'].includes(command.type)) {
-                // The writing pane owns save recovery. A refreshed snapshot is not
-                // a draftSaved acknowledgment; it lets the pane detect stale versions.
-                try {
-                    const refreshed = await window.journal.invoke({ type: 'state' })
-                    startTransition(() => setReply((current) => reconcileReply(current, refreshed, { type: 'state' })))
-                    setError('')
-                    return refreshed
-                } catch {
-                    /* Keep the current draft available. */
+    const run = useCallback(
+        async (command: Command): Promise<Reply | undefined> => {
+            try {
+                const base = currentReply.current?.state
+                const result = window.journal.updates
+                    ? expandReply(await window.journal.updates(command, base && stateCursor(base)), base)
+                    : await window.journal.invoke(command)
+                startTransition(() => setReply((current) => reconcileReply(current, result, command)))
+                if ('remotes' in result) {
+                    const next = result.remotes as Record<string, string[]>
+                    setRemotes((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next))
                 }
+                if (command.type !== 'state') dismiss(`workspace-command:${command.type}`)
                 setError('')
-            } else setError(String(failure))
-            return undefined
-        }
-    }, [])
+                return result
+            } catch (failure) {
+                if (['draft', 'publish', 'reconcile'].includes(command.type)) {
+                    // The writing pane owns save recovery. A refreshed snapshot is not
+                    // a draftSaved acknowledgment; it lets the pane detect stale versions.
+                    try {
+                        const refreshed = await window.journal.invoke({ type: 'state' })
+                        startTransition(() =>
+                            setReply((current) => reconcileReply(current, refreshed, { type: 'state' }))
+                        )
+                        setError('')
+                        return refreshed
+                    } catch {
+                        /* Keep the current draft available. */
+                    }
+                    setError('')
+                } else if (workspaceVisible.current && currentReply.current) {
+                    // These surfaces own their recovery. Polling must not replay notifications.
+                    if (!['state', 'details', 'history'].includes(command.type)) {
+                        const refresh = command.type === 'refresh'
+                        toast({
+                            id: `workspace-command:${command.type}`,
+                            type: 'error',
+                            title: refresh ? 'Could not refresh activity' : 'Could not complete action',
+                            action: {
+                                label: refresh ? 'Retry refresh' : 'Retry action',
+                                onClick: (id) => {
+                                    update(id, { type: 'loading', title: 'Retrying?', action: undefined })
+                                    void run(command)
+                                }
+                            }
+                        })
+                    }
+                } else setError(String(failure))
+                return undefined
+            }
+        },
+        [toast, update, dismiss]
+    )
     useEffect(() => {
         const parameters = new URLSearchParams(window.location.search)
         const referenceKind = parameters.get('reference')
@@ -190,7 +216,6 @@ function JournalApp() {
                     state={reply.state}
                     notionConnected={reply.connections.notion}
                     run={run}
-                    error={error}
                     initialWeek={workspaceWeek || weekOf(new Date(), reply.state.settings)}
                     initialActivity={workspaceActivity}
                     initialWrite={workspaceWriting}
