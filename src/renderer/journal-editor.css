@@ -451,3 +451,74 @@
         transition: none;
     }
 }
+.ws-block-menu.journal-emoji-menu {
+    max-width: min(384px, calc(100vw - 32px));
+    width: min(384px, calc(100vw - 32px));
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    animation: none;
+    --emoji-highlight: color-mix(in oklab, var(--foreground) 12%, var(--surface-raised));
+}
+
+.journal-emoji-tabs {
+    min-width: 0;
+}
+.ws-block-menu .journal-emoji-categories button {
+    min-width: 0;
+    min-height: 40px;
+    justify-content: center;
+    padding: var(--space-2);
+}
+.journal-emoji-tabs [role='tabpanel'] {
+    margin-block-start: var(--space-4);
+}
+.journal-emoji-rows {
+    position: relative;
+    contain: layout style;
+}
+.journal-emoji-section {
+    display: flex;
+    align-items: center;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    padding-inline: var(--space-2);
+}
+
+.journal-emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    content-visibility: auto;
+    contain-intrinsic-size: auto 44px;
+}
+.ws-block-menu .journal-emoji-grid button {
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: var(--radius-inset);
+    min-width: 0;
+    height: 44px;
+    font-size: var(--text-2xl);
+    cursor: pointer;
+}
+.ws-block-menu .journal-emoji-grid button[aria-selected='true'] {
+    background: var(--emoji-highlight);
+}
+.ws-block-menu .journal-emoji-grid button:active {
+    transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+    .ws-block-menu .journal-emoji-grid button:hover {
+        background: var(--emoji-highlight);
+    }
+}
+
+.journal-emoji-glyph {
+    display: block;
+    width: 40px;
+    height: 40px;
+    flex: none;
+    background-image: url('./assets/emoji-atlas.webp');
+    background-repeat: no-repeat;
+}

@@ -5,7 +5,11 @@ description: Verify Gitorian Electron features through real desktop journeys. Us
 
 # Verify Gitorian
 
-Read [the feature map](features/README.md), select the affected entry points, and define their observable outcomes before changing code. The primary surface is the Electron desktop app; Git, SQLite, and integration HTTP adapters support it. A renderer-only browser preview cannot prove desktop IPC or persistence.
+Read the coverage policy in [testing](../../../docs/testing.md) and [the feature map](features/README.md), select the affected behavioral entry points, and define their observable outcomes before changing code. Visual appearance and animation timing are manual review; keep automated journeys focused on consequential behavior. The primary surface is the Electron desktop app; Git, SQLite, and integration HTTP adapters support it. A renderer-only browser preview cannot prove desktop IPC or persistence.
+
+## Final handoff
+
+Run `pnpm verify:release` after source changes and reviews are complete. Require its complete result to pass; focused reruns are diagnostic. The command owns check, compile and desktop sequencing and writes `.ai-docs/verification/release/<run>/run.json`. Follow [testing](../../../docs/testing.md#final-revision-verification) for checkout ownership and interrupted-run recovery.
 
 ## Launch
 

@@ -1,73 +1,10 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { initialState, type Activity } from '../../src/shared/model'
+import { state, flow, description } from './support/mermaid-fixture'
 import { test, expect } from './support/desktop'
 
-const flow =
-    'flowchart LR\n    Draft[Write draft] --> Review{Review}\n    Review -->|Approved| Publish[Publish entry]\n    Review -->|Changes| Draft\n'
-const sequence =
-    'sequenceDiagram\n    participant UI as Journal\n    participant Store as Local store\n    UI->>Store: Save draft\n    Store-->>UI: Saved\n'
-const fence = (source: string, language = 'mermaid') => '```' + language + '\n' + source + '\n```'
-const description = [
-    '## Publishing a journal entry',
-    'Review the draft before publishing. Drafts stay local until approved.',
-    fence(flow),
-    '### Local persistence',
-    fence(sequence),
-    '| Stage | Owner |\n| --- | --- |\n| Review | Author |',
-    fence('const draft = await save();', 'ts'),
-    fence('- old\n+ new', 'diff')
-].join('\n\n')
-const state = initialState()
-state.settings.refreshMinutes = 0
-// Repository metadata is needed by activity filtering; no Git directory or external provider is used.
-state.repositories = [
-    {
-        id: 'fixture',
-        name: 'journal-workflows',
-        path: '',
-        remote: '',
-        base: 'main',
-        trackingStart: '2026-01-01',
-        emails: [],
-        available: false,
-        removed: false,
-        branchBases: {},
-        branches: ['main']
-    }
-]
-const activity = (id: string, title: string, body: string): Activity => ({
-    id,
-    title,
-    description: body,
-    kind: 'pr',
-    repositoryId: 'fixture',
-    date: new Date().toISOString(),
-    author: 'fixture-author',
-    branches: ['main'],
-    files: [],
-    filesLoaded: true,
-    disposition: 'inbox',
-    explicit: false,
-    deletedBranches: [],
-    pullRequest: { status: 'open', openedAt: new Date().toISOString(), commitDates: [] }
-})
-state.activities = [
-    activity('valid', 'Mermaid publishing workflow', description),
-    activity(
-        'invalid',
-        'Invalid Mermaid recovery',
-        [fence('flowchart LR\n A['), fence(''), fence('x'.repeat(50_001))].join('\n\n')
-    ),
-    activity(
-        'untrusted',
-        'Untrusted Mermaid content',
-        fence(
-            '%%{init: {"securityLevel":"loose","htmlLabels":true}}%%\nflowchart LR\n A[Safe label] --> B[Another label]\n click A "https://example.invalid/" "Open"'
-        )
-    )
-]
+test.use({ desktopEntry: 'tests/e2e/support/mermaid-main.mjs', desktopRepositoryIds: ['fixture'] })
 
 test('mermaid: shared details, source, recovery, themes and inert diagrams', async ({ desktop }, info) => {
     const { page, app, shot } = desktop
@@ -77,18 +14,7 @@ test('mermaid: shared details, source, recovery, themes and inert diagrams', asy
         window.setContentSize(1280, 960)
         window.webContents.setBackgroundThrottling(false)
     })
-    await test.step('prepare synthetic PR metadata through the real backup boundary', async () => {
-        const backup = join(desktop.scratch, 'fixture.json')
-        const fixture = { backupVersion: 3, state, images: [] }
-        writeFileSync(backup, JSON.stringify(fixture))
-        writeFileSync(info.outputPath('fixture.json'), JSON.stringify(fixture, null, 2))
-        await desktop.chooseFolder(backup)
-        await app.evaluate(({ dialog }) => {
-            dialog.showMessageBox = () => Promise.resolve({ response: 1, checkboxChecked: false })
-        })
-        await page.evaluate(() => window.journal.invoke({ type: 'import' }))
-        await page.reload()
-    })
+    writeFileSync(info.outputPath('fixture.json'), JSON.stringify(state, null, 2))
     const open = async (title: string) => page.locator('.hub-activity').filter({ hasText: title }).click()
     const blocks = page.getByRole('region', { name: 'Mermaid diagram', exact: true })
     const image = blocks.first().getByRole('img')

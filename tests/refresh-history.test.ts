@@ -2,7 +2,8 @@ import { journalState } from './database-fixtures'
 import { run } from './effect-fixtures'
 import { expect, it, vi } from 'vitest'
 import { commandSchema } from '../src/shared/model'
-import { workspace } from './fixtures'
+import { journal, workspace } from './fixtures'
+import type { Repository } from '../src/shared/model'
 import * as gitModule from '../src/main/git'
 import { JournalDatabase } from '../src/main/journal-database'
 import { join } from 'node:path'
@@ -39,43 +40,56 @@ it('manual refresh extends history using durable Git bodies and unchanged PR ver
     }
 })
 it('extends only targeted active repositories and never moves an earlier history start forward', async () => {
-    const app = await workspace()
+    const app = await journal()
+    const repository: Repository = {
+        id: 'target',
+        name: 'target',
+        path: '',
+        remote: '',
+        base: 'main',
+        trackingStart: '2026-10-12',
+        emails: [],
+        available: true,
+        removed: false,
+        branchBases: {},
+        branches: [],
+        remotes: []
+    }
+    // This scenario owns scope/date rules. Native Git is covered by git.test.ts;
+    // empty synthetic paths must never read the checkout running the test.
+    const index = vi.spyOn(gitModule, 'indexCommits').mockResolvedValue({ refs: {}, items: [] })
     try {
-        {
-            app.repository.trackingStart = '2026-10-12'
-            await app.store.saveRepository(app.repository)
-        }
+        await app.store.saveRepository(repository)
         for (const fixtureRepository of [
-            { ...app.repository, id: 'other', path: '', trackingStart: '2026-10-12' },
-            { ...app.repository, id: 'removed', path: '', removed: true, trackingStart: '2026-10-12' }
+            { ...repository, id: 'other', path: '', trackingStart: '2026-10-12' },
+            { ...repository, id: 'removed', path: '', removed: true, trackingStart: '2026-10-12' }
         ])
             await app.store.saveRepository(fixtureRepository)
         await run(app.service.refresh({ source: 'git' }))
-        expect(app.repository.trackingStart).toBe('2026-10-12')
+        expect(
+            (await journalState(app.store)).repositories.find((item) => item.id === repository.id)?.trackingStart
+        ).toBe('2026-10-12')
         await run(
             app.service.handle({
                 type: 'refresh',
-                repositoryId: app.repository.id,
+                repositoryId: repository.id,
                 since: '2026-10-05',
                 source: 'git'
             })
         )
         expect(
             (await journalState(app.store)).repositories
-                .sort((a, b) =>
-                    a.id === app.repository.id ? -1 : b.id === app.repository.id ? 1 : a.id.localeCompare(b.id)
-                )
+                .sort((a, b) => (a.id === repository.id ? -1 : b.id === repository.id ? 1 : a.id.localeCompare(b.id)))
                 .map((repo) => repo.trackingStart)
         ).toEqual(['2026-10-05', '2026-10-12', '2026-10-12'])
         await run(app.service.handle({ type: 'refresh', since: '2026-10-08', source: 'git' }))
         expect(
             (await journalState(app.store)).repositories
-                .sort((a, b) =>
-                    a.id === app.repository.id ? -1 : b.id === app.repository.id ? 1 : a.id.localeCompare(b.id)
-                )
+                .sort((a, b) => (a.id === repository.id ? -1 : b.id === repository.id ? 1 : a.id.localeCompare(b.id)))
                 .map((repo) => repo.trackingStart)
         ).toEqual(['2026-10-05', '2026-10-08', '2026-10-12'])
     } finally {
+        index.mockRestore()
         await app.close()
     }
 })

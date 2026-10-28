@@ -191,3 +191,13 @@
 .list[data-orientation='vertical'] .trigger {
     justify-items: start;
 }
+
+.listShell[data-full-width='true'],
+.listShell[data-full-width='true'] .viewport,
+.listShell[data-full-width='true'] .list {
+    width: 100%;
+}
+.listShell[data-full-width='true'] .trigger {
+    flex: 1 1 0;
+    min-width: 0;
+}

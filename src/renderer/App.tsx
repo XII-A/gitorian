@@ -4,7 +4,7 @@ import type { Command, Reply } from '../shared/model'
 import { WeeklyHub } from './WeeklyHub'
 import { Settings } from './Settings'
 import { CommandMenu } from './components/CommandMenu'
-import { Button } from './components/arc/button/button'
+import { StartupRecovery } from './StartupRecovery'
 import { Workspace } from './Workspace'
 import { WorkspaceReference } from './WorkspaceReference'
 import { localDate, weekOf } from '../shared/model'
@@ -36,6 +36,10 @@ function JournalApp() {
     const [reply, setReply] = useState<Reply>()
     const [remotes, setRemotes] = useState<Record<string, string[]>>({})
     const [error, setError] = useState('')
+    const [startupPending, setStartupPending] = useState(false)
+    const [startupFailures, setStartupFailures] = useState(0)
+    const startupInFlight = useRef(false)
+    const startupFocus = useRef(false)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [settingsSection, setSettingsSection] = useState<SetupSection>('repositories')
     const onboarding = useOnboarding(reply)
@@ -46,13 +50,19 @@ function JournalApp() {
     const [reference, setReference] = useState<{ kind: string; id: string }>()
     const [sourcesOpen, setSourcesOpen] = useState(false)
     const { toast, update, dismiss } = useToastStack()
-    const workspaceVisible = useRef(false)
-    workspaceVisible.current = screen === 'workspace' && !settingsOpen && !reference
+    const commandSurfaceVisible = useRef(false)
+    commandSurfaceVisible.current = !settingsOpen && !reference
     const polling = useRef(false)
     const currentReply = useRef(reply)
     currentReply.current = reply
     const run = useCallback(
         async (command: Command): Promise<Reply | undefined> => {
+            const startup = !currentReply.current
+            if (startup && startupInFlight.current) return undefined
+            if (startup) {
+                startupInFlight.current = true
+                setStartupPending(true)
+            }
             try {
                 const base = currentReply.current?.state
                 const result = window.journal.updates
@@ -63,10 +73,11 @@ function JournalApp() {
                     const next = result.remotes as Record<string, string[]>
                     setRemotes((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next))
                 }
-                if (command.type !== 'state') dismiss(`workspace-command:${command.type}`)
+                if (command.type !== 'state') dismiss(`journal-command:${command.type}`)
                 setError('')
                 return result
             } catch (failure) {
+                if (startup) setStartupFailures((count) => count + 1)
                 if (['draft', 'publish', 'reconcile'].includes(command.type)) {
                     // The writing pane owns save recovery. A refreshed snapshot is not
                     // a draftSaved acknowledgment; it lets the pane detect stale versions.
@@ -81,13 +92,14 @@ function JournalApp() {
                         /* Keep the current draft available. */
                     }
                     setError('')
-                } else if (workspaceVisible.current && currentReply.current) {
+                } else if (commandSurfaceVisible.current && currentReply.current) {
                     // These surfaces own their recovery. Polling must not replay notifications.
                     if (!['state', 'details', 'history'].includes(command.type)) {
                         const refresh = command.type === 'refresh'
                         toast({
-                            id: `workspace-command:${command.type}`,
+                            id: `journal-command:${command.type}`,
                             type: 'error',
+                            duration: 0,
                             title: refresh ? 'Could not refresh activity' : 'Could not complete action',
                             action: {
                                 label: refresh ? 'Retry refresh' : 'Retry action',
@@ -100,6 +112,11 @@ function JournalApp() {
                     }
                 } else setError(String(failure))
                 return undefined
+            } finally {
+                if (startup) {
+                    startupInFlight.current = false
+                    setStartupPending(false)
+                }
             }
         },
         [toast, update, dismiss]
@@ -120,7 +137,8 @@ function JournalApp() {
         void run({ type: 'state' })
         let lastPoll = Date.now()
         const timer = setInterval(() => {
-            if (polling.current) return
+            // A failed startup waits for explicit recovery; polling must not race Retry.
+            if (polling.current || !currentReply.current) return
             const state = currentReply.current?.state
             const active = state?.repositoryImport?.status === 'running' || (!!state && activityUpdating(state))
             if (!active && Date.now() - lastPoll < 15000) return
@@ -163,6 +181,17 @@ function JournalApp() {
         window.addEventListener('keydown', keyboard)
         return () => window.removeEventListener('keydown', keyboard)
     }, [screen, settingsOpen, commandsOpen, reference])
+    useEffect(() => {
+        if (!reply || !startupFocus.current) return
+        startupFocus.current = false
+        // The recovery action has unmounted. Preserve focus on surviving controls.
+        if (document.activeElement !== document.body) return
+        const heading = document.querySelector<HTMLElement>('main h1, main h2, main h3')
+        if (heading) {
+            heading.tabIndex = -1
+            heading.focus({ preventScroll: true })
+        }
+    }, [reply])
     const openWorkspace = (date?: string, writing = false) => {
         setWorkspaceWeek(date ?? (reply ? weekOf(new Date(), reply.state.settings) : ''))
         setWorkspaceActivity(undefined)
@@ -241,10 +270,15 @@ function JournalApp() {
                     }}
                 />
             ) : (
-                <main className="loading">
-                    <p role={error ? 'alert' : 'status'}>{error || 'Opening your journal…'}</p>
-                    {error && <Button onClick={() => run({ type: 'state' })}>Try again</Button>}
-                </main>
+                <StartupRecovery
+                    error={error}
+                    pending={startupPending}
+                    failures={startupFailures}
+                    onRetry={() => {
+                        startupFocus.current = true
+                        return run({ type: 'state' })
+                    }}
+                />
             )}
             {settingsOpen && reply && (
                 <Settings
@@ -257,7 +291,7 @@ function JournalApp() {
                     close={() => setSettingsOpen(false)}
                 />
             )}
-            {commandsOpen && (
+            {commandsOpen && reply && (
                 <CommandMenu
                     close={() => setCommandsOpen(false)}
                     commands={[
