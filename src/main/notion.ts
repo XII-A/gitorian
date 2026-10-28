@@ -8,7 +8,7 @@ import type { Destination, Entry, ConnectionProfile, NotionDiscoveryProgress } f
 import { Http } from './http'
 import { Context, Effect, Layer } from 'effect'
 import { HttpError, TransportError } from './http'
-import type { Store } from './store'
+import type { JournalDatabase } from './journal-database'
 import { downloadImage, UnsupportedImageError } from './images'
 import type { JournalSetup } from './notion-connection'
 import sharp from 'sharp'
@@ -80,7 +80,7 @@ export const Notion = Context.GenericTag<Notion>('gitorian/Notion')
 type NotionToken = (refresh?: boolean, rejected?: string) => Effect.Effect<string, Error>
 export const NotionLive = (
     getToken: NotionToken,
-    images?: Pick<Store, 'image' | 'importImage'>,
+    images?: Pick<JournalDatabase, 'image' | 'importImage'>,
     imageDownload = downloadImage
 ) =>
     Layer.effect(
@@ -90,7 +90,7 @@ export const NotionLive = (
 export function makeNotion(
     http: Http,
     getToken: NotionToken,
-    images?: Pick<Store, 'image' | 'importImage'>,
+    images?: Pick<JournalDatabase, 'image' | 'importImage'>,
     imageDownload = downloadImage
 ) {
     const prepareJournal = (

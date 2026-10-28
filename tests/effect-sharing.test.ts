@@ -1,3 +1,4 @@
+import { journalState } from './database-fixtures'
 import { GitHubFailure } from '../src/main/github'
 import { Effect, Exit, Fiber, Scope } from 'effect'
 import { expect, it, vi } from 'vitest'
@@ -29,12 +30,12 @@ it.each(['details', 'refresh', 'reconcile'] as const)(
             branchBases: {},
             branches: []
         }
-        app.store.state.repositories = [repository]
+        for (const fixtureRepository of [repository]) await app.store.saveRepository(fixtureRepository)
         app.remote.github = true
         let operation: Effect.Effect<unknown, Error>
         if (kind === 'details') {
             await run(app.service.refresh({ source: 'github' }))
-            const activity = app.store.state.activities.find((item) => item.kind === 'pr')!
+            const activity = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
             vi.spyOn(app.github, 'snapshot').mockImplementation(() =>
                 wait.pipe(
                     Effect.as({ diff: patch, fingerprint: 'fixture', base: 'base', head: activity.head ?? 'head' })
@@ -55,10 +56,10 @@ it.each(['details', 'refresh', 'reconcile'] as const)(
             operation = app.service.refresh({ source: 'github' })
         } else {
             await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
-            const draft = app.store.state.drafts[0]
+            const draft = (await journalState(app.store)).drafts[0]
             app.remote.loseCreateResponse = true
             await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow()
-            const save = app.store.state.saves[0]
+            const save = (await journalState(app.store)).saves[0]
             const fetcher = app.remote.fetch
             vi.spyOn(app.remote, 'fetch').mockImplementationOnce(async (...args) => {
                 entered = true
@@ -100,7 +101,7 @@ it.each(['refresh', 'import'] as const)(
             await run(Scope.close(a, Exit.void))
             if (kind === 'refresh') {
                 await run(app.service.refresh())
-                expect(app.store.state.lastRefreshAttempt).toBeUndefined()
+                expect((await journalState(app.store)).lastRefreshAttempt).toBeUndefined()
             } else {
                 await expect(run(app.service.importRepositories(scan!.repositoryScan!.id, paths))).rejects.toThrow(
                     'suspended'
@@ -109,10 +110,10 @@ it.each(['refresh', 'import'] as const)(
             await run(Scope.close(b, Exit.void))
             if (kind === 'refresh') {
                 await run(app.service.refresh())
-                expect(app.store.state.lastRefreshAttempt).toBeDefined()
+                expect((await journalState(app.store)).lastRefreshAttempt).toBeDefined()
             } else {
                 await run(app.service.importRepositories(scan!.repositoryScan!.id, paths))
-                expect(app.store.state.repositoryImport?.status).toBe('done')
+                expect((await journalState(app.store)).repositoryImport?.status).toBe('done')
             }
         } finally {
             await run(Scope.close(a, Exit.void))
@@ -129,19 +130,22 @@ it('acknowledges background refresh only after source admission is visible', asy
     })
     try {
         app.remote.github = true
-        app.store.state.repositories.push({
-            id: 'repo',
-            name: 'Repo',
-            path: '',
-            remote: 'https://github.com/example/project',
-            base: 'main',
-            trackingStart: '2026-10-05',
-            emails: ['me@example.com'],
-            available: true,
-            removed: false,
-            branchBases: {},
-            branches: []
-        })
+        for (const fixtureRepository of [
+            {
+                id: 'repo',
+                name: 'Repo',
+                path: '',
+                remote: 'https://github.com/example/project',
+                base: 'main',
+                trackingStart: '2026-10-05',
+                emails: ['me@example.com'],
+                available: true,
+                removed: false,
+                branchBases: {},
+                branches: []
+            }
+        ])
+            await app.store.saveRepository(fixtureRepository)
         vi.spyOn(app.github, 'activities').mockImplementation(() =>
             Effect.promise(() => gate)
                 .pipe(Effect.as([]))
@@ -153,7 +157,7 @@ it('acknowledges background refresh only after source admission is visible', asy
                 )
         )
         await run(app.service.startRefresh({ source: 'github' }))
-        expect(app.service.reply().state.acquisition?.['github:repo'].status).toBe('running')
+        expect((await run(app.service.reply())).state.acquisition?.['github:repo'].status).toBe('running')
     } finally {
         release()
         await app.close()
@@ -164,19 +168,22 @@ it('releases announced source admission when interrupted before execution starts
     const controller = new AbortController()
     try {
         app.remote.github = true
-        app.store.state.repositories.push({
-            id: 'repo',
-            name: 'Repo',
-            path: '',
-            remote: 'https://github.com/example/project',
-            base: 'main',
-            trackingStart: '2026-10-05',
-            emails: ['me@example.com'],
-            available: true,
-            removed: false,
-            branchBases: {},
-            branches: []
-        })
+        for (const fixtureRepository of [
+            {
+                id: 'repo',
+                name: 'Repo',
+                path: '',
+                remote: 'https://github.com/example/project',
+                base: 'main',
+                trackingStart: '2026-10-05',
+                emails: ['me@example.com'],
+                available: true,
+                removed: false,
+                branchBases: {},
+                branches: []
+            }
+        ])
+            await app.store.saveRepository(fixtureRepository)
         const provider = vi
             .spyOn(app.github, 'activities')
             .mockImplementation(() =>
@@ -187,10 +194,10 @@ it('releases announced source admission when interrupted before execution starts
                     )
                 )
             )
-        const persist = app.store.persist.bind(app.store)
-        vi.spyOn(app.store, 'persist').mockImplementation(() => {
-            if (app.store.state.acquisition?.['github:repo']?.status === 'running') controller.abort()
-            return persist()
+        const checkpoint = app.store.saveCheckpoint.bind(app.store)
+        vi.spyOn(app.store, 'saveCheckpoint').mockImplementation(async (...args) => {
+            if (args[1].status === 'running') controller.abort()
+            return checkpoint(...args)
         })
         const exit = await Effect.runPromiseExit(
             app.service.refresh({ source: 'github' }).pipe(Effect.withMaxOpsBeforeYield(64)),
@@ -198,7 +205,7 @@ it('releases announced source admission when interrupted before execution starts
         )
         expect(Exit.isFailure(exit)).toBe(true)
         expect(provider).not.toHaveBeenCalled()
-        expect(app.store.state.acquisition?.['github:repo']?.status).toBe('idle')
+        expect((await journalState(app.store)).acquisition?.['github:repo']?.status).toBe('idle')
     } finally {
         await app.close()
     }

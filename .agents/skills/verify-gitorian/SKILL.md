@@ -9,7 +9,7 @@ Read [the feature map](features/README.md), select the affected entry points, an
 
 ## Launch
 
-From the repository root, use Node >=22.19, pnpm 10.24.0, and Git on PATH:
+From the repository root, use Node >=24.16, pnpm 10.24.0, and Git on PATH:
 
 ```powershell
 pnpm install --frozen-lockfile

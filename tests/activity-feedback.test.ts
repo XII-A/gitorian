@@ -94,11 +94,16 @@ it('loads missing weeks silently, keeps cached weeks immediate and does not relo
         })
     try {
         await render(state, '2026-10-05')
-        expect(run).not.toHaveBeenCalled()
+        expect(run).toHaveBeenCalledExactlyOnceWith({
+            type: 'view',
+            view: { since: '2026-10-05', until: '2026-10-11' }
+        })
+        run.mockClear()
         await render(state, '2026-09-28')
-        expect(run).toHaveBeenCalledExactlyOnceWith({ type: 'loadWeek', since: '2026-09-28' })
+        expect(run).toHaveBeenCalledWith({ type: 'loadWeek', since: '2026-09-28' })
+        const beforePoll = run.mock.calls.length
         await render({ ...state, snapshotVersion: 2 }, '2026-09-28')
-        expect(run).toHaveBeenCalledTimes(1)
+        expect(run).toHaveBeenCalledTimes(beforePoll)
     } finally {
         await act(async () => {
             await Promise.resolve()

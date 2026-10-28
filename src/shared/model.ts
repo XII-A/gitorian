@@ -18,6 +18,7 @@ export interface JournalNode {
     marks?: { type: string; attrs?: Record<string, unknown> }[]
     content?: JournalNode[]
 }
+const dayOrInstant = z.union([z.iso.date(), z.iso.datetime({ offset: true })])
 export const emptyDocument: JournalNode = { type: 'doc', content: [{ type: 'paragraph' }] }
 export const repositorySchema = z.object({
     id: z.string(),
@@ -25,7 +26,7 @@ export const repositorySchema = z.object({
     path: z.string(),
     remote: z.string(),
     base: z.string(),
-    trackingStart: z.string(),
+    trackingStart: z.iso.date(),
     emails: z.array(z.string()),
     available: z.boolean(),
     removed: z.boolean(),
@@ -38,7 +39,7 @@ export const activitySchema = z.object({
     repositoryId: z.string(),
     kind: z.enum(['commit', 'pr', 'review', 'opened', 'merged']),
     title: z.string(),
-    date: z.string(),
+    date: dayOrInstant,
     author: z.string(),
     branches: z.array(z.string()),
     sha: z.string().optional(),
@@ -82,20 +83,21 @@ export const activitySchema = z.object({
 export const selectionSchema = z.object({ activityId: z.string(), revision: z.string().optional() })
 export const draftSchema = z.object({
     id: z.string(),
-    week: z.string(),
+    version: z.number().int().positive().default(1),
+    week: z.iso.date(),
     title: z.string(),
     body: documentSchema,
     selections: z.array(selectionSchema),
-    updatedAt: z.string(),
+    updatedAt: z.iso.datetime({ offset: true }),
     publishedEntryId: z.string().optional()
 })
 export const entrySchema = z.object({
     id: z.string(),
     title: z.string(),
-    date: z.string(),
+    date: dayOrInstant,
     url: z.string(),
     body: documentSchema,
-    refreshedAt: z.string()
+    refreshedAt: z.iso.datetime({ offset: true })
 })
 export const destinationSchema = z.object({
     kind: z.enum(['page', 'database']),
@@ -164,6 +166,13 @@ export const stateSchema = z.object({
     lastRefreshAttempt: z.string().optional(),
     refreshError: z.string().optional(),
     snapshotVersion: z.number().optional(),
+    activityPage: z
+        .object({
+            since: z.string(),
+            until: z.string(),
+            next: z.object({ instant: z.number(), id: z.string() }).optional()
+        })
+        .optional(),
     transportPauses: z.record(z.string(), z.number()).optional(),
     acquisition: z
         .record(
@@ -292,7 +301,24 @@ export function inbox(state: State, week: string): Activity[] {
     })
 }
 export const commandSchema = z.discriminatedUnion('type', [
+    z.object({
+        type: z.literal('view'),
+        view: z.object({
+            since: z.iso.date(),
+            until: z.iso.date(),
+            activityId: z.string().optional(),
+            entryId: z.string().optional(),
+            cursor: z.object({ instant: z.number().int(), id: z.string() }).optional(),
+            limit: z.number().int().min(1).max(2000).optional()
+        })
+    }),
     z.object({ type: z.literal('state') }),
+    z.object({
+        type: z.literal('entryHistory'),
+        query: z.string().max(2000),
+        cursor: z.object({ date: dayOrInstant, id: z.string() }).optional()
+    }),
+    z.object({ type: z.literal('entry'), id: z.string() }),
     z.object({ type: z.literal('loadWeek'), since: z.iso.date() }),
     z.object({ type: z.literal('addRepository') }),
     z.object({ type: z.literal('addRepositories') }),
@@ -387,7 +413,20 @@ export interface NotionPage {
     icon?: string
     parentId?: string
 }
+export interface EntrySummary {
+    id: string
+    title: string
+    date: string
+    excerpt: string
+}
+export interface EntryPage {
+    items: EntrySummary[]
+    next?: { date: string; id: string }
+}
 export interface Reply {
+    entryPage?: EntryPage
+    entry?: Entry
+    draftSaved?: { id: string; version: number }
     repositoryScan?: {
         id: string
         folder: string

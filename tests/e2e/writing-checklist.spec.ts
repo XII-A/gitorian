@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test, expect } from './support/desktop'
 import type { JournalNode } from '../../src/shared/model'
+import type { Editor } from '@tiptap/react'
 
 test('checklists retain editable text, keyboard behavior and saved state', async ({ desktop }, info) => {
     const { page, profile, shot } = desktop
@@ -87,12 +88,29 @@ test('checklists retain editable text, keyboard behavior and saved state', async
         await expect(items).toHaveCount(3)
         await expect(text(2)).toHaveText('Markdown task')
         await page.keyboard.press('Home')
+        // Native caret movement reaches ProseMirror through selectionchange.
+        // Wait for that precondition before sending the next editing command.
+        await expect
+            .poll(() =>
+                body.evaluate((element) => {
+                    const { selection } = (element as HTMLElement & { editor: Editor }).editor.state
+                    return {
+                        empty: selection.empty,
+                        offset: selection.$from.parentOffset,
+                        text: selection.$from.parent.textContent
+                    }
+                })
+            )
+            .toEqual({ empty: true, offset: 0, text: 'Markdown task' })
         await page.keyboard.press('Backspace')
         await expect(items).toHaveCount(2)
         await expect(body.locator(':scope > p').filter({ hasText: 'Markdown task' })).toHaveText('Markdown task')
         await page.keyboard.press('ControlOrMeta+z')
         await expect(items).toHaveCount(3)
         await expect(text(2)).toHaveText('Markdown task')
+        await expect(body.locator(':scope > p').filter({ hasText: 'Recovered paragraph' })).toHaveText(
+            'Recovered paragraph'
+        )
         await shot('05-backspace-and-undo-recovery')
     })
 
@@ -118,9 +136,13 @@ test('checklists retain editable text, keyboard behavior and saved state', async
 
     await test.step('independent post-exit SQLite matches the saved document', async () => {
         await desktop.close()
-        const db = new DatabaseSync(join(profile, 'gitorian.sqlite'), { readOnly: true })
+        const db = new DatabaseSync(join(profile, 'journal.sqlite'), { readOnly: true })
         try {
-            const rows = db.prepare("SELECT json FROM state_records WHERE collection='drafts'").all()
+            const rows = db
+                .prepare(
+                    "SELECT json_object('id',id,'title',title,'body',json(body),'week',week,'version',version,'updatedAt',updatedAt) AS json FROM drafts"
+                )
+                .all()
             const drafts = rows.map((row) => JSON.parse(String(row.json)) as { body: JournalNode })
             writeFileSync(info.outputPath('persisted-drafts.json'), JSON.stringify(drafts, null, 2))
             expect(drafts).toHaveLength(1)

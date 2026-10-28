@@ -1,6 +1,6 @@
 # Frontend conventions
 
-Install Node.js 22.19 or newer and pnpm 10.24.0 (the version pinned in `package.json`), then run `pnpm install --frozen-lockfile`. Use `pnpm check` for validation and `pnpm build` for a production build.
+Install Node.js 24.16 or newer and pnpm 10.24.0 (the version pinned in `package.json`), then run `pnpm install --frozen-lockfile`. Use `pnpm check` for validation and `pnpm build` for a production build.
 
 The hub and writing workspace share Arc's semantic tokens and installed components. Import `components/arc/foundation.css` once in `src/renderer/src.tsx`. Keep page styles in the renderer's page stylesheet; use documented component props and layout classes rather than targeting CSS module internals.
 
@@ -82,6 +82,8 @@ Notion authorization continues inside one connection morph. The rounded leading 
 At 600px and below, Settings navigation moves above the content and uses horizontal Arc tabs, with matching keyboard orientation. This gives the connection morph enough width for its picker and both confirmation actions. The picker menu can be wider than its compact field, bounded to the viewport; long option labels expose their full text through a native title.
 
 Keep word count, save status, and the Notion action in one footer row, with the status centered between equal outer columns when space allows. Only writing panes 460px or narrower stack the count and status beside the settings action. Use a pane container query, since the writing pane can be narrow within a wide window.
+
+Draft version conflicts interrupt writing with an Arc Dialog and RadioGroup. Require selection followed by a consequence-named submission; keep both copies until success. The controlled dialog blocks Escape/outside dismissal and uses the local `DialogContent.showCloseButton={false}` extension. Other dialogs keep their close affordance. Refreshing after a failed draft command supplies conflict context, never a save acknowledgment. Keep retry guidance inside the dialog and return focus to Entry title after resolution.
 
 Keep sample state separate from real commands. The workspace header has no sample-data switch. Retain `workspace-sample.ts` and the explicit `?workspace=true&data=sample&week=2026-10-05` preview URL for design iteration and smoke tests; normal workspace navigation uses real data. Sample publishing is simulated. Detached reference windows remain read-only and send citations to the editable main workspace through the existing channel. They have no note form; citation results appear in the inspector footer.
 

@@ -11,7 +11,7 @@ import { JournalPublishingLive } from './journal-publishing'
 import { ActivityAcquisitionLive } from './activity-acquisition'
 import { JournalLive } from './service'
 import type { Reply } from '../shared/model'
-import type { Store } from './store'
+import type { JournalDatabase } from './journal-database'
 
 /** One acyclic graph, shared by Electron and fixtures. */
 export const JournalModulesLive = JournalLive.pipe(
@@ -22,7 +22,7 @@ export const JournalModulesLive = JournalLive.pipe(
 )
 
 export interface JournalAdapters {
-    store: Store
+    store: JournalDatabase
     fetcher?: typeof fetch
     imageDownload?: typeof downloadImage
     githubCredential: () => string
@@ -36,10 +36,8 @@ export function journalLayer(adapters: JournalAdapters) {
         Layer.succeed(JournalStore, adapters.store),
         Layer.succeed(ConnectionState, { snapshot: adapters.connections }),
         HttpLive(adapters.fetcher, {
-            pauses: () => (adapters.store.state.transportPauses ??= {}),
-            changed: () => {
-                adapters.store.persist()
-            }
+            pauses: () => adapters.store.config.transportPauses,
+            changed: (scope, until) => adapters.store.savePause(scope, until).then(() => undefined)
         })
     )
     const providers = Layer.mergeAll(

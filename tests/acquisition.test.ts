@@ -1,3 +1,4 @@
+import { journalState } from './database-fixtures'
 import { GitHubFailure } from '../src/main/github'
 import { Effect } from 'effect'
 import { run, journalClient, githubClient, transportClient } from './effect-fixtures'
@@ -5,7 +6,7 @@ import { expect, it, vi } from 'vitest'
 import type { Repository } from '../src/shared/model'
 import { WorkQueue } from '../src/main/work-queue'
 import { journal, workspace, transport } from './fixtures'
-import { Store } from '../src/main/store'
+import { JournalDatabase } from '../src/main/journal-database'
 import { join } from 'node:path'
 import * as gitModule from '../src/main/git'
 const repository: Repository = {
@@ -28,7 +29,8 @@ it('settles an accepted source when its repository is removed before batch admis
         release = resolve
     })
     app.remote.github = true
-    app.store.state.repositories = [0, 1, 2].map((id) => ({ ...repository, id: `repo-${id}` }))
+    for (const fixtureRepository of [0, 1, 2].map((id) => ({ ...repository, id: `repo-${id}` })))
+        await app.store.saveRepository(fixtureRepository)
     const read = vi.spyOn(app.github, 'activities').mockImplementation((_repository, _login, _tracked, scan) =>
         Effect.gen(function* () {
             yield* Effect.promise(() => gate)
@@ -40,11 +42,11 @@ it('settles an accepted source when its repository is removed before batch admis
     try {
         pending = run(app.service.refresh({ source: 'github' }))
         await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2))
-        app.store.state.repositories[2].removed = true
+        await app.store.saveRepository({ ...app.store.config.repositories[2], removed: true })
         release()
         await pending
-        app.store.state.repositories[2].removed = false
-        expect(app.store.state.acquisition?.['github:repo-2'].status).toBe('idle')
+        await app.store.saveRepository({ ...app.store.config.repositories[2], removed: false })
+        expect((await journalState(app.store)).acquisition?.['github:repo-2'].status).toBe('idle')
         expect(read).toHaveBeenCalledTimes(2)
     } finally {
         release()
@@ -61,7 +63,7 @@ it.each([false, true])(
             release = resolve
         })
         app.remote.github = true
-        app.store.state.repositories = [{ ...repository }]
+        for (const fixtureRepository of [{ ...repository }]) await app.store.saveRepository(fixtureRepository)
         const read = vi.spyOn(app.github, 'activities').mockImplementation((_repository, _login, _tracked, scan) =>
             Effect.gen(function* () {
                 yield* Effect.promise(() => gate)
@@ -83,11 +85,11 @@ it.each([false, true])(
             await Promise.all([active, retry, resumed])
             if (!resumeWhilePending) {
                 expect(read).toHaveBeenCalledTimes(1)
-                expect(app.store.state.acquisition?.['github:repo'].status).toBe('cancelled')
+                expect((await journalState(app.store)).acquisition?.['github:repo'].status).toBe('cancelled')
                 await run(app.service.refresh({ repositoryId: repository.id, source: 'github', resume: true }))
             }
             expect(read).toHaveBeenCalledTimes(2)
-            expect(app.store.state.acquisition?.['github:repo'].status).toBe('idle')
+            expect((await journalState(app.store)).acquisition?.['github:repo'].status).toBe('idle')
         } finally {
             release()
             await Promise.all([active, retry, resumed])
@@ -102,7 +104,8 @@ it('retains pause identity for a completed source while another source keeps the
         release = resolve
     })
     app.remote.github = true
-    app.store.state.repositories = ['fast', 'held'].map((id) => ({ ...repository, id }))
+    for (const fixtureRepository of ['fast', 'held'].map((id) => ({ ...repository, id })))
+        await app.store.saveRepository(fixtureRepository)
     const read = vi.spyOn(app.github, 'activities').mockImplementation((repository, _login, _tracked, scan) =>
         Effect.gen(function* () {
             if (repository.id === 'held') yield* Effect.promise(() => gate)
@@ -114,13 +117,15 @@ it('retains pause identity for a completed source while another source keeps the
     let resumed: Promise<void> | undefined
     try {
         first = run(app.service.refresh({ source: 'github', resume: true }))
-        await vi.waitFor(() => expect(app.store.state.acquisition?.['github:fast'].status).toBe('idle'))
+        await vi.waitFor(async () =>
+            expect((await journalState(app.store)).acquisition?.['github:fast'].status).toBe('idle')
+        )
         await run(app.service.stopWork('github', 'fast'))
         resumed = run(app.service.refresh({ source: 'github', resume: true }))
         release()
         await Promise.all([first, resumed])
         expect(read.mock.calls.filter(([repository]) => repository.id === 'fast')).toHaveLength(2)
-        expect(app.store.state.acquisition?.['github:fast'].status).toBe('idle')
+        expect((await journalState(app.store)).acquisition?.['github:fast'].status).toBe('idle')
     } finally {
         release()
         await Promise.all([first, resumed])
@@ -159,8 +164,11 @@ it('stops before enriching old unrelated PR history', async () => {
 it('reconsiders completed GitHub coverage when the journal timezone changes', async () => {
     const app = await workspace()
     try {
-        app.repository.trackingStart = '2026-10-05'
-        app.store.state.settings.timezone = 'UTC'
+        {
+            app.repository.trackingStart = '2026-10-05'
+            await app.store.saveRepository(app.repository)
+        }
+        await app.store.saveSettings({ ...app.store.config.settings, timezone: 'UTC' })
         const http = await transportClient(async (input, init) => {
             const response = await app.remote.fetch(input, init)
             const url = input instanceof Request ? input.url : String(input)
@@ -183,11 +191,13 @@ it('reconsiders completed GitHub coverage when the journal timezone changes', as
             app.requests
         )
         await run(service.handle({ type: 'loadWeek', since: '2026-10-05' }))
-        expect(app.store.state.activities.some((activity) => activity.kind === 'pr')).toBe(false)
-        app.store.state.settings.timezone = 'Europe/Istanbul'
+        expect((await journalState(app.store)).activities.some((activity) => activity.kind === 'pr')).toBe(false)
+        await app.store.saveSettings({ ...app.store.config.settings, timezone: 'Europe/Istanbul' })
         await run(service.handle({ type: 'loadWeek', since: '2026-10-05' }))
-        expect(app.store.state.activities.some((activity) => activity.kind === 'pr')).toBe(true)
-        expect(app.store.state.acquisition?.[`github:${app.repository.id}`].historyTimezone).toBe('Europe/Istanbul')
+        expect((await journalState(app.store)).activities.some((activity) => activity.kind === 'pr')).toBe(true)
+        expect((await journalState(app.store)).acquisition?.[`github:${app.repository.id}`].historyTimezone).toBe(
+            'Europe/Istanbul'
+        )
     } finally {
         await app.close()
     }
@@ -274,21 +284,21 @@ it('repeated refresh skips unchanged PR enrichment and unchanged Git histories',
     try {
         app.remote.github = true
         await run(app.service.refresh())
-        const refs = app.store.state.acquisition?.[`git:${app.repository.id}`].refs
+        const refs = (await journalState(app.store)).acquisition?.[`git:${app.repository.id}`].refs
         const start = app.remote.requests.length
         await run(app.service.refresh())
         const github = app.remote.requests.slice(start).filter((request) => request.url.includes('api.github.com'))
         expect(github).toHaveLength(1)
         expect(github[0].url).toContain('/pulls?')
         expect(log.mock.calls.at(-1)?.[1]).toEqual(refs)
-        expect(app.store.state.acquisition?.[`git:${app.repository.id}`].refs).toEqual(refs)
+        expect((await journalState(app.store)).acquisition?.[`git:${app.repository.id}`].refs).toEqual(refs)
         const beforeHistory = app.remote.requests.length
         await run(app.service.handle({ type: 'refresh', since: '2020-01-01' }))
         expect(
             app.remote.requests.slice(beforeHistory).filter((request) => request.url.includes('api.github.com'))
         ).toHaveLength(1)
         expect(
-            app.store.state.activities.some(
+            (await journalState(app.store)).activities.some(
                 (activity) => activity.kind === 'review' && activity.date.startsWith('2026-10-07')
             )
         ).toBe(true)
@@ -302,9 +312,9 @@ it('loads hub file metadata without acquiring a patch and coalesces workspace di
     const read = vi.spyOn(gitModule, 'commitDetails')
     try {
         await run(app.service.refresh())
-        const activity = app.store.state.activities.find((item) => item.kind === 'commit')!
+        const activity = (await journalState(app.store)).activities.find((item) => item.kind === 'commit')!
         await run(app.service.handle({ type: 'details', activityId: activity.id, content: 'files' }))
-        expect(app.store.state.diffs[activity.id]).toBeUndefined()
+        expect((await journalState(app.store)).diffs[activity.id]).toBeUndefined()
         expect(read.mock.calls[0][2]).toBe(false)
         read.mockClear()
         const result = await Promise.all([
@@ -325,19 +335,23 @@ it('keeps patch bodies out of snapshots and retains patches and checkpoints afte
     try {
         app.remote.github = true
         await run(app.service.refresh())
-        const pr = app.store.state.activities.find((item) => item.kind === 'pr')!
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
         await run(app.service.handle({ type: 'details', activityId: pr.id }))
-        expect(app.service.reply().state.diffs).toEqual({})
-        expect(app.service.reply().state.revisions.every((item) => item.diff === '')).toBe(true)
-        const patch = app.store.state.diffs[pr.id]
-        const versions = structuredClone(app.store.state.acquisition?.[`github:${app.repository.id}`].versions)
-        app.store.close()
-        const reopened = new Store(join(app.directory, 'tracking.sqlite'))
+        expect((await run(app.service.reply())).state.diffs).toEqual({})
+        expect((await run(app.service.reply())).state.revisions.every((item) => item.diff === '')).toBe(true)
+        const patch = (await journalState(app.store)).diffs[pr.id]
+        const versions = structuredClone(
+            (await journalState(app.store)).acquisition?.[`github:${app.repository.id}`].versions
+        )
+        await app.store.close()
+        const reopened = await JournalDatabase.open(join(app.directory, 'tracking.sqlite'))
         try {
-            expect(reopened.state.diffs[pr.id]).toBe(patch)
-            expect(reopened.state.acquisition?.[`github:${app.repository.id}`].versions).toEqual(versions)
+            expect((await journalState(reopened)).diffs[pr.id]).toBe(patch)
+            expect((await journalState(reopened)).acquisition?.[`github:${app.repository.id}`].versions).toEqual(
+                versions
+            )
         } finally {
-            reopened.close()
+            await reopened.close()
         }
     } finally {
         await app.close()
@@ -425,14 +439,14 @@ it('a user pause survives scheduled refresh and explicit retry resumes it', asyn
         app.remote.github = true
         await run(app.service.refresh())
         await run(app.service.stopWork('github', app.repository.id))
-        expect(app.store.state.acquisition?.[`github:${app.repository.id}`].error).toBeUndefined()
+        expect((await journalState(app.store)).acquisition?.[`github:${app.repository.id}`].error).toBeUndefined()
         const start = app.remote.requests.length
         await run(app.service.refresh({ repositoryId: app.repository.id, source: 'github' }))
         expect(app.remote.requests).toHaveLength(start)
-        expect(app.store.state.acquisition?.[`github:${app.repository.id}`].status).toBe('cancelled')
+        expect((await journalState(app.store)).acquisition?.[`github:${app.repository.id}`].status).toBe('cancelled')
         await run(app.service.refresh({ repositoryId: app.repository.id, source: 'github', resume: true }))
         expect(app.remote.requests).toHaveLength(start + 1)
-        expect(app.store.state.acquisition?.[`github:${app.repository.id}`].status).toBe('idle')
+        expect((await journalState(app.store)).acquisition?.[`github:${app.repository.id}`].status).toBe('idle')
     } finally {
         await app.close()
     }

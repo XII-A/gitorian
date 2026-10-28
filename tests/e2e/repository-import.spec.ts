@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test, expect } from './support/desktop'
@@ -47,11 +48,18 @@ test('repository import: selection, cancellation, recovery and durable tracking'
             await chooseFolder(join(folder, name))
             await page.evaluate(() => window.journal.invoke({ type: 'addRepository' }))
         }
-        await page.evaluate(async () => {
-            const { state } = await window.journal.invoke({ type: 'state' })
-            await window.journal.invoke({ type: 'settings', settings: { ...state.settings, refreshMinutes: 0 } })
-            await window.journal.invoke({ type: 'repository', repository: { ...state.repositories[1], removed: true } })
-        })
+        // Match inspection's canonical paths, including Windows short names and case aliases.
+        const stoppedPath = join(folder, process.platform === 'win32' ? 'ARCHIVED-TOOLS' : 'archived-tools')
+        await page.evaluate(
+            async (stoppedPath) => {
+                const { state } = await window.journal.invoke({ type: 'state' })
+                const stopped = state.repositories.find((repository) => repository.path === stoppedPath)
+                if (!stopped) throw new Error('The stopped repository fixture was not imported')
+                await window.journal.invoke({ type: 'settings', settings: { ...state.settings, refreshMinutes: 0 } })
+                await window.journal.invoke({ type: 'repository', repository: { ...stopped, removed: true } })
+            },
+            await realpath(stoppedPath)
+        )
         writeFileSync(info.outputPath('fixture.json'), JSON.stringify({ folder, names, delayedIO: true }, null, 2))
     })
     await test.step('chooser, discovery and review expose progress', async () => {
@@ -179,10 +187,12 @@ test('repository import: selection, cancellation, recovery and durable tracking'
     })
     await test.step('post-exit SQLite contains exactly the selected tracking choices', async () => {
         await desktop.close()
-        const db = new DatabaseSync(join(profile, 'gitorian.sqlite'), { readOnly: true })
+        const db = new DatabaseSync(join(profile, 'journal.sqlite'), { readOnly: true })
         try {
             const repositories = db
-                .prepare("SELECT json FROM state_records WHERE collection='repositories'")
+                .prepare(
+                    "SELECT json_object('id',id,'name',name,'path',path,'removed',removed,'available',available) AS json FROM repositories"
+                )
                 .all()
                 .map((row) => JSON.parse(String(row.json)) as Repository)
             writeFileSync(info.outputPath('persisted-repositories.json'), JSON.stringify(repositories, null, 2))

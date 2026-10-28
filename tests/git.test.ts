@@ -1,3 +1,4 @@
+import { journalState } from './database-fixtures'
 import { run } from './effect-fixtures'
 import { expect, it } from 'vitest'
 import { writeFile } from 'node:fs/promises'
@@ -50,9 +51,9 @@ it('loads first-parent merge changes and replaces cached combined patches', asyn
         const combined = await app.git('show', '--format=', sha)
         expect(combined).toMatch(/^diff --cc /)
         const activity = (await commits(app.repository, 'development', 'history')).find((item) => item.sha === sha)!
-        app.store.state.activities.push(activity)
-        app.store.state.diffs[activity.id] = combined
-        expect(hasCachedDetails(app.store.state, activity)).toBe(false)
+        await app.store.applyAcquisitionBatch({ activities: [activity] })
+        ;(await journalState(app.store)).diffs[activity.id] = combined
+        expect(hasCachedDetails(await journalState(app.store), activity)).toBe(false)
         const reply = await run(app.service.handle({ type: 'details', activityId: activity.id }))
         expect(reply.diff).toMatch(/^diff --git /)
         expect(
@@ -60,7 +61,7 @@ it('loads first-parent merge changes and replaces cached combined patches', asyn
                 .map((file) => file.newPath)
                 .sort()
         ).toEqual(['feature.txt', 'work.txt'])
-        expect(activity.files).toEqual(
+        expect((await app.store.activity(activity.id))!.files).toEqual(
             expect.arrayContaining([
                 { name: 'feature.txt', status: 'A', lineStats: { additions: 1, deletions: 0 } },
                 { name: 'work.txt', status: 'M', lineStats: { additions: 1, deletions: 1 } }
@@ -68,8 +69,10 @@ it('loads first-parent merge changes and replaces cached combined patches', asyn
         )
         expect(reply.diff).toContain('-development')
         expect(reply.diff).toContain('+resolved')
-        expect(hasCachedDetails(app.store.state, activity)).toBe(true)
-        expect((await commitDetails(app.repository, sha, false)).files).toEqual(activity.files)
+        expect(hasCachedDetails(await journalState(app.store), activity)).toBe(true)
+        expect((await commitDetails(app.repository, sha, false)).files).toEqual(
+            (await app.store.activity(activity.id))!.files
+        )
     } finally {
         await app.close()
     }
@@ -141,24 +144,24 @@ it('retains captured metadata, diffs and journal associations after a branch is 
         await app.git('checkout', '-b', 'temporary')
         await app.git('commit', '--allow-empty', '-m', 'Temporary work')
         await run(app.service.handle({ type: 'refresh' }))
-        const activity = app.store.state.activities.find((item) => item.title === 'Temporary work')!
+        const activity = (await journalState(app.store)).activities.find((item) => item.title === 'Temporary work')!
         await run(app.service.handle({ type: 'details', activityId: activity.id }))
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         await run(
             app.service.handle({
                 type: 'select',
-                draftId: app.store.state.drafts[0].id,
+                draftId: (await journalState(app.store)).drafts[0].id,
                 activityId: activity.id,
                 included: true
             })
         )
-        await run(app.service.handle({ type: 'publish', draftId: app.store.state.drafts[0].id }))
+        await run(app.service.handle({ type: 'publish', draftId: (await journalState(app.store)).drafts[0].id }))
         await app.git('checkout', 'development')
         await app.git('branch', '-D', 'temporary')
         await run(app.service.handle({ type: 'refresh' }))
-        expect(activity.deletedBranches).toContain('temporary')
-        expect(app.store.state.coverage[0].activityId).toBe(activity.id)
-        expect(app.store.state.diffs).toHaveProperty(activity.id)
+        expect((await app.store.activity(activity.id))!.deletedBranches).toContain('temporary')
+        expect((await journalState(app.store)).coverage[0].activityId).toBe(activity.id)
+        expect((await journalState(app.store)).diffs).toHaveProperty(activity.id)
     } finally {
         await app.close()
     }
@@ -184,7 +187,7 @@ it('keeps other authors searchable without admitting their history to the person
                 since: ''
             })
         )
-        const other = app.store.state.activities.find((item) => item.title === 'Other author work')!
+        const other = (await journalState(app.store)).activities.find((item) => item.title === 'Other author work')!
         expect(other).toBeDefined()
         const filtered = await run(
             app.service.handle({
@@ -198,19 +201,25 @@ it('keeps other authors searchable without admitting their history to the person
         )
         expect(filtered.activityIds).toEqual([other.id])
         expect(
-            inbox(app.store.state, weekOf(new Date(), app.store.state.settings)).some((item) => item.id === other.id)
+            inbox(await journalState(app.store), weekOf(new Date(), (await journalState(app.store)).settings)).some(
+                (item) => item.id === other.id
+            )
         ).toBe(false)
-        await run(app.service.handle({ type: 'newDraft', week: weekOf(new Date(), app.store.state.settings) }))
+        await run(
+            app.service.handle({ type: 'newDraft', week: weekOf(new Date(), (await journalState(app.store)).settings) })
+        )
         await run(
             app.service.handle({
                 type: 'select',
-                draftId: app.store.state.drafts[0].id,
+                draftId: (await journalState(app.store)).drafts[0].id,
                 activityId: other.id,
                 included: true
             })
         )
         expect(
-            inbox(app.store.state, weekOf(new Date(), app.store.state.settings)).some((item) => item.id === other.id)
+            inbox(await journalState(app.store), weekOf(new Date(), (await journalState(app.store)).settings)).some(
+                (item) => item.id === other.id
+            )
         ).toBe(true)
     } finally {
         await app.close()

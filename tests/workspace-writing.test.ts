@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
 import { sampleState } from '../src/renderer/workspace-sample'
-import type { Command, JournalNode } from '../src/shared/model'
+import type { Command, JournalNode, Reply } from '../src/shared/model'
 import type { EditorSnapshot } from '../src/renderer/editor-snapshot'
 
 const notifications = vi.hoisted(() => ({
@@ -280,3 +280,51 @@ it.each([false, true])(
         expect(container.textContent).toContain('Update in Notion')
     }
 )
+
+it('advances dirty writing only to its own save acknowledgment when another writer changes the snapshot', async () => {
+    const state = sampleState('2026-10-05')
+    state.drafts[0].version = 1
+    let release!: (value: Reply) => void
+    const run = vi.fn(
+        (_command: Command) =>
+            new Promise<Reply>((resolve) => {
+                release = resolve
+            })
+    )
+    await update(() =>
+        root.render(
+            createElement(WorkspaceDraft, {
+                state,
+                week: '2026-10-05',
+                sample: false,
+                notionConnected: true,
+                run,
+                publishTarget: null,
+                onReady: vi.fn(),
+                onSettings: vi.fn()
+            })
+        )
+    )
+    await update(() => writer.change?.(body('First edit')))
+    await update(() => vi.advanceTimersByTime(1000))
+    await update(() => writer.change?.(body('Continued local writing')))
+    await update(() =>
+        release({
+            state: { ...state, drafts: [{ ...state.drafts[0], version: 3, body: body('Another writer') }] },
+            draftSaved: { id: state.drafts[0].id, version: 2 },
+            connections: { github: false, notion: true, protectedStorage: false }
+        })
+    )
+    await update(() => vi.advanceTimersByTime(1000))
+    expect(run.mock.calls[1][0]).toMatchObject({
+        type: 'draft',
+        draft: { version: 2, body: body('Continued local writing') }
+    })
+    await update(() =>
+        release({
+            state,
+            draftSaved: { id: state.drafts[0].id, version: 3 },
+            connections: { github: false, notion: true, protectedStorage: false }
+        })
+    )
+})

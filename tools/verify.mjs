@@ -1,3 +1,4 @@
+import { activityEvidence } from './database-evidence.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
@@ -63,7 +64,12 @@ if (
 }
 
 function doctor() {
-    const files = ['out/main/index.js', 'out/main/store-writer.js', 'out/preload/index.cjs', 'out/renderer/index.html']
+    const files = [
+        'out/main/index.js',
+        'out/main/database-worker.js',
+        'out/preload/index.cjs',
+        'out/renderer/index.html'
+    ]
     const hashes = Object.fromEntries(
         files.map((file) => [
             file,
@@ -216,12 +222,9 @@ if (mode === 'doctor') {
         const journey = JSON.parse(readFileSync(join(output, 'journey.json'), 'utf8'))
         if (!journey.passed) throw new Error('The journey did not report success')
         if (mode === 'activity-days') {
-            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
+            const db = new DatabaseSync(join(scratch, 'profile', 'journal.sqlite'), { readOnly: true })
             try {
-                const activities = db
-                    .prepare("SELECT json FROM state_records WHERE collection='activities'")
-                    .all()
-                    .map((row) => JSON.parse(String(row.json)))
+                const activities = activityEvidence(db)
                 if (activities.length !== 132) throw new Error('Day navigation changed persisted activity')
                 writeFileSync(join(output, 'persisted-activities.json'), JSON.stringify(activities, null, 2))
             } finally {
@@ -229,12 +232,9 @@ if (mode === 'doctor') {
             }
         }
         if (mode === 'line-statistics') {
-            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
+            const db = new DatabaseSync(join(scratch, 'profile', 'journal.sqlite'), { readOnly: true })
             try {
-                const activities = db
-                    .prepare("SELECT json FROM state_records WHERE collection='activities'")
-                    .all()
-                    .map((row) => JSON.parse(String(row.json)))
+                const activities = activityEvidence(db)
                 writeFileSync(join(output, 'persisted-activities.json'), JSON.stringify(activities, null, 2))
                 const fixture = JSON.parse(readFileSync(join(output, 'fixture.json'), 'utf8'))
                 const inspected = activities.filter((activity) =>
@@ -256,18 +256,13 @@ if (mode === 'doctor') {
             }
         }
         if (mode === 'github-import') {
-            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
+            const db = new DatabaseSync(join(scratch, 'profile', 'journal.sqlite'), { readOnly: true })
             try {
                 const records = (collection) =>
-                    db
-                        .prepare('SELECT json FROM state_records WHERE collection=?')
-                        .all(collection)
-                        .map((row) => JSON.parse(String(row.json)))
+                    collection === 'activities' ? activityEvidence(db) : db.prepare('SELECT * FROM repositories').all()
                 const repositories = records('repositories')
                 const activities = records('activities')
-                const settings = JSON.parse(
-                    String(db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()?.json)
-                )
+                const settings = JSON.parse(String(db.prepare('SELECT settings AS json FROM journal').get()?.json))
                 writeFileSync(
                     join(output, 'persisted-github-activity.json'),
                     JSON.stringify({ repositories, activities, refreshMinutes: settings.refreshMinutes }, null, 2)
@@ -288,10 +283,10 @@ if (mode === 'doctor') {
             }
         }
         if (mode === 'publishing') {
-            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
+            const db = new DatabaseSync(join(scratch, 'profile', 'journal.sqlite'), { readOnly: true })
             try {
                 const entries = db
-                    .prepare("SELECT json FROM state_records WHERE collection='entries'")
+                    .prepare("SELECT json_object('id',id,'title',title,'body',json(body)) AS json FROM entries")
                     .all()
                     .map((row) => JSON.parse(String(row.json)))
                 writeFileSync(join(output, 'persisted-entries.json'), JSON.stringify(entries, null, 2))
@@ -306,10 +301,12 @@ if (mode === 'doctor') {
             }
         }
         if (mode === 'app-updates') {
-            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
+            const db = new DatabaseSync(join(scratch, 'profile', 'journal.sqlite'), { readOnly: true })
             try {
                 const drafts = db
-                    .prepare("SELECT json FROM state_records WHERE collection='drafts'")
+                    .prepare(
+                        "SELECT json_object('id',id,'title',title,'body',json(body),'week',week,'version',version,'updatedAt',updatedAt) AS json FROM drafts"
+                    )
                     .all()
                     .map((row) => JSON.parse(String(row.json)))
                 writeFileSync(join(output, 'persisted-drafts.json'), JSON.stringify(drafts, null, 2))
@@ -320,16 +317,16 @@ if (mode === 'doctor') {
             }
         }
         if (onboardingMode || connectionMode) {
-            const db = new DatabaseSync(join(scratch, 'profile', 'gitorian.sqlite'), { readOnly: true })
+            const db = new DatabaseSync(join(scratch, 'profile', 'journal.sqlite'), { readOnly: true })
             try {
                 if (disclosureMode) {
-                    const count = db
-                        .prepare("SELECT count(*) AS total FROM state_records WHERE collection='repositories'")
-                        .get()
+                    const count = db.prepare('SELECT count(*) AS total FROM repositories').get()
                     if (count.total !== 0) throw new Error('Disclosure fixture unexpectedly imported repositories')
                 } else if (onboardingMode) {
                     const repositories = db
-                        .prepare("SELECT json FROM state_records WHERE collection='repositories'")
+                        .prepare(
+                            "SELECT json_object('id',id,'name',name,'path',path,'remote',remote,'removed',json(CASE removed WHEN 1 THEN 'true' ELSE 'false' END)) AS json FROM repositories"
+                        )
                         .all()
                         .map((row) => JSON.parse(String(row.json)))
                     writeFileSync(join(output, 'persisted-repositories.json'), JSON.stringify(repositories, null, 2))
@@ -343,7 +340,7 @@ if (mode === 'doctor') {
                     if (preferences['gitorian:onboarding:v1:local'] !== 'complete')
                         throw new Error('Completion preference was not retained')
                 } else if (connectionMode) {
-                    const row = db.prepare("SELECT json FROM state_parts WHERE key='settings'").get()
+                    const row = db.prepare('SELECT settings AS json FROM journal').get()
                     const settings = JSON.parse(String(row?.json))
                     writeFileSync(join(output, 'persisted-settings.json'), JSON.stringify(settings, null, 2))
                     if (

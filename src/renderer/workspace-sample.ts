@@ -125,6 +125,7 @@ export function sampleState(week: string): State {
     state.drafts = [
         {
             id: `sample-draft-${week}`,
+            version: 1,
             week,
             title: 'The week the sync finally held',
             selections: [],

@@ -7,7 +7,7 @@ import { Context, Deferred, Effect, ExecutionStrategy, Exit, Fiber, Layer, Schem
 import { attemptLifetime, credentialSchema } from '../../services/notion-oauth/src/protocol'
 import type { Destination } from '../shared/model'
 import type { JournalSetupStore } from './notion-setup'
-import type { Store } from './store'
+import type { JournalDatabase } from './journal-database'
 import { Http } from './http'
 import { makeNotion, toNotionError } from './notion'
 import type { Notion } from './notion'
@@ -100,7 +100,11 @@ export interface ConnectionAdapters {
     fetcher: typeof fetch
     recovery: Pick<JournalSetupStore, 'get' | 'set' | 'clear'>
 }
-type DestinationStore = Pick<Store, 'state' | 'persist' | 'flush'>
+interface DestinationStore {
+    readonly config: Pick<JournalDatabase['config'], 'settings'>
+    readonly generation: string
+    setDestination: JournalDatabase['setDestination']
+}
 type SetupPages = Pick<Notion, 'prepareJournal' | 'destinationIcon' | 'describeDestination'>
 type TokenAccess = (refresh?: boolean, rejected?: string) => Effect.Effect<string, Error>
 export const NotionConnectionLive = (adapters: ConnectionAdapters) =>
@@ -139,19 +143,19 @@ export function makeNotionConnection(
             | undefined
         let committing = false
         let stagedKey: string | undefined
-        let stateOwner = store.state
-        let credentialKey = stateOwner.settings.destination?.credentialSlot
-            ? 'notion-' + stateOwner.settings.destination.credentialSlot
+        let stateOwner = store.generation
+        let credentialKey = store.config.settings.destination?.credentialSlot
+            ? 'notion-' + store.config.settings.destination.credentialSlot
             : 'notion'
-        let destinationId = stateOwner.settings.destination?.id
+        let destinationId = store.config.settings.destination?.id
         let closed = false
         const synchronizeDestination = () => {
-            if (stateOwner === store.state) return
-            stateOwner = store.state
-            credentialKey = stateOwner.settings.destination?.credentialSlot
-                ? 'notion-' + stateOwner.settings.destination.credentialSlot
+            if (stateOwner === store.generation) return
+            stateOwner = store.generation
+            credentialKey = store.config.settings.destination?.credentialSlot
+                ? 'notion-' + store.config.settings.destination.credentialSlot
                 : 'notion'
-            destinationId = stateOwner.settings.destination?.id
+            destinationId = store.config.settings.destination?.id
             credentialGeneration++
             attemptGeneration++
             pending = undefined
@@ -703,39 +707,14 @@ export function makeNotionConnection(
                                             )
                                             check()
                                             const committed: Destination = { ...destination, credentialSlot: slot }
-                                            const commitState = store.state
-                                            const previous = commitState.settings.destination
-                                            commitState.settings.destination = committed
-                                            try {
-                                                store.persist()
-                                            } catch (error) {
-                                                if (
-                                                    store.state === commitState &&
-                                                    commitState.settings.destination === committed
-                                                )
-                                                    commitState.settings.destination = previous
-                                                throw new DurabilityError(error)
-                                            }
-                                            return { committed, commitState, previous, key }
+                                            return { committed, generation: store.generation, key }
                                         },
-                                        catch: (error) =>
-                                            error instanceof DurabilityError ? error : connectionError(error)
+                                        catch: (error) => connectionError(error)
                                     })
                                     yield* Effect.tryPromise({
-                                        try: () => store.flush(),
+                                        try: () => store.setDestination(transaction.committed, transaction.generation),
                                         catch: (error) => new DurabilityError(error)
-                                    }).pipe(
-                                        Effect.onError(() =>
-                                            Effect.sync(() => {
-                                                if (
-                                                    store.state === transaction.commitState &&
-                                                    transaction.commitState.settings.destination ===
-                                                        transaction.committed
-                                                )
-                                                    transaction.commitState.settings.destination = transaction.previous
-                                            })
-                                        )
-                                    )
+                                    })
                                     return yield* Effect.try({
                                         try: () => {
                                             check()
@@ -774,7 +753,7 @@ export function makeNotionConnection(
         }
         const refreshDestination = () =>
             Effect.gen(function* () {
-                const saved = store.state.settings.destination
+                const saved = store.config.settings.destination
                 if (!connected() || !saved) return
                 const owner = credentialGeneration
                 const destination = yield* installedPages.describeDestination(saved)
@@ -782,15 +761,16 @@ export function makeNotionConnection(
                 if (
                     !closed &&
                     owner === credentialGeneration &&
-                    store.state.settings.destination === saved &&
+                    store.config.settings.destination?.id === saved.id &&
                     connected() &&
                     JSON.stringify(saved) !== JSON.stringify(destination)
                 ) {
-                    store.state.settings.destination = { ...destination, credentialSlot: saved.credentialSlot }
-                    yield* Effect.try({
-                        try: () => {
-                            store.persist()
-                        },
+                    yield* Effect.tryPromise({
+                        try: () =>
+                            store.setDestination(
+                                { ...destination, credentialSlot: saved.credentialSlot },
+                                store.generation
+                            ),
                         catch: (error) => new DurabilityError(error)
                     })
                 }

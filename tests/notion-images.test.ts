@@ -1,3 +1,4 @@
+import { journalState, seedJournal, editPublication } from './database-fixtures'
 import { DurabilityError } from '../src/main/durability-error'
 import { HttpError, TransportError } from '../src/main/http'
 import { run } from './effect-fixtures'
@@ -10,7 +11,7 @@ import sharp from 'sharp'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { Store } from '../src/main/store'
+import { JournalDatabase } from '../src/main/journal-database'
 import { validateImage, UnsupportedImageError } from '../src/main/images'
 import { toNotion } from '../src/shared/notion-format'
 import type { NotionBlock } from '../src/shared/notion-format'
@@ -21,9 +22,9 @@ afterEach(async () => {
 })
 async function setup() {
     const directory = mkdtempSync(join(tmpdir(), 'notion-images-'))
-    const store = new Store(join(directory, 'journal.sqlite'))
-    cleanup.push(() => {
-        store.close()
+    const store = await JournalDatabase.open(join(directory, 'journal.sqlite'))
+    cleanup.push(async () => {
+        await store.close()
         rmSync(directory, { recursive: true, force: true })
     })
     const bytes = await sharp({ create: { width: 12, height: 8, channels: 3, background: '#557799' } })
@@ -137,8 +138,10 @@ async function setup() {
         destination: { kind: 'page', id: 'parent', titleProperty: '', dateProperty: '' },
         createdAt: page.created_time
     }
-    store.state.settings.destination = save.destination
-    store.state.drafts.push({
+    await store.setDestination(save.destination)
+    const seeded = await journalState(store)
+    seeded.drafts.push({
+        version: 1,
         id: 'draft',
         week: '2026-10-19',
         title: save.title,
@@ -146,6 +149,7 @@ async function setup() {
         selections: [],
         updatedAt: save.createdAt
     })
+    await seedJournal(store, seeded)
     const runtime = ManagedRuntime.make(
         journalLayer({
             store,
@@ -164,9 +168,7 @@ async function setup() {
         store,
         id,
         bytes,
-        get save() {
-            return store.state.saves.at(-1)!
-        },
+        save: async () => (await journalState(store)).saves.at(-1)!,
         notion,
         publishing,
         fetcher,
@@ -176,39 +178,45 @@ async function setup() {
 }
 it('uploads once for repeated images and round-trips bytes/descriptions through temporary URLs', async () => {
     const app = await setup()
-    const checkpoint = vi.spyOn(app.store, 'flush')
-    const original = structuredClone(app.store.state.drafts[0].body)
+    const checkpoint = vi.spyOn(app.store, 'checkpointPublication')
+    const original = structuredClone((await journalState(app.store)).drafts[0].body)
     await run(app.publishing.publish('draft'))
-    const entry = app.store.state.entries[0]
+    const entry = (await journalState(app.store)).entries[0]
     expect(entry.body).toEqual(original)
     expect(
         app.fetcher.mock.calls.filter(([url]) => (url instanceof Request ? url.url : String(url)).endsWith('/send'))
     ).toHaveLength(1)
-    expect(app.save.imageUploads?.[app.id]).toBeDefined()
+    expect((await app.save()).imageUploads?.[app.id]).toBeDefined()
     expect(checkpoint).toHaveBeenCalled()
     const refreshed = await run(app.notion.refreshEntry('page'))
     expect(toNotion(refreshed.body)).toEqual(toNotion(original))
     expect(app.download).toHaveBeenCalledTimes(2)
-    expect(app.save.body).toEqual(original)
+    expect((await app.save()).body).toEqual(original)
     expect(
         app.fetcher.mock.calls.every(([, init]) => new Headers(init?.headers).get('Notion-Version') === '2025-09-03')
     ).toBe(true)
-    app.save.status = 'unknown'
-    await run(app.publishing.reconcile(app.save.id))
-    expect(app.store.state.entries[0].id).toBe('page')
-    app.save.status = 'unknown'
+    await editPublication(app.store, (save) => {
+        save.status = 'unknown'
+    })
+    await run(app.publishing.reconcile((await app.save()).id))
+    expect((await journalState(app.store)).entries[0].id).toBe('page')
+    await editPublication(app.store, (save) => {
+        save.status = 'unknown'
+    })
     app.remote.wrongImage = true
-    await expect(run(app.publishing.reconcile(app.save.id))).rejects.toThrow('differs')
+    await expect(run(app.publishing.reconcile((await app.save()).id))).rejects.toThrow('differs')
 })
 it('finds a complete image-bearing page after a lost create response without duplicating it', async () => {
     const app = await setup()
     app.remote.loseCreate = true
     await expect(run(app.publishing.publish('draft'))).rejects.toThrow()
-    expect(app.save.entryId).toBeUndefined()
-    const restoredSave = structuredClone(app.save)
-    app.store.state.saves[0] = restoredSave
+    expect((await app.save()).entryId).toBeUndefined()
+    const restoredSave = structuredClone(await app.save())
+    await editPublication(app.store, (save) => {
+        Object.assign(save, restoredSave)
+    })
     await run(app.publishing.reconcile(restoredSave.id))
-    expect(app.store.state.entries[0].id).toBe('page')
+    expect((await journalState(app.store)).entries[0].id).toBe('page')
     expect(
         app.fetcher.mock.calls.filter(
             ([url, init]) =>
@@ -219,26 +227,34 @@ it('finds a complete image-bearing page after a lost create response without dup
 it('preflights expired image uploads before deleting existing writing during an update', async () => {
     const app = await setup()
     await run(app.publishing.publish('draft'))
-    app.save.status = 'unknown'
-    app.save.updateExisting = true
-    app.save.imageUploads![app.id].expiresAt = new Date(0).toISOString()
+    await editPublication(app.store, (save) => {
+        save.status = 'unknown'
+    })
+    await editPublication(app.store, (save) => {
+        save.updateExisting = true
+    })
+    await editPublication(app.store, (save) => {
+        save.imageUploads![app.id].expiresAt = new Date(0).toISOString()
+    })
     app.remote.failUpload = true
     app.fetcher.mockClear()
-    await expect(run(app.publishing.reconcile(app.save.id))).rejects.toThrow()
+    await expect(run(app.publishing.reconcile((await app.save()).id))).rejects.toThrow()
     expect(app.fetcher.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false)
     app.remote.failUpload = false
-    await run(app.publishing.reconcile(app.save.id))
+    await run(app.publishing.reconcile((await app.save()).id))
     expect(app.fetcher.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(true)
-    expect(toNotion((await run(app.notion.refreshEntry('page'))).body)).toEqual(toNotion(app.save.body))
+    expect(toNotion((await run(app.notion.refreshEntry('page'))).body)).toEqual(toNotion((await app.save()).body))
 })
 it('represents unsupported remote media explicitly and never confirms it as the expected image', async () => {
     const app = await setup()
     await run(app.publishing.publish('draft'))
-    app.save.status = 'unknown'
+    await editPublication(app.store, (save) => {
+        save.status = 'unknown'
+    })
     app.download.mockRejectedValue(new UnsupportedImageError('Unsupported image'))
     const entry = await run(app.notion.refreshEntry('page'))
     expect(JSON.stringify(entry.body)).toContain('Unsupported content: image')
-    await expect(run(app.publishing.reconcile(app.save.id))).rejects.toThrow('differs')
+    await expect(run(app.publishing.reconcile((await app.save()).id))).rejects.toThrow('differs')
     app.download.mockRejectedValue(new Error('Download unavailable'))
     await expect(run(app.notion.refreshEntry('page'))).rejects.toThrow('Download unavailable')
 })
@@ -253,34 +269,34 @@ it.each(['network', 'server'] as const)(
         expect(failure).toBeInstanceOf(kind === 'network' ? TransportError : HttpError)
         if (failure instanceof HttpError) expect(failure.status).toBe(500)
         if (failure instanceof TransportError) expect(failure.cause).toBeInstanceOf(Error)
-        expect(app.store.state.saves[0].status).toBe('failed')
-        expect(app.store.state.saves[0].error).toContain('page has not been changed')
+        expect((await journalState(app.store)).saves[0].status).toBe('failed')
+        expect((await journalState(app.store)).saves[0].error).toContain('page has not been changed')
         app.remote.networkUpload = false
         app.remote.failUpload = false
         await run(app.publishing.publish('draft'))
-        expect(app.store.state.saves.at(-1)?.status).toBe('confirmed')
+        expect((await journalState(app.store)).saves.at(-1)?.status).toBe('confirmed')
     }
 )
 it('preserves an image checkpoint durability failure before page dispatch', async () => {
     const app = await setup()
     const cause = new Error('Image progress checkpoint unavailable')
-    const persist = app.store.persist.bind(app.store)
+    const persist = app.store.checkpointPublication.bind(app.store)
     let unavailable = true
-    vi.spyOn(app.store, 'persist').mockImplementation(() => {
-        if (unavailable && app.store.state.saves.some((save) => save.imageUploads?.[app.id])) {
+    vi.spyOn(app.store, 'checkpointPublication').mockImplementation(async (...args) => {
+        if (unavailable && args[0].imageUploads?.[app.id]) {
             unavailable = false
             throw cause
         }
-        return persist()
+        return persist(...args)
     })
     const failure = await run(app.publishing.publish('draft')).catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(DurabilityError)
     if (failure instanceof DurabilityError) expect(failure.cause).toBe(cause)
-    expect(app.store.state.saves[0].status).toBe('failed')
+    expect((await journalState(app.store)).saves[0].status).toBe('failed')
     expect(
         app.fetcher.mock.calls.some(([url]) => (url instanceof Request ? url.url : String(url)).endsWith('/pages'))
     ).toBe(false)
     unavailable = false
     await run(app.publishing.publish('draft'))
-    expect(app.store.state.saves.at(-1)?.status).toBe('confirmed')
+    expect((await journalState(app.store)).saves.at(-1)?.status).toBe('confirmed')
 })

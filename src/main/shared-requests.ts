@@ -34,7 +34,7 @@ export function makeSharedRequests<K, A, E>(closedError: () => E) {
         )
         return <R>(
             key: K,
-            prepare: Effect.Effect<Effect.Effect<A, E, R>, never, Scope.Scope>,
+            prepare: Effect.Effect<Effect.Effect<A, E, R>, E, Scope.Scope>,
             ready: Effect.Effect<void> = Effect.void
         ): Effect.Effect<A, E, R> =>
             Effect.uninterruptibleMask((restore) =>

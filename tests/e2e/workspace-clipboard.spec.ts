@@ -96,9 +96,13 @@ test('workspace clipboard: native rich text, title, keyboard, read-only and pers
         await expect(body.locator('strong')).toHaveCount(2)
         await shot('04-reloaded-draft')
         await desktop.close()
-        const db = new DatabaseSync(join(desktop.profile, 'gitorian.sqlite'), { readOnly: true })
+        const db = new DatabaseSync(join(desktop.profile, 'journal.sqlite'), { readOnly: true })
         try {
-            const rows = db.prepare("SELECT json FROM state_records WHERE collection='drafts'").all()
+            const rows = db
+                .prepare(
+                    "SELECT json_object('id',id,'title',title,'body',json(body),'week',week,'version',version,'updatedAt',updatedAt) AS json FROM drafts"
+                )
+                .all()
             writeFileSync(info.outputPath('persisted-drafts.json'), JSON.stringify(rows, null, 2))
             expect(rows).toHaveLength(1)
             const saved = JSON.parse(String(rows[0].json))

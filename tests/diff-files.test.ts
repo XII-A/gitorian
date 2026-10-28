@@ -1,3 +1,4 @@
+import { journalState } from './database-fixtures'
 import { run } from './effect-fixtures'
 import { expect, it } from 'vitest'
 import { filesFromDiff } from '../src/main/diff-files'
@@ -30,14 +31,19 @@ it('opens a PR diff without file-list requests and reuses its files in hub detai
     const app = await workspace()
     try {
         app.remote.github = true
-        app.repository.trackingStart = '2026-10-05'
+        {
+            app.repository.trackingStart = '2026-10-05'
+            await app.store.saveRepository(app.repository)
+        }
         await run(app.service.refresh({ source: 'github' }))
-        const pr = app.store.state.activities.find((item) => item.kind === 'pr')!
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
         const start = app.remote.requests.length
         const reply = await run(app.service.handle({ type: 'details', activityId: pr.id }))
         expect(reply.diff).toBe(patch)
-        expect(pr.files).toEqual([{ name: 'a.ts', status: 'modified', lineStats: { additions: 1, deletions: 1 } }])
-        expect(pr.filesLoaded).toBe(true)
+        expect((await app.store.activity(pr.id))!.files).toEqual([
+            { name: 'a.ts', status: 'modified', lineStats: { additions: 1, deletions: 1 } }
+        ])
+        expect((await app.store.activity(pr.id))!.filesLoaded).toBe(true)
         expect(app.remote.requests.slice(start).some((request) => request.url.includes('/files'))).toBe(false)
         const loaded = app.remote.requests.length
         await run(app.service.handle({ type: 'details', activityId: pr.id, content: 'files' }))
@@ -51,14 +57,17 @@ it('keeps metadata-only PR details independent of patch download', async () => {
     const app = await workspace()
     try {
         app.remote.github = true
-        app.repository.trackingStart = '2026-10-05'
+        {
+            app.repository.trackingStart = '2026-10-05'
+            await app.store.saveRepository(app.repository)
+        }
         await run(app.service.refresh({ source: 'github' }))
-        const pr = app.store.state.activities.find((item) => item.kind === 'pr')!
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
         app.remote.failDiff = true
         const start = app.remote.requests.length
         await run(app.service.handle({ type: 'details', activityId: pr.id, content: 'files' }))
-        expect(pr.files).toEqual([{ name: 'a.ts', status: 'modified' }])
-        expect(app.store.state.diffs[pr.id]).toBeUndefined()
+        expect((await app.store.activity(pr.id))!.files).toEqual([{ name: 'a.ts', status: 'modified' }])
+        expect((await journalState(app.store)).diffs[pr.id]).toBeUndefined()
         expect(app.remote.requests.slice(start).map((request) => request.url)).toEqual([
             expect.stringContaining('/files?')
         ])

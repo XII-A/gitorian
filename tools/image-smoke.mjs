@@ -1,5 +1,5 @@
+import { seedJournal } from './seed-journal.mjs'
 import { app, dialog, ipcMain } from 'electron'
-import { DatabaseSync } from 'node:sqlite'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -42,10 +42,7 @@ const state = {
         layout: { order: ['activity', 'draft', 'details'], hidden: [], sizes: { activity: 24, draft: 46, details: 30 } }
     }
 }
-const database = new DatabaseSync(join(directory, 'gitorian.sqlite'))
-database.exec('CREATE TABLE state (id INTEGER PRIMARY KEY, json TEXT NOT NULL)')
-database.prepare('INSERT INTO state VALUES(1,?)').run(JSON.stringify(state))
-database.close()
+await seedJournal(directory, state)
 const png = await sharp(
     Buffer.from(
         '<svg width="1200" height="600"><rect width="1200" height="600" fill="#f4f1eb"/><rect x="100" y="200" width="280" height="160" rx="16" fill="#d1dfd1"/><rect x="800" y="200" width="280" height="160" rx="16" fill="#d3dceb"/><path d="M380 280H800" stroke="#3c4540" stroke-width="5"/><text x="170" y="295" font-size="32">Editor</text><text x="850" y="295" font-size="32">Journal</text><text x="410" y="150" font-size="42">Writing with images</text></svg>'

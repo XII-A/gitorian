@@ -110,9 +110,11 @@ app.quit = () => {
 const launchInstaller = async (_file, args) => {
     await pause(10)
     if (failLaunch) throw Object.assign(new Error('Simulated asynchronous installer launch failure'), { code: 'EPERM' })
-    const db = new DatabaseSync(join(directory, 'profile', 'gitorian.sqlite'), { readOnly: true })
+    const db = new DatabaseSync(join(directory, 'profile', 'journal.sqlite'), { readOnly: true })
     const drafts = db
-        .prepare("SELECT json FROM state_records WHERE collection='drafts'")
+        .prepare(
+            "SELECT json_object('id',id,'title',title,'body',json(body),'week',week,'version',version,'updatedAt',updatedAt) AS json FROM drafts"
+        )
         .all()
         .map((row) => JSON.parse(row.json))
     db.close()
