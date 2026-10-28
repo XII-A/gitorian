@@ -2,8 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-const version = '3.22.2'
-const commit = '6985be0cf461f0997f28f6798f469d01a2b46ca3'
+const version = '3.22.4'
+const commit = '5e8c4fe9e82fecdddb7812fa0090470b15a6fea0'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const destination = fileURLToPath(new URL('../.reference/effect', import.meta.url))
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))

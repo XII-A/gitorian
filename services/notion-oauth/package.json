@@ -8,7 +8,7 @@
         "build": "esbuild src/netlify.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/functions/oauth.mjs"
     },
     "dependencies": {
-        "effect": "3.22.2"
+        "effect": "3.22.4"
     },
     "devDependencies": {
         "esbuild": "0.25.12",
