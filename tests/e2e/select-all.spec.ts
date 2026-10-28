@@ -1,4 +1,5 @@
 import { test, expect } from './support/desktop'
+import type { Editor } from '@tiptap/react'
 
 test('select all: block-first selection, empty blocks, escalation and editing', async ({ desktop }) => {
     const { page, app, shot } = desktop
@@ -44,6 +45,20 @@ test('select all: block-first selection, empty blocks, escalation and editing', 
     await body.press('Control+A')
     await expect.poll(selected).toBe('Nested item')
     await body.press('End')
+    // Native caret movement reaches the editor asynchronously via selectionchange.
+    // Wait for the editing precondition before Enter can replace the old selection.
+    await expect
+        .poll(() =>
+            body.evaluate((element) => {
+                const { selection } = (element as HTMLElement & { editor: Editor }).editor.state
+                return {
+                    empty: selection.empty,
+                    offset: selection.$from.parentOffset,
+                    text: selection.$from.parent.textContent
+                }
+            })
+        )
+        .toEqual({ empty: true, offset: 'Nested item'.length, text: 'Nested item' })
     await body.press('Enter')
     await body.press('Enter')
     await body.press('Control+A')
