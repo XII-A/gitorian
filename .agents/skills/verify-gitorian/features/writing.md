@@ -17,7 +17,7 @@ Start or resume a weekly entry, edit structured writing, cite work, and recover 
 
 ## How to get to it (user POV)
 
-From the hub use `Write this weekâ€™s entry` or `Open journal` to create or resume the current week's draft. An empty week reached inside the workspace offers `Start this weekâ€™s entry`. In the workspace, edit Entry title and Journal body; inspect activity and use its citation action.
+From the hub use `Write this week’s entry` or `Open journal` to create or resume the current week's draft. An empty week reached inside the workspace offers `Start this week’s entry`. In the workspace, edit Entry title and Journal body; inspect activity and use its citation action.
 
 ## Driving it with Electron
 
