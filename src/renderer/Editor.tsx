@@ -1,3 +1,5 @@
+import { EmojiPicker } from './EmojiPicker'
+import { findEmoji, readEmojiHistory, recordEmoji, type EmojiCategory, type EmojiUse } from './emoji-catalog'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import {
     memo,
@@ -41,7 +43,8 @@ import {
     Quote,
     FileCode,
     BookTemplate,
-    ImagePlus
+    ImagePlus,
+    Smile
 } from 'lucide-react'
 import { Button } from './components/arc/button/button'
 import { Input } from './components/arc/input/input'
@@ -62,7 +65,8 @@ const blocks = [
     { id: 'ordered', label: 'Numbered list', icon: ListOrdered },
     { id: 'task', label: 'Checklist', icon: ListChecks },
     { id: 'quote', label: 'Quote', icon: Quote },
-    { id: 'code', label: 'Code block', icon: FileCode }
+    { id: 'code', label: 'Code block', icon: FileCode },
+    { id: 'emoji', label: 'Emoji', icon: Smile }
 ]
 function blockQuery(query: string) {
     const turn = /^turn(?:\s*into)?\s*/i.exec(query)
@@ -84,6 +88,7 @@ function blockQuery(query: string) {
 }
 
 interface Menu {
+    emoji?: boolean
     from: number
     to: number
     query: string
@@ -153,6 +158,22 @@ export const Editor = memo(function Editor({
     const validLink = !linkURL || /^(https?:|mailto:|tel:|\/|#)/i.test(linkURL)
     const [menu, setMenu] = useState<Menu>()
     const menuRef = useRef<Menu | undefined>(undefined)
+    const [emojiCategory, setEmojiCategory] = useState<EmojiCategory>('all')
+    const emojiCategoryRef = useRef<EmojiCategory>('all')
+    const [emojiHistory, setEmojiHistory] = useState<EmojiUse[]>([])
+    const emojiHistoryRef = useRef<EmojiUse[]>([])
+    useEffect(() => {
+        const glyphs = new Image()
+        glyphs.src = new URL('./assets/emoji-atlas.webp', import.meta.url).href
+        void glyphs.decode().catch(() => undefined)
+        const history = readEmojiHistory()
+        emojiHistoryRef.current = history
+        setEmojiHistory(history)
+    }, [])
+    const emojiResults = useMemo(
+        () => findEmoji(menu?.query ?? '', emojiCategory, emojiHistory),
+        [menu?.query, emojiCategory, emojiHistory]
+    )
     const [active, setActive] = useState(0)
     const activeRef = useRef(0)
     const host = useRef<HTMLDivElement>(null)
@@ -168,15 +189,21 @@ export const Editor = memo(function Editor({
             })
         } else setBar(undefined)
         const prefix = $from.parent.textBetween(0, $from.parentOffset, '\n')
-        const match = empty && !readOnly && !$from.parent.type.spec.code ? /\/([^/]*)$/.exec(prefix) : null
+        const colon = /(?:^|\s):([\p{L}\p{N}_+-]*)$/u.exec(prefix)
+        const match = empty && !readOnly && !$from.parent.type.spec.code ? (colon ?? /\/([^/]*)$/.exec(prefix)) : null
         if (!match) {
             menuRef.current = undefined
             setMenu(undefined)
             return
         }
+        if (colon && (!menuRef.current?.emoji || menuRef.current.from !== from - match[1].length - 1)) {
+            emojiCategoryRef.current = 'all'
+            setEmojiCategory('all')
+        }
         const rect = host.current?.getBoundingClientRect()
         const coords = editor.view.coordsAtPos(from)
         const next = {
+            emoji: !!colon,
             height: coords.bottom - coords.top,
             from: from - match[1].length - 1,
             to: from,
@@ -192,7 +219,14 @@ export const Editor = memo(function Editor({
     const apply = (editor: TiptapEditor, block: string) => {
         const current = menuRef.current
         if (!current) return
-        if (block === 'image') {
+        if (block === 'emoji') {
+            editor
+                .chain()
+                .focus()
+                .insertContentAt({ from: current.from, to: current.to }, { type: 'text', text: ':' })
+                .run()
+            return
+        } else if (block === 'image') {
             flushSync(() => {
                 editor.commands.deleteRange(current)
                 menuRef.current = undefined
@@ -221,6 +255,20 @@ export const Editor = memo(function Editor({
         } else applyBlockFormat(editor, block, current, blockQuery(current.query).convert)
         menuRef.current = undefined
         setMenu(undefined)
+    }
+    const insertEmoji = (target: TiptapEditor, emoji: string) => {
+        const current = menuRef.current
+        if (!current || readOnly) return
+        const history = recordEmoji(emojiHistoryRef.current, emoji)
+        emojiHistoryRef.current = history
+        setEmojiHistory(history)
+        menuRef.current = undefined
+        setMenu(undefined)
+        target
+            .chain()
+            .focus()
+            .insertContentAt({ from: current.from, to: current.to }, { type: 'text', text: emoji })
+            .run()
     }
     const editorRef = useRef<TiptapEditor | null>(null)
     const editor = useEditor({
@@ -277,9 +325,23 @@ export const Editor = memo(function Editor({
                 if (!current || !editorRef.current) return false
                 const filtered = availableBlocks.filter(
                     (block) =>
-                        (!blockQuery(current.query).convert || !['template', 'image'].includes(block.id)) &&
+                        (!blockQuery(current.query).convert || !['template', 'image', 'emoji'].includes(block.id)) &&
                         block.label.toLowerCase().includes(blockQuery(current.query).search)
                 )
+                if (current.emoji && event.key !== 'Escape') {
+                    const results = findEmoji(current.query, emojiCategoryRef.current, emojiHistoryRef.current)
+                    const movement: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 8, ArrowUp: -8 }
+                    if (movement[event.key] && results.length) {
+                        activeRef.current = (activeRef.current + movement[event.key] + results.length) % results.length
+                        setActive(activeRef.current)
+                        return true
+                    }
+                    if (['Enter', 'Tab'].includes(event.key) && results[activeRef.current]) {
+                        insertEmoji(editorRef.current, results[activeRef.current].emoji)
+                        return true
+                    }
+                    return false
+                }
                 if (event.key === 'Escape') {
                     setMenu(undefined)
                     menuRef.current = undefined
@@ -405,8 +467,8 @@ export const Editor = memo(function Editor({
         const attrs: Record<string, string> = menu
             ? {
                   'aria-expanded': 'true',
-                  'aria-controls': `${id}-blocks`,
-                  'aria-activedescendant': `${id}-block-${active}`
+                  'aria-controls': menu.emoji ? `${id}-emoji-options` : `${id}-blocks`,
+                  ...(menu.emoji && !emojiResults.length ? {} : { 'aria-activedescendant': `${id}-block-${active}` })
               }
             : { 'aria-expanded': 'false' }
         editor.setOptions({
@@ -419,7 +481,7 @@ export const Editor = memo(function Editor({
                 }
             }
         })
-    }, [editor, menu, id, active, readOnly, label])
+    }, [editor, menu, id, active, readOnly, label, emojiResults.length])
     useLayoutEffect(() => {
         const viewport = menuViewport.current
         const option = menuElement.current?.querySelector<HTMLElement>('[aria-selected="true"]')
@@ -432,7 +494,7 @@ export const Editor = memo(function Editor({
     if (!editor) return null
     const filtered = availableBlocks.filter(
         (block) =>
-            (!blockQuery(menu?.query ?? '').convert || !['template', 'image'].includes(block.id)) &&
+            (!blockQuery(menu?.query ?? '').convert || !['template', 'image', 'emoji'].includes(block.id)) &&
             block.label.toLowerCase().includes(blockQuery(menu?.query ?? '').search)
     )
     return (
@@ -527,11 +589,15 @@ export const Editor = memo(function Editor({
                     </PopoverAnchor>
                     <PopoverContent
                         ref={menuElement}
-                        className="ws-block-menu"
+                        className={menu.emoji ? 'ws-block-menu journal-emoji-menu' : 'ws-block-menu'}
                         id={`${id}-blocks`}
-                        role="listbox"
-                        aria-label={blockQuery(menu.query).convert ? 'Turn into' : 'Add blocks'}
-                        collisionBoundary={host.current?.closest('[role="region"]') ?? undefined}
+                        role={menu.emoji ? 'dialog' : 'listbox'}
+                        aria-label={
+                            menu.emoji ? 'Choose emoji' : blockQuery(menu.query).convert ? 'Turn into' : 'Add blocks'
+                        }
+                        collisionBoundary={
+                            menu.emoji ? undefined : (host.current?.closest('[role="region"]') ?? undefined)
+                        }
                         collisionPadding={8}
                         sideOffset={8}
                         onOpenAutoFocus={(event) => event.preventDefault()}
@@ -541,40 +607,57 @@ export const Editor = memo(function Editor({
                                 event.preventDefault()
                         }}
                     >
-                        <ScrollArea
-                            className="ws-block-options"
-                            label="Formatting options"
-                            maxHeight="min(320px, calc(var(--radix-popover-content-available-height) - var(--space-4) - 2px))"
-                            viewportRef={menuViewport}
-                            fade={8}
-                        >
-                            {filtered.length ? (
-                                filtered.map((block, index) => (
-                                    <button
-                                        type="button"
-                                        key={block.id}
-                                        role="option"
-                                        id={`${id}-block-${index}`}
-                                        aria-selected={active === index}
-                                        onMouseDown={(event) => event.preventDefault()}
-                                        onPointerMove={() => {
-                                            activeRef.current = index
-                                            setActive(index)
-                                        }}
-                                        onClick={() => apply(editor, block.id)}
-                                    >
-                                        <block.icon size={16} aria-hidden="true" />
-                                        <span>
-                                            {blockQuery(menu.query).convert
-                                                ? `Turn into ${block.label.toLowerCase()}`
-                                                : block.label}
-                                        </span>
-                                    </button>
-                                ))
-                            ) : (
-                                <p className="ws-block-empty">No matching formats</p>
-                            )}
-                        </ScrollArea>
+                        {menu.emoji ? (
+                            <EmojiPicker
+                                results={emojiResults}
+                                category={emojiCategory}
+                                active={active}
+                                id={id}
+                                onCategory={(category) => {
+                                    emojiCategoryRef.current = category
+                                    setEmojiCategory(category)
+                                    activeRef.current = 0
+                                    setActive(0)
+                                }}
+                                onReturnToEditor={() => editor.view.focus()}
+                                onChoose={(emoji) => insertEmoji(editor, emoji)}
+                            />
+                        ) : (
+                            <ScrollArea
+                                className="ws-block-options"
+                                label="Formatting options"
+                                maxHeight="min(320px, calc(var(--radix-popover-content-available-height) - var(--space-4) - 2px))"
+                                viewportRef={menuViewport}
+                                fade={8}
+                            >
+                                {filtered.length ? (
+                                    filtered.map((block, index) => (
+                                        <button
+                                            type="button"
+                                            key={block.id}
+                                            role="option"
+                                            id={`${id}-block-${index}`}
+                                            aria-selected={active === index}
+                                            onMouseDown={(event) => event.preventDefault()}
+                                            onPointerMove={() => {
+                                                activeRef.current = index
+                                                setActive(index)
+                                            }}
+                                            onClick={() => apply(editor, block.id)}
+                                        >
+                                            <block.icon size={16} aria-hidden="true" />
+                                            <span>
+                                                {blockQuery(menu.query).convert
+                                                    ? `Turn into ${block.label.toLowerCase()}`
+                                                    : block.label}
+                                            </span>
+                                        </button>
+                                    ))
+                                ) : (
+                                    <p className="ws-block-empty">No matching formats</p>
+                                )}
+                            </ScrollArea>
+                        )}
                     </PopoverContent>
                 </Popover>
             )}
