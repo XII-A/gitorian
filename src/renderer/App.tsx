@@ -46,8 +46,8 @@ function JournalApp() {
     const [reference, setReference] = useState<{ kind: string; id: string }>()
     const [sourcesOpen, setSourcesOpen] = useState(false)
     const { toast, update, dismiss } = useToastStack()
-    const workspaceVisible = useRef(false)
-    workspaceVisible.current = screen === 'workspace' && !settingsOpen && !reference
+    const commandSurfaceVisible = useRef(false)
+    commandSurfaceVisible.current = !settingsOpen && !reference
     const polling = useRef(false)
     const currentReply = useRef(reply)
     currentReply.current = reply
@@ -63,7 +63,7 @@ function JournalApp() {
                     const next = result.remotes as Record<string, string[]>
                     setRemotes((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next))
                 }
-                if (command.type !== 'state') dismiss(`workspace-command:${command.type}`)
+                if (command.type !== 'state') dismiss(`journal-command:${command.type}`)
                 setError('')
                 return result
             } catch (failure) {
@@ -81,13 +81,14 @@ function JournalApp() {
                         /* Keep the current draft available. */
                     }
                     setError('')
-                } else if (workspaceVisible.current && currentReply.current) {
+                } else if (commandSurfaceVisible.current && currentReply.current) {
                     // These surfaces own their recovery. Polling must not replay notifications.
                     if (!['state', 'details', 'history'].includes(command.type)) {
                         const refresh = command.type === 'refresh'
                         toast({
-                            id: `workspace-command:${command.type}`,
+                            id: `journal-command:${command.type}`,
                             type: 'error',
+                            duration: 0,
                             title: refresh ? 'Could not refresh activity' : 'Could not complete action',
                             action: {
                                 label: refresh ? 'Retry refresh' : 'Retry action',

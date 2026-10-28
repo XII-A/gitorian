@@ -2,14 +2,7 @@
 
 ## Header atmosphere
 
-Startup and workspace-to-hub entry blend the palette background in over Arc's 160ms token, then blend the first completed shader frame over its fallback with the 240ms enter token. No sky geometry moves. The desktop journey samples actual computed canvas opacity on both entry paths and requires intermediate frames before settling; reduced motion retains the static fallback with a short opacity reveal. The workspace still schedules no continuous shader draws.
-
-The hub sky extends 400px and animates; the workspace retains 110px and renders a frozen shader frame, redrawing only for actual palette or size changes. The desktop journey requires zero workspace shader draws over an idle interval and captures breadcrumb contrast under all four clock-controlled themes. Its foreground chevron remains independent of breadcrumb hover/focus color. Reduced motion still uses the CSS fallback. Route cycling expects an animated hub and a static workspace.
-
-
-After `pnpm build`, run `pnpm test:e2e header-atmosphere`. The disposable journal-only desktop journey controls computer-local time, requires day/dusk colors in the real hub and workspace, verifies static reduced motion, types into the journal, simulates WebGL loss and returns to the hub. The atmosphere follows today's computer clock independently of the journal timezone or selected week. No weather requests or location preferences exist. Hidden/offscreen headers dispose their renderer; context failure remains static until route remount. The canvas is capped at DPR 1, 600,000 pixels and at most 20 draws/second, with a static fallback after sustained slow scheduling.
-
-Retain screenshots, actions, trace and run.json with zero exit and cleanup.removed. `pnpm smoke:writing:release` also records header renderer/phase/backing dimensions alongside the existing saved-body and input-latency guards; a static result cannot establish animated performance. It is an isolated offscreen Electron replay, not physical GPU power measurement.
+Review hub/workspace skies manually for local-time colors, breadcrumb contrast, restrained motion, reduced motion and usable static fallback. Shader draw counts, entry opacity frames and route stress loops are not automated release gates. Writing, input, recovery and persistence remain covered by the journeys below.
 
 Start or resume a weekly entry, edit structured writing, cite work, and recover local writing without a Notion connection.
 
@@ -86,10 +79,6 @@ Run pnpm test:e2e select-all for paragraph, multiline code and list text selecti
 Run `pnpm build`, `pnpm verify doctor`, then `pnpm test:e2e workspace-save-errors draft-recovery`.
 `workspace-save-errors` owns journal-only autosave rejection: its Electron IPC registration fixture rejects only the selected draft command, retaining real renderer, preload and SQLite. From hub Open journal, type "Writing that could not be saved". Require one persistent **Could not save writing** toast with **Retry saving**, no footer error, recovery storage containing later edits, and a retry that still fails without losing input. Remove the injected rejection and retry; require the toast to disappear, normal saved status, reload retention and independent post-exit SQLite evidence. Keep numbered PNGs, source.patch, actions, trace, persisted-drafts.json and successful run.json with cleanup.removed. The conflict dialog remains owned by draft-recovery; inspector diff errors remain inline.
 
-The sky journey fixes only wall-clock time, leaving animation scheduling real. Entry verification captures the actual ready-canvas CSS transition and checks increasing intermediate opacity at 25% and 75% of its timeline. It imposes no minimum frame rate or shader startup deadline beyond the journey assertion timeout.
-
-The sky journey verifies visible cloud movement while the renderer remains animated. On slow machines it requires the static CSS sky, hidden canvas and zero continuing shader draws. On faster machines it deliberately blocks animation frames to exercise that same fallback before continuing writing and route recovery.
-
 ## Emoji
 
 Run `pnpm test:e2e emoji` in a disposable journal profile. Type `:rocket`, choose with Enter, then open `/emoji` from the formatter: it becomes a literal `:` with editing focus retained. Type to search, use the Arc category tabs, and check Recent ordering after repeated picks and renderer reload. Verify insertion replaces the trigger, unmatched queries show recovery copy, Escape retains text, and both inserted emoji survive autosave and reopening after reload. The journey retains browse, filtered, and inserted screenshots. Emoji are ordinary Unicode text, so existing save/export paths apply.
@@ -101,3 +90,4 @@ Cold-open verification retains `emoji-open-timing.json`, requires less than 200m
 The same owning journey exercises seven native wheel jumps from 800 to 2400px and direction reversals under 4x CPU slowdown. `emoji-scroll-frames.json` retains animation-frame timestamps, scroll offsets and intersecting emoji rows. Require no empty sampled viewports and no frame gap over 150ms. Split traces into `before-scroll-trace.zip`, `scroll-trace.zip`, and `trace.zip`: screenshot/DOM snapshot collection is disabled only during the timed portion because profiling showed snapshot traversal distorting frame timing. Input stays native through CDP wheel events. Retain the scrolled and hover screenshots after normal tracing resumes. Category controls stay above content with a 16px group gap; check bounds at 390, 768, 1024 and 1440px, 200% zoom and the RTL mirror.
 
 Flags are not offered: the catalog excludes the Flags category before building search and history lookups. The emoji journey seeds a formerly picked Syria flag, verifies no Flags tab or flag in All/Recent, and verifies `:syria` shows no matches. Stored journal text and the cached atlas stay unchanged.
+

@@ -1,13 +1,14 @@
 import { journalState } from './database-fixtures'
 import { run } from './effect-fixtures'
 import { expect, it } from 'vitest'
-import { writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { execFile } from 'node:child_process'
-import { commits, commitDetails, inspectRepository, githubRemote } from '../src/main/git'
+import { execFile, execFileSync } from 'node:child_process'
+import { commits, commitDetails, inspectRepository, githubRemote, indexCommits } from '../src/main/git'
 import { workspace } from './fixtures'
-import { inbox, weekOf } from '../src/shared/model'
+import { inbox, weekOf, type Repository } from '../src/shared/model'
 import { parseDiff } from 'react-diff-view'
 import { hasCachedDetails } from '../src/renderer/activity-cache'
 it('chooses a GitHub fetch source using upstream, origin, then another named remote', async () => {
@@ -250,5 +251,50 @@ it('uses the linked PR target when browsing a remote-tracking branch', async () 
         expect(app.repository.base).toBe('development')
     } finally {
         await app.close()
+    }
+})
+
+it('indexes a real full Git page and resumes without losing or duplicating the remaining history', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'gitorian-git-page-'))
+    try {
+        execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: directory, windowsHide: true })
+        let input = ''
+        for (let i = 1; i <= 2001; i++) {
+            const title = `Work ${i}`
+            input += `commit refs/heads/main\nmark :${i}\ncommitter Author <author@example.invalid> ${1791244800 + i} +0000\ndata ${title.length}\n${title}\n${i > 1 ? `from :${i - 1}\n` : ''}\n`
+        }
+        execFileSync('git', ['fast-import', '--quiet'], { cwd: directory, input, windowsHide: true })
+        const repository: Repository = {
+            id: 'page-fixture',
+            name: 'page-fixture',
+            path: directory,
+            remote: '',
+            base: 'main',
+            trackingStart: '2026-01-01',
+            emails: [],
+            available: true,
+            removed: false,
+            branchBases: {},
+            branches: ['main']
+        }
+        const first = await indexCommits(repository, {}, '2026-01-01')
+        expect(first.history).toHaveLength(2000)
+        expect(first.nextOffset).toBe(2000)
+        const last = await indexCommits(
+            repository,
+            first.refs,
+            '2026-01-01',
+            first.nextOffset,
+            first.excludedTips,
+            first.history
+        )
+        expect(last.nextOffset).toBeUndefined()
+        expect(last.items).toHaveLength(2001)
+        expect(new Set(last.items.map((item) => item.sha)).size).toBe(2001)
+        expect(last.items.map((item) => item.title)).toContain('Work 1')
+        expect(last.items.map((item) => item.title)).toContain('Work 2001')
+        expect(last.items.every((item) => item.branches.includes('main'))).toBe(true)
+    } finally {
+        await rm(directory, { recursive: true, force: true })
     }
 })

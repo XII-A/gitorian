@@ -8,7 +8,7 @@ Read [backend conventions](src/main/README.md) before changing main-process serv
 
 Read [testing](docs/testing.md) when adding or migrating tests, choosing a runner, or debugging a failed journey.
 
-- Prefer E2E verification through the real Electron UI, preload bridge, and local store. For feature changes, read and use [verify-gitorian](.agents/skills/verify-gitorian/SKILL.md), then update the affected feature recipes and entry points.
+- Automate consequential behavior and review visual polish manually, following the coverage policy in [testing](docs/testing.md). Prefer E2E verification through the real Electron UI, preload bridge, and local store. For feature changes, read and use [verify-gitorian](.agents/skills/verify-gitorian/SKILL.md), then update the affected feature recipes and entry points.
 - For complex features, choose realistic scenarios of medium or high complexity, including failure, recovery, and persistence where relevant. Define observable outcomes before implementation.
 - Retain reproducible E2E evidence: commands, fixture/precondition details, actions, resulting UI, side effects, and exit status. Keep artifacts under `.ai-docs/verification/` after cleanup.
 - Never write unit tests after writing the code. When isolated testing is necessary, first list the system's failure modes and define independent expected outcomes, then write the tests before implementation.

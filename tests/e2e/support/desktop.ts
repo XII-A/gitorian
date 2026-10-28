@@ -30,9 +30,10 @@ async function within<T>(operation: Promise<T>, milliseconds: number, message: s
     }
 }
 
-export const test = base.extend<{ desktop: Desktop; desktopEntry: string }>({
+export const test = base.extend<{ desktop: Desktop; desktopEntry: string; desktopRepositoryIds: string[] }>({
     desktopEntry: ['out/main/index.js', { option: true }],
-    desktop: async ({ desktopEntry }, use, info) => {
+    desktopRepositoryIds: [[], { option: true }],
+    desktop: async ({ desktopEntry, desktopRepositoryIds }, use, info) => {
         mkdirSync(info.outputDir, { recursive: true })
         const scratch = mkdtempSync(join(tmpdir(), 'gitorian-e2e-'))
         const profile = join(scratch, 'profile')
@@ -141,7 +142,9 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string }>({
             expect(doctor.profile).toBe(profile)
             expect(doctor.url).toBe(pathToFileURL(resolve('out/renderer/index.html')).href)
             expect(doctor.title).toBe('Gitorian')
-            expect(doctor.state.state.repositories).toEqual([])
+            expect(doctor.state.state.repositories.map((repository) => repository.id).sort()).toEqual(
+                [...desktopRepositoryIds].sort()
+            )
             expect(doctor.state.connections.github).toBe(false)
             expect(doctor.state.connections.notion).toBe(false)
             await use({
