@@ -1,6 +1,6 @@
 # Testing
 
-Choose the smallest existing scenario that proves the behavior. Prefer real Electron journeys for desktop features; Vitest covers domain/storage behavior and DOM interactions that do not require a desktop. Define observable outcomes before implementation and give overlapping behavior one owning scenario.
+For scenario selection, coverage, isolation, and handoff requirements, follow [coding standards](../CODING_STANDARDS.md).
 
 ## Run and debug
 
@@ -17,13 +17,13 @@ pnpm test:e2e:report                        # Latest HTML report
 pnpm check                                 # Required static checks and Vitest suite
 ```
 
-`pnpm verify repository-import` and `pnpm smoke:repository-import` select the same Playwright scenario. Other `pnpm verify` modes retain their existing harnesses; consult the [feature map](../.agents/skills/verify-gitorian/features/README.md) for native-window, integration, writing, installer and performance coverage. Those specialized tools still serve a purpose.
+`pnpm verify repository-import` and `pnpm smoke:repository-import` select the same Playwright scenario. Other `pnpm verify` modes retain their existing harnesses; consult the [feature map](../.agents/skills/verify-gitorian/features/README.md) for native-window, integration, writing, installer and performance coverage.
 
 Windows CI runs only for pull requests targeting `main`, `release`, or a branch under `release/`. PRs targeting feature branches and direct pushes do not trigger this workflow. Opening, updating commits, reopening or editing an eligible PR triggers CI; edits include retargeting a previously skipped PR to an eligible branch. Static checks and Vitest run alongside two desktop shards on separate Windows runners. Each shard compiles once, runs its share of the full migrated desktop suite with one worker, and uploads independently named desktop evidence even on failure. Matrix fail-fast is disabled so a failed shard does not cancel its sibling's evidence. The required `CI checks` gate succeeds only when checks and every desktop shard succeed; failed, cancelled or skipped lanes fail the gate.
 
 `pnpm build` retains typechecking for local and packaging callers. `pnpm build:compile` owns compilation without typechecking; CI uses it because `pnpm check` already owns the independently required typecheck. Do not use compilation success as proof of type safety. Electron is already installed by the project: a separate Playwright browser download is unnecessary for this suite. Electron automation is experimental; verify dependency upgrades against the real journey.
 
-To reproduce a shard, run `pnpm build`, then `pnpm test:e2e --shard=1/2` or `pnpm test:e2e --shard=2/2`. Run these sequentially on a shared desktop: disposable profiles do not isolate the native clipboard or window focus. CI parallelism relies on separate machines, not extra Playwright workers. Keep focused journeys during iteration and the required `pnpm check` before handoff.
+To reproduce a shard, run `pnpm build`, then `pnpm test:e2e --shard=1/2` or `pnpm test:e2e --shard=2/2`. Run these sequentially on a shared desktop: disposable profiles do not isolate the native clipboard or window focus. CI parallelism relies on separate machines, not extra Playwright workers.
 
 ## Author a desktop journey
 
@@ -31,7 +31,7 @@ Import `test` and `expect` from `tests/e2e/support/desktop`. Request its `deskto
 
 The fixture owns a disposable profile and scratch directory, the Electron process, clean launch environment, startup identity checks, logs, trace, failure screenshot and cleanup. Its interface provides `page`, `app`, `scratch`, `profile`, `chooseFolder(path, delay?)`, `shot(name)` and `close()`. The default entry is the compiled application. Use the `desktopEntry` test option only for process-local setup that must precede main-module loading; repository import holds real I/O until progress assertions and screenshots finish, then releases it. Keep feature fixtures and expected outcomes beside the scenario, rather than adding feature switches to the shared fixture.
 
-Override external dependencies at existing seams. `chooseFolder` replaces Electron's native picker response; discovery, Git, IPC and SQLite stay real. Setup through application commands is fixture preparation, not UI proof. Type/click through Playwright for user actions. Use `desktop.close()` before independent read-only SQLite checks; the profile remains available until fixture teardown. Close all query handles before cleanup. Use journal-only fixtures unless repository behavior is under test. External publishing still needs explicit authorization.
+Override external dependencies at existing seams. `chooseFolder` replaces Electron's native picker response; discovery, Git, IPC and SQLite stay real. Setup through application commands is fixture preparation, not UI proof. Type/click through Playwright for user actions. Use `desktop.close()` before independent read-only SQLite checks; the profile remains available until fixture teardown. Close all query handles before cleanup.
 
 Every run has a unique directory under `.ai-docs/verification/desktop/runs/`; reruns preserve prior evidence. The HTML report is replaced with the latest run. Failure selection is stored separately in `.ai-docs/verification/desktop/.last-run.json`, so `--last-failed` works across runs; `PLAYWRIGHT_LAST_RUN_OUTPUT_FILE` can override that location. Each scenario retains:
 
@@ -46,7 +46,7 @@ Success requires a passed test, clean Electron exit, `run.json.passed === true` 
 
 Keep Vitest for existing logic, Git, HTTP and storage tests. For DOM interaction scenarios, use a happy-dom environment with React Testing Library's `render`, `screen`, explicit `afterEach(cleanup)`, and `userEvent.setup()`. Import `@testing-library/jest-dom/vitest` for readable DOM assertions. See `tests/settings-rendering.test.ts` for an example. Explicit cleanup matters because Vitest globals are disabled.
 
-Assert visible behavior and retained edits rather than DOM object identity. Retain focused editor-engine tests where direct Tiptap commands are the intended interface. Simulated DOM tests cannot prove native input, layout, paint, motion timing, preload IPC or desktop persistence; keep those outcomes in their owning desktop journey.
+Retain focused editor-engine tests where direct Tiptap commands are the intended interface. Simulated DOM tests cannot prove native input, layout, paint, motion timing, preload IPC or desktop persistence; keep those outcomes in their owning desktop journey.
 
 ## Migrate remaining tools
 
