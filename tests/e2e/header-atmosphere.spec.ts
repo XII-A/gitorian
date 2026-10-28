@@ -67,7 +67,46 @@ test('header sky follows local time, respects reduced motion and survives route 
     const after = await skyPixels()
     const motion = before.reduce((sum, value, i) => sum + Math.abs(value - after[i]), 0) / before.length
     console.info(`Visible sky change over four seconds: ${motion}`)
-    expect(motion, 'Cloud motion must be visible after downsampling away shader grain').toBeGreaterThan(1)
+    if ((await sky.getAttribute('data-renderer')) === 'animated') {
+        expect(motion, 'Cloud motion must be visible after downsampling away shader grain').toBeGreaterThan(1)
+        // Reproduce sustained slow scheduling at the browser boundary, without
+        // changing the renderer's clock, threshold or fallback implementation.
+        await page.evaluate(async () => {
+            for (let frame = 0; frame < 40; frame++) {
+                await new Promise<void>((resolve) =>
+                    requestAnimationFrame(() => {
+                        const end = performance.now() + 150
+                        while (performance.now() < end) {
+                            /* simulate a busy renderer */
+                        }
+                        resolve()
+                    })
+                )
+            }
+        })
+    }
+    await expect(sky).toHaveAttribute('data-renderer', 'static')
+    await expect(sky.locator('canvas')).toHaveCSS('visibility', 'hidden')
+    await expect(sky).toBeVisible()
+    await expect(sky).toHaveCSS('--sky-0', '#295c86')
+    const fallbackDraws = await sky.locator('canvas').evaluate(
+        (canvas: HTMLCanvasElement) =>
+            new Promise<number>((resolve) => {
+                const gl = canvas.getContext('webgl')!
+                const original = gl.drawArrays.bind(gl)
+                let draws = 0
+                gl.drawArrays = (...args) => {
+                    draws++
+                    original(...args)
+                }
+                setTimeout(() => {
+                    gl.drawArrays = original
+                    resolve(draws)
+                }, 400)
+            })
+    )
+    expect(fallbackDraws, 'Slow scheduling fallback must stop shader work').toBe(0)
+    await shot('00-hub-slow-scheduling-fallback')
     await expect(page.getByRole('toolbar', { name: 'Sky preview' })).toHaveCount(0)
     const setHour = async (hour: number) => {
         await page.clock.setFixedTime(new Date(2026, 9, 28, hour))
