@@ -1,13 +1,13 @@
 # Testing
 
-For scenario selection, coverage, isolation, and handoff requirements, follow [coding standards](../CODING_STANDARDS.md).
+For scenario selection, coverage, isolation, and verification scope, follow [coding standards](../CODING_STANDARDS.md).
 
 ## Run and debug
 
 Use the Node/pnpm versions in `package.json`, install with `pnpm install --frozen-lockfile`, then:
 
 ```sh
-pnpm verify:release                       # Final check, compile, all desktop journeys, one result
+pnpm verify:release                       # Pre-PR check, compile, all desktop journeys, one result
 pnpm test tests/settings-rendering.test.ts   # Focused Vitest scenario
 pnpm build                                 # Compile before desktop tests
 pnpm test:e2e                               # All migrated desktop journeys
@@ -20,19 +20,19 @@ pnpm check                                 # Required static checks and Vitest s
 
 `pnpm verify repository-import` and `pnpm smoke:repository-import` select the same Playwright scenario. Other `pnpm verify` modes retain their existing harnesses; consult the [feature map](../.agents/skills/verify-gitorian/features/README.md) for native-window, integration, writing, installer and performance coverage. Those specialized tools still serve a purpose.
 
-Windows CI runs only for pull requests targeting `main`, `release`, or a branch under `release/`. PRs targeting feature branches and direct pushes do not trigger this workflow. Opening, updating commits, reopening or editing an eligible PR triggers CI; edits include retargeting a previously skipped PR to an eligible branch. Static checks and Vitest run alongside two desktop shards on separate Windows runners. Each shard compiles once, runs its share of the full migrated desktop suite with one worker, and uploads independently named desktop evidence even on failure. Matrix fail-fast is disabled so a failed shard does not cancel its sibling's evidence. The required `CI checks` gate succeeds only when checks and every desktop shard succeed; failed, cancelled or skipped lanes fail the gate.
+Windows CI runs only for pull requests targeting `main`, `release`, or a branch under `release/`. PRs targeting feature branches and direct pushes do not trigger this workflow. Opening, updating commits, reopening or editing an eligible PR triggers CI; edits include retargeting a previously skipped PR to an eligible branch. CI runs static checks and Vitest through `pnpm check`. The required `CI checks` gate succeeds only when that job succeeds; failed, cancelled or skipped checks fail the gate. Agents own Electron UI journey verification locally under the [verification scope policy](../CODING_STANDARDS.md#verification-scope).
 
-`pnpm build` retains typechecking for local and packaging callers. `pnpm build:compile` owns compilation without typechecking; CI uses it because `pnpm check` already owns the independently required typecheck. Do not use compilation success as proof of type safety. Electron is already installed by the project: a separate Playwright browser download is unnecessary for this suite. Electron automation is experimental; verify dependency upgrades against the real journey.
+`pnpm build` retains typechecking for local and packaging callers. `pnpm build:compile` owns compilation without typechecking. Do not use compilation success as proof of type safety. Electron is already installed by the project: a separate Playwright browser download is unnecessary for this suite. Electron automation is experimental; verify dependency upgrades against the real journey.
 
-To reproduce a shard, run `pnpm build`, then `pnpm test:e2e --shard=1/2` or `pnpm test:e2e --shard=2/2`. Run these sequentially on a shared desktop: disposable profiles do not isolate the native clipboard or window focus. CI parallelism relies on separate machines, not extra Playwright workers. Keep focused journeys during iteration; use `pnpm verify:release` for the final handoff.
+Run desktop journeys sequentially on a shared desktop: disposable profiles do not isolate the native clipboard or window focus.
 
 ## Final-revision verification
 
-`pnpm verify:release` owns a sequential check, compile, then desktop run. It sets `CI=1` for child commands so focused `.only` declarations fail, stops at the first failure and records source identity, commands, stage start/end times and exit status in `.ai-docs/verification/release/<run>/run.json`. Source identity includes HEAD and all tracked/nonignored untracked file contents; edits between stages fail verification even without a commit change. Stage new files before desktop evidence capture so the source patch is reproducible. A focused rerun is diagnostic; a final handoff requires a complete green run on the final source. Source edits after a green run require verification again.
+`pnpm verify:release` owns a sequential check, compile, then desktop run. It sets `CI=1` for child commands so focused `.only` declarations fail, stops at the first failure and records source identity, commands, stage start/end times and exit status in `.ai-docs/verification/release/<run>/run.json`. Source identity includes HEAD and all tracked/nonignored untracked file contents; edits between stages fail verification even without a commit change. Stage new files before desktop evidence capture so the source patch is reproducible. For the pre-PR gate, a focused rerun is diagnostic: require a complete green run on the final source. Source edits after a green run require full verification again before PR creation.
 
 The canonical `pnpm build`, `pnpm build:compile`, `pnpm test:e2e`, migrated `pnpm verify` journeys and `pnpm verify:release` share one checkout lock. Concurrent commands fail promptly before starting work. The lock reports owner PID/command; after interruption, verify that the owner and its children exited before removing the exact `.ai-docs/verification/checkout.lock` directory. Hard process-tree termination deliberately leaves ownership for inspection. No automatic stale-lock stealing or retries.
 
-This lock covers the canonical compiled build/automated desktop path. `pnpm dev`, direct tool/compiler/Playwright invocation, packaging beyond its build, and specialized legacy/native/profiling tools are exclusive manual work: stop them before release verification. CI shards use separate checkouts/machines, so their locks are independent. Do not bypass a busy lock with a raw command.
+This lock covers the canonical compiled build/automated desktop path. `pnpm dev`, direct tool/compiler/Playwright invocation, packaging beyond its build, and specialized legacy/native/profiling tools are exclusive manual work: stop them before release verification. Do not bypass a busy lock with a raw command.
 
 ## Coverage ownership
 
