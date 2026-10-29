@@ -1,3 +1,4 @@
+import { providerRemote, providerName } from '../shared/provider-accounts'
 import { useEffect, useState } from 'react'
 import type { Command, Reply, State } from '../shared/model'
 import { Button } from './components/arc/button/button'
@@ -59,7 +60,7 @@ export function AcquisitionStatus({
                                     <strong>
                                         {source === 'notion'
                                             ? 'Notion journal'
-                                            : `${repository?.name ?? 'Repository'} / ${source === 'github' ? 'GitHub' : 'Local Git'}`}
+                                            : `${repository?.name ?? 'Repository'} / ${source === 'remote' ? (repository && providerRemote(repository.remote) ? providerName(providerRemote(repository.remote)!.provider) : 'Remote') : 'Local Git'}`}
                                     </strong>
                                     <p>
                                         {waiting
@@ -76,7 +77,7 @@ export function AcquisitionStatus({
                                                     ? onSettings()
                                                     : run({
                                                           type: 'refresh',
-                                                          source: source as 'git' | 'github' | 'notion',
+                                                          source: source as 'git' | 'remote' | 'notion',
                                                           repositoryId
                                                       })
                                             }

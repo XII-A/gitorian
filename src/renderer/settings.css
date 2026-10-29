@@ -739,3 +739,51 @@
         gap: 0;
     }
 }
+
+.provider-connections {
+    display: grid;
+    gap: var(--space-6, 24px);
+}
+.provider-account-list {
+    display: grid;
+    gap: 12px;
+}
+.provider-account-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+}
+.provider-account-profile,
+.provider-account-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+.provider-account-profile strong {
+    display: block;
+    overflow-wrap: anywhere;
+    font-weight: 500;
+}
+.provider-account-status {
+    display: block;
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
+    margin-top: 4px;
+}
+.settings-provider-assignment {
+    display: grid;
+    gap: 8px;
+}
+@media (max-width: 600px) {
+    .provider-account-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+    .provider-account-actions {
+        align-self: flex-end;
+    }
+}

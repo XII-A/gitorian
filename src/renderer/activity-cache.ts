@@ -20,7 +20,7 @@ export function unchangedStateReply(current: Reply | undefined, result: Reply, c
         result.state.snapshotVersion !== undefined &&
         current.state.restoreId === result.state.restoreId &&
         current.state.snapshotVersion === result.state.snapshotVersion &&
-        current.connections.github === result.connections.github &&
+        current.connections.remote === result.connections.remote &&
         current.connections.notion === result.connections.notion &&
         current.connections.protectedStorage === result.connections.protectedStorage
     )
@@ -31,6 +31,6 @@ export function hasCachedDetails(state: State, activity: Activity, content: 'fil
     return (
         state.diffs[activity.id] !== undefined &&
         !isCombinedDiff(state.diffs[activity.id]) &&
-        (activity.kind !== 'pr' || (!!activity.revision && activity.diffRevision === activity.revision))
+        (activity.kind !== 'change-request' || (!!activity.revision && activity.diffRevision === activity.revision))
     )
 }

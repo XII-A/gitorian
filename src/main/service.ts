@@ -12,10 +12,11 @@ import { discoverRepositories, repositoryPathKey } from './repository-discovery'
 import { weekOf } from '../shared/model'
 import type { Command, Reply, RepositoryImportProgress, Repository, Selection } from '../shared/model'
 import type { JournalView } from './database/types'
+import { ProviderAccounts } from './provider-accounts'
 export interface JournalService {
     readonly reply: (extra?: Partial<Reply>, view?: JournalView) => Effect.Effect<Reply, JournalFailure>
     readonly suspend: Effect.Effect<void, never, Scope.Scope>
-    readonly stopWork: (source: 'git' | 'github' | 'repositories', repositoryId?: string) => Effect.Effect<void>
+    readonly stopWork: (source: 'git' | 'remote' | 'repositories', repositoryId?: string) => Effect.Effect<void>
     readonly addRepository: (path: string) => Effect.Effect<void, JournalFailure>
     readonly scanRepositories: (
         folder: string,
@@ -36,6 +37,7 @@ export const JournalLive = Layer.effect(JournalService, makeJournal())
 function makeJournal() {
     return Effect.gen(function* () {
         const store = yield* JournalStore
+        const accounts = yield* ProviderAccounts
         const acquisition = yield* ActivityAcquisition
         const publishing = yield* JournalPublishing
         const records = yield* ActivityRecords
@@ -82,14 +84,14 @@ function makeJournal() {
             ),
             Effect.asVoid
         )
-        const stopWork = (source: 'git' | 'github' | 'repositories', repositoryId?: string) =>
+        const stopWork = (source: 'git' | 'remote' | 'repositories', repositoryId?: string) =>
             Effect.gen(function* () {
                 if (source === 'repositories') importStopped = true
                 else yield* acquisition.stop(source, repositoryId)
             })
         const reply = (extra: Partial<Reply> = {}, view?: JournalView) =>
             local(async (): Promise<Reply> => ({
-                state: await store.readWorkspace(view),
+                state: { ...(await store.readWorkspace(view)), accounts: accounts.accounts() },
                 connections: connections(),
                 ...extra
             }))
@@ -109,7 +111,7 @@ function makeJournal() {
                     id: randomUUID(),
                     name: inspected.name,
                     path: inspected.path,
-                    remote: inspected.githubRemote,
+                    remote: inspected.selectedRemote,
                     base: inspected.base,
                     emails: inspected.email ? [inspected.email] : [],
                     trackingStart: weekOf(new Date(), store.config.settings),
@@ -236,7 +238,7 @@ function makeJournal() {
                                                 branches: inspected.branches,
                                                 remotes: inspected.remotes
                                             })
-                                            yield* local(() => store.saveRepository(tracked))
+                                            yield* local(() => store.updateRepositoryLocation(tracked))
                                             restored++
                                         } else existing++
                                     } else {
@@ -317,16 +319,9 @@ function makeJournal() {
                         return yield* reply()
                     case 'view':
                         return yield* reply({}, command.view)
-                    case 'repository': {
-                        const previous = yield* findRepository(command.repository.id)
-                        yield* local(() =>
-                            store.saveRepository(
-                                { ...command.repository, path: previous.path, available: previous.available },
-                                generation
-                            )
-                        )
+                    case 'repository':
+                        yield* local(() => store.updateRepositorySettings(command.repository, generation))
                         break
-                    }
                     case 'loadWeek':
                         yield* refresh({ since: command.since, missingOnly: true })
                         break
@@ -347,8 +342,8 @@ function makeJournal() {
                             .filter(Boolean)
                         const remotePrefix = remoteNames.find((name) => command.branch.startsWith(`${name}/`))
                         const branchName = remotePrefix ? command.branch.slice(remotePrefix.length + 1) : command.branch
-                        const linked = (yield* local(() => store.activities(repository.id, 'pr'))).find((a) =>
-                            a.branches.includes(branchName)
+                        const linked = (yield* local(() => store.activities(repository.id, 'change-request'))).find(
+                            (a) => a.branches.includes(branchName)
                         )
                         const target = linked?.base
                         const remoteTarget = target
@@ -402,7 +397,7 @@ function makeJournal() {
                     case 'select': {
                         const activity = yield* findActivity(command.activityId)
                         const selection: Selection = { activityId: activity.id }
-                        if (command.included && activity.kind === 'pr')
+                        if (command.included && activity.kind === 'change-request')
                             selection.revision = yield* records.capture(activity.id)
                         yield* local(() => store.setSelection(command.draftId, selection, command.included, generation))
                         break
@@ -436,7 +431,9 @@ function makeJournal() {
                     case 'coverage': {
                         const activity = yield* findActivity(command.activityId)
                         const revision =
-                            command.linked && activity.kind === 'pr' ? yield* records.capture(activity.id) : undefined
+                            command.linked && activity.kind === 'change-request'
+                                ? yield* records.capture(activity.id)
+                                : undefined
                         yield* local(() =>
                             store.setCoverage(
                                 { activityId: activity.id, revision },

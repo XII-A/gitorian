@@ -38,10 +38,18 @@ There is no released legacy schema to support. The initial baseline may be repla
 
 Publication intent is committed before HTTP writes. Interrupted pending attempts become unknown on reopen, and block another publication until reconciliation. Confirmation commits entry, coverage and draft linkage together. Notion setup recovery and credentials remain in their existing separate recovery/vault files, never in the journal tables.
 
-Backup format 3 includes documents, relational evidence, captured patches, image bytes and uncertain publication progress. It omits credentials and local repository paths. Restore validates JSON, images and relationships before committing a replacement; invalid input leaves the journal unchanged. Treat backups as private source/writing data. For a full SQLite recovery copy use SQLite's backup facility; copying a live main file alone can omit WAL commits.
+Backup format 4 includes provider account/assignment metadata (disconnected on restore), original project identity, documents, relational evidence, captured patches, image bytes and uncertain publication progress. Format 3 is converted only at the import seam. It omits credentials and local repository paths. Restore validates JSON, images and relationships before committing a replacement; invalid input leaves the journal unchanged. Treat backups as private source/writing data. For a full SQLite recovery copy use SQLite's backup facility; copying a live main file alone can omit WAL commits.
 
 Cache collection runs in bounded batches. Selected, covered and publication-linked revision patches remain protected. Unpinned patches expire after 30 days without access. The latest confirmed publication per draft and every unresolved attempt remain; older failed/confirmed attempts expire after 30 days. Imported images are durable user content, including assets owned only by an unsaved recovery copy. Automatic cache collection never deletes them; an explicit restore replaces the image set. Renderer-only recovery caches are not a database backup.
 
 ## Verification
 
 Read the [database verification recipe](../.agents/skills/verify-gitorian/features/database.md) and [testing conventions](testing.md). Storage tests exercise real workers and native SQLite, including before/after-commit worker death, stale versions, rollback, migration rejection, restore fencing, image retries and protected evidence. Desktop journeys verify the actual preload and renderer, then independently query the closed database.
+
+## Provider migrations
+
+Provider metadata and preparation records live in `provider_accounts` and `provider_preparations`. Repository account/project fields and activity provenance/canonical keys are stored alongside the existing relational evidence. Applied migrations remain immutable; upgrades preserve activity IDs, draft selections and cached revisions. Legacy PR names are converted at the migration/import seams, and legacy local qualification is retained when supported by local history.
+
+Drizzle executes its migration statements inside a transaction, where SQLite ignores foreign-key toggles. The database owner disables enforcement before entering that transaction to prevent table-rebuild cascade deletion, then restores enforcement. The provider migration set includes an in-transaction `pragma_foreign_key_check` assertion so invalid relationships roll back before commit. Normal application transactions always enforce foreign keys.
+
+Account activation is prepared before a vault write and committed with a captured prior generation/key. Recovery markers retain staged and predecessor keys until cleanup finishes. Disconnect leaves durable cleanup intent before erasing secrets. Restore clears prior provider credentials after validated journal replacement; backups omit vault keys and all secrets.

@@ -2,7 +2,7 @@ import { NotionRequests } from '../src/main/notion-request'
 import { Effect, ManagedRuntime } from 'effect'
 import { journalLayer } from '../src/main/journal-layer'
 import { JournalService } from '../src/main/service'
-import { GitHub } from '../src/main/github'
+import { RemoteContributions } from '../src/main/remote-contributions'
 import { Notion } from '../src/main/notion'
 import { run } from './effect-fixtures'
 import { randomUUID } from 'node:crypto'
@@ -48,25 +48,44 @@ export async function journal() {
     const directory = await mkdtemp(join(tmpdir(), 'gitorian-test-'))
     const store = await JournalDatabase.open(join(directory, 'tracking.sqlite'))
     const remote = transport()
+    const accountId = randomUUID()
+    const secrets = new Map<string, string>([
+        ['provider-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', JSON.stringify({ access_token: 'test-token' })]
+    ])
+    await store.prepareProviderAccount({
+        id: accountId,
+        provider: 'github',
+        host: 'github.com',
+        userId: '42',
+        username: 'me',
+        emails: ['first@example.com'],
+        generation: 1,
+        status: 'connected',
+        credentialKey: 'provider-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+    })
+    await store.activateProviderAccount(accountId, 1)
+    await store.finishProviderAccount(accountId)
     const runtime = ManagedRuntime.make(
         journalLayer({
             store,
             fetcher: (...args) => remote.fetch(...args),
-            githubCredential: () => 'test-token',
-            setGitHubCredential: (token) => {
-                remote.token = token
+            vault: {
+                get: (key) => secrets.get(key) ?? '',
+                set: (key, value) => {
+                    secrets.set(key, value)
+                },
+                protected: () => true
             },
             notionToken: () => Effect.succeed('test-token'),
-            connections: () => ({ github: remote.github, notion: true, protectedStorage: true })
+            connections: () => ({ remote: remote.github, notion: true, protectedStorage: true })
         })
     )
     const [service, github, notion, requests] = await Promise.all([
         runtime.runPromise(JournalService),
-        runtime.runPromise(GitHub),
+        runtime.runPromise(RemoteContributions),
         runtime.runPromise(Notion),
         runtime.runPromise(NotionRequests)
     ])
-    await store.setGitHubLogin('me')
     await store.setDestination({ kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' })
     return {
         directory,
@@ -93,7 +112,15 @@ export async function workspace() {
         await run(app.service.addRepository(app.directory))
         const repository = app.store.config.repositories[0]
         repository.remote = 'https://github.com/example/project.git'
+        repository.accountId = app.store.config.accounts[0].id
+        repository.accountGeneration = 1
         await app.store.saveRepository(repository)
+        const { remoteConfiguration } = await import('../src/shared/provider-accounts')
+        await app.store.assignProviderAccount(repository.id, remoteConfiguration(app.store.config.repositories[0]), {
+            accountId: repository.accountId,
+            accountGeneration: 1,
+            assignment: 'automatic'
+        })
         return { ...app, git, repository }
     } catch (error) {
         await app.close()

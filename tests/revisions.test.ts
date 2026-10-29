@@ -23,7 +23,7 @@ it('pins a selected PR revision, retains coverage after equivalent rewrites, and
             await app.store.saveRepository(app.repository)
         }
         await run(app.service.handle({ type: 'refresh' }))
-        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         expect((await app.store.activity(pr.id))!.base).toBe('main')
         expect(
             (await journalState(app.store)).activities.some((item) => item.kind === 'review' && item.author === 'me')
@@ -44,7 +44,9 @@ it('pins a selected PR revision, retains coverage after equivalent rewrites, and
         await run(app.service.handle({ type: 'publish', draftId: draft.id }))
         expect((await journalState(app.store)).coverage[0].revision).toBe(selectedRevision)
         expect(coveredEntries(await journalState(app.store), (await app.store.activity(pr.id))!)).toEqual([])
-        expect(inbox(await journalState(app.store), '2026-10-05').filter((item) => item.kind === 'pr')).toHaveLength(1)
+        expect(
+            inbox(await journalState(app.store), '2026-10-05').filter((item) => item.kind === 'change-request')
+        ).toHaveLength(1)
         app.remote.patch = patch.replace('1111111..2222222', '9999999..aaaaaaa').replace('@@ -1 +1 @@', '@@ -9 +9 @@')
         app.remote.head = 'f'.repeat(40)
         await run(app.service.handle({ type: 'refresh' }))
@@ -71,7 +73,7 @@ it('does not infer whole-PR coverage from commits and suppresses a known integra
             await app.store.saveRepository(app.repository)
         }
         await run(app.service.handle({ type: 'refresh' }))
-        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         const commit = (await journalState(app.store)).activities.find((item) => item.sha === 'd'.repeat(40))!
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         await run(
@@ -173,7 +175,7 @@ it('does not import newly discovered old PR work as fresh but detects later net 
         }
         const week = weekOf(new Date(), (await journalState(app.store)).settings)
         await run(app.service.handle({ type: 'refresh' }))
-        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         expect(inbox(await journalState(app.store), week).some((item) => item.id === pr.id)).toBe(false)
         expect((await journalState(app.store)).diffs[pr.id]).toBeUndefined()
         app.remote.head = 'e'.repeat(40)
@@ -224,7 +226,7 @@ it('conservatively surfaces changed references for old PRs whose patches cannot 
         }
         const week = weekOf(new Date(), (await journalState(app.store)).settings)
         await run(app.service.handle({ type: 'refresh' }))
-        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         expect(inbox(await journalState(app.store), week).some((item) => item.id === pr.id)).toBe(false)
         await run(app.service.handle({ type: 'refresh' }))
         expect(inbox(await journalState(app.store), week).some((item) => item.id === pr.id)).toBe(false)
@@ -241,7 +243,7 @@ it('identifies an old cached patch after a failed refresh rather than presenting
     try {
         app.remote.github = true
         await run(app.service.handle({ type: 'refresh' }))
-        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         await run(app.service.handle({ type: 'details', activityId: pr.id }))
         const cachedRevision = (await app.store.activity(pr.id))!.diffRevision
         app.remote.head = 'f'.repeat(40)
@@ -261,7 +263,7 @@ it('compares the final integration patch separately from the covered pre-merge P
     try {
         app.remote.github = true
         await run(app.service.handle({ type: 'refresh' }))
-        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         await run(
             app.service.handle({
@@ -288,7 +290,7 @@ it('retains the whole PR patch and uncertain coverage for an unproven linear mer
     try {
         app.remote.github = true
         await run(app.service.handle({ type: 'refresh' }))
-        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         await run(
             app.service.handle({

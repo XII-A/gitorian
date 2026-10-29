@@ -106,7 +106,7 @@ export function RelatedActivities({
                     iconVariant="plain"
                     icon={<GitBranch size={32} strokeWidth={1.5} aria-hidden="true" />}
                     title="No related activity"
-                    description="No other captured activity shares this branch or pull request."
+                    description="No other captured activity shares this branch or request."
                 />
             )}
         </ScrollArea>

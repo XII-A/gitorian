@@ -12,8 +12,13 @@ export function ActivityCitationCard({
     repositoryName: string
     ready?: boolean
 }) {
-    const pullNumber = activity.prId?.match(/(?:^|[:/])(\d+)$/)?.[1]
-    const reference = activity.kind === 'commit' ? activity.sha?.slice(0, 7) : pullNumber ? `#${pullNumber}` : undefined
+    const pullNumber = activity.remoteSource?.number ?? activity.changeRequestId?.match(/(?:^|[:/])(\d+)$/)?.[1]
+    const reference =
+        activity.kind === 'commit'
+            ? activity.sha?.slice(0, 7)
+            : pullNumber
+              ? `${activity.remoteSource?.provider === 'gitlab' ? '!' : '#'}${pullNumber}`
+              : undefined
     return (
         <div className="activity-citation-card" data-ready={ready || undefined}>
             <div className="activity-citation-heading">

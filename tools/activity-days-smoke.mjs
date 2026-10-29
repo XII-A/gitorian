@@ -83,9 +83,9 @@ app.on('browser-window-created', (_, window) => {
             })
             await wait(`!!document.querySelector('[aria-label="Open settings"]')`)
             const initial = await js(
-                `window.journal.invoke({type:'state'}).then(r=>({repositories:r.state.repositories.length,activities:r.state.activities.length,github:r.connections.github,notion:r.connections.notion}))`
+                `window.journal.invoke({type:'state'}).then(r=>({repositories:r.state.repositories.length,activities:r.state.activities.length,github:r.connections.remote,notion:r.connections.notion}))`
             )
-            assert.deepEqual(initial, { repositories: 0, activities: 0, github: false, notion: false })
+            assert.deepEqual(initial, { repositories: 0, activities: 0, remote: false, notion: false })
             assert.equal(app.getPath('userData'), join(scratch, 'profile'))
             assert.ok(window.webContents.getURL().startsWith(pathToFileURL(resolve('out/renderer/index.html')).href))
             writeFileSync(

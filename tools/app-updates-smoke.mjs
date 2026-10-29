@@ -203,7 +203,7 @@ app.on('browser-window-created', (_, window) => {
             await wait(`!!document.querySelector('[aria-label="Open settings"]') && !!window.journal.appUpdates`)
             const initial = await js(`window.journal.invoke({type:'state'})`)
             assert(
-                initial.state.repositories.length === 0 && !initial.connections.github && !initial.connections.notion,
+                initial.state.repositories.length === 0 && !initial.connections.remote && !initial.connections.notion,
                 'Empty journal-only fixture without personal accounts'
             )
             await hidden('Hub has no update button before an update is ready')

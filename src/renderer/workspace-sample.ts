@@ -94,7 +94,13 @@ export function sampleState(week: string): State {
         id: `sample:${week}:${index}`,
         repositoryId: `sample-repo-${index < 8 ? 0 : index < 18 ? 1 : 2}`,
         kind:
-            index === 1 ? 'merged' : [5, 12].includes(index) ? 'review' : [8, 15, 22].includes(index) ? 'pr' : 'commit',
+            index === 1
+                ? 'merged'
+                : [5, 12].includes(index)
+                  ? 'review'
+                  : [8, 15, 22].includes(index)
+                    ? 'change-request'
+                    : 'commit',
         title,
         date: `${offsetDay(week, index < 3 ? 4 : index < 8 ? 3 : index < 14 ? 2 : index < 19 ? 1 : 0)}T${String(14 - (index % 6)).padStart(2, '0')}:14:00+03:00`,
         author: 'Alex',
@@ -102,7 +108,7 @@ export function sampleState(week: string): State {
         sha: index === 0 ? 'a3f9c218912ab0' : `7be01d${index.toString(16)}8912ab0`,
         ...(index === 1 || [8, 15, 22].includes(index)
             ? {
-                  prId: `sample/pr/${142 - index}`,
+                  changeRequestId: `sample/pr/${142 - index}`,
                   url: `https://github.com/gitorian-example/mobile-app/pull/${142 - index}`
               }
             : {}),

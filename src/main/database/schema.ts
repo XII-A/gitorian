@@ -11,7 +11,21 @@ import {
     uniqueIndex,
     type AnySQLiteColumn
 } from 'drizzle-orm/sqlite-core'
-import type { Destination, JournalNode, Repository, State } from '../../shared/model'
+import type { Activity, Destination, JournalNode, Repository, State } from '../../shared/model'
+import type { ProviderAccount, ProviderPreparation } from '../../shared/provider-accounts'
+
+export const providerAccounts = sqliteTable('provider_accounts', {
+    id: text().primaryKey(),
+    identity: text().notNull().unique(),
+    metadata: text({ mode: 'json' }).$type<ProviderAccount>().notNull()
+})
+export const providerPreparations = sqliteTable('provider_preparations', {
+    id: text().primaryKey(),
+    metadata: text({ mode: 'json' }).$type<ProviderPreparation>().notNull()
+})
+export const credentialCleanup = sqliteTable('provider_credential_cleanup', {
+    key: text().primaryKey()
+})
 
 export const journal = sqliteTable(
     'journal',
@@ -19,6 +33,7 @@ export const journal = sqliteTable(
         id: integer().primaryKey(),
         generation: text().notNull(),
         sequence: integer().notNull(),
+        providerUpgrade: integer({ mode: 'boolean' }).notNull().default(false),
         settings: text({ mode: 'json' }).$type<State['settings']>().notNull(),
         lastRefreshed: text(),
         lastRefreshAttempt: text(),
@@ -35,6 +50,10 @@ export const repositories = sqliteTable(
         name: text().notNull(),
         path: text().notNull(),
         remote: text().notNull(),
+        accountId: text(),
+        providerProjectId: text(),
+        accountGeneration: integer(),
+        assignment: text({ enum: ['automatic', 'explicit'] }),
         base: text().notNull(),
         trackingStart: text().notNull(),
         available: integer({ mode: 'boolean' }).notNull(),
@@ -82,12 +101,12 @@ export const activities = sqliteTable(
         repositoryId: text()
             .notNull()
             .references(() => repositories.id),
-        kind: text({ enum: ['commit', 'pr', 'review', 'opened', 'merged'] }).notNull(),
+        kind: text({ enum: ['commit', 'change-request', 'review', 'opened', 'merged'] }).notNull(),
         title: text().notNull(),
         occurredAt: integer().notNull(),
         author: text().notNull(),
         sha: text(),
-        prId: text(),
+        changeRequestId: text('prId'),
         url: text(),
         description: text().notNull(),
         revision: text(),
@@ -98,6 +117,10 @@ export const activities = sqliteTable(
         fingerprint: text(),
         integrationSha: text(),
         sourceVersion: text(),
+        revisionSource: text({ mode: 'json' }).$type<Activity['revisionSource']>(),
+        localQualified: integer({ mode: 'boolean' }).notNull().default(false),
+        remoteIdentity: text(),
+        remoteSource: text({ mode: 'json' }).$type<Activity['remoteSource']>(),
         filesLoaded: integer({ mode: 'boolean' }).notNull(),
         disposition: text({ enum: ['inbox', 'deferred', 'dismissed'] }).notNull(),
         deferUntil: text(),
@@ -112,7 +135,8 @@ export const activities = sqliteTable(
     (t) => [
         index('activity_repository_date').on(t.repositoryId, t.occurredAt, t.id),
         index('activity_date').on(t.occurredAt, t.id),
-        index('activity_pr').on(t.repositoryId, t.prId),
+        uniqueIndex('activity_remote_identity').on(t.repositoryId, t.remoteIdentity),
+        index('activity_pr').on(t.repositoryId, t.changeRequestId),
         index('activity_inbox').on(t.disposition, t.deferUntil, t.occurredAt),
         foreignKey({
             columns: [t.id, t.revision],
@@ -124,7 +148,7 @@ export const activities = sqliteTable(
             foreignColumns: [revisions.activityId, revisions.id],
             name: 'activity_cached_revision'
         }),
-        check('activity_kind', sql`${t.kind} IN ('commit','pr','review','opened','merged')`),
+        check('activity_kind', sql`${t.kind} IN ('commit','change-request','review','opened','merged')`),
         check('activity_disposition', sql`${t.disposition} IN ('inbox','deferred','dismissed')`),
         check('activity_flags', sql`${t.explicit} IN (0,1) AND ${t.filesLoaded} IN (0,1) AND ${t.journaled} IN (0,1)`)
     ]
@@ -311,7 +335,7 @@ export const acquisition = sqliteTable(
         key: text().primaryKey(),
         status: text().notNull(),
         retryAt: text(),
-        provider: text({ enum: ['git', 'github', 'notion'] }).notNull(),
+        provider: text({ enum: ['git', 'remote', 'notion'] }).notNull(),
         repositoryId: text().references(() => repositories.id, { onDelete: 'cascade' }),
         cursor: text({ mode: 'json' })
             .$type<
@@ -327,7 +351,7 @@ export const acquisition = sqliteTable(
         check('acquisition_cursor', sql`json_valid(${t.cursor})`),
         check(
             'acquisition_source',
-            sql`(${t.provider}='notion' AND ${t.repositoryId} IS NULL) OR (${t.provider} IN ('git','github') AND ${t.repositoryId} IS NOT NULL)`
+            sql`(${t.provider}='notion' AND ${t.repositoryId} IS NULL) OR (${t.provider} IN ('git','remote') AND ${t.repositoryId} IS NOT NULL)`
         )
     ]
 )

@@ -178,6 +178,19 @@ export const Editor = memo(function Editor({
     const activeRef = useRef(0)
     const host = useRef<HTMLDivElement>(null)
     const id = useId()
+    const menuOpen = !!menu
+    useLayoutEffect(() => {
+        if (!menuOpen) return
+        const locked: { element: HTMLElement; overflow: string }[] = []
+        for (let element = host.current?.parentElement; element; element = element.parentElement) {
+            if (!/(auto|scroll)/.test(getComputedStyle(element).overflowY)) continue
+            locked.push({ element, overflow: element.style.overflowY })
+            element.style.overflowY = 'hidden'
+        }
+        return () => {
+            for (const { element, overflow } of locked) element.style.overflowY = overflow
+        }
+    }, [menuOpen])
     const updateMenu = (editor: TiptapEditor) => {
         const { $from, empty, from } = editor.state.selection
         if (!empty && !readOnly && !$from.parent.type.spec.code && editor.state.selection instanceof TextSelection) {
@@ -572,6 +585,7 @@ export const Editor = memo(function Editor({
             )}
             {menu && (
                 <Popover
+                    key={menu.emoji ? 'emoji' : 'blocks'}
                     open
                     onOpenChange={(open) => {
                         if (!open) {

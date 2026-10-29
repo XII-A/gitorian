@@ -37,7 +37,7 @@ const activity = (id: string, title: string, body: string): Activity => ({
     id,
     title,
     description: body,
-    kind: 'pr',
+    kind: 'change-request',
     repositoryId: 'fixture',
     date: new Date().toISOString(),
     author: 'fixture-author',
@@ -47,7 +47,7 @@ const activity = (id: string, title: string, body: string): Activity => ({
     disposition: 'inbox',
     explicit: false,
     deletedBranches: [],
-    pullRequest: { status: 'open', openedAt: new Date().toISOString(), commitDates: [] }
+    changeRequest: { status: 'open', openedAt: new Date().toISOString(), commitDates: [] }
 })
 state.activities = [
     activity('valid', 'Mermaid publishing workflow', description),

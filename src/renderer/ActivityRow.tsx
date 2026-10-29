@@ -12,7 +12,7 @@ interface Props extends ComponentPropsWithRef<'button'> {
 
 const labels: Record<Activity['kind'], string> = {
     commit: 'Commit',
-    pr: 'Pull request',
+    'change-request': 'Pull request',
     review: 'Review',
     opened: 'Opened',
     merged: 'Merged'
@@ -21,8 +21,13 @@ const labels: Record<Activity['kind'], string> = {
 export function ActivityRow({ activity, repositoryName, connected, className, ...props }: Props) {
     const Icon =
         activity.kind === 'commit' ? GitCommitHorizontal : activity.kind === 'merged' ? GitMerge : GitPullRequest
-    const pullNumber = activity.prId?.match(/(?:^|[:/])(\d+)$/)?.[1]
-    const reference = activity.kind === 'commit' ? activity.sha?.slice(0, 7) : pullNumber ? `#${pullNumber}` : undefined
+    const pullNumber = activity.remoteSource?.number ?? activity.changeRequestId?.match(/(?:^|[:/])(\d+)$/)?.[1]
+    const reference =
+        activity.kind === 'commit'
+            ? activity.sha?.slice(0, 7)
+            : pullNumber
+              ? `${activity.remoteSource?.provider === 'gitlab' ? '!' : '#'}${pullNumber}`
+              : undefined
     return (
         <button
             {...props}
@@ -56,7 +61,11 @@ export function ActivityRow({ activity, repositoryName, connected, className, ..
                     size="sm"
                     animateChanges={false}
                 >
-                    {labels[activity.kind]}
+                    {activity.remoteSource?.provider === 'gitlab' && activity.kind === 'change-request'
+                        ? 'Merge request'
+                        : activity.remoteSource?.provider === 'gitlab' && activity.kind === 'review'
+                          ? 'Review comment'
+                          : labels[activity.kind]}
                 </Badge>
                 {reference && <span className="activity-row-reference">{reference}</span>}
             </span>

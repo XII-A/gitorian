@@ -1,4 +1,4 @@
-﻿import { test, expect } from './support/desktop'
+import { test, expect } from './support/desktop'
 import { writeFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'

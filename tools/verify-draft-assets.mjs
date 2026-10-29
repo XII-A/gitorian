@@ -262,7 +262,7 @@ try {
     report.initial = await js(`window.journal.invoke({type:'state'})`)
     assert(
         report.initial.state.drafts.length === 0 &&
-            !report.initial.connections.github &&
+            !report.initial.connections.remote &&
             !report.initial.connections.notion,
         'Installed app starts with disposable data and no credentials'
     )

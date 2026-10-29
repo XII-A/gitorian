@@ -17,7 +17,7 @@ describe('weekly activity and sample references', () => {
         })
         expect(found.map((activity) => activity.id)).toEqual(['sample:2026-10-05:0'])
         expect(
-            filterWorkspaceActivity(state, '2026-10-05', { ...filters, kind: 'pr' }).every(
+            filterWorkspaceActivity(state, '2026-10-05', { ...filters, kind: 'change-request' }).every(
                 (activity) => activity.kind !== 'commit'
             )
         ).toBe(true)

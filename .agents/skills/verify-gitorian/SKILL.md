@@ -7,9 +7,9 @@ description: Verify Gitorian Electron features through real desktop journeys. Us
 
 Read the coverage policy in [testing](../../../docs/testing.md) and [the feature map](features/README.md), select the affected behavioral entry points, and define their observable outcomes before changing code. Visual appearance and animation timing are manual review; keep automated journeys focused on consequential behavior. The primary surface is the Electron desktop app; Git, SQLite, and integration HTTP adapters support it. A renderer-only browser preview cannot prove desktop IPC or persistence.
 
-## Final handoff
+## Verification scope
 
-Run `pnpm verify:release` after source changes and reviews are complete. Require its complete result to pass; focused reruns are diagnostic. The command owns check, compile and desktop sequencing and writes `.ai-docs/verification/release/<run>/run.json`. Follow [testing](../../../docs/testing.md#final-revision-verification) for checkout ownership and interrupted-run recovery.
+Follow [coding standards](../../../CODING_STANDARDS.md#verification-scope) to choose focused verification or the full pre-PR run. For focused work, select the affected feature-map entry points and require their observable outcomes and cleanup to pass. For full verification, follow [testing](../../../docs/testing.md#final-revision-verification), including checkout ownership and interrupted-run recovery.
 
 ## Launch
 
@@ -67,7 +67,7 @@ Inspect the printed `run.json` after every run, including failures. Require `cle
 
 - `pnpm verify doctor` runs the read-only build check in `tools/verify.mjs`.
 - `pnpm verify repository-import` runs launch, live doctor, drive, evidence, persistence check, and cleanup in one command.
-- `pnpm verify connections` drives the [connections journey](features/connections.md) using a journal-only disposable profile and simulated GitHub HTTP/browser boundaries.
+- `pnpm verify connections` drives the [connections journey](features/connections.md) using the provider-account Electron journey followed by the Notion journey, with disposable profiles and simulated provider HTTP/browser boundaries.
 - Other existing harness commands and concrete entry points are indexed in [features/README.md](features/README.md).
 
 Maintain the map with the app: update changed selectors, entry points, preconditions, and outcomes; rerun affected journeys and retain their evidence. A feature is verified only when every claimed entry point has an observed result.
