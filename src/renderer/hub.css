@@ -181,6 +181,22 @@
         transform var(--duration-standard) var(--ease-in-out),
         opacity var(--duration-fast) var(--ease-standard);
 }
+.hub-filter-dock::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--space-3)) calc(-1 * var(--space-3)) calc(-1 * var(--space-5));
+    z-index: -2;
+    pointer-events: none;
+    background: color-mix(in oklab, var(--background) 85%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    mask-image: linear-gradient(to bottom, black 0%, black calc(100% - var(--space-5)), transparent 100%);
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.hub-filter-dock[data-stuck]::after {
+    opacity: 1;
+}
 .hub-filter-dock[data-stuck]::before {
     opacity: 1;
     transform: scale(1);

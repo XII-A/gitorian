@@ -1,7 +1,6 @@
 import type { ButtonHTMLAttributes } from 'react'
 import { ChevronRight, Folder, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest } from 'lucide-react'
 import type { Activity } from '../shared/model'
-import { Badge } from './components/arc/badge/badge'
 import './activity-row.css'
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -28,6 +27,12 @@ export function ActivityRow({ activity, repositoryName, connected, className, ..
             : pullNumber
               ? `${activity.remoteSource?.provider === 'gitlab' ? '!' : '#'}${pullNumber}`
               : undefined
+    const kindLabel =
+        activity.remoteSource?.provider === 'gitlab' && activity.kind === 'change-request'
+            ? 'Merge request'
+            : activity.remoteSource?.provider === 'gitlab' && activity.kind === 'review'
+              ? 'Review comment'
+              : labels[activity.kind]
     return (
         <button
             {...props}
@@ -40,7 +45,10 @@ export function ActivityRow({ activity, repositoryName, connected, className, ..
                 <Icon size={14} strokeWidth={1.75} />
             </span>
             <span className="activity-row-content">
-                <span className="activity-row-title">{activity.title}</span>
+                <span className="activity-row-title">
+                    <span className="activity-row-kind">{kindLabel}: </span>
+                    {activity.title}
+                </span>
                 <span className="activity-row-meta">
                     <span title={repositoryName}>
                         <Folder size={12} strokeWidth={1.75} aria-hidden="true" />
@@ -52,22 +60,8 @@ export function ActivityRow({ activity, repositoryName, connected, className, ..
                             {activity.branches[0]}
                         </span>
                     )}
+                    {reference && <span className="activity-row-reference">{reference}</span>}
                 </span>
-            </span>
-            <span className="activity-row-trailing">
-                <Badge
-                    className="activity-row-status"
-                    tone={activity.kind === 'merged' ? 'success' : 'neutral'}
-                    size="sm"
-                    animateChanges={false}
-                >
-                    {activity.remoteSource?.provider === 'gitlab' && activity.kind === 'change-request'
-                        ? 'Merge request'
-                        : activity.remoteSource?.provider === 'gitlab' && activity.kind === 'review'
-                          ? 'Review comment'
-                          : labels[activity.kind]}
-                </Badge>
-                {reference && <span className="activity-row-reference">{reference}</span>}
             </span>
             <ChevronRight size={14} strokeWidth={1.75} className="activity-row-chevron" aria-hidden="true" />
         </button>
