@@ -8,7 +8,7 @@
     <ellipse cx="512" cy="225" rx="349" ry="61" fill="#242424" />
     <path d="M152 400 C152 440 313 472 512 472 C711 472 872 440 872 400 V420 C872 460 711 492 512 492 C313 492 152 460 152 420 Z M152 590 C152 630 313 662 512 662 C711 662 872 630 872 590 V610 C872 650 711 682 512 682 C313 682 152 650 152 610 Z" fill="#242424" />
   </g>
-  <g>
+  <g data-logo-band="1">
     <g clip-path="url(#_6N-0__eavpfz0)">
       <g transform="translate(152.078 350.832) matrix(1.645 0.522 0 4.7 0 0) translate(-12 -12)" style="opacity: 0">
         <path d="M6 6v12M18 9a9 9 0 0 1-9 9H6" fill="none" stroke="#242424" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" />
@@ -46,7 +46,7 @@
       </g>
     </g>
   </g>
-  <g>
+  <g data-logo-band="2">
     <g clip-path="url(#_6N-0__eavpfz1)">
       <g transform="translate(152.078 540.832) matrix(1.645 0.522 0 4.7 0 0) translate(-12 -12)" style="opacity: 0">
         <path d="m7 6-6 6 6 6m10-12 6 6-6 6M14 3l-4 18" fill="none" stroke="#242424" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" />
@@ -68,7 +68,7 @@
       </g>
     </g>
   </g>
-  <g>
+  <g data-logo-band="3">
     <g clip-path="url(#_6N-0__eavpfz2)">
       <g transform="translate(152.078 730.832) matrix(1.645 0.522 0 4.7 0 0) translate(-12 -12)" style="opacity: 0">
         <path d="m15 4 5 5M3 21l5-1L21 7a2 2 0 0 0 0-3l-1-1a2 2 0 0 0-3 0L4 16Zm1-5 4 4" fill="none" stroke="#242424" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" />
