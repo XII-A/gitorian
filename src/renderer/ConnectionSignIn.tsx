@@ -46,7 +46,9 @@ export function ConnectionSignIn({
     onOpen,
     onDisconnect,
     disconnectLabel,
-    disconnectPrompt
+    disconnectPrompt,
+    idleLabel,
+    idleActionLabel
 }: {
     provider: 'GitHub' | 'GitLab' | 'Notion'
     device?: { url: string; interval: number; code?: string }
@@ -57,6 +59,8 @@ export function ConnectionSignIn({
     disabled: boolean
     connected: boolean
     disconnectLabel?: string
+    idleLabel?: ReactNode
+    idleActionLabel?: string
     disconnectPrompt?: ReactNode
     /** A reversible connected action that uses the same morph for editing instead of disconnecting. */
     connectedAction?: { label: ReactNode; name: string; onActivate: () => void | Promise<void> }
@@ -146,11 +150,11 @@ export function ConnectionSignIn({
                     onWidthSettled={(face) => {
                         if (phase === 'connected' && face === 'idle') setIdentityReady(true)
                     }}
-                    label={phase === 'connected' ? (connectedAction?.label ?? 'Disconnect') : 'Connect'}
+                    label={phase === 'connected' ? (connectedAction?.label ?? 'Disconnect') : (idleLabel ?? 'Connect')}
                     actionLabel={
                         phase === 'connected'
                             ? (connectedAction?.name ?? disconnectLabel ?? `Disconnect ${provider}`)
-                            : `Connect ${provider}`
+                            : (idleActionLabel ?? `Connect ${provider}`)
                     }
                     prompt={
                         disconnectPrompt ?? <span className="settings-disconnect-question">Disconnect {provider}?</span>
@@ -194,6 +198,7 @@ export function ConnectionSignIn({
                                     {device.code && (
                                         <CopyButton
                                             value={device.code}
+                                            autoCopy
                                             label="Copy code"
                                             iconOnly
                                             variant="plain"

@@ -236,6 +236,12 @@ it('shows the connected identity after successful authorization', async () => {
     try {
         await update(() => button('Add GitHub account').click())
         await update(() => vi.advanceTimersByTimeAsync(5000))
+        expect(document.querySelector('.github-signin-surface[data-phase="success"]')?.textContent).toContain(
+            'Connected'
+        )
+        expect(document.querySelector('.provider-account-row')).toBeNull()
+        await update(() => vi.advanceTimersByTimeAsync(900))
+        await update(() => vi.advanceTimersByTimeAsync(32))
         expect(document.querySelector('.provider-account-row')?.textContent).toContain('@journal-author')
         expect(button('Add GitHub account').disabled).toBe(false)
     } finally {

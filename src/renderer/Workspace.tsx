@@ -503,7 +503,7 @@ export function Workspace({
                             className="ws-week-chart"
                         />
                         <ActivityFilterStrip className="ws-activity-filters">
-                            {(['all', 'commit', 'change-request', 'previous'] as const).map((value) => (
+                            {(['all', 'commit', 'change-request'] as const).map((value) => (
                                 <Button
                                     key={value}
                                     variant="ghost"
@@ -513,25 +513,17 @@ export function Workspace({
                                     aria-pressed={kind === value}
                                     onClick={() => setKind(value)}
                                 >
-                                    {value === 'all'
-                                        ? 'All'
-                                        : value === 'commit'
-                                          ? 'Commits'
-                                          : value === 'previous'
-                                            ? 'Previous account/remote activity'
-                                            : 'Requests & reviews'}
+                                    {value === 'all' ? 'All' : value === 'commit' ? 'Commits' : 'Requests & reviews'}
                                     <span>
                                         {
                                             allItems.filter(
                                                 (item) =>
                                                     (project === 'all' || item.repositoryId === project) &&
-                                                    (value === 'previous'
-                                                        ? item.previousSource
-                                                        : !item.previousSource &&
-                                                          (value === 'all' ||
-                                                              (value === 'commit'
-                                                                  ? item.kind === 'commit'
-                                                                  : item.kind !== 'commit')))
+                                                    !item.previousSource &&
+                                                    (value === 'all' ||
+                                                        (value === 'commit'
+                                                            ? item.kind === 'commit'
+                                                            : item.kind !== 'commit'))
                                             ).length
                                         }
                                     </span>
