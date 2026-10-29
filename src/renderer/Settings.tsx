@@ -611,7 +611,7 @@ export function Settings({
                                         {error}
                                     </Alert>
                                 ) : (
-                                    <p role="status">{status || 'Changes apply when saved.'}</p>
+                                    <p role="status">{status}</p>
                                 )}
                             </div>
                             <Button disabled={!!busy} loading={busy === 'save'} onClick={save}>

@@ -373,9 +373,21 @@ legend {
 }
 .loading {
     display: grid;
-    place-content: center;
-    height: 100vh;
-    text-align: center;
+    place-items: center;
+    min-height: 100dvh;
+    padding: var(--space-8);
+}
+.startup-loading-content {
+    display: grid;
+    gap: var(--space-6);
+    width: min(100%, 28rem);
+    min-width: 0;
+}
+.startup-loading-content h1 {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: 500;
+    color: var(--text-secondary);
 }
 .reference {
     height: 100vh;
