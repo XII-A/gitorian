@@ -64,7 +64,7 @@ it.each(['hub', 'workspace', 'existing'] as const)(
                 await update(() =>
                     finish?.({
                         state: { ...state, drafts: [created] },
-                        connections: { github: false, notion: true, protectedStorage: false }
+                        connections: { remote: false, notion: true, protectedStorage: false }
                     })
                 )
             } else expect(run).not.toHaveBeenCalled()

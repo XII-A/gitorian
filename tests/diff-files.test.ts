@@ -35,8 +35,8 @@ it('opens a PR diff without file-list requests and reuses its files in hub detai
             app.repository.trackingStart = '2026-10-05'
             await app.store.saveRepository(app.repository)
         }
-        await run(app.service.refresh({ source: 'github' }))
-        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+        await run(app.service.refresh({ source: 'remote' }))
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         const start = app.remote.requests.length
         const reply = await run(app.service.handle({ type: 'details', activityId: pr.id }))
         expect(reply.diff).toBe(patch)
@@ -61,8 +61,8 @@ it('keeps metadata-only PR details independent of patch download', async () => {
             app.repository.trackingStart = '2026-10-05'
             await app.store.saveRepository(app.repository)
         }
-        await run(app.service.refresh({ source: 'github' }))
-        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+        await run(app.service.refresh({ source: 'remote' }))
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         app.remote.failDiff = true
         const start = app.remote.requests.length
         await run(app.service.handle({ type: 'details', activityId: pr.id, content: 'files' }))

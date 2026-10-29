@@ -4,7 +4,8 @@ import { ApplicationWorkLive } from './application-work'
 import { type Effect, Layer } from 'effect'
 import { JournalStore, ConnectionState } from './journal-context'
 import { HttpLive } from './http'
-import { GitHubLive } from './github'
+import { ProviderAccountsLive, type ProviderVault } from './provider-accounts'
+import { RemoteContributionsLive } from './remote-contributions'
 import { NotionLive } from './notion'
 import { ActivityRecordsLive } from './activity-records'
 import { JournalPublishingLive } from './journal-publishing'
@@ -25,8 +26,8 @@ export interface JournalAdapters {
     store: JournalDatabase
     fetcher?: typeof fetch
     imageDownload?: typeof downloadImage
-    githubCredential: () => string
-    setGitHubCredential: (token: string) => void
+    vault: ProviderVault
+    gitlabClientId?: string
     notionToken: (refresh?: boolean, rejected?: string) => Effect.Effect<string, Error>
     connections: () => Reply['connections']
 }
@@ -40,10 +41,15 @@ export function journalLayer(adapters: JournalAdapters) {
             changed: (scope, until) => adapters.store.savePause(scope, until).then(() => undefined)
         })
     )
+    const accounts = ProviderAccountsLive({
+        vault: adapters.vault,
+        fetcher: adapters.fetcher,
+        gitlabClientId: adapters.gitlabClientId
+    }).pipe(Layer.provideMerge(native))
     const providers = Layer.mergeAll(
-        GitHubLive(adapters.githubCredential, adapters.setGitHubCredential, adapters.fetcher),
+        RemoteContributionsLive,
         NotionLive(adapters.notionToken, adapters.store, adapters.imageDownload),
         NotionRequestsLive(adapters.notionToken)
-    ).pipe(Layer.provideMerge(native))
+    ).pipe(Layer.provideMerge(accounts))
     return JournalModulesLive.pipe(Layer.provideMerge(providers))
 }

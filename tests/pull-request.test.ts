@@ -1,7 +1,7 @@
 import { transportClient, githubClient, run } from './effect-fixtures'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { activitySchema } from '../src/shared/model'
-import { pullRequestContext } from '../src/renderer/pull-request'
+import { changeRequestContext } from '../src/renderer/pull-request'
 import { sampleState } from '../src/renderer/workspace-sample'
 const repository = { ...sampleState('2026-10-05').repositories[0], remote: 'https://github.com/example/project' }
 describe('pull request status acquisition', () => {
@@ -40,17 +40,19 @@ describe('pull request status acquisition', () => {
                   : []
             return Promise.resolve(new Response(JSON.stringify(result)))
         })
-        const github = await githubClient(http, () => 'test', vi.fn())
+        const github = await githubClient(http, () => 'test')
         const activities = await run(github.activities(repository, 'me', []))
-        const canonical = activities.find((item) => item.kind === 'pr')!
-        expect(activitySchema.parse(canonical).pullRequest).toEqual({
+        const canonical = activities.find((item) => item.kind === 'change-request')!
+        expect(activitySchema.parse(canonical).changeRequest).toEqual({
             status: expected,
             openedAt: pull.created_at,
             commitDates: dates.slice(1),
             closedAt: pull.closed_at ?? undefined,
             mergedAt: mergedAt ?? undefined
         })
-        expect(activities.filter((item) => item.kind !== 'pr').every((item) => !item.pullRequest)).toBe(true)
+        expect(activities.filter((item) => item.kind !== 'change-request').every((item) => !item.changeRequest)).toBe(
+            true
+        )
     })
     it('refreshes status-only changes even when GitHub timestamps and commit hashes are unchanged', async () => {
         let draft = true
@@ -75,24 +77,25 @@ describe('pull request status acquisition', () => {
                     new Response(JSON.stringify(url.includes('/pulls?') ? [{ ...pull, draft }] : []))
                 )
             }),
-            () => 'test',
-            vi.fn()
+            () => 'test'
         )
         const versions: Record<string, string> = {}
-        expect((await run(github.activities(repository, 'me', [], { versions })))[0].pullRequest?.status).toBe('draft')
+        expect((await run(github.activities(repository, 'me', [], { versions })))[0].changeRequest?.status).toBe(
+            'draft'
+        )
         draft = false
-        expect((await run(github.activities(repository, 'me', [], { versions })))[0].pullRequest?.status).toBe('open')
+        expect((await run(github.activities(repository, 'me', [], { versions })))[0].changeRequest?.status).toBe('open')
         expect(await run(github.activities(repository, 'me', [], { versions }))).toEqual([])
     })
 })
 describe('legacy PR context', () => {
     it('does not infer open status from the absence of a merged event', () => {
-        const activity = { ...sampleState('2026-10-05').activities[8], kind: 'pr' as const }
-        expect(pullRequestContext(activity, [activity]).status).toBeUndefined()
-        expect(activitySchema.parse(activity).pullRequest).toBeUndefined()
+        const activity = { ...sampleState('2026-10-05').activities[8], kind: 'change-request' as const }
+        expect(changeRequestContext(activity, [activity]).status).toBeUndefined()
+        expect(activitySchema.parse(activity).changeRequest).toBeUndefined()
     })
     it('reads known opened and merged dates without including reviews or another repository', () => {
-        const activity = { ...sampleState('2026-10-05').activities[8], kind: 'pr' as const }
+        const activity = { ...sampleState('2026-10-05').activities[8], kind: 'change-request' as const }
         const opened = {
             ...activity,
             id: `${activity.id}:opened`,
@@ -105,7 +108,7 @@ describe('legacy PR context', () => {
             kind: 'merged' as const,
             date: '2026-10-09T10:00:00Z'
         }
-        const context = pullRequestContext(activity, [
+        const context = changeRequestContext(activity, [
             activity,
             opened,
             merged,

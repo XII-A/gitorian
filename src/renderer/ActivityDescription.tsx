@@ -79,6 +79,8 @@ export function ActivityDescription({ activity, repository }: { activity: Activi
                     const imageUrl = new URL(resolved)
                     if (imageUrl.hostname === 'github.com' && imageUrl.pathname.includes('/blob/'))
                         imageUrl.searchParams.set('raw', 'true')
+                    if (imageUrl.hostname === 'gitlab.com')
+                        imageUrl.pathname = imageUrl.pathname.replace('/-/blob/', '/-/raw/')
                     return imageUrl.href
                 }}
                 components={{

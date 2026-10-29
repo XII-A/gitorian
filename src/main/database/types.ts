@@ -1,5 +1,6 @@
 import type { Activity, State } from '../../shared/model'
 import type { GitHistory } from '../git'
+import type { ProviderAccount, ProviderPreparation } from '../../shared/provider-accounts'
 
 export interface JournalView {
     since: string
@@ -13,6 +14,9 @@ export interface Configuration {
     generation: string
     sequence: number
     settings: State['settings']
+    accounts: ProviderAccount[]
+    accountPreparations: ProviderPreparation[]
+    credentialCleanup: string[]
     repositories: State['repositories']
     acquisition: NonNullable<State['acquisition']>
     transportPauses: Record<string, number>
@@ -22,7 +26,7 @@ export interface Configuration {
     refreshError?: string
 }
 export interface AcquisitionBatch {
-    source?: { repositoryId: string; provider: 'git' | 'github'; configuration: string }
+    source?: { repositoryId: string; provider: 'git' | 'remote'; configuration: string }
     repository?: State['repositories'][number]
     activities?: Activity[]
     checkpoint?: { key: string; value: NonNullable<State['acquisition']>[string] }

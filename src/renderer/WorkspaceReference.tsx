@@ -130,7 +130,7 @@ export function WorkspaceReference({
                                 ? () =>
                                       Promise.resolve({
                                           state: source,
-                                          connections: { github: false, notion: false, protectedStorage: false }
+                                          connections: { remote: false, notion: false, protectedStorage: false }
                                       })
                                 : run
                         }

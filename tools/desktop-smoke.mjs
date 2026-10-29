@@ -402,7 +402,7 @@ app.on('browser-window-created', (_, window) => {
                 if (!removedRow.textContent.includes('Commit')) throw new Error('Expected a commit hover fixture')
                 removedRow.dispatchEvent(new PointerEvent('pointermove', {bubbles:true,pointerType:'mouse'}))
                 await pause()
-                filter('PRs & reviews').click()
+                filter('Requests & reviews').click()
                 await pause()
                 const bounds = viewport.getBoundingClientRect()
                 const content = viewport.querySelector('.activity-hover').getBoundingClientRect()
@@ -416,7 +416,7 @@ app.on('browser-window-created', (_, window) => {
                 viewport.scrollTop = 100
                 const offset = viewport.scrollTop
                 if (offset === 0) throw new Error('Expected a scrollable PR fixture')
-                filter('PRs & reviews').click()
+                filter('Requests & reviews').click()
                 await pause()
                 const activityUnchangedFilterKeepsScroll = viewport.scrollTop === offset
                 document.querySelector('[aria-label="Refresh activity"]').click()

@@ -35,7 +35,7 @@ it('keeps unchanged activity and settings references across draft saves and upda
                 state.snapshotVersion = (state.snapshotVersion ?? 0) + 1
             }
             return Promise.resolve(
-                structuredClone({ state, connections: { github: false, notion: false, protectedStorage: false } })
+                structuredClone({ state, connections: { remote: false, notion: false, protectedStorage: false } })
             )
         })
     }
@@ -92,7 +92,7 @@ it('uses incremental desktop replies while preserving the captured baseline thro
         return Promise.resolve(
             structuredClone(
                 server.pack(
-                    { state: snapshot, connections: { github: false, notion: false, protectedStorage: false } },
+                    { state: snapshot, connections: { remote: false, notion: false, protectedStorage: false } },
                     base
                 )
             )

@@ -34,8 +34,8 @@ it.each(['details', 'refresh', 'reconcile'] as const)(
         app.remote.github = true
         let operation: Effect.Effect<unknown, Error>
         if (kind === 'details') {
-            await run(app.service.refresh({ source: 'github' }))
-            const activity = (await journalState(app.store)).activities.find((item) => item.kind === 'pr')!
+            await run(app.service.refresh({ source: 'remote' }))
+            const activity = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
             vi.spyOn(app.github, 'snapshot').mockImplementation(() =>
                 wait.pipe(
                     Effect.as({ diff: patch, fingerprint: 'fixture', base: 'base', head: activity.head ?? 'head' })
@@ -53,7 +53,7 @@ it.each(['details', 'refresh', 'reconcile'] as const)(
                     )
                 )
             )
-            operation = app.service.refresh({ source: 'github' })
+            operation = app.service.refresh({ source: 'remote' })
         } else {
             await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             const draft = (await journalState(app.store)).drafts[0]
@@ -156,8 +156,8 @@ it('acknowledges background refresh only after source admission is visible', asy
                     )
                 )
         )
-        await run(app.service.startRefresh({ source: 'github' }))
-        expect((await run(app.service.reply())).state.acquisition?.['github:repo'].status).toBe('running')
+        await run(app.service.startRefresh({ source: 'remote' }))
+        expect((await run(app.service.reply())).state.acquisition?.['remote:repo'].status).toBe('running')
     } finally {
         release()
         await app.close()
@@ -200,12 +200,12 @@ it('releases announced source admission when interrupted before execution starts
             return checkpoint(...args)
         })
         const exit = await Effect.runPromiseExit(
-            app.service.refresh({ source: 'github' }).pipe(Effect.withMaxOpsBeforeYield(64)),
+            app.service.refresh({ source: 'remote' }).pipe(Effect.withMaxOpsBeforeYield(64)),
             { signal: controller.signal }
         )
         expect(Exit.isFailure(exit)).toBe(true)
         expect(provider).not.toHaveBeenCalled()
-        expect((await journalState(app.store)).acquisition?.['github:repo']?.status).toBe('idle')
+        expect((await journalState(app.store)).acquisition?.['remote:repo']?.status).toBe('idle')
     } finally {
         await app.close()
     }

@@ -3,15 +3,18 @@ import type { JournalFailure } from './journal-errors'
 import { ApplicationWork } from './application-work'
 import { makeSharedRequests } from './shared-requests'
 import { Context, Deferred, Effect, Exit, Layer, Queue, type Scope } from 'effect'
-import { indexCommits, inspectRepository, githubRemote } from './git'
+import { indexCommits, inspectRepository } from './git'
 import { HttpError } from './http'
-import { gitConfiguration, githubConfiguration } from '../shared/activity-history'
+import { gitConfiguration, contributionConfiguration } from '../shared/activity-history'
 import { localDate } from '../shared/model'
 import type { Activity, Repository, State } from '../shared/model'
 import type { AcquisitionBatch } from './database/types'
-import { GitHub } from './github'
+import { RemoteContributions } from './remote-contributions'
+import { ProviderAccounts } from './provider-accounts'
+import { providerRemote } from '../shared/provider-accounts'
 import { Notion } from './notion'
 import { ActivityRecords } from './activity-records'
+import { GitLabFailure } from './gitlab'
 import { JournalPublishing } from './journal-publishing'
 import { ConnectionState, JournalError, JournalStore } from './journal-context'
 function batchSlots() {
@@ -23,14 +26,14 @@ function batchSlots() {
 }
 export interface RefreshOptions {
     repositoryId?: string
-    source?: 'git' | 'github' | 'notion'
+    source?: 'git' | 'remote' | 'notion'
     resume?: boolean
     since?: string
     missingOnly?: boolean
 }
 export interface ActivityAcquisition {
     readonly suspend: Effect.Effect<void, never, Scope.Scope>
-    readonly stop: (source: 'git' | 'github', repositoryId?: string) => Effect.Effect<void>
+    readonly stop: (source: 'git' | 'remote', repositoryId?: string) => Effect.Effect<void>
     readonly refresh: (options?: RefreshOptions) => Effect.Effect<void, JournalFailure>
     readonly startRefresh: (options?: RefreshOptions) => Effect.Effect<void, JournalFailure>
     readonly backfill: (repositoryId: string, since: string) => Effect.Effect<void, JournalFailure>
@@ -41,7 +44,8 @@ function makeAcquisition() {
     return Effect.gen(function* () {
         const work = yield* ApplicationWork
         const store = yield* JournalStore
-        const github = yield* GitHub
+        const github = yield* RemoteContributions
+        const accounts = yield* ProviderAccounts
         const notion = yield* Notion
         const records = yield* ActivityRecords
         const publishing = yield* JournalPublishing
@@ -54,7 +58,7 @@ function makeAcquisition() {
         const shared = yield* makeSharedRequests<string, undefined, Error>(
             () => new JournalError('Acquisition is closed')
         )
-        const lanes = { git: yield* batchSlots(), github: yield* batchSlots() }
+        const lanes = { git: yield* batchSlots(), remote: yield* batchSlots() }
         const sources = new Map<string, { generation: number; pending: number; lane: Effect.Semaphore }>()
         const statuses = new Map<string, NonNullable<State['acquisition']>[string]>()
         const suspensions = new Set<symbol>()
@@ -82,7 +86,7 @@ function makeAcquisition() {
             (key !== 'notion' && !!store.config.repositories.find((r) => key.endsWith(':' + r.id))?.removed)
         const checkpoint = (key: string, value: NonNullable<State['acquisition']>[string], generation: string) =>
             local(() => store.saveCheckpoint(key, value, generation))
-        const stop = (provider: 'git' | 'github', repositoryId?: string) =>
+        const stop = (provider: 'git' | 'remote', repositoryId?: string) =>
             Effect.gen(function* () {
                 const keys = new Set([...sources.keys(), ...Object.keys(store.config.acquisition)])
                 for (const key of keys)
@@ -118,6 +122,8 @@ function makeAcquisition() {
                     sources.clear()
                     stateGeneration = generation
                 }
+                for (const repository of store.config.repositories.filter((r) => !r.removed && !r.accountId))
+                    yield* accounts.resolve(repository.id).pipe(Effect.catchAll(() => Effect.void))
                 const config = store.config
                 const repositories = config.repositories.filter(
                     (r) => !r.removed && (!options.repositoryId || r.id === options.repositoryId)
@@ -125,10 +131,11 @@ function makeAcquisition() {
                 const identity = { settings: config.settings, restoreId: generation }
                 const keys = repositories.flatMap((r) => [
                     ...(!options.source || options.source === 'git' ? [`git:${r.id}`] : []),
-                    ...((!options.source || options.source === 'github') &&
-                    connections().github &&
-                    githubRemote(r.remote)
-                        ? [`github:${r.id}`]
+                    ...((!options.source || options.source === 'remote') &&
+                    connections().remote &&
+                    r.accountId &&
+                    providerRemote(r.remote)
+                        ? [`remote:${r.id}`]
                         : [])
                 ])
                 const tokens = new Map(keys.map((key) => [key, source(key).generation]))
@@ -136,8 +143,12 @@ function makeAcquisition() {
                     options,
                     generation,
                     config.settings.timezone,
-                    config.settings.githubLogin,
-                    repositories.map((r) => [r.id, gitConfiguration(r, identity), githubConfiguration(r, identity)]),
+                    '',
+                    repositories.map((r) => [
+                        r.id,
+                        gitConfiguration(r, identity),
+                        contributionConfiguration(r, identity)
+                    ]),
                     [...tokens]
                 ])
                 const perform = Effect.gen(function* () {
@@ -151,7 +162,7 @@ function makeAcquisition() {
                             Effect.gen(function* () {
                                 const token = tokens.get(key)!
                                 if (stopped(key, token, generation)) return
-                                const provider = key.startsWith('git:') ? 'git' : 'github'
+                                const provider = key.startsWith('git:') ? 'git' : 'remote'
                                 const status = statusFor(key)
                                 if (status.status === 'cancelled' && !options.resume) return
                                 if (status.retryAt && Date.parse(status.retryAt) > Date.now()) return
@@ -164,7 +175,7 @@ function makeAcquisition() {
                                 const configuration =
                                     provider === 'git'
                                         ? gitConfiguration(repository, identity)
-                                        : githubConfiguration(repository, identity)
+                                        : contributionConfiguration(repository, identity)
                                 const sourceIdentity: NonNullable<AcquisitionBatch['source']> = {
                                     repositoryId: repository.id,
                                     provider: provider,
@@ -320,6 +331,7 @@ function makeAcquisition() {
                                                                   Object.assign(status, {
                                                                       since: repository.trackingStart,
                                                                       page: 1,
+                                                                      offset: 0,
                                                                       windowEnd: undefined,
                                                                       lastSuccess: undefined,
                                                                       historySince: undefined,
@@ -338,6 +350,7 @@ function makeAcquisition() {
                                                                   Object.assign(status, {
                                                                       since: repository.trackingStart,
                                                                       page: 1,
+                                                                      offset: 0,
                                                                       windowEnd: undefined
                                                                   })
                                                               Object.assign(status, {
@@ -359,16 +372,19 @@ function makeAcquisition() {
                                                                         .slice(0, 10)
                                                                   : repository.trackingStart
                                                               const tracked = (yield* local(() =>
-                                                                  store.activities(repository.id, 'pr')
+                                                                  store.activities(repository.id, 'change-request')
                                                               )).map((a) => a.id)
                                                               yield* github.activities(
                                                                   repository,
-                                                                  config.settings.githubLogin,
+                                                                  config.accounts.find(
+                                                                      (a) => a.id === repository.accountId
+                                                                  )?.username ?? '',
                                                                   tracked,
                                                                   {
                                                                       timezone: config.settings.timezone,
                                                                       since: status.since,
                                                                       page: status.page,
+                                                                      offset: status.offset,
                                                                       versions: status.versions,
                                                                       background: true,
                                                                       batch: (activities) =>
@@ -392,7 +408,10 @@ function makeAcquisition() {
                                                                                   )
                                                                               )
                                                                               for (const incoming of activities) {
-                                                                                  if (incoming.kind !== 'pr') continue
+                                                                                  if (
+                                                                                      incoming.kind !== 'change-request'
+                                                                                  )
+                                                                                      continue
                                                                                   const previous = prior.get(
                                                                                       incoming.id
                                                                                   )
@@ -414,13 +433,30 @@ function makeAcquisition() {
                                                                                           (yield* local(() =>
                                                                                               store.patch(incoming.id)
                                                                                           )) !== undefined
-                                                                                      const id = yield* records.capture(
-                                                                                          incoming.id,
-                                                                                          {
+                                                                                      const id = yield* records
+                                                                                          .capture(incoming.id, {
                                                                                               retainDiff,
                                                                                               background: true
-                                                                                          }
-                                                                                      )
+                                                                                          })
+                                                                                          .pipe(
+                                                                                              Effect.catchAll(
+                                                                                                  (error) =>
+                                                                                                      error instanceof
+                                                                                                      GitLabFailure
+                                                                                                          ? Effect.logWarning(
+                                                                                                                error.message
+                                                                                                            ).pipe(
+                                                                                                                Effect.as(
+                                                                                                                    undefined
+                                                                                                                )
+                                                                                                            )
+                                                                                                          : Effect.fail(
+                                                                                                                error
+                                                                                                            )
+                                                                                              )
+                                                                                          )
+                                                                                      if (!id) continue
+
                                                                                       const current = (yield* local(
                                                                                           () =>
                                                                                               store.activity(
@@ -462,10 +498,11 @@ function makeAcquisition() {
                                                                                   }
                                                                               }
                                                                           }),
-                                                                      checkpoint: (page, complete) =>
+                                                                      checkpoint: (page, complete, offset) =>
                                                                           Effect.gen(function* () {
                                                                               yield* check
                                                                               status.page = page
+                                                                              status.offset = offset
                                                                               if (complete) {
                                                                                   status.historySince =
                                                                                       repository.trackingStart
@@ -626,7 +663,7 @@ function makeAcquisition() {
                                 const repository = repositories.find((r) => key.endsWith(':' + r.id))!
                                 const configuration = key.startsWith('git:')
                                     ? gitConfiguration(repository, identity)
-                                    : githubConfiguration(repository, identity)
+                                    : contributionConfiguration(repository, identity)
                                 if (
                                     options.missingOnly &&
                                     options.since &&

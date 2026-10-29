@@ -71,7 +71,7 @@ const body = (text: string): JournalNode => ({
 it('does no synchronous recovery writes or backend saves during a typing burst, then saves the latest document once', async () => {
     const state = sampleState('2026-10-05')
     const run = vi.fn((_command: Command) =>
-        Promise.resolve({ state, connections: { github: false, notion: true, protectedStorage: false } })
+        Promise.resolve({ state, connections: { remote: false, notion: true, protectedStorage: false } })
     )
     await update(() =>
         root.render(
@@ -131,7 +131,7 @@ it('checkpoints continuous typing and lets an existing empty draft apply the sav
     state.drafts[0].body = { type: 'doc', content: [{ type: 'paragraph' }] }
     state.settings.template = body('Weekly template')
     const run = vi.fn(() =>
-        Promise.resolve({ state, connections: { github: false, notion: true, protectedStorage: false } })
+        Promise.resolve({ state, connections: { remote: false, notion: true, protectedStorage: false } })
     )
     await update(() =>
         root.render(
@@ -253,7 +253,7 @@ it.each([false, true])(
             }
         ]
         const run = vi.fn(() =>
-            Promise.resolve({ state: saved, connections: { github: false, notion: true, protectedStorage: false } })
+            Promise.resolve({ state: saved, connections: { remote: false, notion: true, protectedStorage: false } })
         )
         await update(() =>
             root.render(
@@ -312,7 +312,7 @@ it('advances dirty writing only to its own save acknowledgment when another writ
         release({
             state: { ...state, drafts: [{ ...state.drafts[0], version: 3, body: body('Another writer') }] },
             draftSaved: { id: state.drafts[0].id, version: 2 },
-            connections: { github: false, notion: true, protectedStorage: false }
+            connections: { remote: false, notion: true, protectedStorage: false }
         })
     )
     await update(() => vi.advanceTimersByTime(1000))
@@ -324,7 +324,7 @@ it('advances dirty writing only to its own save acknowledgment when another writ
         release({
             state,
             draftSaved: { id: state.drafts[0].id, version: 3 },
-            connections: { github: false, notion: true, protectedStorage: false }
+            connections: { remote: false, notion: true, protectedStorage: false }
         })
     )
 })

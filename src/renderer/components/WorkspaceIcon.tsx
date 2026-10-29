@@ -4,7 +4,7 @@ export function WorkspaceIcon({
     name,
     ...props
 }: SVGProps<SVGSVGElement> & {
-    name: 'back' | 'commit' | 'pr' | 'branch' | 'popout' | 'close' | 'book' | 'focus' | 'refresh' | 'check'
+    name: 'back' | 'commit' | 'change-request' | 'branch' | 'popout' | 'close' | 'book' | 'focus' | 'refresh' | 'check'
 }) {
     const paths = {
         back: <path d="m14 5-7 7 7 7M7 12h14" />,
@@ -14,7 +14,7 @@ export function WorkspaceIcon({
                 <circle cx="12" cy="12" r="4" />
             </>
         ),
-        pr: (
+        'change-request': (
             <>
                 <circle cx="6" cy="5" r="2" />
                 <circle cx="6" cy="19" r="2" />

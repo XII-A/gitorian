@@ -17,7 +17,7 @@ import { weekOf } from '../shared/model'
 import { ConnectionProfileCache } from './connection-profiles'
 import { Vault } from './vault'
 import { Http } from './http'
-import { GitHub } from './github'
+import { ProviderAccounts } from './provider-accounts'
 import { Notion, makeNotion } from './notion'
 import { desktopLayer } from './desktop-layer'
 import type { DesktopEnvironment } from './desktop-layer'
@@ -56,7 +56,7 @@ let notionConnection: NotionConnection | undefined
 let stopNotionPages: (() => void) | undefined
 const referenceWindows = new Set<number>()
 const referencePins = new Map<number, { kind: string; id: string }>()
-let runtime: ManagedRuntime.ManagedRuntime<DesktopEnvironment, never>
+let runtime: ManagedRuntime.ManagedRuntime<DesktopEnvironment, Error>
 let work: ApplicationWork
 const native = <A>(operation: () => Promise<A>) => Effect.tryPromise({ try: operation, catch: (error) => error })
 function execute<A, E>(operation: Effect.Effect<A, E, DesktopEnvironment>): Promise<A> {
@@ -253,15 +253,17 @@ void app.whenReady().then(async () => {
                 import.meta.env.MAIN_VITE_NOTION_OAUTH_ORIGIN ||
                 '',
             fetcher: fetch,
+            gitlabClientId: import.meta.env.MAIN_VITE_GITLAB_CLIENT_ID || '',
             recovery: new NotionSetupStore(join(app.getPath('userData'), 'notion-setup.json'))
         })
     )
-    work = runtime.runSync(ApplicationWork)
-    service = runtime.runSync(JournalService)
-    const http = runtime.runSync(Http)
-    const github = runtime.runSync(GitHub)
-    const notion = runtime.runSync(Notion)
-    const connection = runtime.runSync(NotionConnection)
+    work = await runtime.runPromise(ApplicationWork)
+    service = await runtime.runPromise(JournalService)
+    const http = await runtime.runPromise(Http)
+    const providerAccounts = await runtime.runPromise(ProviderAccounts)
+    void execute(work.fork(providerAccounts.migrateLegacy.pipe(Effect.catchAll(() => Effect.void))))
+    const notion = await runtime.runPromise(Notion)
+    const connection = await runtime.runPromise(NotionConnection)
     notionConnection = connection
     const notionDiscovery = new NotionDiscoveryCache(join(app.getPath('userData'), 'notion-pages.json'))
     const notionReads = new Map<string, AbortController>()
@@ -274,14 +276,8 @@ void app.whenReady().then(async () => {
     let availableNotionPages: Effect.Effect.Success<ReturnType<Notion['accessiblePages']>> = []
     const profiles = new ConnectionProfileCache(
         join(app.getPath('userData'), 'connection-profiles.json'),
-        (service) => (service === 'notion' ? connection.profileKey() : vault.get(service)),
-        (service) =>
-            service === 'notion'
-                ? execute(notion.profile())
-                : Promise.resolve({
-                      name: store.config.settings.githubLogin,
-                      avatarUrl: `https://github.com/${encodeURIComponent(store.config.settings.githubLogin)}.png?size=64`
-                  })
+        () => connection.profileKey(),
+        () => execute(notion.profile())
     )
     mainWindow = windowFor()
     const updater = new WindowsUpdater()
@@ -445,7 +441,7 @@ void app.whenReady().then(async () => {
                         repository.remotes = inspected.remotes
                         repository.available = true
                         repository.removed = false
-                        yield* native(() => store.saveRepository(repository))
+                        yield* native(() => store.updateRepositoryLocation(repository))
                     }
                     break
                 }
@@ -622,42 +618,44 @@ void app.whenReady().then(async () => {
                 case 'refreshConnectionProfile':
                     yield* native(() => profiles.refresh(command.service))
                     return yield* service.reply({ connectionProfiles: profiles.snapshot() })
-                case 'githubStart': {
-                    const device = yield* github.start()
-                    {
-                        const handled = yield* Effect.gen(function* () {
-                            yield* native(() => openExternal(device.url))
-                        }).pipe(
-                            Effect.catchAll((_error) =>
-                                Effect.gen(function* () {
-                                    return yield* service.reply({
-                                        device,
-                                        message:
-                                            'Could not open your browser. Use Open browser or visit the displayed address.'
-                                    })
-                                })
-                            )
-                        )
-                        if (handled !== undefined) return handled
-                    }
-                    return yield* service.reply({ device })
+                case 'providerBegin': {
+                    const attempt = yield* providerAccounts.begin(command.provider, command.accountId)
+                    const opened = yield* native(() => openExternal(attempt.url)).pipe(
+                        Effect.as(true),
+                        Effect.catchAll(() => Effect.succeed(false))
+                    )
+                    return yield* service.reply({
+                        providerAttempt: attempt,
+                        message: opened
+                            ? undefined
+                            : `Could not open your browser. Open ${attempt.url} and enter the code.`
+                    })
                 }
-                case 'githubPoll': {
-                    const account = yield* github.poll()
-                    if ('pending' in account)
-                        return yield* service.reply({ devicePending: { interval: account.interval } })
-                    profiles.clear('github')
-                    yield* native(() => store.setGitHubLogin(account.login))
-                    for (const repository of store.config.repositories)
-                        yield* native(() =>
-                            store.saveRepository({
-                                ...repository,
-                                emails: [...new Set([...repository.emails, ...account.emails])]
-                            })
-                        )
-                    yield* work.fork(native(() => profiles.refresh('github')))
+                case 'providerPoll': {
+                    const result = yield* providerAccounts.complete(command.attemptId)
+                    if (result.pending) return yield* service.reply({ devicePending: { interval: result.interval } })
+                    yield* work.fork(
+                        Effect.gen(function* () {
+                            for (const repository of store.config.repositories.filter(
+                                (r) => !r.removed && !r.accountId
+                            ))
+                                yield* providerAccounts.resolve(repository.id).pipe(Effect.catchAll(() => Effect.void))
+                        })
+                    )
                     break
                 }
+                case 'providerCancel':
+                    yield* providerAccounts.cancel(command.attemptId)
+                    break
+                case 'providerDisconnect':
+                    yield* providerAccounts.disconnect(command.accountId)
+                    break
+                case 'providerAssign':
+                    yield* providerAccounts.resolve(
+                        command.repositoryId,
+                        command.automatic ? 'automatic' : command.accountId
+                    )
+                    break
                 case 'disconnect':
                     if (command.service === 'notion') {
                         notionPickerGeneration++
@@ -708,7 +706,7 @@ void app.whenReady().then(async () => {
                                         return yield* Effect.fail(new Error('The backup exceeds the 512 MiB limit.'))
                                     const backup = yield* native(() => readFile(result.filePaths[0], 'utf8'))
                                     yield* native(() => store.restore(backup))
-                                    vault.set('github', '')
+                                    yield* providerAccounts.cleanup()
                                     notionPickerGeneration++
                                     stopNotionPages?.()
                                     notionDiscovery.clear()
@@ -792,6 +790,7 @@ void app.whenReady().then(async () => {
         if (!sameRange() || (continuation && previous?.activityPage?.next?.id !== continuation.id))
             continuation = undefined
         let state = await store.readWorkspace(continuation ? { ...view!, cursor: continuation } : view)
+        state.accounts = providerAccounts.accounts()
         const mergePage = (before: Reply['state'], next: Reply['state']) => ({
             ...next,
             activities: [...new Map([...before.activities, ...next.activities].map((a) => [a.id, a])).values()],
@@ -844,15 +843,16 @@ void app.whenReady().then(async () => {
                 store.config.repositories.some(
                     (repository) => key.endsWith(`:${repository.id}`) && !repository.removed
                 ) &&
-                (!key.startsWith('github:') || !!vault.get('github')) &&
-                (key.startsWith('github:') || key.startsWith('git:')) &&
+                (!key.startsWith('remote:') ||
+                    store.config.repositories.some((r) => key === `remote:${r.id}` && !!r.accountId)) &&
+                (key.startsWith('remote:') || key.startsWith('git:')) &&
                 status.windowEnd &&
                 (status.status === 'idle' ||
                     (status.status === 'paused' && !!status.retryAt && Date.parse(status.retryAt) <= Date.now()))
         )
         if (pending) {
             const [source, repositoryId] = pending[0].split(':')
-            yield* service.startRefresh({ repositoryId, source: source === 'git' ? 'git' : 'github' })
+            yield* service.startRefresh({ repositoryId, source: source === 'git' ? 'git' : 'remote' })
             return
         }
         if (minutes > 0 && !mainWindow.isDestroyed() && mainWindow.isVisible() && elapsed >= minutes * 60000)

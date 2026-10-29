@@ -16,13 +16,20 @@ import {
 import type { Activity, Destination, Draft, Entry, JournalNode, Repository, Selection, State } from '../../shared/model'
 import { localDate } from '../../shared/model'
 import { plainText } from '../../shared/notion-format'
-import { gitConfiguration, githubConfiguration } from '../../shared/activity-history'
+import { gitConfiguration, contributionConfiguration } from '../../shared/activity-history'
 import { imageIds } from '../../shared/images'
 import type { JournalImage } from '../../shared/images'
 import { imageLimits } from '../../shared/images'
 import type { GitHistory } from '../git'
 import { DatabaseError, type AcquisitionBatch, type Configuration, type JournalView } from './types'
 import * as t from './schema'
+import { upgradeJournalBackup } from '../../shared/journal-upgrade'
+import {
+    providerAccountSchema,
+    providerRemote,
+    remoteConfiguration,
+    type ProviderAccount
+} from '../../shared/provider-accounts'
 
 const optional = <T>(value: T | null): T | undefined => value ?? undefined
 const instant = (value: string) => {
@@ -77,7 +84,16 @@ export class JournalEngine {
             this.native.exec(
                 'PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000'
             )
-            migrate(this.db, { migrationsFolder: migrations })
+            // SQLite ignores FK toggles inside Drizzle's migration transaction. Disable
+            // before it starts so table rebuilds cannot cascade-delete retained evidence.
+            this.native.exec('PRAGMA foreign_keys=OFF')
+            try {
+                migrate(this.db, { migrationsFolder: migrations })
+            } finally {
+                this.native.exec('PRAGMA foreign_keys=ON')
+            }
+            if (this.native.prepare('PRAGMA foreign_key_check').all().length)
+                throw new DatabaseError('schema', 'Journal migration relationships could not be verified.')
             if (!this.db.select().from(t.journal).get())
                 this.db
                     .insert(t.journal)
@@ -89,6 +105,20 @@ export class JournalEngine {
                     })
                     .run()
             this.write(() => {
+                if (!this.db.select().from(t.journal).get()!.providerUpgrade) {
+                    const legacy = this.hydrateActivities(this.db.select().from(t.activities).all())
+                    const converted = upgradeJournalBackup({
+                        repositories: this.repositories(),
+                        activities: legacy,
+                        revisions: []
+                    }) as { activities: unknown[] }
+                    for (const activity of stateSchema.shape.activities.parse(converted.activities))
+                        this.putActivity(activity, false)
+                    this.native.exec(
+                        "UPDATE activities SET localQualified=1 WHERE kind='commit' AND (remoteSource IS NULL OR id IN (SELECT activityId FROM git_history_items))"
+                    )
+                    this.db.update(t.journal).set({ providerUpgrade: true }).where(eq(t.journal.id, 1)).run()
+                }
                 this.db
                     .update(t.publications)
                     .set({ status: 'unknown' })
@@ -149,7 +179,22 @@ export class JournalEngine {
         return {
             generation: row.generation,
             sequence: row.sequence,
-            settings: row.settings,
+            settings: parseSettings(row.settings),
+            credentialCleanup: this.db
+                .select()
+                .from(t.credentialCleanup)
+                .all()
+                .map((r) => r.key),
+            accounts: this.db
+                .select()
+                .from(t.providerAccounts)
+                .all()
+                .map((a) => a.metadata),
+            accountPreparations: this.db
+                .select()
+                .from(t.providerPreparations)
+                .all()
+                .map((a) => a.metadata),
             repositories: this.repositories(),
             acquisition: Object.fromEntries(
                 this.db
@@ -188,6 +233,10 @@ export class JournalEngine {
             .all()
             .map((r) => ({
                 ...r,
+                accountId: r.accountId ?? undefined,
+                providerProjectId: r.providerProjectId ?? undefined,
+                accountGeneration: r.accountGeneration ?? undefined,
+                assignment: r.assignment ?? undefined,
                 emails: emails.filter((e) => e.repositoryId === r.id).map((e) => e.email),
                 branches: branches.filter((b) => b.repositoryId === r.id).map((b) => b.name)
             }))
@@ -195,10 +244,18 @@ export class JournalEngine {
     private putRepository(input: Repository) {
         const r = repositorySchema.parse(input)
         const { emails, branches, ...record } = r
+        const stored = {
+            ...record,
+            remotes: r.remotes ?? [],
+            accountId: r.accountId ?? null,
+            accountGeneration: r.accountGeneration ?? null,
+            providerProjectId: r.providerProjectId ?? null,
+            assignment: r.assignment ?? null
+        }
         this.db
             .insert(t.repositories)
-            .values({ ...record, remotes: r.remotes ?? [] })
-            .onConflictDoUpdate({ target: t.repositories.id, set: { ...record, remotes: r.remotes ?? [] } })
+            .values(stored)
+            .onConflictDoUpdate({ target: t.repositories.id, set: stored })
             .run()
         this.db.delete(t.repositoryEmails).where(eq(t.repositoryEmails.repositoryId, r.id)).run()
         this.db.delete(t.repositoryBranches).where(eq(t.repositoryBranches.repositoryId, r.id)).run()
@@ -208,7 +265,190 @@ export class JournalEngine {
             this.db.insert(t.repositoryBranches).values({ repositoryId: r.id, name }).run()
     }
     saveRepository(repository: Repository, generation: string) {
-        this.write(() => this.putRepository(repository), generation)
+        this.write(() => {
+            const current = this.repositories().find((r) => r.id === repository.id)
+            const assignment = current?.remote === repository.remote ? current : undefined
+            this.putRepository(
+                current
+                    ? {
+                          ...repository,
+                          accountId: assignment?.accountId,
+                          accountGeneration: assignment?.accountGeneration,
+                          providerProjectId: assignment?.providerProjectId,
+                          assignment: assignment?.assignment
+                      }
+                    : repository
+            )
+        }, generation)
+    }
+    updateRepositorySettings(repository: Repository, generation: string) {
+        this.write(() => {
+            const current = this.repositories().find((r) => r.id === repository.id)
+            if (!current) throw new DatabaseError('invalid', 'Repository is no longer available.')
+            const assignment = current.remote === repository.remote ? current : undefined
+            this.putRepository({
+                ...repository,
+                path: current.path,
+                available: current.available,
+                accountId: assignment?.accountId,
+                accountGeneration: assignment?.accountGeneration,
+                providerProjectId: assignment?.providerProjectId,
+                assignment: assignment?.assignment
+            })
+        }, generation)
+    }
+    updateRepositoryLocation(
+        location: Pick<Repository, 'id' | 'path' | 'branches' | 'remotes' | 'available' | 'removed'>,
+        generation: string
+    ) {
+        this.write(() => {
+            const current = this.repositories().find((r) => r.id === location.id)
+            if (!current) throw new DatabaseError('invalid', 'Repository is no longer available.')
+            this.putRepository({
+                ...current,
+                path: location.path,
+                branches: location.branches,
+                remotes: location.remotes,
+                available: location.available,
+                removed: location.removed
+            })
+        }, generation)
+    }
+    assignProviderAccount(
+        repositoryId: string,
+        configuration: string,
+        assignment: {
+            accountId?: string
+            accountGeneration?: number
+            providerProjectId?: string
+            assignment: 'automatic' | 'explicit'
+        },
+        generation: string
+    ) {
+        this.write(() => {
+            const repository = this.repositories().find((r) => r.id === repositoryId)
+            if (!repository || remoteConfiguration(repository) !== configuration)
+                throw new DatabaseError('conflict', 'Repository changed. Choose its account again.')
+            if (assignment.accountId) {
+                const account = this.config().accounts.find((a) => a.id === assignment.accountId)
+                if (
+                    !account ||
+                    account.generation !== assignment.accountGeneration ||
+                    !['connected', 'session'].includes(account.status)
+                )
+                    throw new DatabaseError('conflict', 'The account changed. Reconnect or choose another account.')
+            }
+            this.putRepository({ ...repository, ...assignment })
+        }, generation)
+    }
+    prepareProviderAccount(input: ProviderAccount, generation: string) {
+        this.write(() => {
+            const account = providerAccountSchema.parse(input)
+            const current = this.config().accounts.find((a) => a.id === account.id)
+            if (current && account.generation !== current.generation + 1 && account.generation !== current.generation)
+                throw new DatabaseError('conflict', 'This account changed. Connect again.')
+            const metadata = {
+                ...account,
+                predecessorKey: current?.credentialKey,
+                previousGeneration: current?.generation ?? 0
+            }
+            this.db
+                .insert(t.providerPreparations)
+                .values({ id: account.id, metadata })
+                .onConflictDoUpdate({ target: t.providerPreparations.id, set: { metadata } })
+                .run()
+        }, generation)
+    }
+    activateProviderAccount(id: string, expected: number, generation: string) {
+        this.write(() => {
+            const pending = this.db
+                .select()
+                .from(t.providerPreparations)
+                .where(eq(t.providerPreparations.id, id))
+                .get()?.metadata
+            const current = this.config().accounts.find((a) => a.id === id)
+            if (
+                !pending ||
+                pending.status === 'disconnected' ||
+                pending.generation !== expected ||
+                (current?.generation ?? 0) !== pending.previousGeneration ||
+                current?.credentialKey !== pending.predecessorKey
+            )
+                throw new DatabaseError('conflict', 'This account changed. Connect again.')
+            const metadata = providerAccountSchema.parse(pending)
+            if (
+                this.config().accounts.some(
+                    (a) =>
+                        a.id !== id &&
+                        a.provider === pending.provider &&
+                        a.host === pending.host &&
+                        a.userId === pending.userId
+                )
+            )
+                throw new DatabaseError('conflict', 'This account is already connected.')
+            this.db
+                .insert(t.providerAccounts)
+                .values({ id, identity: JSON.stringify([pending.provider, pending.host, pending.userId]), metadata })
+                .onConflictDoUpdate({ target: t.providerAccounts.id, set: { metadata } })
+                .run()
+            for (const r of this.repositories().filter((r) => r.accountId === id))
+                this.putRepository({ ...r, accountGeneration: expected })
+        }, generation)
+    }
+    finishProviderAccount(id: string, generation: string) {
+        this.write(
+            () => this.db.delete(t.providerPreparations).where(eq(t.providerPreparations.id, id)).run(),
+            generation
+        )
+    }
+    finishCredentialCleanup(key: string, generation: string) {
+        this.write(() => this.db.delete(t.credentialCleanup).where(eq(t.credentialCleanup.key, key)).run(), generation)
+    }
+    disconnectProviderAccount(id: string, generation: string, status: 'disconnected' | 'reconnect' = 'disconnected') {
+        return this.write(() => {
+            const current = this.config().accounts.find((a) => a.id === id)
+            if (!current) throw new DatabaseError('invalid', 'Account not found.')
+            const pending = this.config().accountPreparations.find((a) => a.id === id)
+            const keys = [
+                ...new Set(
+                    [current.credentialKey, pending?.credentialKey, pending?.predecessorKey].filter(
+                        (k): k is string => !!k
+                    )
+                )
+            ]
+            for (const key of keys) this.db.insert(t.credentialCleanup).values({ key }).onConflictDoNothing().run()
+            this.db
+                .insert(t.providerPreparations)
+                .values({
+                    id,
+                    metadata: {
+                        ...(pending ?? current),
+                        status: 'disconnected',
+                        predecessorKey: current.credentialKey,
+                        previousGeneration: current.generation + 1
+                    }
+                })
+                .onConflictDoUpdate({
+                    target: t.providerPreparations.id,
+                    set: {
+                        metadata: {
+                            ...(pending ?? current),
+                            status: 'disconnected',
+                            predecessorKey: current.credentialKey,
+                            previousGeneration: current.generation + 1
+                        }
+                    }
+                })
+                .run()
+            this.db
+                .update(t.providerAccounts)
+                .set({ metadata: { ...current, status, generation: current.generation + 1 } })
+                .where(eq(t.providerAccounts.id, id))
+                .run()
+            for (const r of this.repositories().filter((r) => r.accountId === id))
+                this.putRepository({ ...r, accountGeneration: current.generation + 1 })
+            return keys
+        }, generation)
     }
     extendTrackingStart(id: string, since: string, generation: string) {
         return this.write(
@@ -226,8 +466,7 @@ export class JournalEngine {
             const current = this.config().settings
             const parsed = parseSettings({
                 ...settings,
-                destination: current.destination,
-                githubLogin: current.githubLogin
+                destination: current.destination
             })
             this.setImageReferences('template', parsed.template)
             this.db.update(t.journal).set({ settings: parsed }).where(eq(t.journal.id, 1)).run()
@@ -240,12 +479,6 @@ export class JournalEngine {
                 .set({ settings: { ...this.config().settings, destination } })
                 .where(eq(t.journal.id, 1))
                 .run()
-        }, generation)
-    }
-    setGitHubLogin(githubLogin: string, generation: string) {
-        this.write(() => {
-            const settings = stateSchema.shape.settings.parse({ ...this.config().settings, githubLogin })
-            this.db.update(t.journal).set({ settings }).where(eq(t.journal.id, 1)).run()
         }, generation)
     }
     repositoryUnavailable(id: string, configuration: string, generation: string) {
@@ -289,7 +522,7 @@ export class JournalEngine {
         const value = stateSchema.shape.acquisition.unwrap().valueType.parse(input)
         const { status, retryAt, versions, refs: _refs, excludedTips: _tips, ...cursor } = value
         const provider = key.slice(0, !key.includes(':') ? undefined : key.indexOf(':'))
-        if (!['git', 'github', 'notion'].includes(provider))
+        if (!['git', 'remote', 'notion'].includes(provider))
             throw new DatabaseError('invalid', 'Unknown activity source')
         const repositoryId = provider === 'notion' ? null : key.slice(key.indexOf(':') + 1)
         const previous = this.db
@@ -301,7 +534,7 @@ export class JournalEngine {
             key,
             status,
             retryAt: retryAt ?? null,
-            provider: provider as 'git' | 'github' | 'notion',
+            provider: provider as 'git' | 'remote' | 'notion',
             repositoryId,
             cursor
         }
@@ -337,7 +570,7 @@ export class JournalEngine {
         const row = this.db.select().from(t.acquisition).where(eq(t.acquisition.key, key)).get()
         if (!row) return undefined
         const versions =
-            row.provider === 'github'
+            row.provider === 'remote'
                 ? Object.fromEntries(
                       this.db
                           .select()
@@ -408,10 +641,12 @@ export class JournalEngine {
                 .where(and(inArray(t.activityDates.activityId, ids), eq(t.activityDates.kind, 'commit')))
                 .all()
         )
+        const configurations = new Map(this.repositories().map((r) => [r.id, remoteConfiguration(r)]))
         return rows.map((row) =>
             this.hydrateActivity(row, {
                 branches: branches.get(row.id) ?? [],
                 files: files.get(row.id) ?? [],
+                configuration: configurations.get(row.repositoryId),
                 commitDates: dates.get(row.id) ?? []
             })
         )
@@ -421,6 +656,7 @@ export class JournalEngine {
         related?: {
             branches: (typeof t.activityBranches.$inferSelect)[]
             files: (typeof t.activityFiles.$inferSelect)[]
+            configuration?: string
             commitDates: { instant: number }[]
         }
     ): Activity {
@@ -444,7 +680,14 @@ export class JournalEngine {
                 .all()
         return activitySchema.parse({
             ...row,
-            pullRequest:
+            previousSource:
+                !!row.remoteSource &&
+                !row.localQualified &&
+                !row.explicit &&
+                (related?.configuration ??
+                    remoteConfiguration(this.repositories().find((r) => r.id === row.repositoryId)!)) !==
+                    row.remoteSource.configuration,
+            changeRequest:
                 row.openedAt === null
                     ? undefined
                     : {
@@ -529,11 +772,11 @@ export class JournalEngine {
             journaled: journaled || !!retained?.journaled,
             author: a.author,
             sha: a.sha ?? null,
-            prId: a.prId ?? null,
-            prStatus: a.pullRequest?.status ?? null,
-            openedAt: a.pullRequest ? instant(a.pullRequest.openedAt) : null,
-            closedAt: a.pullRequest?.closedAt ? instant(a.pullRequest.closedAt) : null,
-            mergedAt: a.pullRequest?.mergedAt ? instant(a.pullRequest.mergedAt) : null,
+            changeRequestId: a.changeRequestId ?? null,
+            prStatus: a.changeRequest?.status ?? null,
+            openedAt: a.changeRequest ? instant(a.changeRequest.openedAt) : null,
+            closedAt: a.changeRequest?.closedAt ? instant(a.changeRequest.closedAt) : null,
+            mergedAt: a.changeRequest?.mergedAt ? instant(a.changeRequest.mergedAt) : null,
             url: a.url ?? null,
             description: a.description,
             revision: a.revision ?? null,
@@ -543,6 +786,19 @@ export class JournalEngine {
             fingerprint: a.fingerprint ?? null,
             integrationSha: a.integrationSha ?? null,
             sourceVersion: a.sourceVersion ?? null,
+            revisionSource: a.revisionSource ?? null,
+            localQualified: a.localQualified ?? (a.kind === 'commit' && !a.remoteSource),
+            remoteIdentity:
+                a.remoteSource && a.kind !== 'commit'
+                    ? JSON.stringify([
+                          a.remoteSource.provider,
+                          a.remoteSource.host,
+                          a.remoteSource.projectId ?? a.remoteSource.path,
+                          a.kind,
+                          a.remoteSource.eventId
+                      ])
+                    : null,
+            remoteSource: a.remoteSource ?? null,
             filesLoaded: !!a.filesLoaded,
             disposition: a.disposition,
             deferUntil: a.deferUntil ?? null,
@@ -560,17 +816,17 @@ export class JournalEngine {
         const facts: { kind: 'activity' | 'commit' | 'opened' | 'closed' | 'merged'; instant: number }[] = [
             { kind: 'activity', instant: instant(a.date) }
         ]
-        if (a.pullRequest) {
+        if (a.changeRequest) {
             facts.push(
-                { kind: 'opened', instant: instant(a.pullRequest.openedAt) },
-                ...a.pullRequest.commitDates.map((date) => ({ kind: 'commit' as const, instant: instant(date) }))
+                { kind: 'opened', instant: instant(a.changeRequest.openedAt) },
+                ...a.changeRequest.commitDates.map((date) => ({ kind: 'commit' as const, instant: instant(date) }))
             )
-            if (a.pullRequest.closedAt) facts.push({ kind: 'closed', instant: instant(a.pullRequest.closedAt) })
-            if (a.pullRequest.mergedAt) facts.push({ kind: 'merged', instant: instant(a.pullRequest.mergedAt) })
+            if (a.changeRequest.closedAt) facts.push({ kind: 'closed', instant: instant(a.changeRequest.closedAt) })
+            if (a.changeRequest.mergedAt) facts.push({ kind: 'merged', instant: instant(a.changeRequest.mergedAt) })
         }
         for (const fact of new Map(
             facts
-                .filter((f) => !a.pullRequest || f.instant >= instant(a.pullRequest.openedAt))
+                .filter((f) => !a.changeRequest || f.instant >= instant(a.changeRequest.openedAt))
                 .map((f) => [`${f.kind}:${f.instant}`, f])
         ).values())
             this.db
@@ -600,7 +856,7 @@ export class JournalEngine {
                 const repository = config.repositories.find((r) => r.id === batch.source!.repositoryId)
                 const configuration =
                     repository &&
-                    (batch.source.provider === 'git' ? gitConfiguration : githubConfiguration)(repository, {
+                    (batch.source.provider === 'git' ? gitConfiguration : contributionConfiguration)(repository, {
                         settings: config.settings,
                         restoreId: config.generation
                     })
@@ -621,7 +877,21 @@ export class JournalEngine {
                     available: batch.repository.available
                 })
             }
-            for (const activity of batch.activities ?? []) this.putActivity(activity, true)
+            for (const activity of batch.activities ?? []) {
+                if (activity.remoteSource) {
+                    const account = this.config().accounts.find((a) => a.id === activity.remoteSource!.accountId)
+                    if (
+                        !account ||
+                        account.generation !== activity.remoteSource.sessionGeneration ||
+                        !['connected', 'session'].includes(account.status)
+                    )
+                        throw new DatabaseError('conflict', 'The connected account changed. Refresh again.')
+                }
+                this.putActivity(
+                    batch.source?.provider === 'git' ? { ...activity, localQualified: true } : activity,
+                    true
+                )
+            }
             if (batch.history && batch.repository) {
                 const h = batch.history,
                     repositoryId = batch.repository.id
@@ -706,7 +976,7 @@ export class JournalEngine {
             .all()
             .map((r) => ({
                 id: r.id,
-                prId: r.activityId,
+                activityId: r.activityId,
                 base: r.base,
                 head: r.head,
                 fingerprint: optional(r.fingerprint),
@@ -721,6 +991,18 @@ export class JournalEngine {
     ) {
         this.write(() => {
             const current = this.activity(activity.id)
+            if (activity.remoteSource) {
+                const repository = this.repositories().find((r) => r.id === activity.repositoryId)
+                const account = this.config().accounts.find((a) => a.id === activity.remoteSource!.accountId)
+                if (
+                    !repository ||
+                    remoteConfiguration(repository) !== activity.remoteSource.configuration ||
+                    !account ||
+                    account.generation !== activity.remoteSource.sessionGeneration ||
+                    !['connected', 'session'].includes(account.status)
+                )
+                    throw new DatabaseError('conflict', 'The connected account changed. Open this activity again.')
+            }
             if (!current || current.sourceVersion !== activity.sourceVersion)
                 throw new DatabaseError('conflict', 'Activity changed while loading. Open it again.')
             this.putActivity(
@@ -1154,7 +1436,14 @@ export class JournalEngine {
         const config = this.config(),
             state = initialState()
         const { generation, sequence, ...metadata } = config
-        Object.assign(state, { ...metadata, version: 1, restoreId: generation, snapshotVersion: sequence })
+        const { accountPreparations: _preparations, credentialCleanup: _cleanup, accounts, ...safeMetadata } = metadata
+        Object.assign(state, {
+            ...safeMetadata,
+            accounts: accounts.map(({ credentialKey: _key, ...account }) => account),
+            version: 1,
+            restoreId: generation,
+            snapshotVersion: sequence
+        })
         const week = view?.since ?? weekOf(new Date(this.now()), config.settings)
         const until = view?.until ?? new Date(Date.parse(week) + 6 * 86400000).toISOString().slice(0, 10)
         const midnight = (date: string) => {
@@ -1240,7 +1529,7 @@ export class JournalEngine {
                   .all()
                   .map((row) => ({
                       id: row.id,
-                      prId: row.activityId,
+                      activityId: row.activityId,
                       base: row.base,
                       head: row.head,
                       fingerprint: optional(row.fingerprint),
@@ -1262,7 +1551,13 @@ export class JournalEngine {
             .get()!.value
         if (bytes > imageLimits.backup)
             throw new DatabaseError('invalid', 'The journal exceeds the 512 MiB backup limit.')
-        const { generation, sequence, ...config } = this.config(),
+        const {
+                generation,
+                sequence,
+                accountPreparations: _preparations,
+                credentialCleanup: _cleanup,
+                ...config
+            } = this.config(),
             state = { ...initialState(), ...config, restoreId: generation, snapshotVersion: sequence }
         state.acquisition = Object.fromEntries(
             this.db
@@ -1315,7 +1610,11 @@ export class JournalEngine {
                 height: i.height,
                 bytes: i.bytes.toString('base64')
             }))
-        const result = JSON.stringify({ backupVersion: 3, state, images })
+        state.accounts = config.accounts.map(({ credentialKey: _key, ...account }) => ({
+            ...account,
+            status: 'disconnected'
+        }))
+        const result = JSON.stringify({ backupVersion: 4, state, images })
         if (Buffer.byteLength(result) > imageLimits.backup)
             throw new DatabaseError('invalid', 'The journal exceeds the 512 MiB backup limit.')
         return result
@@ -1323,7 +1622,23 @@ export class JournalEngine {
     restore(state: State, images: JournalImage[]) {
         state = stateSchema.parse(state)
         state.settings = parseSettings(state.settings)
+        for (const repository of state.repositories) {
+            if (!repository.accountId) continue
+            const account = state.accounts.find((a) => a.id === repository.accountId)
+            const remote = providerRemote(repository.remote)
+            if (!account || !remote || remote.provider !== account.provider || remote.host !== account.host)
+                throw new DatabaseError('invalid', 'The backup contains an invalid repository account assignment.')
+        }
         this.write(() => {
+            const config = this.config()
+            const keys = new Set([
+                'github',
+                ...config.accounts.flatMap((a) => (a.credentialKey ? [a.credentialKey] : [])),
+                ...config.accountPreparations.flatMap((a) =>
+                    [a.credentialKey, a.predecessorKey].filter((k): k is string => !!k)
+                )
+            ])
+            for (const key of keys) this.db.insert(t.credentialCleanup).values({ key }).onConflictDoNothing().run()
             // FK order deliberately keeps every replacement atomic.
             for (const table of [
                 t.imageReferences,
@@ -1344,6 +1659,8 @@ export class JournalEngine {
                 t.repositoryBranches,
                 t.repositoryEmails,
                 t.repositories,
+                t.providerAccounts,
+                t.providerPreparations,
                 t.acquisition,
                 t.transportPauses,
                 t.images
@@ -1356,13 +1673,22 @@ export class JournalEngine {
                     .run()
             for (const repository of state.repositories)
                 this.putRepository({ ...repository, path: '', available: false })
+            for (const account of state.accounts)
+                this.db
+                    .insert(t.providerAccounts)
+                    .values({
+                        id: account.id,
+                        identity: JSON.stringify([account.provider, account.host, account.userId]),
+                        metadata: { ...account, status: 'disconnected' }
+                    })
+                    .run()
             for (const activity of state.activities) this.putActivity(activity, false)
             for (const revision of state.revisions)
                 this.db
                     .insert(t.revisions)
                     .values({
                         id: revision.id,
-                        activityId: revision.prId,
+                        activityId: revision.activityId,
                         base: revision.base,
                         head: revision.head,
                         fingerprint: revision.fingerprint,

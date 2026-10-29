@@ -68,7 +68,7 @@ it('keeps actual editor revisions through idle saves, title edits, citations, in
         expect(serialize).toHaveBeenCalledTimes(1)
         expect(saved[0]).toMatchObject({ type: 'draft', draft: { body: writing.getJSON() } })
         await update(() => {
-            finish?.({ state, connections: { github: false, notion: true, protectedStorage: false } })
+            finish?.({ state, connections: { remote: false, notion: true, protectedStorage: false } })
         })
         await update(() => writing.commands.insertContent(' second'))
         // A title change must read the current editor revision rather than feed an older saved body back into it.
@@ -95,14 +95,14 @@ it('keeps actual editor revisions through idle saves, title edits, citations, in
         expect(saved[1]).toMatchObject({ type: 'draft', draft: { title: 'New title', body: writing.getJSON() } })
         await update(() => writing.commands.insertContent(' last'))
         await update(() => {
-            finish?.({ state, connections: { github: false, notion: true, protectedStorage: false } })
+            finish?.({ state, connections: { remote: false, notion: true, protectedStorage: false } })
         })
         expect(host.querySelector('[role="status"]')?.textContent).toContain('Saving')
         await update(() => window.dispatchEvent(new Event('pagehide')))
         expect(saved[2]).toMatchObject({ type: 'draft', draft: { body: writing.getJSON() } })
         expect(localStorage.getItem(localStorage.key(0)!)).toContain('last')
         await update(() => {
-            finish?.({ state, connections: { github: false, notion: true, protectedStorage: false } })
+            finish?.({ state, connections: { remote: false, notion: true, protectedStorage: false } })
         })
     } finally {
         await update(() => root.unmount())

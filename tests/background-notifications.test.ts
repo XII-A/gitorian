@@ -78,7 +78,7 @@ it('does not repeat source warnings on polling or count user-paused sources', as
     const repo = state.repositories[0]
     state.acquisition = {
         [`git:${repo.id}`]: { status: 'cancelled', error: 'Paused by you' },
-        [`github:${repo.id}`]: { status: 'error', error: 'HTTP 401' }
+        [`remote:${repo.id}`]: { status: 'error', error: 'HTTP 401' }
     }
     const render = async () => {
         await act(async () => {

@@ -123,6 +123,7 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                 lane: ReturnType<typeof priorityLane>
             ): Effect.Effect<T, HttpFailure> => {
                 const github = new URL(url).host === 'api.github.com'
+                const gitlab = new URL(url).host === 'gitlab.com'
                 const read = !init.method || init.method === 'GET'
                 const cached = read ? cache.get(key) : undefined
                 if (cached) headers.set('If-None-Match', cached.etag)
@@ -140,15 +141,21 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                             )
                         )
                     const budget = budgets.get(scope)
-                    if (github && options.background && budget && budget.reset > Date.now() && budget.remaining <= 500)
+                    if (
+                        (github || gitlab) &&
+                        options.background &&
+                        budget &&
+                        budget.reset > Date.now() &&
+                        budget.remaining <= (github ? 500 : 10)
+                    )
                         return yield* Effect.fail(
                             new HttpError(
                                 429,
-                                'Background GitHub refresh paused to preserve quota for opening changes.',
+                                `Background ${github ? 'GitHub' : 'GitLab'} refresh paused to preserve quota for opening changes.`,
                                 budget.reset
                             )
                         )
-                    if (github && options.background) {
+                    if ((github || gitlab) && options.background) {
                         const delay = Math.max(0, 150 - (Date.now() - (lastRequest.get(scope) ?? 0)))
                         if (delay) yield* Effect.sleep(delay)
                     }
@@ -179,8 +186,9 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                                     })
                             })
                     )
-                    const remaining = response.headers.get('x-ratelimit-remaining')
-                    const reset = Number(response.headers.get('x-ratelimit-reset') ?? 0) * 1000
+                    const remaining = response.headers.get(gitlab ? 'ratelimit-remaining' : 'x-ratelimit-remaining')
+                    const reset =
+                        Number(response.headers.get(gitlab ? 'ratelimit-reset' : 'x-ratelimit-reset') ?? 0) * 1000
                     if (remaining !== null) budgets.set(scope, { remaining: Number(remaining), reset })
                     if (remaining === '0' && reset) yield* pause(scope, reset)
                     if (response.status === 304 && cached) return cached.value as T
@@ -241,7 +249,7 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                     return value as T
                 }).pipe(Effect.scoped)
 
-                return (github ? lane(attempt, options.background ? 0 : 1) : attempt).pipe(
+                return (github || gitlab ? lane(attempt, options.background ? 0 : 1) : attempt).pipe(
                     Effect.retry({
                         times: 2,
                         schedule: Schedule.exponential(200).pipe(Schedule.jittered),
@@ -268,7 +276,7 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                     headers.set('Authorization', 'Bearer ' + token)
                     if (host === 'api.notion.com') {
                         if (!headers.has('Notion-Version')) headers.set('Notion-Version', '2025-09-03')
-                    } else {
+                    } else if (host === 'api.github.com') {
                         if (!headers.has('Accept')) headers.set('Accept', 'application/vnd.github+json')
                         headers.set('X-GitHub-Api-Version', '2022-11-28')
                     }

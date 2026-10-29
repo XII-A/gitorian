@@ -16,14 +16,14 @@ it('chooses a GitHub fetch source using upstream, origin, then another named rem
     try {
         await app.git('remote', 'add', 'origin', 'https://example.com/local/project.git')
         await app.git('remote', 'add', 'work', 'ssh://git@github.com/team/project.git')
-        expect((await inspectRepository(app.directory)).githubRemote).toBe('ssh://git@github.com/team/project.git')
+        expect((await inspectRepository(app.directory)).selectedRemote).toBe('ssh://git@github.com/team/project.git')
         await app.git('remote', 'set-url', 'origin', 'git@github.com:author/project.git')
-        expect((await inspectRepository(app.directory)).githubRemote).toBe('git@github.com:author/project.git')
+        expect((await inspectRepository(app.directory)).selectedRemote).toBe('git@github.com:author/project.git')
         await app.git('remote', 'add', 'upstream', 'https://github.com/team/project.git')
         await app.git('remote', 'set-url', '--push', 'upstream', 'https://github.com/other/project.git')
-        expect((await inspectRepository(app.directory)).githubRemote).toBe('https://github.com/team/project.git')
+        expect((await inspectRepository(app.directory)).selectedRemote).toBe('https://github.com/team/project.git')
         for (const name of ['origin', 'work', 'upstream']) await app.git('remote', 'remove', name)
-        expect((await inspectRepository(app.directory)).githubRemote).toBe('')
+        expect((await inspectRepository(app.directory)).selectedRemote).toBe('')
     } finally {
         await app.close()
     }

@@ -66,12 +66,12 @@ it('previews GitHub Markdown, file changes, and PR history in the details tab', 
     const state = sampleState('2026-10-05')
     const activity = {
         ...state.activities[8],
-        kind: 'pr' as const,
+        kind: 'change-request' as const,
         description:
             '## Summary\n\n**Retry uploads**\n\n- [x] Added coverage\n\n| File | Status |\n| --- | --- |\n| retry.ts | Updated |',
         filesLoaded: true,
         files: [{ name: 'src/renamed.ts', status: 'R100', previousName: 'src/old.ts' }],
-        pullRequest: {
+        changeRequest: {
             status: 'merged' as const,
             openedAt: state.activities[8].date,
             commitDates: [],
@@ -126,7 +126,7 @@ it('explains an empty relation without reserving a long virtual scroll area', ()
         createElement(RelatedActivities, { activities: [], repositoryName: 'Project' })
     )
     expect(container.querySelector('h3')?.textContent).toBe('No related activity')
-    expect(container.textContent).toContain('No other captured activity shares this branch or pull request.')
+    expect(container.textContent).toContain('No other captured activity shares this branch or request.')
     expect(container.querySelector('[data-variant="plain"]')).not.toBeNull()
     expect(container.querySelector('[aria-label="Related activity"]')).not.toBeNull()
     expect(container.querySelector('.ws-related-space')).toBeNull()

@@ -1,20 +1,23 @@
 import type { Activity } from '../shared/model'
 
 export function isPullRequest(activity: Activity) {
-    return activity.kind === 'pr' || activity.kind === 'opened' || activity.kind === 'merged'
+    return activity.kind === 'change-request' || activity.kind === 'opened' || activity.kind === 'merged'
 }
 
-export function pullRequestKey(activity: Activity) {
-    return JSON.stringify([activity.repositoryId, activity.prId ?? activity.id.replace(/:(opened|merged)$/, '')])
+export function changeRequestKey(activity: Activity) {
+    return JSON.stringify([
+        activity.repositoryId,
+        activity.changeRequestId ?? activity.id.replace(/:(opened|merged)$/, '')
+    ])
 }
 
-export function pullRequestContext(activity: Activity, activities: Activity[]) {
-    const key = pullRequestKey(activity)
-    const related = activities.filter((item) => isPullRequest(item) && pullRequestKey(item) === key)
+export function changeRequestContext(activity: Activity, activities: Activity[]) {
+    const key = changeRequestKey(activity)
+    const related = activities.filter((item) => isPullRequest(item) && changeRequestKey(item) === key)
     const canonical =
-        related.find((item) => item.kind === 'pr') ??
+        related.find((item) => item.kind === 'change-request') ??
         related.reduce((latest, item) => (item.date > latest.date ? item : latest), activity)
-    const metadata = activity.pullRequest ?? canonical.pullRequest
+    const metadata = activity.changeRequest ?? canonical.changeRequest
     const openedAt = metadata?.openedAt ?? related.find((item) => item.kind === 'opened')?.date
     const mergedAt = metadata?.mergedAt ?? related.find((item) => item.kind === 'merged')?.date
     const commitDates = metadata?.commitDates ?? []

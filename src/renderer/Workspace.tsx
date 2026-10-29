@@ -190,7 +190,7 @@ export function Workspace({
             setExample(next)
             return {
                 state: next,
-                connections: { github: false, notion: false, protectedStorage: false },
+                connections: { remote: false, notion: false, protectedStorage: false },
                 ...(command.type === 'draft'
                     ? { draftSaved: { id: command.draft.id, version: command.draft.version + 1 } }
                     : {})
@@ -243,6 +243,10 @@ export function Workspace({
         [state.activities, state.repositories, state.settings.timezone]
     )
     const items = useMemo(() => rangeActivities(activityState, week, offsetDay(week, 6)), [activityState, week])
+    const allItems = useMemo(
+        () => rangeActivities(activityState, week, offsetDay(week, 6), true),
+        [activityState, week]
+    )
     const searchItems = useMemo(
         () =>
             searchExpanded
@@ -252,7 +256,7 @@ export function Workspace({
                       group: state.repositories.find((repo) => repo.id === item.repositoryId)?.name,
                       meta: `${formatDay(localDate(new Date(item.date), state.settings.timezone))} · ${item.sha?.slice(0, 7) ?? item.kind}`,
                       keywords: [item.sha ?? '', item.description, ...item.branches],
-                      icon: <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'pr'} />
+                      icon: <WorkspaceIcon name={item.kind === 'commit' ? 'commit' : 'change-request'} />
                   }))
                 : [],
         [searchExpanded, items, state.repositories, state.settings.timezone]
@@ -499,7 +503,7 @@ export function Workspace({
                             className="ws-week-chart"
                         />
                         <ActivityFilterStrip className="ws-activity-filters">
-                            {(['all', 'commit', 'pr'] as const).map((value) => (
+                            {(['all', 'commit', 'change-request'] as const).map((value) => (
                                 <Button
                                     key={value}
                                     variant="ghost"
@@ -509,12 +513,13 @@ export function Workspace({
                                     aria-pressed={kind === value}
                                     onClick={() => setKind(value)}
                                 >
-                                    {value === 'all' ? 'All' : value === 'commit' ? 'Commits' : 'PRs & reviews'}
+                                    {value === 'all' ? 'All' : value === 'commit' ? 'Commits' : 'Requests & reviews'}
                                     <span>
                                         {
-                                            items.filter(
+                                            allItems.filter(
                                                 (item) =>
                                                     (project === 'all' || item.repositoryId === project) &&
+                                                    !item.previousSource &&
                                                     (value === 'all' ||
                                                         (value === 'commit'
                                                             ? item.kind === 'commit'
