@@ -9,7 +9,7 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
     repositoryName: string
     connected?: boolean
     repositoryMarker?: RepositoryMarkerStyle
-    repositoryMuted?: boolean
+    repositoryGroup?: string
 }
 
 const labels: Record<Activity['kind'], string> = {
@@ -25,7 +25,7 @@ export function ActivityRow({
     repositoryName,
     connected,
     repositoryMarker,
-    repositoryMuted,
+    repositoryGroup,
     className,
     ...props
 }: Props) {
@@ -49,7 +49,9 @@ export function ActivityRow({
             {...props}
             type="button"
             className={['activity-row', className].filter(Boolean).join(' ')}
-            data-repository-muted={repositoryMuted || undefined}
+            data-activity-id={activity.id}
+            data-repository-id={activity.repositoryId}
+            data-repository-group={repositoryGroup}
             data-kind={activity.kind}
             data-connected={connected || undefined}
         >
@@ -57,10 +59,8 @@ export function ActivityRow({
                 <Icon size={14} strokeWidth={1.75} />
             </span>
             <span className="activity-row-content">
-                <span className="activity-row-title">
-                    <span className="activity-row-kind">{kindLabel}: </span>
-                    {activity.title}
-                </span>
+                <span className="activity-row-kind">{kindLabel}: </span>
+                <span className="activity-row-title">{activity.title.trim() || 'Untitled activity'}</span>
                 <span className="activity-row-meta">
                     <span title={repositoryName}>
                         {repositoryMarker ? (

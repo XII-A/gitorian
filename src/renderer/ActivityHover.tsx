@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { useRowHover } from './use-row-hover'
@@ -7,12 +7,14 @@ import { useRowHover } from './use-row-hover'
 export function ActivityHover({ children }: { children: ReactNode }) {
     const { root, style, handlers } = useRowHover('.activity-row', children)
     const { x, y, width, height, opacity } = style
+    const dirty = useRef(true)
     const clipId = useId()
     const [timeline, setTimeline] = useState({ neutral: '', merged: '' })
 
     // Two paths mirror the existing borders, rather than adding motion to every row.
     const measureTimeline = useCallback(() => {
         if (!root.current) return
+        dirty.current = false
         const bounds = root.current.getBoundingClientRect()
         const viewport = root.current.closest('[role="region"]')?.getBoundingClientRect()
         const paths = { neutral: '', merged: '' }
@@ -48,10 +50,15 @@ export function ActivityHover({ children }: { children: ReactNode }) {
         )
     }, [root])
 
-    useLayoutEffect(measureTimeline, [measureTimeline])
+    useLayoutEffect(() => {
+        dirty.current = true
+        if (opacity.get() > 0) measureTimeline()
+    }, [measureTimeline, children, opacity])
     useEffect(() => {
         let frame = 0
         const schedule = () => {
+            dirty.current = true
+            if (opacity.get() <= 0) return
             cancelAnimationFrame(frame)
             frame = requestAnimationFrame(measureTimeline)
         }
@@ -91,10 +98,24 @@ export function ActivityHover({ children }: { children: ReactNode }) {
             viewport?.removeEventListener('scroll', schedule)
             cancelAnimationFrame(frame)
         }
-    }, [root, measureTimeline])
+    }, [root, measureTimeline, opacity])
 
     return (
-        <div className="activity-hover" ref={root} {...handlers}>
+        <div
+            className="activity-hover"
+            ref={root}
+            {...handlers}
+            onPointerMove={(event) => {
+                if (
+                    event.pointerType !== 'touch' &&
+                    window.matchMedia('(hover: hover) and (pointer: fine)').matches &&
+                    dirty.current &&
+                    (event.target as HTMLElement).closest('.activity-row')
+                )
+                    measureTimeline()
+                handlers.onPointerMove(event)
+            }}
+        >
             <motion.span
                 className="activity-hover-highlight"
                 style={{ x, y, width, height, opacity }}

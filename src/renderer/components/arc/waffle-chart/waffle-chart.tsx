@@ -1,5 +1,8 @@
 'use client'
 
+import { formatWaffleShare } from './waffle-format'
+import { allocateWaffleCells } from './waffle-allocation'
+
 import {
     useEffect,
     useImperativeHandle,
@@ -37,6 +40,7 @@ export interface WaffleChartProps {
     label: string
     /** Unit after each raw value in the tooltip and table, such as "TWh". */
     unit?: string
+    singularUnit?: string
     formatValue?: (value: number, category: WaffleCategory) => string
     /** Grid rows. rows Ã columns cells make the whole; 10 Ã 10 means one cell per percent. */
     rows?: number
@@ -92,19 +96,6 @@ function useReducedMotionSafe() {
     return !!useReducedMotion() && hydrated
 }
 
-/** Whole cells per category by largest remainder, so the counts always add up to the grid. */
-function allocate(data: WaffleCategory[], total: number, cells: number): number[] {
-    if (total <= 0) return data.map(() => 0)
-    const exact = data.map((item) => (Math.max(0, item.value) / total) * cells)
-    const counts = exact.map(Math.floor)
-    let left = cells - counts.reduce((sum, count) => sum + count, 0)
-    const order = exact
-        .map((value, index) => ({ index, rest: value - Math.floor(value) }))
-        .sort((a, b) => b.rest - a.rest)
-    for (let k = 0; left > 0 && k < order.length; k++, left--) counts[order[k].index]++
-    return counts
-}
-
 /**
  * Hands cells to categories while moving as few as possible: each category keeps the cells it already had,
  * surplus cells join the categories that grew, and every block takes its cells in their previous order so paths never cross.
@@ -135,7 +126,7 @@ function reassign(previous: Cell[], data: WaffleCategory[], counts: number[]): C
 /** A share that rolls to its new value on a spring and holds its width with tabular figures. */
 function Rolling({ value, decimals, reduced }: { value: number; decimals: number; reduced: boolean }) {
     const shown = useMotionValue(value)
-    const text = useTransform(shown, (current) => `${current.toFixed(decimals)}%`)
+    const text = useTransform(shown, (current) => `${formatWaffleShare(current, decimals)}%`)
     useEffect(() => {
         if (reduced) {
             shown.jump(value)
@@ -151,6 +142,7 @@ export function WaffleChart({
     data,
     label,
     unit = '',
+    singularUnit,
     formatValue,
     rows = 10,
     columns = 10,
@@ -181,7 +173,7 @@ export function WaffleChart({
 
     // Cells are persistent objects; each data change reassigns them so they travel instead of repainting.
     const signature = `${count}|${data.map((item) => `${item.key}:${item.value}`).join(',')}`
-    const counts = useMemo(() => allocate(data, total, count), [signature]) // eslint-disable-line react-hooks/exhaustive-deps
+    const counts = useMemo(() => allocateWaffleCells(data, total, count), [signature]) // eslint-disable-line react-hooks/exhaustive-deps
     const [layout, setLayout] = useState(() => ({
         cells: reassign(
             Array.from({ length: count }, (_, id) => ({ id, key: null, slot: id })),
@@ -356,15 +348,15 @@ export function WaffleChart({
     }
 
     const format = (value: number, item: WaffleCategory) =>
-        `${formatValue ? formatValue(value, item) : grouped.format(value)}${unit ? ` ${unit}` : ''}`
+        `${formatValue ? formatValue(value, item) : grouped.format(value)}${unit ? ` ${value === 1 ? (singularUnit ?? unit) : unit}` : ''}`
     const share = (item: WaffleCategory) => (total > 0 ? (Math.max(0, item.value) / total) * 100 : 0)
     const reading = pointer ? (data.find((item) => item.key === pointer.key) ?? null) : null
     const announce = reading
-        ? `${reading.label}, ${share(reading).toFixed(decimals)}%, ${format(reading.value, reading)}`
+        ? `${reading.label}, ${formatWaffleShare(share(reading), decimals)}%, ${format(reading.value, reading)}`
         : ''
     const summary = empty
         ? `${label}. ${emptyLabel}.`
-        : `${label}. ${data.map((item) => `${item.label} ${share(item).toFixed(decimals)}%`).join(', ')}.`
+        : `${label}. ${data.map((item) => `${item.label} ${formatWaffleShare(share(item), decimals)}%`).join(', ')}.`
     const shownX = reduced ? tipX : glideX,
         shownY = reduced ? tipY : glideY
     const settle = reduced ? { duration: 0 } : spring.morph
@@ -481,7 +473,7 @@ export function WaffleChart({
                                 />
                                 <span className={styles.tipName}>{reading?.label ?? ''}</span>
                                 <span className={styles.tipValue}>
-                                    {reading ? `${share(reading).toFixed(decimals)}%` : ''}
+                                    {reading ? `${formatWaffleShare(share(reading), decimals)}%` : ''}
                                 </span>
                             </p>
                             <p className={styles.tipMeta}>{reading ? format(reading.value, reading) : ''}</p>
@@ -554,7 +546,12 @@ export function WaffleChart({
                                 <tr key={item.key}>
                                     <th scope="row">{item.label}</th>
                                     <td>{format(item.value, item)}</td>
-                                    <td>{share(item).toFixed(decimals)}%</td>
+                                    <td>
+                                        {new Intl.NumberFormat('en-US', { maximumFractionDigits: decimals }).format(
+                                            share(item)
+                                        )}
+                                        %
+                                    </td>
                                     <td>{counts[index]}</td>
                                 </tr>
                             ))}

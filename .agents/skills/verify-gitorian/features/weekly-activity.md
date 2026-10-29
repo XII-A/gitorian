@@ -74,6 +74,12 @@ Run `pnpm test:e2e startup-recovery` after `pnpm build`. The journal-only Electr
 
 ## Repository activity waffle
 
-The Hub uses only the borderless waffle chart, with a development-only sample data toggle. `pnpm test tests/repository-activity.test.ts` owns switching between sample data and the real empty state and absence of the toggle in production. `pnpm verify hub-dialog` captures `repository-waffle.png` using four disposable Git repositories with 18, 11, 7 and 4 commits. The expanded 40-activity timeline retains the desktop sticky-position check and `repository-sticky.png` capture before the existing dialog journey.
+The Hub uses the borderless waffle chart with stored activity only. `pnpm verify hub-dialog` captures `repository-waffle.png` using four disposable Git repositories with 18, 11, 7 and 4 commits. The expanded 40-activity timeline retains the desktop sticky-position check and `repository-sticky.png` capture before the existing dialog journey.
 
-The waffle shares the day chart's 260px width and right edge. Its natural-height heading aligns with the activity heading before scrolling; its sticky inset centers it against the filter strip after scrolling. The card has no internal scrollbar or height cap. Verification of the current alignment refinement was explicitly deferred to the user.
+The waffle shares the day chart's 260px width and right edge. Its natural-height heading aligns with the activity heading before scrolling; its sticky inset centers it against the filter strip after scrolling. The card has no internal scrollbar or height cap.
+
+## Large-list performance and identity regressions
+
+`pnpm test:e2e hub-repositories` owns the compiled Electron journey with 1,024 stored activities across 256 repositories in a disposable journal. It checks six individually named tiny shares plus Other (250), legend hover/focus/selection dimming, bounded virtual rendering, sequential Tab focus across 30 rows, focus through resizing, and expansion/collapse. No preview controls, URL override, or sample records exist in the app. Test-only records are created through `seedJournal` at the normal restore boundary; no real repository or provider is needed.
+
+`tests/repository-summary.test.ts` owns exact aggregate totals, bounded categories, and duplicate-name disambiguation. `tests/waffle-allocation.test.ts` owns positive tiny-category visibility (999:1 and a million-to-one skew) and nonzero percentage formatting. `tests/activity-row-labels.test.ts` owns empty-title fallback. Ordinary disclosure animation remains covered by `pnpm verify activity-days` on its existing 120-record real-Git fixture. Historical development-mode stress measurements, focus-promotion/reorder probes, width/zoom captures and source patches remain under `.ai-docs/verification/hub-stress-*`; the preview harness and its app controls were retired for release.

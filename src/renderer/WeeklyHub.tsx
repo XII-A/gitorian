@@ -1,5 +1,4 @@
-import { hubSampleData } from './hub-sample-data'
-import { repositoryActivityData } from './repository-markers'
+import { summarizeRepositoryActivity } from './repository-markers'
 import { RepositoryActivity } from './RepositoryActivity'
 import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
@@ -7,7 +6,7 @@ import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
 import { sourceProblems } from './background-work'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { BookOpen, Check, GitCommitHorizontal, ListChecks, RefreshCw, Settings2 } from 'lucide-react'
 import { AnimatePresence, motion, stagger, useIsPresent, usePresenceData } from 'motion/react'
@@ -181,17 +180,28 @@ export function WeeklyHub({
     const detailDialog = useRef<HubActivityDialogHandle>(null)
     const { refresh, refreshing: busy } = useActivityRefresh(run, start, end, state.settings.timezone)
     const loadingWeek = useWeekHistory(state, run, start)
-    const [sampleMode, setSampleMode] = useState(false)
-    const sample = import.meta.env.DEV && sampleMode
-    const preview = sample ? hubSampleData(start) : undefined
-    const repositories = preview?.repositories ?? state.repositories
-    const items = preview?.activities ?? rangeActivities(state, start, end)
-    const [highlightedRepository, setHighlightedRepository] = useState<string | null>(null)
-    const repositoryMarkers = new Map(repositoryActivityData(repositories, items).map((repo) => [repo.key, repo]))
-    const commits = items.filter((item) => item.kind === 'commit')
-    const prs = items.filter((item) => item.kind !== 'commit')
-    const repos = repositories.filter((repo) => items.some((item) => item.repositoryId === repo.id))
-    const days = [...new Set(items.map((item) => localDate(new Date(item.date), state.settings.timezone)))]
+    const repositories = state.repositories
+    const items = useMemo(() => rangeActivities(state, start, end), [state, start, end])
+    const highlightRules = useRef<HTMLStyleElement>(null)
+    const highlightRepository = useCallback((key: string | null) => {
+        if (!highlightRules.current) return
+        const escaped = key ? CSS.escape(key) : ''
+        highlightRules.current.textContent = key
+            ? `.hub-timeline .activity-row:not(:focus-visible):not([data-repository-id="${escaped}"]):not([data-repository-group="${escaped}"]) :is(.activity-row-content,.activity-row-node,.activity-row-chevron){opacity:.4}`
+            : ''
+    }, [])
+    const repositorySummary = useMemo(() => summarizeRepositoryActivity(repositories, items), [repositories, items])
+    const { commits, prs, days } = useMemo(() => {
+        const commits: Activity[] = [],
+            prs: Activity[] = [],
+            days = new Set<string>()
+        for (const item of items) {
+            ;(item.kind === 'commit' ? commits : prs).push(item)
+            days.add(localDate(new Date(item.date), state.settings.timezone))
+        }
+        return { commits, prs, days: [...days] }
+    }, [items, state.settings.timezone])
+    const repositoryCount = repositorySummary.entries.length
     const projectItems = project === 'all' ? items : items.filter((item) => item.repositoryId === project)
     const visible = projectItems.filter(
         (item) => tab === 'all' || (tab === 'commit' ? item.kind === 'commit' : item.kind !== 'commit')
@@ -201,13 +211,13 @@ export function WeeklyHub({
     const row = (item: Activity, connected: boolean) => (
         <ActivityRow
             activity={item}
-            repositoryMarker={repositoryMarkers.get(item.repositoryId)}
-            repositoryMuted={highlightedRepository !== null && highlightedRepository !== item.repositoryId}
-            repositoryName={repositories.find((repo) => repo.id === item.repositoryId)?.name ?? 'Repository'}
+            repositoryMarker={repositorySummary.byId.get(item.repositoryId)}
+            repositoryGroup={repositorySummary.byId.get(item.repositoryId)?.group}
+            repositoryName={repositorySummary.byId.get(item.repositoryId)?.label ?? 'Repository'}
             connected={connected}
             className={`hub-activity hub-kind-${item.kind}`}
             key={item.id}
-            onClick={sample ? undefined : () => detailDialog.current?.open(item)}
+            onClick={() => detailDialog.current?.open(item)}
         />
     )
     const filters = (
@@ -295,7 +305,7 @@ export function WeeklyHub({
                 <strong>
                     <AnimatedCounter variant="inline" value={commits.length} />
                 </strong>
-                <span>commits</span>
+                <span>{commits.length === 1 ? 'commit' : 'commits'}</span>
             </div>
             <div>
                 <strong>
@@ -305,15 +315,15 @@ export function WeeklyHub({
             </div>
             <div>
                 <strong>
-                    <AnimatedCounter variant="inline" value={repos.length} />
+                    <AnimatedCounter variant="inline" value={repositoryCount} />
                 </strong>
-                <span>repositories</span>
+                <span>{repositoryCount === 1 ? 'repository' : 'repositories'}</span>
             </div>
             <div>
                 <strong>
                     <AnimatedCounter variant="inline" value={days.length} />
                 </strong>
-                <span>active days</span>
+                <span>{days.length === 1 ? 'active day' : 'active days'}</span>
             </div>
         </div>
     )
@@ -497,6 +507,7 @@ export function WeeklyHub({
                                     >
                                         <div className="hub-thread-layout">
                                             <section id="hub-activity" className="hub-timeline">
+                                                <style ref={highlightRules} />
                                                 <div className="hub-section-heading">
                                                     <h2>Activity this week</h2>
                                                 </div>
@@ -513,6 +524,7 @@ export function WeeklyHub({
                                                                 </div>
                                                                 <ActivityDayRows
                                                                     day={day}
+                                                                    virtualize={items.length > 500}
                                                                     items={dayItems}
                                                                     focused={dayFilter.day !== 'all'}
                                                                     expanded={dayFilter.expanded.has(day)}
@@ -545,17 +557,8 @@ export function WeeklyHub({
                                             </section>
                                             <aside>
                                                 <RepositoryActivity
-                                                    sample={sample}
-                                                    onSampleChange={(enabled) => {
-                                                        setSampleMode(enabled)
-                                                        setHighlightedRepository(null)
-                                                        setProject('all')
-                                                        setTab('all')
-                                                        dayFilter.setDay('all')
-                                                    }}
-                                                    onHighlightChange={setHighlightedRepository}
-                                                    repositories={repos}
-                                                    items={items}
+                                                    onHighlightChange={highlightRepository}
+                                                    summary={repositorySummary}
                                                     hasRepositories={state.repositories.some((repo) => !repo.removed)}
                                                 />
                                             </aside>

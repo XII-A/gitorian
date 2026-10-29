@@ -302,3 +302,15 @@
     width: 12px;
     height: 12px;
 }
+
+.figure[data-compact-legend] .itemLabel {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.figure[data-compact-legend] .itemValue {
+    white-space: normal;
+}

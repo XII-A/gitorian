@@ -1,3 +1,5 @@
+import type { ComponentProps } from 'react'
+import { VirtualActivityDayRows } from './VirtualActivityDayRows'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Ellipsis } from 'lucide-react'
@@ -85,7 +87,7 @@ export function groupActivityDays(activities: Activity[], timezone: string, sele
 }
 
 /** The same five-row preview and final timeline node in both activity surfaces. */
-export function ActivityDayRows({
+function StandardActivityDayRows({
     day,
     items,
     expanded,
@@ -224,6 +226,34 @@ export function ActivityDayRows({
                         }
                     ]}
                 />
+            )}
+        </div>
+    )
+}
+
+export function ActivityDayRows(props: ComponentProps<typeof StandardActivityDayRows> & { virtualize?: boolean }) {
+    const [virtual, setVirtual] = useState(!!props.virtualize || props.items.length > 200)
+    const focusedActivity = useRef<string | undefined>(undefined)
+    // Keep a day virtual once promoted; acquisition must not swap its renderer back and forth.
+    const large = virtual || !!props.virtualize || props.items.length > 200
+    if (large && !virtual) setVirtual(true)
+    return (
+        <div
+            style={{ display: 'contents' }}
+            onFocusCapture={(event) => {
+                focusedActivity.current = (event.target as HTMLElement).closest<HTMLElement>(
+                    '[data-activity-id]'
+                )?.dataset.activityId
+            }}
+            onBlurCapture={(event) => {
+                if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget))
+                    focusedActivity.current = undefined
+            }}
+        >
+            {large ? (
+                <VirtualActivityDayRows {...props} restoreFocusId={focusedActivity.current} />
+            ) : (
+                <StandardActivityDayRows {...props} />
             )}
         </div>
     )

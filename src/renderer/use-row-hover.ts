@@ -20,6 +20,10 @@ export function useRowHover(selector: string, children: ReactNode) {
         active.current = null
         animate(opacity, 0, { duration: reduced ? 0 : motionTokens.duration.fast })
     }, [opacity, reduced])
+    const hideOnScroll = useCallback(() => {
+        active.current = null
+        opacity.jump(0)
+    }, [opacity])
     const position = useCallback(
         (row: HTMLButtonElement, mode: 'instant' | 'animate' | 'sync') => {
             if (!root.current) return
@@ -71,13 +75,13 @@ export function useRowHover(selector: string, children: ReactNode) {
     useEffect(() => {
         const observer = new ResizeObserver(sync)
         if (root.current) observer.observe(root.current)
-        window.addEventListener('scroll', hide, true)
+        window.addEventListener('scroll', hideOnScroll, true)
         return () => {
             observer.disconnect()
-            window.removeEventListener('scroll', hide, true)
+            window.removeEventListener('scroll', hideOnScroll, true)
             for (const value of [x, y, width, height, opacity]) value.stop()
         }
-    }, [sync, hide, x, y, width, height, opacity])
+    }, [sync, hideOnScroll, x, y, width, height, opacity])
 
     return {
         root,

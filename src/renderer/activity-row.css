@@ -236,7 +236,6 @@
         inset 0 0 0 2px var(--repository-color),
         inset 0 0 0 3px var(--surface);
 }
-.activity-row[data-repository-muted]:not(:focus-visible)
-    :is(.activity-row-content, .activity-row-node, .activity-row-chevron) {
-    opacity: 0.4;
+.activity-virtual-list {
+    position: relative;
 }

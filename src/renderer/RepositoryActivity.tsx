@@ -1,62 +1,55 @@
-import { useMemo } from 'react'
-import { Button } from './components/arc/button/button'
+import { useLayoutEffect, useRef } from 'react'
 import { WaffleChart } from './components/arc/waffle-chart/waffle-chart'
-import type { Activity, State } from '../shared/model'
-import { repositoryActivityData } from './repository-markers'
+import type { RepositorySummary } from './repository-markers'
 import './repository-activity.css'
 
 export function RepositoryActivity({
-    repositories,
-    items,
+    summary,
     hasRepositories,
-    onHighlightChange,
-    sample,
-    onSampleChange
+    onHighlightChange
 }: {
-    repositories: State['repositories']
-    items: Activity[]
+    summary: RepositorySummary
     hasRepositories: boolean
     onHighlightChange?: (key: string | null) => void
-    sample: boolean
-    onSampleChange: (sample: boolean) => void
 }) {
-    const data = useMemo(() => repositoryActivityData(repositories, items), [repositories, items])
-    const total = data.reduce((sum, repo) => sum + repo.value, 0)
+    const card = useRef<HTMLElement>(null)
+    useLayoutEffect(() => {
+        const node = card.current
+        if (!node) return
+        const observer = new ResizeObserver(() =>
+            node.style.setProperty('--repository-height', `${node.getBoundingClientRect().height}px`)
+        )
+        observer.observe(node)
+        return () => observer.disconnect()
+    }, [])
+    const data = summary.chart
+    const total = summary.total
     return (
-        <>
-            <section className="repository-activity" aria-labelledby="repository-activity-title">
-                <header>
-                    <h2 id="repository-activity-title">Activity by repository</h2>
-                </header>
-                {total > 0 ? (
-                    <>
-                        <div className="repository-chart">
-                            <WaffleChart
-                                data={data}
-                                onPreviewChange={onHighlightChange}
-                                fillOrder="rows"
-                                compactLegend
-                                label="Weekly activity by repository"
-                                unit="activities"
-                                showValues
-                            />
-                        </div>
-                    </>
-                ) : (
-                    <p className="repository-empty">
-                        {hasRepositories
-                            ? 'No repository activity loaded for this week.'
-                            : 'Connect a repository to load its activity.'}
-                    </p>
-                )}
-            </section>
-            {import.meta.env.DEV && (
-                <div className="repository-sample-toggle">
-                    <Button variant="secondary" size="sm" aria-pressed={sample} onClick={() => onSampleChange(!sample)}>
-                        {sample ? 'Show real data' : 'Show sample data'}
-                    </Button>
+        <section ref={card} className="repository-activity" aria-labelledby="repository-activity-title">
+            <header>
+                <h2 id="repository-activity-title">Activity by repository</h2>
+            </header>
+            {total > 0 ? (
+                <div className="repository-chart">
+                    <WaffleChart
+                        data={data}
+                        onPreviewChange={onHighlightChange}
+                        fillOrder="rows"
+                        compactLegend
+                        label="Weekly activity by repository"
+                        unit="activities"
+                        singularUnit="activity"
+                        decimals={1}
+                        showValues
+                    />
                 </div>
+            ) : (
+                <p className="repository-empty">
+                    {hasRepositories
+                        ? 'No repository activity loaded for this week.'
+                        : 'Connect a repository to load its activity.'}
+                </p>
             )}
-        </>
+        </section>
     )
 }
