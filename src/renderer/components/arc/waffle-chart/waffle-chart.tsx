@@ -26,6 +26,7 @@ export interface WaffleCategory {
     value: number
     /** Any CSS color. Defaults to the first series for accentKey, the supporting series for the next three, then neutral steps. */
     color?: string
+    shape?: 'square' | 'round' | 'framed'
 }
 
 /** A unit chart: every cell is one share of the whole, so parts of a total read as countable squares. */
@@ -50,6 +51,8 @@ export interface WaffleChartProps {
     activeKey?: string | null
     defaultActiveKey?: string | null
     onActiveChange?: (key: string | null) => void
+    /** Effective hover, keyboard or pinned category for linked views. */
+    onPreviewChange?: (key: string | null) => void
     /** Category list with shares that roll to their new value. */
     legend?: boolean
     /** Show the formatted raw value beneath each legend percentage. */
@@ -157,6 +160,7 @@ export function WaffleChart({
     activeKey,
     defaultActiveKey = null,
     onActiveChange,
+    onPreviewChange,
     legend = true,
     showValues = false,
     decimals = 0,
@@ -215,6 +219,11 @@ export function WaffleChart({
     const focusKey = pointer?.key ?? preview ?? pinned
     const active = focusKey && data.some((item) => item.key === focusKey) ? focusKey : null
 
+    useEffect(() => {
+        onPreviewChange?.(active)
+    }, [active, onPreviewChange])
+    useEffect(() => () => onPreviewChange?.(null), [onPreviewChange])
+
     const [side, setSide] = useState(0)
     useLayoutEffect(() => {
         const node = grid.current
@@ -248,6 +257,8 @@ export function WaffleChart({
     }
 
     const shapeOf = (key: string | null) => {
+        const explicit = data.find((item) => item.key === key)?.shape
+        if (explicit) return explicit
         if (key === null || key === accent) return 'square'
         const rank = data.filter((entry) => entry.key !== accent).findIndex((entry) => entry.key === key)
         return rank < 0 ? 'square' : SHAPES[rank % SHAPES.length]

@@ -1,3 +1,5 @@
+import { hubSampleData } from './hub-sample-data'
+import { repositoryActivityData } from './repository-markers'
 import { RepositoryActivity } from './RepositoryActivity'
 import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
@@ -179,10 +181,16 @@ export function WeeklyHub({
     const detailDialog = useRef<HubActivityDialogHandle>(null)
     const { refresh, refreshing: busy } = useActivityRefresh(run, start, end, state.settings.timezone)
     const loadingWeek = useWeekHistory(state, run, start)
-    const items = rangeActivities(state, start, end)
+    const [sampleMode, setSampleMode] = useState(false)
+    const sample = import.meta.env.DEV && sampleMode
+    const preview = sample ? hubSampleData(start) : undefined
+    const repositories = preview?.repositories ?? state.repositories
+    const items = preview?.activities ?? rangeActivities(state, start, end)
+    const [highlightedRepository, setHighlightedRepository] = useState<string | null>(null)
+    const repositoryMarkers = new Map(repositoryActivityData(repositories, items).map((repo) => [repo.key, repo]))
     const commits = items.filter((item) => item.kind === 'commit')
     const prs = items.filter((item) => item.kind !== 'commit')
-    const repos = state.repositories.filter((repo) => items.some((item) => item.repositoryId === repo.id))
+    const repos = repositories.filter((repo) => items.some((item) => item.repositoryId === repo.id))
     const days = [...new Set(items.map((item) => localDate(new Date(item.date), state.settings.timezone)))]
     const projectItems = project === 'all' ? items : items.filter((item) => item.repositoryId === project)
     const visible = projectItems.filter(
@@ -193,11 +201,13 @@ export function WeeklyHub({
     const row = (item: Activity, connected: boolean) => (
         <ActivityRow
             activity={item}
-            repositoryName={state.repositories.find((repo) => repo.id === item.repositoryId)?.name ?? 'Repository'}
+            repositoryMarker={repositoryMarkers.get(item.repositoryId)}
+            repositoryMuted={highlightedRepository !== null && highlightedRepository !== item.repositoryId}
+            repositoryName={repositories.find((repo) => repo.id === item.repositoryId)?.name ?? 'Repository'}
             connected={connected}
             className={`hub-activity hub-kind-${item.kind}`}
             key={item.id}
-            onClick={() => detailDialog.current?.open(item)}
+            onClick={sample ? undefined : () => detailDialog.current?.open(item)}
         />
     )
     const filters = (
@@ -227,7 +237,7 @@ export function WeeklyHub({
                     </Button>
                 ))}
                 <ActivityDayFilter week={start} value={dayFilter.day} onValueChange={dayFilter.setDay} />
-                <ProjectFilter repositories={state.repositories} value={project} onValueChange={setProject} />
+                <ProjectFilter repositories={repositories} value={project} onValueChange={setProject} />
             </ActivityFilterStrip>
         </HubFilterDock>
     )
@@ -535,6 +545,15 @@ export function WeeklyHub({
                                             </section>
                                             <aside>
                                                 <RepositoryActivity
+                                                    sample={sample}
+                                                    onSampleChange={(enabled) => {
+                                                        setSampleMode(enabled)
+                                                        setHighlightedRepository(null)
+                                                        setProject('all')
+                                                        setTab('all')
+                                                        dayFilter.setDay('all')
+                                                    }}
+                                                    onHighlightChange={setHighlightedRepository}
                                                     repositories={repos}
                                                     items={items}
                                                     hasRepositories={state.repositories.some((repo) => !repo.removed)}

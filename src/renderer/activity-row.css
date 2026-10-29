@@ -219,3 +219,24 @@
     clip-path: inset(50%);
     white-space: nowrap;
 }
+
+.activity-repository-marker {
+    display: inline-block;
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: var(--repository-color);
+}
+.activity-repository-marker[data-shape='round'] {
+    border-radius: 50%;
+}
+.activity-repository-marker[data-shape='framed'] {
+    box-shadow:
+        inset 0 0 0 2px var(--repository-color),
+        inset 0 0 0 3px var(--surface);
+}
+.activity-row[data-repository-muted]:not(:focus-visible)
+    :is(.activity-row-content, .activity-row-node, .activity-row-chevron) {
+    opacity: 0.4;
+}

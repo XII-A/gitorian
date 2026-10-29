@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import '@testing-library/jest-dom/vitest'
-import { createElement } from 'react'
+import { createElement, useState } from 'react'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { hubSampleData } from '../src/renderer/hub-sample-data'
 import { RepositoryActivity } from '../src/renderer/RepositoryActivity'
 import type { WaffleChartProps } from '../src/renderer/components/arc/waffle-chart/waffle-chart'
 
@@ -18,6 +19,17 @@ vi.mock('../src/renderer/components/arc/waffle-chart/waffle-chart', () => ({
             )
         )
 }))
+function SamplePreview() {
+    const [sample, setSample] = useState(false)
+    const preview = sample ? hubSampleData('2026-10-26') : { repositories: [], activities: [] }
+    return createElement(RepositoryActivity, {
+        repositories: preview.repositories,
+        items: preview.activities,
+        hasRepositories: sample,
+        sample,
+        onSampleChange: setSample
+    })
+}
 const nativeAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate')
 beforeAll(() => {
     Reflect.deleteProperty(Element.prototype, 'animate')
@@ -34,7 +46,7 @@ afterEach(() => {
 it('previews sample repositories and returns to the real empty state', async () => {
     vi.stubEnv('DEV', true)
     const user = userEvent.setup()
-    render(createElement(RepositoryActivity, { repositories: [], items: [], hasRepositories: false }))
+    render(createElement(SamplePreview))
     expect(screen.getByText('Connect a repository to load its activity.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Show sample data' }))
     expect(screen.getByText('weekly-j: 18')).toBeVisible()
@@ -46,6 +58,6 @@ it('previews sample repositories and returns to the real empty state', async () 
 
 it('keeps the sample override out of production', () => {
     vi.stubEnv('DEV', false)
-    render(createElement(RepositoryActivity, { repositories: [], items: [], hasRepositories: false }))
+    render(createElement(SamplePreview))
     expect(screen.queryByRole('button', { name: 'Show sample data' })).not.toBeInTheDocument()
 })

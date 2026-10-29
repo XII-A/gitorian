@@ -1,12 +1,15 @@
-import type { ButtonHTMLAttributes } from 'react'
+import type { ButtonHTMLAttributes, CSSProperties } from 'react'
 import { ChevronRight, Folder, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest } from 'lucide-react'
 import type { Activity } from '../shared/model'
+import type { RepositoryMarkerStyle } from './repository-markers'
 import './activity-row.css'
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
     activity: Activity
     repositoryName: string
     connected?: boolean
+    repositoryMarker?: RepositoryMarkerStyle
+    repositoryMuted?: boolean
 }
 
 const labels: Record<Activity['kind'], string> = {
@@ -17,7 +20,15 @@ const labels: Record<Activity['kind'], string> = {
     merged: 'Merged'
 }
 
-export function ActivityRow({ activity, repositoryName, connected, className, ...props }: Props) {
+export function ActivityRow({
+    activity,
+    repositoryName,
+    connected,
+    repositoryMarker,
+    repositoryMuted,
+    className,
+    ...props
+}: Props) {
     const Icon =
         activity.kind === 'commit' ? GitCommitHorizontal : activity.kind === 'merged' ? GitMerge : GitPullRequest
     const pullNumber = activity.remoteSource?.number ?? activity.changeRequestId?.match(/(?:^|[:/])(\d+)$/)?.[1]
@@ -38,6 +49,7 @@ export function ActivityRow({ activity, repositoryName, connected, className, ..
             {...props}
             type="button"
             className={['activity-row', className].filter(Boolean).join(' ')}
+            data-repository-muted={repositoryMuted || undefined}
             data-kind={activity.kind}
             data-connected={connected || undefined}
         >
@@ -51,7 +63,16 @@ export function ActivityRow({ activity, repositoryName, connected, className, ..
                 </span>
                 <span className="activity-row-meta">
                     <span title={repositoryName}>
-                        <Folder size={12} strokeWidth={1.75} aria-hidden="true" />
+                        {repositoryMarker ? (
+                            <span
+                                className="activity-repository-marker"
+                                data-shape={repositoryMarker.shape}
+                                style={{ '--repository-color': repositoryMarker.color } as CSSProperties}
+                                aria-hidden="true"
+                            />
+                        ) : (
+                            <Folder size={12} strokeWidth={1.75} aria-hidden="true" />
+                        )}
                         {repositoryName}
                     </span>
                     {activity.branches[0] && (
