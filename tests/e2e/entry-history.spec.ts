@@ -8,6 +8,31 @@ test('local and published history: pagination, search, exact-week editing and pe
     desktop
 }, info) => {
     const { page, app } = desktop
+    const getReadCount = () =>
+        app.evaluate(({ app }) => {
+            const state = { reads: 0 }
+            app.emit('history-entry-stats', state)
+            return state.reads
+        })
+    const reads = await page.evaluate(async () => {
+        const { state } = await window.journal.invoke({ type: 'state' })
+        const samples = []
+        for (let index = 0; index < 5; index++) {
+            const started = performance.now()
+            const reply = await window.journal.readEntry('notion:entry-00', state.restoreId)
+            samples.push({
+                milliseconds: performance.now() - started,
+                bytes: new TextEncoder().encode(JSON.stringify(reply)).length,
+                includesWorkspace: !!reply && 'state' in reply
+            })
+        }
+        return samples
+    })
+    writeFileSync(info.outputPath('entry-reads.json'), JSON.stringify(reads, null, 2))
+    expect(reads.every((read) => !read.includesWorkspace)).toBe(true)
+    await expect(page.evaluate(() => window.journal.readEntry('notion:entry-00', 'old-generation'))).rejects.toThrow(
+        /journal changed/i
+    )
     await page.getByRole('button', { name: 'Previous entries', exact: true }).click()
     await expect(page.locator('.history-row')).toHaveCount(50)
     await page.getByRole('button', { name: 'Load more entries', exact: true }).click()
@@ -19,7 +44,18 @@ test('local and published history: pagination, search, exact-week editing and pe
     await desktop.shot('02-search-spinner')
     await app.evaluate(({ app }) => app.emit('history-release-search'))
     await expect(page.locator('.history-row')).toHaveCount(1)
+    const beforeColdRead = await getReadCount()
+    await app.evaluate(({ app }) => app.emit('history-hold-entry'))
+    await page.locator('.history-row').hover()
     await page.locator('.history-row').click()
+    await expect(page.getByRole('status', { name: 'Loading entry', exact: true })).toBeVisible()
+    await expect(page.locator('.history-article h2')).toHaveText('Archive entry 0')
+    expect(await getReadCount()).toBe(beforeColdRead + 1)
+    await page.locator('.history-entry-dialog').evaluate(async (node) => {
+        await Promise.allSettled(node.getAnimations().map((animation) => animation.finished))
+    })
+    await desktop.shot('02-entry-skeleton')
+    await app.evaluate(({ app }) => app.emit('history-release-entry'))
     await expect(page.locator('.history-article')).toContainText('A unique archived lesson.')
     await desktop.shot('02-archived-document')
     await page.getByRole('button', { name: 'Close entry', exact: true }).click()
@@ -27,8 +63,11 @@ test('local and published history: pagination, search, exact-week editing and pe
     await expect(page.locator('.history-row')).toBeFocused()
     await expect(page.locator('.history-entry-dialog')).toHaveCount(0)
     await desktop.shot('02-reader-closed')
+    const readCount = await getReadCount()
     await page.keyboard.press('Enter')
-    await expect(page.locator('.history-article')).toBeVisible()
+    await expect(page.locator('.history-article')).toContainText('A unique archived lesson.')
+    await expect(page.getByRole('status', { name: 'Loading entry', exact: true })).toHaveCount(0)
+    expect(await getReadCount()).toBe(readCount)
     await page.keyboard.press('Escape')
     await expect(page.locator('.history-row')).toHaveAttribute('aria-pressed', 'false')
     await expect(page.locator('.history-entry-dialog')).toHaveCount(0)
@@ -42,10 +81,40 @@ test('local and published history: pagination, search, exact-week editing and pe
     await page.locator('.history-row').click()
     await expect(page.locator('.history-article')).toContainText('A unique local lesson.')
     await desktop.shot('02-local-reader-actions')
-    await page
-        .getByRole('group', { name: 'Entry actions', exact: true })
-        .getByRole('button', { name: 'Edit', exact: true })
-        .click()
+    const originalWindow = await app.evaluate(({ BrowserWindow }) => {
+        const window = BrowserWindow.getAllWindows()[0]
+        const size = window.getContentSize()
+        const minimum = window.getMinimumSize()
+        window.setMinimumSize(320, 400)
+        window.setContentSize(390, 900)
+        return { size, minimum }
+    })
+    await page.locator('.history-entry-dialog').evaluate(async (node) => {
+        await Promise.allSettled(node.getAnimations().map((animation) => animation.finished))
+    })
+    await desktop.shot('02-reader-actions-narrow')
+    await app.evaluate(({ BrowserWindow }, original) => {
+        const window = BrowserWindow.getAllWindows()[0]
+        window.setMinimumSize(original.minimum[0], original.minimum[1])
+        window.setContentSize(original.size[0], original.size[1])
+    }, originalWindow)
+
+    const actions = page.getByRole('toolbar', { name: 'Entry actions', exact: true })
+    await actions.getByRole('button', { name: 'Edit', exact: true }).focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(actions.getByRole('button', { name: 'Open in Notion', exact: true })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect
+        .poll(() =>
+            app.evaluate(({ app }) => {
+                const state = { opened: [] as string[] }
+                app.emit('history-entry-stats', state)
+                return state.opened
+            })
+        )
+        .toEqual(['https://example.invalid/'])
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.press('Enter')
     const title = page.getByRole('textbox', { name: 'Entry title', exact: true })
     await expect(title).toHaveValue('Local autosaved entry')
     await expect(page.getByRole('button', { name: /Publish|Set up Notion publishing|Connect Notion/ })).toHaveCount(0)
@@ -59,7 +128,7 @@ test('local and published history: pagination, search, exact-week editing and pe
     await expect(page.locator('.history-row')).toHaveCount(1)
     await page.locator('.history-row').click()
     await page
-        .getByRole('group', { name: 'Entry actions', exact: true })
+        .getByRole('toolbar', { name: 'Entry actions', exact: true })
         .getByRole('button', { name: 'Edit', exact: true })
         .click()
     await expect(title).toHaveValue('Edited older local entry')

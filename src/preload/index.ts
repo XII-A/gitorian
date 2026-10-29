@@ -3,6 +3,7 @@ import type { DesktopBridge, RepositoryImportProgress, NotionDiscoveryEvent } fr
 import type { AppUpdateState } from '../shared/app-updates'
 
 const bridge: DesktopBridge = {
+    readEntry: (id, restoreId) => ipcRenderer.invoke('journal:entry', { id, restoreId }),
     clipboard: (action) => ipcRenderer.invoke('journal:clipboard', action),
     writeClipboardText: (text) => ipcRenderer.invoke('journal:clipboard-text', text),
     appUpdates: {

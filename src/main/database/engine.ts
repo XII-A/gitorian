@@ -1322,7 +1322,16 @@ export class JournalEngine {
     }
     entry(id: string): HistoryEntry | undefined {
         if (id.startsWith('local:')) {
-            const draft = this.draft(id.slice(6))
+            const draft = this.db
+                .select({
+                    title: t.drafts.title,
+                    week: t.drafts.week,
+                    body: t.drafts.body,
+                    publishedEntryId: t.drafts.publishedEntryId
+                })
+                .from(t.drafts)
+                .where(eq(t.drafts.id, id.slice(6)))
+                .get()
             if (!draft) return undefined
             const publication = draft.publishedEntryId
                 ? this.db

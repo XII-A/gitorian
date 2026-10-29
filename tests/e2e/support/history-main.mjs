@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, shell } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -14,11 +14,29 @@ app.on('history-hold-search', () => {
     })
 })
 app.on('history-release-search', () => releaseSearch())
+let entryGate = Promise.resolve()
+let releaseEntry = () => {}
+let entryReads = 0
+const opened = []
+app.on('history-hold-entry', () => {
+    entryGate = new Promise((resolve) => {
+        releaseEntry = resolve
+    })
+})
+app.on('history-release-entry', () => releaseEntry())
+app.on('history-entry-stats', (state) => Object.assign(state, { reads: entryReads, opened }))
+shell.openExternal = async (url) => {
+    opened.push(url)
+}
 const handle = ipcMain.handle.bind(ipcMain)
 ipcMain.handle = (channel, listener) =>
     handle(channel, async (event, payload) => {
         const command = channel === 'journal:updates' ? payload.command : payload
         if (command?.type === 'entryHistory') await searchGate
+        if (channel === 'journal:entry') {
+            entryReads++
+            await entryGate
+        }
         return listener(event, payload)
     })
 
