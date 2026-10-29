@@ -1,4 +1,5 @@
-import { memo, useMemo } from 'react'
+import { memo, useEffect, useMemo, useRef } from 'react'
+import { useDraggable } from '@dnd-kit/core'
 import type { Activity, Repository } from '../shared/model'
 import { ActivityDayRows, groupActivityDays } from './ActivityDays'
 import type { useActivityDays } from './ActivityDays'
@@ -22,23 +23,39 @@ const WorkspaceActivityRow = memo(function WorkspaceActivityRow({
     canCite: boolean
     onInspect: (activity: Activity) => void
 }) {
+    const { setNodeRef, listeners, isDragging } = useDraggable({ id: activity.id, disabled: !canCite })
+    const dragged = useRef(false)
+    useEffect(() => {
+        if (isDragging) dragged.current = true
+    }, [isDragging])
     return (
         <ActivityRow
+            ref={setNodeRef}
+            {...listeners}
+            onPointerDown={() => {
+                dragged.current = false
+            }}
             activity={activity}
             repositoryName={repositoryName}
             connected={connected}
             className="ws-activity-row"
             aria-pressed={selected}
-            draggable={canCite}
-            onDragStart={(event) => {
-                event.dataTransfer.setData('application/x-gitorian-activity', activity.id)
-                event.dataTransfer.effectAllowed = 'copy'
+            draggable={false}
+            data-citable={canCite || undefined}
+            onDragStart={(event) => event.preventDefault()}
+            data-dragging={isDragging || undefined}
+            onClick={(event) => {
+                // A release after Escape can arrive after dnd-kit's click guard
+                // expires. It must not turn the cancelled drag into inspection.
+                if (dragged.current && event.detail > 0) {
+                    event.preventDefault()
+                    return
+                }
+                onInspect(activity)
             }}
-            onClick={() => onInspect(activity)}
         />
     )
 })
-
 export const WorkspaceActivityList = memo(function WorkspaceActivityList({
     activities,
     dayFilter,

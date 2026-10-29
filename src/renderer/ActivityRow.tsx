@@ -1,10 +1,10 @@
-import type { ButtonHTMLAttributes } from 'react'
+import type { ComponentPropsWithRef } from 'react'
 import { ChevronRight, Folder, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest } from 'lucide-react'
 import type { Activity } from '../shared/model'
 import { Badge } from './components/arc/badge/badge'
 import './activity-row.css'
 
-interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
+interface Props extends ComponentPropsWithRef<'button'> {
     activity: Activity
     repositoryName: string
     connected?: boolean

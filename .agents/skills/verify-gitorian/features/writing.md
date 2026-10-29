@@ -91,3 +91,5 @@ The same owning journey exercises seven native wheel jumps from 800 to 2400px an
 
 Flags are not offered: the catalog excludes the Flags category before building search and history lookups. The emoji journey seeds a formerly picked Syria flag, verifies no Flags tab or flag in All/Recent, and verifies `:syria` shows no matches. Stored journal text and the cached atlas stay unchanged.
 
+
+Activity-row citation dragging is covered by `pnpm test:e2e activity-citation`: a pointer movement threshold preserves clicks, a fully opaque dnd-kit React overlay follows pickup, Escape and invalid drops leave writing intact, and a successful drop inserts exactly one citation that survives reload. Retain pickup and over-writing screenshots to inspect the real card and target cue. The writing target accepts citations only while an editable draft is ready. Mouse and delayed-touch sensors preserve ordinary list scrolling; the inspector Cite action remains the keyboard alternative. Review the short pickup/return transitions and reduced-motion fade manually. No HTML drag image is used.
