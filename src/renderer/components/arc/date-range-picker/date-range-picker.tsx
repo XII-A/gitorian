@@ -245,7 +245,10 @@ function Bar({ row, segment, reduced }: { row: number; segment: Segment; reduced
     const left = useMotionValue(segment?.left ?? 0),
         width = useMotionValue(segment?.width ?? 0),
         opacity = useMotionValue(segment ? 1 : 0)
-    const transform = useTransform(() => `translateX(${left.get()}%) scaleX(${width.get() / 100})`)
+    // Clip a full-size surface instead of scaling it: even a one-day slice keeps circular caps.
+    const clipPath = useTransform(
+        () => `inset(0 ${100 - left.get() - width.get()}% 0 ${left.get()}% round calc((var(--cell) - 6px) / 2))`
+    )
     const wasEmpty = useRef(!segment)
     useLayoutEffect(() => {
         if (!segment) {
@@ -269,8 +272,7 @@ function Bar({ row, segment, reduced }: { row: number; segment: Segment; reduced
             style={{
                 left: 0,
                 width: '100%',
-                transformOrigin: 'left',
-                transform,
+                clipPath,
                 opacity,
                 top: `calc(${row} * var(--cell) + 3px)`
             }}
@@ -998,6 +1000,9 @@ export function DateRangePicker({
                         key="shared"
                         layoutId={layoutId}
                         layout="position"
+                        // Only the picker morph moves this label. Unrelated page updates
+                        // can clamp a scrolled ancestor; that is not a label transition.
+                        layoutDependency={open}
                         className={styles.value}
                         data-empty={!committed || undefined}
                         transition={SHRINK}
