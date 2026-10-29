@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { Appearance } from './appearance'
 import type { AppUpdateState } from './app-updates'
 import type { StateCursor, UpdateReply } from './state-updates'
 import { providerAccountSchema, providerSchema } from './provider-accounts'
@@ -485,6 +486,11 @@ export interface Reply {
     detailError?: string
 }
 export interface DesktopBridge {
+    appearance?: {
+        initial: Appearance
+        select: (value: Appearance) => Promise<Appearance>
+        onChange: (listener: (value: Appearance) => void) => () => void
+    }
     clipboard?: (action: 'cut' | 'copy' | 'paste') => Promise<void>
     writeClipboardText: (text: string) => Promise<void>
     appUpdates?: {

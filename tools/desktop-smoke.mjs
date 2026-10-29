@@ -139,7 +139,9 @@ app.on('browser-window-created', (_, window) => {
                 let detached = await checkInspectorTabs(reference, 'reference-dark')
                 nativeTheme.themeSource = 'light'
                 // Exercise retained light tokens explicitly without changing startup policy.
-                await reference.webContents.executeJavaScript(`document.documentElement.dataset.theme='light'`)
+                await reference.webContents.executeJavaScript(
+                    `window.journal.appearance.select({mode:'light',theme:document.documentElement.dataset.palette}).then(()=>true)`
+                )
                 detached = (await checkInspectorTabs(reference, 'reference-light')) && detached
                 await reference.webContents.executeJavaScript(
                     `document.querySelector('[aria-label="Dock back to workspace"]').click()`

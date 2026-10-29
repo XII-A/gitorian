@@ -19,7 +19,7 @@
     --surface-muted: var(--neutral-2);
     --foreground: var(--neutral-11);
     --text-secondary: var(--neutral-8);
-    --text-muted: var(--neutral-7);
+    --text-muted: oklch(45% 0 0);
     --border: oklch(93.5% 0 0);
     --border-subtle: oklch(96.5% 0 0);
     --border-strong: oklch(82% 0 0);
@@ -42,9 +42,9 @@
     --control-fill: var(--control-on);
     /* Product decision: no focus rings anywhere. Kept as a token so existing rules resolve to nothing. */
     --focus-ring: transparent;
-    --success: oklch(49% 0.19 150);
-    --warning: oklch(58% 0.18 75);
-    --danger: oklch(54% 0.21 25);
+    --success: oklch(45% 0.17 150);
+    --warning: oklch(44% 0.12 75);
+    --danger: oklch(49% 0.19 25);
     --shadow-resting: 0 1px 2px oklch(0% 0 0 / 0.035);
     --shadow-raised: 0 6px 18px oklch(0% 0 0 / 0.065), 0 1px 3px oklch(0% 0 0 / 0.035);
     --shadow-floating: 0 20px 48px oklch(0% 0 0 / 0.105), 0 3px 10px oklch(0% 0 0 / 0.045);
@@ -157,7 +157,7 @@
     --surface-muted: oklch(26% 0 0);
     --foreground: oklch(96% 0 0);
     --text-secondary: oklch(77% 0 0);
-    --text-muted: oklch(64% 0 0);
+    --text-muted: oklch(74% 0 0);
     --border: oklch(29% 0 0);
     --border-subtle: oklch(25% 0 0);
     --border-strong: oklch(40% 0 0);
@@ -482,4 +482,9 @@
     outline: var(--focus-outline-width, 2px) solid
         var(--focus-outline, color-mix(in oklab, var(--accent-strong) 72%, transparent)) !important;
     outline-offset: var(--focus-outline-offset, 2px) !important;
+}
+
+/* Text uses the strong accent role; bright accent fills retain their paired ink. */
+:root {
+    --accent-text: var(--accent-strong);
 }

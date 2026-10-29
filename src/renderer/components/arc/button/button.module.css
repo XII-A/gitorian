@@ -80,9 +80,9 @@
     flex: none;
 }
 .primary {
-    color: var(--background);
-    background: var(--foreground);
-    border-color: var(--foreground);
+    color: var(--primary-foreground, var(--background));
+    background: var(--primary-background, var(--foreground));
+    border-color: var(--primary-background, var(--foreground));
 }
 .secondary {
     color: var(--foreground);

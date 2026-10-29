@@ -89,7 +89,7 @@
     --badge-border: color-mix(in oklab, var(--success) 25%, var(--border));
 }
 .info {
-    --badge-color: var(--accent);
+    --badge-color: var(--accent-text);
     --badge-foreground: var(--accent-strong);
     --badge-background: var(--accent-subtle);
     --badge-border: color-mix(in oklab, var(--accent) 24%, var(--border));

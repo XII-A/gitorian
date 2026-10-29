@@ -49,7 +49,7 @@
     font-size: var(--text-xs);
 }
 .info .icon {
-    color: var(--accent);
+    color: var(--accent-text);
 }
 .success .icon {
     color: var(--success);

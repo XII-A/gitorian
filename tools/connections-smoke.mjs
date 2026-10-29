@@ -777,6 +777,7 @@ app.on('browser-window-created', (_, window) => {
                 return
             }
             await openConnections()
+
             window.setMinimumSize(320, 400)
             window.setContentSize(narrowViewport ? 390 : 1280, 900)
             await wait(`Math.abs(innerWidth - ${narrowViewport ? 390 : 1280}) <= 1`)
@@ -864,13 +865,9 @@ app.on('browser-window-created', (_, window) => {
             await shot('notion-loading-zoom', 100, 'notion')
             window.webContents.setZoomFactor(1)
             window.setContentSize(narrowViewport ? 390 : 1280, 900)
-            await js(
-                `document.documentElement.dataset.theme='light';document.documentElement.dataset.accent='blue';true`
-            )
+            await js(`window.journal.appearance.select({mode:'light',theme:'blue'}).then(()=>true)`)
             await shot('notion-loading-light-blue', 150, 'notion')
-            await js(
-                `document.documentElement.dataset.theme='dark';document.documentElement.dataset.accent='neutral';true`
-            )
+            await js(`window.journal.appearance.select({mode:'dark',theme:'neutral'}).then(()=>true)`)
             writeFileSync(join(output, 'notion-loading-layouts.json'), JSON.stringify(loadingLayouts, null, 2))
             await shot('notion-immediate-search', 150, 'notion')
             await typePageQuery('Release plan')
@@ -919,7 +916,9 @@ app.on('browser-window-created', (_, window) => {
             await assert(`!document.querySelector('[data-loading-branch="fixture-parent"] [tabindex]')`)
             const loadingContrast = []
             for (const theme of ['dark', 'light']) {
-                await js(`document.documentElement.dataset.theme=${JSON.stringify(theme)};true`)
+                await js(
+                    `window.journal.appearance.select({mode:${JSON.stringify(theme)},theme:document.documentElement.dataset.palette}).then(()=>true)`
+                )
                 await pause(300)
                 const ratios = await js(`(() => {
                     const ctx=document.createElement('canvas').getContext('2d',{willReadFrequently:true});ctx.canvas.width=ctx.canvas.height=1;
@@ -936,7 +935,9 @@ app.on('browser-window-created', (_, window) => {
                     throw new Error(`Loading contrast failed: ${JSON.stringify({ theme, ratios })}`)
                 loadingContrast.push({ theme, ratios })
             }
-            await js(`document.documentElement.dataset.theme='dark';true`)
+            await js(
+                `window.journal.appearance.select({mode:'dark',theme:document.documentElement.dataset.palette}).then(()=>true)`
+            )
             writeFileSync(join(output, 'notion-loading-contrast.json'), JSON.stringify(loadingContrast, null, 2))
             await assert(
                 `(getComputedStyle(document.querySelector('[data-loading-branch="fixture-parent"] [data-shimmer]'),'::after').animationName==='none')===${stressMotion}`
@@ -1058,13 +1059,9 @@ app.on('browser-window-created', (_, window) => {
             await assert(`!document.querySelector('[role="treeitem"][title="Decisions"]')`)
             await shot('notion-page-tree', 250, 'notion')
             if (!stressMotion) {
-                await js(
-                    `document.documentElement.dataset.theme='light'; document.documentElement.dataset.accent='blue'; true`
-                )
+                await js(`window.journal.appearance.select({mode:'light',theme:'blue'}).then(()=>true)`)
                 await shot('notion-page-tree-light-blue', 250, 'notion')
-                await js(
-                    `document.documentElement.dataset.theme='dark'; document.documentElement.dataset.accent='neutral'; true`
-                )
+                await js(`window.journal.appearance.select({mode:'dark',theme:'neutral'}).then(()=>true)`)
             }
             await assert(
                 `document.querySelector('[role="treeitem"][title="Shared toggle entry"]').getAttribute('aria-level')==='1'`
@@ -1230,13 +1227,9 @@ app.on('browser-window-created', (_, window) => {
                 }
                 window.setContentSize(...originalSize)
                 await pause(400)
-                await js(
-                    `document.documentElement.dataset.theme='light';document.documentElement.dataset.accent='blue';true`
-                )
+                await js(`window.journal.appearance.select({mode:'light',theme:'blue'}).then(()=>true)`)
                 await shot('notion-selector-light-blue', 300, 'notion')
-                await js(
-                    `document.documentElement.dataset.theme='dark';document.documentElement.dataset.accent='neutral';true`
-                )
+                await js(`window.journal.appearance.select({mode:'dark',theme:'neutral'}).then(()=>true)`)
             }
             const warmEditStarted = performance.now()
             const searchesBeforeEdit = requests.filter(

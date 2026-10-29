@@ -273,7 +273,9 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
             ]
         })
         // Retained light-theme visual fixture; production stays dark on OS changes.
-        await js(`document.documentElement.dataset.theme=${JSON.stringify(theme)}; true`)
+        await js(
+            `window.journal.appearance.select({mode:${JSON.stringify(theme)},theme:document.documentElement.dataset.palette}).then(()=>true)`
+        )
         await wait(`document.documentElement.dataset.theme===${JSON.stringify(theme)}`)
         await pause(100)
         colors.push({

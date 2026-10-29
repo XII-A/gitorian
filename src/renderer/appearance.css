@@ -1,0 +1,104 @@
+/* Snapshot the destination palette, without individual controls crossfading colors underneath it. */
+:root[data-appearance-switching] *,
+:root[data-appearance-switching] *::before,
+:root[data-appearance-switching] *::after {
+    transition: none !important;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+}
+::view-transition-new(root) {
+    z-index: 1;
+}
+::view-transition-old(root) {
+    z-index: 0;
+}
+.appearance-preview {
+    position: relative;
+    display: grid;
+    grid-template-columns: 23% 54% 23%;
+    height: 88px;
+    border-radius: var(--radius-inset);
+    overflow: hidden;
+    background: var(--background);
+    border: 1px solid var(--border);
+}
+.appearance-preview-nav,
+.appearance-preview-inspector {
+    display: grid;
+    gap: 7px;
+    align-content: start;
+    padding: 12px 7px;
+    background: var(--surface-muted);
+}
+.appearance-preview i {
+    display: block;
+    height: 3px;
+    border-radius: var(--radius-pill);
+    background: var(--border-strong);
+}
+.appearance-preview-nav i:first-child {
+    background: var(--primary-background);
+    height: 7px;
+}
+.appearance-preview-paper {
+    display: grid;
+    gap: 6px;
+    align-content: start;
+    padding: 16px 10px;
+    background: var(--surface);
+}
+.appearance-preview-paper i:first-child {
+    width: 70%;
+    height: 5px;
+    background: var(--foreground);
+}
+.appearance-preview-paper b {
+    display: block;
+    width: 28px;
+    height: 9px;
+    border-radius: var(--radius-pill);
+    background: var(--primary-background);
+}
+
+.appearance-theme-colors {
+    display: grid;
+    height: 64px;
+    place-items: center;
+}
+/* A palette sample, matching the supplied reference and the currently resolved scheme. */
+.appearance-theme-orb {
+    display: block;
+    width: 56px;
+    height: 56px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-pill);
+    background: radial-gradient(circle at 30% 25%, var(--surface-raised), var(--accent) 52%, var(--background) 95%);
+}
+.appearance-split-preview {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0;
+    border-radius: var(--radius-inset);
+    overflow: hidden;
+}
+.appearance-split-preview .appearance-preview {
+    border-radius: 0;
+}
+.appearance-settings > h3 {
+    margin-bottom: 0;
+}
+.appearance-settings > .settings-hint {
+    margin: 0;
+}
+
+.appearance-settings[data-input='keyboard'] * {
+    transition: none !important;
+}
+
+/* Original retains the release accent used for text, rather than the stronger custom-theme ink. */
+:root[data-palette='neutral'] {
+    --accent-text: var(--accent);
+}

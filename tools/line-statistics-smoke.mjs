@@ -189,7 +189,9 @@ app.on('browser-window-created', (_, window) => {
         }
         try {
             nativeTheme.themeSource = 'dark'
-            await js(`document.documentElement.dataset.theme='dark'; true`)
+            await js(
+                `window.journal.appearance.select({mode:'dark',theme:document.documentElement.dataset.palette}).then(()=>true)`
+            )
             window.setSize(1440, 1000)
             await wait(`!!document.querySelector('.hub-activity')`)
             const initial = await js(`window.journal.invoke({type:'state'})`)
@@ -271,7 +273,9 @@ app.on('browser-window-created', (_, window) => {
             await wait(`!!document.querySelector(${JSON.stringify(totalSelector)})`)
             nativeTheme.themeSource = 'light'
             // Explicit visual fixture; OS appearance no longer selects the app theme.
-            await js(`document.documentElement.dataset.theme='light'; true`)
+            await js(
+                `window.journal.appearance.select({mode:'light',theme:document.documentElement.dataset.palette}).then(()=>true)`
+            )
             await breakdown()
             await shot('hub-pr-light')
             // Read rendered sRGB pairs through Canvas; retain measured ratios for the UI review.
@@ -288,7 +292,9 @@ app.on('browser-window-created', (_, window) => {
             })()`
             for (const theme of ['light', 'dark']) {
                 nativeTheme.themeSource = theme
-                await js(`document.documentElement.dataset.theme=${JSON.stringify(theme)}; true`)
+                await js(
+                    `window.journal.appearance.select({mode:${JSON.stringify(theme)},theme:document.documentElement.dataset.palette}).then(()=>true)`
+                )
                 await pause(100)
                 const contrast = await js(contrastExpression)
                 writeFileSync(join(output, `contrast-${theme}.json`), JSON.stringify(contrast, null, 2))
@@ -296,7 +302,9 @@ app.on('browser-window-created', (_, window) => {
             }
             nativeTheme.themeSource = 'light'
             // Explicit visual fixture; OS appearance no longer selects the app theme.
-            await js(`document.documentElement.dataset.theme='light'; true`)
+            await js(
+                `window.journal.appearance.select({mode:'light',theme:document.documentElement.dataset.palette}).then(()=>true)`
+            )
             await key('Escape')
             window.setMinimumSize(320, 640)
             window.setSize(390, 850)
@@ -327,7 +335,9 @@ app.on('browser-window-created', (_, window) => {
             await key('Escape')
             window.webContents.setZoomFactor(1)
             nativeTheme.themeSource = 'dark'
-            await js(`document.documentElement.dataset.theme='dark'; true`)
+            await js(
+                `window.journal.appearance.select({mode:'dark',theme:document.documentElement.dataset.palette}).then(()=>true)`
+            )
             await closeDialog()
             await click('.hub-activity', 'Add reliable retry scheduling')
             await wait(`!!document.querySelector(${JSON.stringify(totalSelector)})`)

@@ -43,6 +43,15 @@
     content: '';
     position: absolute;
     inset: 0;
+    background: linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--background) 15%, transparent),
+        color-mix(in oklab, var(--background) 45%, transparent) 25%,
+        color-mix(in oklab, var(--background) 78%, transparent) 65%,
+        var(--background)
+    );
+}
+:root[data-palette='neutral'] .header-atmosphere::after {
     background:
         radial-gradient(circle, rgb(255 255 255 / 0.035) 0.6px, transparent 1px) 0 0 / 7px 7px,
         linear-gradient(to bottom, color-mix(in oklab, var(--background) 42%, transparent), var(--background));

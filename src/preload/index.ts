@@ -1,8 +1,19 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { DesktopBridge, RepositoryImportProgress, NotionDiscoveryEvent } from '../shared/model'
 import type { AppUpdateState } from '../shared/app-updates'
+import type { Appearance } from '../shared/appearance'
 
+const initialAppearance: Appearance = ipcRenderer.sendSync('journal:appearance-initial')
 const bridge: DesktopBridge = {
+    appearance: {
+        initial: initialAppearance,
+        select: (value) => ipcRenderer.invoke('journal:appearance', value),
+        onChange: (listener) => {
+            const receive = (_event: Electron.IpcRendererEvent, value: Appearance) => listener(value)
+            ipcRenderer.on('journal:appearance', receive)
+            return () => ipcRenderer.removeListener('journal:appearance', receive)
+        }
+    },
     clipboard: (action) => ipcRenderer.invoke('journal:clipboard', action),
     writeClipboardText: (text) => ipcRenderer.invoke('journal:clipboard-text', text),
     appUpdates: {

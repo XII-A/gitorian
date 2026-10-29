@@ -58,7 +58,7 @@
     display: grid;
     width: 40px;
     height: 40px;
-    color: var(--accent);
+    color: var(--accent-text);
 }
 .ringArc,
 .ringTick {
@@ -197,7 +197,7 @@
         transform 110ms var(--ease-standard);
 }
 .check[aria-checked='true'] .checkVisual {
-    border-color: var(--accent);
+    border-color: var(--accent-text);
 }
 .checkFill {
     position: absolute;
