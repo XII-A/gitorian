@@ -26,9 +26,19 @@ export function HeaderAtmosphere({ surface }: { surface: 'hub' | 'workspace' }) 
             element.dataset.renderer = 'static'
         }
         const sync = async () => {
-            stop()
-            if (disposed || failed || reduce.matches || !visible || document.hidden) return
-            const version = generation
+            const version = ++generation
+            if (disposed || failed || reduce.matches) {
+                stop()
+                return
+            }
+            if (!visible || document.hidden) {
+                engine?.setActive(false)
+                return
+            }
+            if (engine) {
+                engine.setActive(true)
+                return
+            }
             try {
                 const { createHeaderSky } = await import('./header-sky')
                 if (disposed || version !== generation) return

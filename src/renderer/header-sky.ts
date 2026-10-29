@@ -377,6 +377,8 @@ export function createHeaderSky(canvas: HTMLCanvasElement, colors: SkyPalette, a
     let timer = 0
     let frame = 0
     let destroyed = false
+    let active = true
+    let degraded = false
     let last = 0
     // A curated frozen frame gives the narrow workspace a softer, continuous cloud band.
     // Keep the same field position across palettes, resizes and route visits.
@@ -404,12 +406,13 @@ export function createHeaderSky(canvas: HTMLCanvasElement, colors: SkyPalette, a
     }
     const draw = () => {
         frame = 0
-        if (destroyed || gl.isContextLost()) return
+        if (destroyed || !active || degraded || gl.isContextLost()) return
         const now = performance.now()
         if (animated && previousDraw && now - previousDraw > 100) slowFrames++
         else slowFrames = Math.max(0, slowFrames - 1)
         previousDraw = now
         if (slowFrames >= 12) {
+            degraded = true
             root.dataset.renderer = 'static'
             canvas.style.visibility = 'hidden'
             stop()
@@ -454,16 +457,26 @@ export function createHeaderSky(canvas: HTMLCanvasElement, colors: SkyPalette, a
     }
     // A still workspace redraws only when its dimensions or palette actually change.
     const resize = new ResizeObserver(() => {
-        if (!animated && !destroyed && !frame) frame = requestAnimationFrame(draw)
+        if (!animated && active && !destroyed && !frame) frame = requestAnimationFrame(draw)
     })
     if (!animated) resize.observe(root)
     frame = requestAnimationFrame(draw)
     return {
+        setActive(next: boolean) {
+            if (destroyed || degraded || active === next) return
+            active = next
+            stop()
+            // Paused time must neither advance the clouds nor count as a slow frame.
+            last = 0
+            previousDraw = 0
+            slowFrames = 0
+            if (active) frame = requestAnimationFrame(draw)
+        },
         setPalette(next: SkyPalette) {
             if (next === currentColors) return
             currentColors = next
             palette = next.map(hexToRgb)
-            if (!animated && !destroyed && !frame) frame = requestAnimationFrame(draw)
+            if (!animated && active && !destroyed && !frame) frame = requestAnimationFrame(draw)
         },
         destroy: dispose
     }
