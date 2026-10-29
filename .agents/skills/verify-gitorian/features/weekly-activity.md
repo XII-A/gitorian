@@ -71,3 +71,9 @@ The Hub case also crosses the production polling interval with rejected state re
 
 Run `pnpm test:e2e startup-recovery` after `pnpm build`. The journal-only Electron journey rejects initial state loading after the isolated-profile doctor, then reloads the Hub and workspace entry points. Require a persistent borderless recovery state, compact Retry action, hidden optional diagnostics, visible retry progress, repeated failure feedback, and successful keyboard retry to the intended screen. Background polling waits until a usable snapshot exists; startup requests cannot overlap. Verify narrow layout and reduced motion. Expanded diagnostics must fit within the disclosure without clipping; Copy details must write the full displayed error to the native clipboard. IPC rejection/delay is simulated; renderer, preload and local journal remain real. Retain numbered PNGs, trace, actions and run.json with passed and cleanup success. Startup failure is an explicit exception to foreground command toasts because no usable journal is available.
 
+
+## Repository activity waffle
+
+The Hub uses only the borderless waffle chart, with a development-only sample data toggle. `pnpm test tests/repository-activity.test.ts` owns switching between sample data and the real empty state and absence of the toggle in production. `pnpm verify hub-dialog` captures `repository-waffle.png` using four disposable Git repositories with 18, 11, 7 and 4 commits. The expanded 40-activity timeline retains the desktop sticky-position check and `repository-sticky.png` capture before the existing dialog journey.
+
+The waffle shares the day chart's 260px width and right edge. Its natural-height heading aligns with the activity heading before scrolling; its sticky inset centers it against the filter strip after scrolling. The card has no internal scrollbar or height cap. Verification of the current alignment refinement was explicitly deferred to the user.

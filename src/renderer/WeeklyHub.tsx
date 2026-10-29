@@ -1,3 +1,4 @@
+import { RepositoryActivity } from './RepositoryActivity'
 import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
@@ -6,7 +7,7 @@ import { readableError } from './background-work'
 import { sourceProblems } from './background-work'
 import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
-import { BookOpen, Check, GitBranch, GitCommitHorizontal, ListChecks, RefreshCw, Settings2 } from 'lucide-react'
+import { BookOpen, Check, GitCommitHorizontal, ListChecks, RefreshCw, Settings2 } from 'lucide-react'
 import { AnimatePresence, motion, stagger, useIsPresent, usePresenceData } from 'motion/react'
 import type { Variants } from 'motion/react'
 import { motionTokens } from './components/arc/motion-tokens'
@@ -533,30 +534,11 @@ export function WeeklyHub({
                                                 )}
                                             </section>
                                             <aside>
-                                                <section className="hub-project-summary">
-                                                    <h2>Activity by repository</h2>
-                                                    {repos.length ? (
-                                                        repos.map((repo) => (
-                                                            <div className="hub-project-line" key={repo.id}>
-                                                                <GitBranch size={15} aria-hidden="true" />
-                                                                <span>{repo.name}</span>
-                                                                <strong>
-                                                                    {
-                                                                        items.filter(
-                                                                            (item) => item.repositoryId === repo.id
-                                                                        ).length
-                                                                    }
-                                                                </strong>
-                                                            </div>
-                                                        ))
-                                                    ) : (
-                                                        <p>
-                                                            {state.repositories.some((repo) => !repo.removed)
-                                                                ? 'No repository activity loaded for this week.'
-                                                                : 'Connect a repository to load its activity.'}
-                                                        </p>
-                                                    )}
-                                                </section>
+                                                <RepositoryActivity
+                                                    repositories={repos}
+                                                    items={items}
+                                                    hasRepositories={state.repositories.some((repo) => !repo.removed)}
+                                                />
                                             </aside>
                                         </div>
 
