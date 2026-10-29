@@ -146,10 +146,13 @@ it('retains actionable ownership after a hard process-tree interruption', async 
     const f = await fixture()
     const run = f.start('compile', { HOLD_STAGE: 'exec electron-vite build' })
     await f.waiting()
-    if (process.platform === 'win32')
-        execFileSync('taskkill', ['/PID', String(run.child.pid), '/T', '/F'], { windowsHide: true })
-    else {
-        const childPid = Number(await readFile(join(f.root, 'waiting'), 'utf8'))
+    const childPid = Number(await readFile(join(f.root, 'waiting'), 'utf8'))
+    if (process.platform === 'win32') {
+        // Kill the owner first: /T may kill its child first and let the owner clean up
+        // normally before taskkill reaches it, which does not simulate a hard interruption.
+        execFileSync('taskkill', ['/PID', String(run.child.pid), '/F'], { windowsHide: true })
+        execFileSync('taskkill', ['/PID', String(childPid), '/T', '/F'], { windowsHide: true })
+    } else {
         process.kill(childPid, 'SIGKILL')
         run.child.kill('SIGKILL')
     }
