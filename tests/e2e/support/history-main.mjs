@@ -1,9 +1,26 @@
-import { app } from 'electron'
+import { app, ipcMain } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { tsImport } from 'tsx/esm/api'
 import { seedJournal } from '../../../tools/seed-journal.mjs'
+
+// Hold the real history request to inspect the waiting state deterministically.
+let searchGate = Promise.resolve()
+let releaseSearch = () => {}
+app.on('history-hold-search', () => {
+    searchGate = new Promise((resolve) => {
+        releaseSearch = resolve
+    })
+})
+app.on('history-release-search', () => releaseSearch())
+const handle = ipcMain.handle.bind(ipcMain)
+ipcMain.handle = (channel, listener) =>
+    handle(channel, async (event, payload) => {
+        const command = channel === 'journal:updates' ? payload.command : payload
+        if (command?.type === 'entryHistory') await searchGate
+        return listener(event, payload)
+    })
 
 const profile = process.env.GITORIAN_E2E_PROFILE
 if (!profile) throw new Error('An owned desktop test profile is required')

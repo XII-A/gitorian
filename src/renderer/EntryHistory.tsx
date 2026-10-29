@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BookOpen, ChevronRight, History, X } from 'lucide-react'
+import { BookOpen, ChevronRight, History, LoaderCircle, X } from 'lucide-react'
 import type { Command, HistoryEntry, EntryPage, Reply, State } from '../shared/model'
 import { Dialog, DialogClose, DialogContent } from './components/arc/dialog/dialog'
 import { useHistoryMotion } from './use-history-motion'
@@ -67,18 +67,18 @@ export function EntryHistory({
         }
     }, [open, query, run, state.restoreId])
     useEffect(() => {
+        if (!reading || !selectedId) return
         let active = true
         setLoadedEntry(undefined)
         setDetailError('')
-        setDetailLoading(!!selectedId)
-        if (selectedId && reading)
-            void run({ type: 'entry', id: selectedId }).then((reply) => {
-                if (active) {
-                    setLoadedEntry(reply?.entry)
-                    setDetailLoading(false)
-                    if (!reply?.entry) setDetailError('Could not open this entry. Close and reopen it to retry.')
-                }
-            })
+        setDetailLoading(true)
+        void run({ type: 'entry', id: selectedId }).then((reply) => {
+            if (active) {
+                setLoadedEntry(reply?.entry)
+                setDetailLoading(false)
+                if (!reply?.entry) setDetailError('Could not open this entry. Close and reopen it to retry.')
+            }
+        })
         return () => {
             active = false
         }
@@ -148,7 +148,21 @@ export function EntryHistory({
                             label="Previous weekly entries"
                             fade={16}
                         >
-                            {(loading || error) && <p role="status">{error || 'Loading entries?'}</p>}
+                            {loading && !visible.length && (
+                                <div
+                                    className="history-list-loading"
+                                    role="status"
+                                    aria-label={search ? 'Searching entries' : 'Loading entries'}
+                                >
+                                    <LoaderCircle
+                                        className="history-spinner"
+                                        size={20}
+                                        strokeWidth={1.75}
+                                        aria-hidden="true"
+                                    />
+                                </div>
+                            )}
+                            {error && <p role="status">{error}</p>}
                             {visible.length ? (
                                 <HistoryHover>
                                     {months.map((month) => (
@@ -172,7 +186,7 @@ export function EntryHistory({
                                                             <button
                                                                 type="button"
                                                                 className="history-row"
-                                                                aria-pressed={selectedId === entry.id}
+                                                                aria-pressed={reading && selectedId === entry.id}
                                                                 ref={selectedId === entry.id ? selectedRow : undefined}
                                                                 aria-controls="history-reader"
                                                                 onClick={() => {
@@ -257,9 +271,16 @@ export function EntryHistory({
                             if (open) selectedRow.current?.focus()
                         }}
                     >
-                        <DialogClose className="history-reader-close" aria-label="Close entry">
-                            <X size={16} strokeWidth={1.75} aria-hidden="true" />
-                        </DialogClose>
+                        <div className="history-reader-actions" role="group" aria-label="Entry actions">
+                            {!detailLoading && !detailError && selected?.week && (
+                                <Button variant="secondary" size="sm" onClick={() => openWeek(selected.week)}>
+                                    Edit
+                                </Button>
+                            )}
+                            <DialogClose className="history-reader-close" aria-label="Close entry">
+                                <X size={16} strokeWidth={1.75} aria-hidden="true" />
+                            </DialogClose>
+                        </div>
                         <section className="history-reader" id="history-reader" aria-label="Entry preview">
                             <ScrollArea
                                 className="history-document"
@@ -273,15 +294,6 @@ export function EntryHistory({
                                     <article className="history-article">
                                         <h2>{selected.title || 'Untitled entry'}</h2>
                                         <Editor value={selected.body} readOnly />
-                                        {selected.week && (
-                                            <Button
-                                                variant="secondary"
-                                                size="sm"
-                                                onClick={() => openWeek(selected.week)}
-                                            >
-                                                Edit entry
-                                            </Button>
-                                        )}
                                         {selected.url && (
                                             <Button
                                                 variant="ghost"
