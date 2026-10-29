@@ -182,3 +182,5 @@ The repository chart shares the 260px width and right edge of the day chart abov
 Sticky Hub filters add a noninteractive blurred scrim behind the pill, masked to fade into the passing activity below. It appears only while docked and uses the existing fast opacity transition. ActivityRow removes visible type badges and the trailing reference column across its shared surfaces; the node retains the visual type cue, a visually hidden type label retains the accessible description, and the reference follows the branch in dim monospace metadata.
 
 Compact waffle legend rows extend 12px beyond each side of the chart using negative inline margins and matching inline padding. Their width includes both extensions, keeping dots and values aligned with the chart while only the hover background bleeds outward.
+
+On the Hub's two-column day layout (above 1000px), each day label sticks inside its own day group below the filter pill and fading scrim. `align-self: start` keeps its grid item at the label's natural height, so the next group pushes it out. Stacked day headings remain in normal flow.
