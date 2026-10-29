@@ -36,7 +36,7 @@ test('local and published history: pagination, search, exact-week editing and pe
     await page.getByRole('button', { name: 'Previous entries', exact: true }).click()
     await expect(page.locator('.history-row')).toHaveCount(50)
     await page.getByRole('button', { name: 'Load more entries', exact: true }).click()
-    await expect(page.locator('.history-row')).toHaveCount(55)
+    await expect(page.locator('.history-row')).toHaveCount(56)
     await desktop.shot('01-paginated-history')
     await app.evaluate(({ app }) => app.emit('history-hold-search'))
     await page.getByRole('searchbox', { name: 'Search entries', exact: true }).fill('unique archived lesson')
@@ -132,14 +132,29 @@ test('local and published history: pagination, search, exact-week editing and pe
         .getByRole('button', { name: 'Edit', exact: true })
         .click()
     await expect(title).toHaveValue('Edited older local entry')
+    await page.getByRole('button', { name: 'Hub', exact: true }).click()
+    await page.getByRole('button', { name: 'Previous entries', exact: true }).click()
+    await page.getByRole('searchbox', { name: 'Search entries', exact: true }).fill('unpublished local lesson')
+    await expect(page.locator('.history-row')).toHaveCount(1)
+    await page.locator('.history-row').click()
+    await expect(page.locator('.history-article')).toContainText('A unique unpublished local lesson.')
+    await expect(page.getByRole('toolbar', { name: 'Entry actions', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Open in Notion', exact: true })).toHaveCount(0)
+    await page.locator('.history-entry-dialog').evaluate(async (node) => {
+        await Promise.allSettled(node.getAnimations().map((animation) => animation.finished))
+    })
+    await desktop.shot('04-local-only-edit-button')
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
+    await expect(title).toHaveValue('Local-only entry')
     await desktop.close()
     const db = new DatabaseSync(join(desktop.profile, 'journal.sqlite'), { readOnly: true })
     try {
         const count = db.prepare('SELECT count(*) AS total FROM entries').get()
         expect(count?.total).toBe(55)
         expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([])
-        expect(db.prepare('SELECT week, title FROM drafts').all()).toEqual([
-            { week: '2020-01-06', title: 'Edited older local entry' }
+        expect(db.prepare('SELECT week, title FROM drafts ORDER BY week').all()).toEqual([
+            { week: '2020-01-06', title: 'Edited older local entry' },
+            { week: '2020-01-13', title: 'Local-only entry' }
         ])
         writeFileSync(info.outputPath('persisted-history.json'), JSON.stringify(count))
     } finally {

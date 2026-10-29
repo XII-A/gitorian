@@ -193,8 +193,8 @@
 .history-reader-close {
     display: grid;
     place-items: center;
-    width: var(--control-height-md);
-    height: var(--control-height-md);
+    width: var(--control-height-sm);
+    height: var(--control-height-sm);
     padding: 0;
     border: 1px solid var(--border);
     border-radius: var(--radius-pill);
@@ -240,4 +240,8 @@
 .history-entry-skeleton > div {
     display: grid;
     gap: var(--space-8);
+}
+
+.history-reader-edit {
+    border-radius: var(--radius-pill);
 }

@@ -264,36 +264,45 @@ export function EntryHistory({
                         }}
                     >
                         <div className="history-reader-actions">
-                            {!detailLoading && !detailError && selected && (selected.week || selected.url) && (
-                                <ExpandingButtonGroup
-                                    key={selected.id}
-                                    label="Entry actions"
-                                    size="md"
-                                    items={[
-                                        ...(selected.week
-                                            ? [
-                                                  {
-                                                      id: 'edit',
-                                                      label: 'Edit',
-                                                      icon: <PencilLine />,
-                                                      onSelect: () => openWeek(selected.week)
-                                                  }
-                                              ]
-                                            : []),
-                                        ...(selected.url
-                                            ? [
-                                                  {
-                                                      id: 'notion',
-                                                      label: 'Open in Notion',
-                                                      icon: <NotionLogoIcon />,
-                                                      onSelect: async () =>
-                                                          !!(await run({ type: 'open', url: selected.url! }))
-                                                  }
-                                              ]
-                                            : [])
-                                    ]}
-                                />
-                            )}
+                            {!detailLoading &&
+                                !detailError &&
+                                selected &&
+                                (selected.url ? (
+                                    <ExpandingButtonGroup
+                                        key={selected.id}
+                                        label="Entry actions"
+                                        size="sm"
+                                        items={[
+                                            ...(selected.week
+                                                ? [
+                                                      {
+                                                          id: 'edit',
+                                                          label: 'Edit',
+                                                          icon: <PencilLine />,
+                                                          onSelect: () => openWeek(selected.week)
+                                                      }
+                                                  ]
+                                                : []),
+                                            {
+                                                id: 'notion',
+                                                label: 'Open in Notion',
+                                                icon: <NotionLogoIcon />,
+                                                onSelect: async () =>
+                                                    !!(await run({ type: 'open', url: selected.url! }))
+                                            }
+                                        ]}
+                                    />
+                                ) : selected.week ? (
+                                    <Button
+                                        className="history-reader-edit"
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => openWeek(selected.week)}
+                                    >
+                                        <PencilLine size={14} strokeWidth={1.75} aria-hidden="true" />
+                                        Edit
+                                    </Button>
+                                ) : null)}
                             <DialogClose className="history-reader-close" aria-label="Close entry">
                                 <X size={16} strokeWidth={1.75} aria-hidden="true" />
                             </DialogClose>

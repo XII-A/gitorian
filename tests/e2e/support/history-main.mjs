@@ -82,5 +82,17 @@ state.drafts = [
         }
     }
 ]
+state.drafts.push({
+    ...state.drafts[0],
+    id: 'local-only-week',
+    week: '2020-01-13',
+    title: 'Local-only entry',
+    updatedAt: '2020-01-13T12:00:00Z',
+    publishedEntryId: undefined,
+    body: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A unique unpublished local lesson.' }] }]
+    }
+})
 await seedJournal(profile, state)
 await import(pathToFileURL(resolve('out/main/index.js')).href)
