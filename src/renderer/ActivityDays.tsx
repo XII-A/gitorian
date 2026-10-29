@@ -53,7 +53,6 @@ export function ActivityDayFilter({
                 onValueChange={onValueChange}
                 searchable={false}
                 animateTriggerWidth={false}
-                maxTriggerWidth={160}
                 panelWidth={240}
                 title={
                     value === 'all' ? 'All days' : formatDay(value, { weekday: 'long', month: 'short', day: 'numeric' })

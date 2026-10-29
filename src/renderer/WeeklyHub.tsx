@@ -66,6 +66,36 @@ function SetupPanel({ children, reduced }: { children: ReactNode; reduced: boole
     )
 }
 
+/** Observe the original flow position, never the moving sticky surface. */
+function HubFilterDock({ children }: { children: ReactNode }) {
+    const sentinel = useRef<HTMLDivElement>(null)
+    const dock = useRef<HTMLDivElement>(null)
+    const [stuck, setStuck] = useState(false)
+    useEffect(() => {
+        const marker = sentinel.current
+        const surface = dock.current
+        const viewport = marker?.closest('.hub-scroll')?.firstElementChild
+        if (!marker || !surface || !viewport) return
+        const inset = parseFloat(getComputedStyle(surface).top)
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry) setStuck(entry.boundingClientRect.top <= (entry.rootBounds?.top ?? 0))
+            },
+            { root: viewport, rootMargin: `-${inset}px 0px 0px 0px`, threshold: [0, 1] }
+        )
+        observer.observe(marker)
+        return () => observer.disconnect()
+    }, [])
+    return (
+        <>
+            <div ref={sentinel} className="hub-filter-sentinel" aria-hidden="true" />
+            <div ref={dock} className="hub-filter-dock" data-stuck={stuck || undefined}>
+                {children}
+            </div>
+        </>
+    )
+}
+
 const dateValue = (value: string) => new Date(`${value}T12:00:00`)
 const dateKey = (date: Date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -170,33 +200,35 @@ export function WeeklyHub({
         />
     )
     const filters = (
-        <ActivityFilterStrip className="hub-filters">
-            {(['all', 'commit', 'change-request'] as const).map((value) => (
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    className="hub-filter-chip"
-                    animateContent={false}
-                    key={value}
-                    aria-pressed={tab === value}
-                    onClick={() => setTab(value)}
-                >
-                    {value === 'all' ? 'All activity' : value === 'commit' ? 'Commits' : 'Requests & reviews'}
-                    <AnimatedCounter
-                        variant="inline"
-                        value={
-                            projectItems.filter(
-                                (item) =>
-                                    value === 'all' ||
-                                    (value === 'commit' ? item.kind === 'commit' : item.kind !== 'commit')
-                            ).length
-                        }
-                    />
-                </Button>
-            ))}
-            <ActivityDayFilter week={start} value={dayFilter.day} onValueChange={dayFilter.setDay} />
-            <ProjectFilter repositories={state.repositories} value={project} onValueChange={setProject} />
-        </ActivityFilterStrip>
+        <HubFilterDock>
+            <ActivityFilterStrip className="hub-filters">
+                {(['all', 'commit', 'change-request'] as const).map((value) => (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="hub-filter-chip"
+                        animateContent={false}
+                        key={value}
+                        aria-pressed={tab === value}
+                        onClick={() => setTab(value)}
+                    >
+                        {value === 'all' ? 'All activity' : value === 'commit' ? 'Commits' : 'Requests & reviews'}
+                        <AnimatedCounter
+                            variant="inline"
+                            value={
+                                projectItems.filter(
+                                    (item) =>
+                                        value === 'all' ||
+                                        (value === 'commit' ? item.kind === 'commit' : item.kind !== 'commit')
+                                ).length
+                            }
+                        />
+                    </Button>
+                ))}
+                <ActivityDayFilter week={start} value={dayFilter.day} onValueChange={dayFilter.setDay} />
+                <ProjectFilter repositories={state.repositories} value={project} onValueChange={setProject} />
+            </ActivityFilterStrip>
+        </HubFilterDock>
     )
     const empty = (
         <div className="hub-empty">

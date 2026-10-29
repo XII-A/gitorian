@@ -153,16 +153,84 @@
     font-size: var(--text-xs);
     color: var(--text-secondary);
 }
-.hub-filters {
+.hub-filter-sentinel {
+    height: 1px;
+    margin-bottom: -1px;
+    pointer-events: none;
+}
+.hub-filter-dock {
     position: sticky;
-    top: 0;
+    top: var(--space-3);
     z-index: 2;
+    isolation: isolate;
+    margin-bottom: var(--space-5);
+}
+.hub-filter-dock::before {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+    z-index: -1;
+    pointer-events: none;
     background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-raised);
+    opacity: 0;
+    transform: scaleX(0.98) scaleY(0.92);
+    transition:
+        transform var(--duration-standard) var(--ease-in-out),
+        opacity var(--duration-fast) var(--ease-standard);
+}
+.hub-filter-dock[data-stuck]::before {
+    opacity: 1;
+    transform: scale(1);
+}
+.hub-filters {
+    background: transparent;
     display: flex;
     align-items: center;
     flex-wrap: nowrap;
     gap: var(--space-1);
-    margin-bottom: var(--space-5);
+}
+.hub-filters .activity-filter-items {
+    min-width: 100%;
+    justify-content: center;
+}
+/* Keep the overflow scrims inside the dock's concentric inner curve. */
+.hub-filters .activity-filter-scroll {
+    border-radius: var(--radius-control);
+}
+.hub-filters .activity-filter-edge {
+    width: calc(var(--control-height-sm) + var(--space-6));
+}
+.hub-filters .activity-filter-edge-start {
+    background: linear-gradient(
+        to right,
+        var(--activity-filter-surface) 0%,
+        color-mix(in oklab, var(--activity-filter-surface) 90%, transparent) 45%,
+        color-mix(in oklab, var(--activity-filter-surface) 40%, transparent) 75%,
+        transparent
+    );
+}
+.hub-filters .activity-filter-edge-end {
+    background: linear-gradient(
+        to left,
+        var(--activity-filter-surface) 0%,
+        color-mix(in oklab, var(--activity-filter-surface) 90%, transparent) 45%,
+        color-mix(in oklab, var(--activity-filter-surface) 40%, transparent) 75%,
+        transparent
+    );
+}
+@media (pointer: coarse) {
+    .hub-filters .activity-filter-edge {
+        width: calc(var(--control-height-md) + var(--space-6));
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .hub-filter-dock::before {
+        transform: none;
+        transition: opacity var(--duration-fast) var(--ease-standard);
+    }
 }
 .hub-filters .hub-filter-chip {
     display: inline-flex;
