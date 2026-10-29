@@ -49,3 +49,17 @@ export function largeHubFixture() {
     )
     return state
 }
+
+/** A busy week whose individual days remain below the automatic per-day threshold. */
+export function spreadHubFixture() {
+    const state = largeHubFixture()
+    const monday = new Date()
+    monday.setUTCHours(12, 0, 0, 0)
+    monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7))
+    state.activities = Array.from({ length: 600 }, (_, index) => {
+        const date = new Date(monday)
+        date.setUTCDate(date.getUTCDate() + Math.floor(index / 150))
+        return hubActivity(index, { repositoryId: `repo-${index % 150}`, date: date.toISOString() })
+    })
+    return state
+}
