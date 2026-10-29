@@ -234,7 +234,10 @@ test('provider accounts: multiple identities, GitLab, automatic assignment and r
         const workAccount = page.locator('.provider-account-row').filter({ hasText: '@alex-work' })
         await app.evaluate(({ app }) => app.emit('gitorian-provider-reject-user', 102))
         await page.evaluate(() => window.journal.invoke({ type: 'refresh' }))
-        await expect(workAccount.getByRole('button', { name: 'Reconnect @alex-work', exact: true })).toBeVisible()
+        // Direct IPC refresh does not update renderer state; allow the idle 15s poll plus its 2s tick.
+        await expect(workAccount.getByRole('button', { name: 'Reconnect @alex-work', exact: true })).toBeVisible({
+            timeout: 20000
+        })
         await expect(workAccount.locator('.provider-account-status')).toHaveText('work@example.test')
         await app.evaluate(({ app }) => app.emit('gitorian-provider-reject-user', undefined))
         await app.evaluate(({ app }) => app.emit('gitorian-provider-user', 101))
