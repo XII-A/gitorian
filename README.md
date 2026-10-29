@@ -1,6 +1,6 @@
 # Gitorian
 
-A desktop journal for developers. Review your week’s Git commits, GitHub pull requests and reviews, then write a journal entry with links back to the work. Keep drafts locally and optionally publish to Notion.
+A desktop journal for developers. Review your week’s Git commits, GitHub pull requests and reviews, then write a journal entry with links back to the work. Autosave entries locally, search previous writing, and optionally publish to Notion.
 
 ## Downloads
 
@@ -16,7 +16,7 @@ Install version 0.1.6 manually to enable future in-app updates on Windows. Updat
 2. Open Settings → Repositories and choose a folder containing your local Git repositories. Review the discovered repositories, select those to track, and import them.
 3. Check each repository’s author emails, history start, remote, and comparison base. The app reads existing local refs; fetch repositories with your usual Git tools when you need newer remote history.
 4. Open a week, review activity and diffs, and start writing. Drafts save locally; activity can be cited in the entry.
-5. Optionally connect GitHub for pull requests and reviews, and Notion for publishing and reading saved entries.
+5. Connect GitHub or GitLab for pull requests and reviews to complete onboarding. Optionally connect Notion for publishing. Previous entries includes your autosaved local writing.
 
 Local Git activity and writing do not require either integration.
 
@@ -54,7 +54,7 @@ You can change the destination to an existing parent page or database data sourc
 - Imports depend on accessible local repositories, matching author emails, the configured history range, and available refs. Remote activity needs network access and sufficient GitHub permissions; API limits can delay collection.
 - Large diffs are limited (approximately 2 MB); individual GitHub detail lists above 3,000 records are rejected. Use the original repository or GitHub for complete evidence.
 - Notion conversion supports a subset of its content model; complex blocks may not round-trip exactly. Publishing can modify remote page content. Review uncertain publish results in Notion before retrying.
-- Backups are manual. There is no built-in synchronization of the local database across devices, and published entries are separate from unfinished local drafts.
+- Backups are manual. There is no built-in synchronization of the local database across devices, and publishing keeps a remote snapshot of your locally autosaved writing.
 - Tagged releases are built into drafts for installation verification before manual publication. In-app updates are available for packaged Windows installs starting with 0.1.5; the first installation and other platforms use manual downloads.
 
 ## Development

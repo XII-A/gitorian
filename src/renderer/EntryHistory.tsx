@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { BookOpen, ChevronRight, History, X } from 'lucide-react'
-import type { Command, Entry, EntryPage, Reply, State } from '../shared/model'
+import type { Command, HistoryEntry, EntryPage, Reply, State } from '../shared/model'
 import { Dialog, DialogClose, DialogContent } from './components/arc/dialog/dialog'
 import { useHistoryMotion } from './use-history-motion'
 import { Drawer, DrawerContent, DrawerTrigger, useDrawerItem } from './components/arc/drawer/drawer'
@@ -11,7 +11,6 @@ import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import { Editor } from './Editor'
 import { HistoryHover } from './HistoryHover'
-import { journalWeek } from './hub-model'
 import './entry-history.css'
 
 function entryDate(date: string, options: Intl.DateTimeFormatOptions) {
@@ -41,8 +40,10 @@ export function EntryHistory({
     const reader = useRef<HTMLDivElement>(null)
     const selectedRow = useRef<HTMLButtonElement>(null)
     const [page, setPage] = useState<EntryPage>({ items: [] })
-    const [loadedEntry, setLoadedEntry] = useState<Entry>()
+    const [loadedEntry, setLoadedEntry] = useState<HistoryEntry>()
     const [loading, setLoading] = useState(false)
+    const [detailLoading, setDetailLoading] = useState(false)
+    const [detailError, setDetailError] = useState('')
     const [error, setError] = useState('')
     const request = useRef(0)
     useEffect(() => {
@@ -68,17 +69,20 @@ export function EntryHistory({
     useEffect(() => {
         let active = true
         setLoadedEntry(undefined)
-        if (selectedId)
+        setDetailError('')
+        setDetailLoading(!!selectedId)
+        if (selectedId && reading)
             void run({ type: 'entry', id: selectedId }).then((reply) => {
                 if (active) {
                     setLoadedEntry(reply?.entry)
-                    if (!reply?.entry) setError('Could not open this entry. Close and reopen history to retry.')
+                    setDetailLoading(false)
+                    if (!reply?.entry) setDetailError('Could not open this entry. Close and reopen it to retry.')
                 }
             })
         return () => {
             active = false
         }
-    }, [selectedId, run, state.restoreId])
+    }, [selectedId, reading, run, state.restoreId])
     const more = async () => {
         const token = request.current
         setLoading(true)
@@ -96,7 +100,7 @@ export function EntryHistory({
     const openWeek = (date?: string) => {
         setReading(false)
         setOpen(false)
-        onWrite(date ? journalWeek(date.slice(0, 10), state.settings.weekStart) : '')
+        onWrite(date ?? '')
     }
 
     return (
@@ -127,7 +131,7 @@ export function EntryHistory({
                     }
                 }}
                 title="Previous entries"
-                description="Search published entries by title, date, or text."
+                description="Search your writing by title, date, or text."
             >
                 <div className="history-layout">
                     <section className="history-index" aria-label="Saved entries">
@@ -183,7 +187,9 @@ export function EntryHistory({
                                                                         day: 'numeric'
                                                                     })}
                                                                 </span>
-                                                                <span className="history-row-title">{entry.title}</span>
+                                                                <span className="history-row-title">
+                                                                    {entry.title || 'Untitled entry'}
+                                                                </span>
                                                                 <span className="history-excerpt">
                                                                     {entry.excerpt || 'An entry without body text.'}
                                                                 </span>
@@ -204,11 +210,11 @@ export function EntryHistory({
                                 <EmptyState
                                     icon={<BookOpen size={24} />}
                                     iconVariant="plain"
-                                    title={search ? 'No matching entries' : 'No published entries yet'}
+                                    title={search ? 'No matching entries' : 'No entries yet'}
                                     description={
                                         search
                                             ? 'Try another word, title, or date.'
-                                            : 'Published entries appear here after you save them to Notion and refresh your journal.'
+                                            : 'Your writing appears here automatically as you write.'
                                     }
                                     action={
                                         <Button
@@ -261,10 +267,30 @@ export function EntryHistory({
                                 viewportRef={reader}
                                 fade={16}
                             >
-                                {selected && (
+                                {detailLoading && <p role="status">Loading entry...</p>}
+                                {detailError && <p role="alert">{detailError}</p>}
+                                {!detailLoading && !detailError && selected && (
                                     <article className="history-article">
-                                        <h2>{selected.title}</h2>
+                                        <h2>{selected.title || 'Untitled entry'}</h2>
                                         <Editor value={selected.body} readOnly />
+                                        {selected.week && (
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                onClick={() => openWeek(selected.week)}
+                                            >
+                                                Edit entry
+                                            </Button>
+                                        )}
+                                        {selected.url && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => run({ type: 'open', url: selected.url! })}
+                                            >
+                                                Open in Notion
+                                            </Button>
+                                        )}
                                     </article>
                                 )}
                             </ScrollArea>

@@ -112,7 +112,9 @@ test('provider accounts: multiple identities, GitLab, automatic assignment and r
     })
     await test.step('GitLab contributions, review-only history, details and writing use the real desktop flow', async () => {
         await page.getByRole('button', { name: 'Save settings', exact: true }).click()
-        await page.getByRole('button', { name: 'Dismiss setup', exact: true }).click()
+        await expect(page.getByRole('button', { name: 'Dismiss setup', exact: true })).toHaveCount(0)
+        await expect(page.locator('.hub-stats')).toBeVisible()
+        expect((await page.evaluate(() => window.journal.invoke({ type: 'state' }))).connections.notion).toBe(false)
         await page.getByText('!1 Improve GitLab workflow', { exact: true }).first().click()
         await expect(page.getByRole('link', { name: 'View on GitLab' })).toBeVisible()
         await expect(

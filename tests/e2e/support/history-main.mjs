@@ -30,5 +30,22 @@ state.entries = Array.from({ length: 55 }, (_, index) => ({
         ]
     }
 }))
+// A Monday document must remain editable after switching the calendar preference to Sunday.
+state.settings.weekStart = 0
+state.drafts = [
+    {
+        id: 'local-week',
+        week: '2020-01-06',
+        title: 'Local autosaved entry',
+        version: 2,
+        updatedAt: '2020-01-06T12:00:00Z',
+        publishedEntryId: 'entry-01',
+        selections: [],
+        body: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A unique local lesson.' }] }]
+        }
+    }
+]
 await seedJournal(profile, state)
 await import(pathToFileURL(resolve('out/main/index.js')).href)

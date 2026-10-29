@@ -27,7 +27,7 @@ export function useOnboarding(reply: Reply | undefined) {
         setPreference({ key, visibility })
     }, [key, preference?.key, reply])
 
-    const accountsDone = !!reply?.connections.remote && !!reply?.connections.notion
+    const accountsDone = !!reply?.connections.remote
     const repositoriesDone = !!reply?.state.repositories.some((repository) => !repository.removed)
     const complete = accountsDone && repositoriesDone
     useEffect(() => {

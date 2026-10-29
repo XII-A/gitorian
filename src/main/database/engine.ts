@@ -13,7 +13,17 @@ import {
     stateSchema,
     weekOf
 } from '../../shared/model'
-import type { Activity, Destination, Draft, Entry, JournalNode, Repository, Selection, State } from '../../shared/model'
+import type {
+    Activity,
+    Destination,
+    Draft,
+    Entry,
+    HistoryEntry,
+    JournalNode,
+    Repository,
+    Selection,
+    State
+} from '../../shared/model'
 import { localDate } from '../../shared/model'
 import { plainText } from '../../shared/notion-format'
 import { gitConfiguration, contributionConfiguration } from '../../shared/activity-history'
@@ -58,6 +68,10 @@ export class JournalEngine {
         this.native = new DatabaseSync(path)
         this.db = drizzle({ client: this.native })
         try {
+            this.native.function('journal_text', { deterministic: true }, (body) => plainText(JSON.parse(String(body))))
+            this.native.function('journal_lower', { deterministic: true }, (text) =>
+                String(text).toLocaleLowerCase('en-US')
+            )
             // The new release file has one baseline; an unrelated/old schema is never rewritten.
             const tables = this.native
                 .prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -1306,30 +1320,59 @@ export class JournalEngine {
         this.setImageReferences(`entry:${entry.id}`, value.body)
         this.db.insert(t.entries).values(value).onConflictDoUpdate({ target: t.entries.id, set: value }).run()
     }
-    entry(id: string): Entry | undefined {
-        const value = this.db.select().from(t.entries).where(eq(t.entries.id, id)).get()
-        return value ? entrySchema.parse(value) : undefined
+    entry(id: string): HistoryEntry | undefined {
+        if (id.startsWith('local:')) {
+            const draft = this.draft(id.slice(6))
+            if (!draft) return undefined
+            const publication = draft.publishedEntryId
+                ? this.db
+                      .select({ url: t.entries.url })
+                      .from(t.entries)
+                      .where(eq(t.entries.id, draft.publishedEntryId))
+                      .get()
+                : undefined
+            return {
+                id,
+                title: draft.title,
+                date: draft.week,
+                week: draft.week,
+                body: draft.body,
+                excerpt: plainText(draft.body).slice(0, 200),
+                url: publication?.url
+            }
+        }
+        if (!id.startsWith('notion:')) return undefined
+        const value = this.db
+            .select()
+            .from(t.entries)
+            .where(eq(t.entries.id, id.slice(7)))
+            .get()
+        return value
+            ? { id, title: value.title, date: value.date, body: value.body, excerpt: value.excerpt, url: value.url }
+            : undefined
     }
     entryHistory(query: string, cursor?: { date: string; id: string }) {
-        const rows = this.db
-            .select({ id: t.entries.id, title: t.entries.title, date: t.entries.date, excerpt: t.entries.excerpt })
-            .from(t.entries)
-            .where(
-                and(
-                    query.trim()
-                        ? sql`instr(${t.entries.searchText}, ${query.trim().toLocaleLowerCase('en-US')})>0`
-                        : undefined,
-                    cursor
-                        ? or(
-                              lt(t.entries.date, cursor.date),
-                              and(eq(t.entries.date, cursor.date), lt(t.entries.id, cursor.id))
-                          )
-                        : undefined
-                )
+        // Deduplicate before searching: old remote wording must not match a newer local document.
+        // Body parsing stays in the worker; only the bounded summaries cross the interface.
+        const rows = this.db.all<{ id: string; title: string; date: string; excerpt: string }>(sql`
+            WITH history AS (
+                SELECT 'local:' || id AS id, title, week AS date,
+                    substr(journal_text(body), 1, 200) AS excerpt,
+                    journal_lower(title || ' ' || week || ' ' || journal_text(body)) AS searchText
+                FROM drafts
+                WHERE publishedEntryId IS NOT NULL
+                    OR (trim(title) <> '' AND title <> week || ' – ' || date(week, '+6 days'))
+                    OR trim(journal_text(body)) <> ''
+                    OR EXISTS (SELECT 1 FROM json_tree(body) WHERE key = 'type' AND value IN ('image', 'horizontalRule'))
+                UNION ALL
+                SELECT 'notion:' || id, title, date, excerpt, searchText FROM entries
+                WHERE NOT EXISTS (SELECT 1 FROM drafts WHERE publishedEntryId = entries.id)
             )
-            .orderBy(desc(t.entries.date), desc(t.entries.id))
-            .limit(51)
-            .all()
+            SELECT id, title, date, excerpt FROM history
+            WHERE instr(searchText, ${query.trim().toLocaleLowerCase('en-US')}) > 0
+                ${cursor ? sql`AND (date < ${cursor.date} OR (date = ${cursor.date} AND id < ${cursor.id}))` : sql``}
+            ORDER BY date DESC, id DESC LIMIT 51
+        `)
         const items = rows.slice(0, 50),
             last = items.at(-1)
         return { items, next: rows.length > 50 && last ? { date: last.date, id: last.id } : undefined }

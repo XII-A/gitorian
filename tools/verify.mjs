@@ -329,7 +329,11 @@ if (mode === 'doctor') {
                     )
                         throw new Error('Onboarding import was not persisted')
                     const preferences = JSON.parse(readFileSync(join(output, 'preferences.json'), 'utf8'))
-                    if (preferences['gitorian:onboarding:v1:local'] !== 'complete')
+                    if (
+                        !Object.entries(preferences).some(
+                            ([key, value]) => key.startsWith('gitorian:onboarding:v1:') && value === 'complete'
+                        )
+                    )
                         throw new Error('Completion preference was not retained')
                 } else if (connectionMode) {
                     const row = db.prepare('SELECT settings AS json FROM journal').get()

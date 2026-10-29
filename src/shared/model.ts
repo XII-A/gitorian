@@ -456,13 +456,19 @@ export interface EntrySummary {
     date: string
     excerpt: string
 }
+/** History reads current local writing or a retained publication snapshot. */
+export interface HistoryEntry extends EntrySummary {
+    body: JournalNode
+    week?: string
+    url?: string
+}
 export interface EntryPage {
     items: EntrySummary[]
     next?: { date: string; id: string }
 }
 export interface Reply {
     entryPage?: EntryPage
-    entry?: Entry
+    entry?: HistoryEntry
     draftSaved?: { id: string; version: number }
     repositoryScan?: {
         id: string
