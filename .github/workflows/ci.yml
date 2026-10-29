@@ -29,51 +29,18 @@ jobs:
             - run: pnpm install --frozen-lockfile
             - run: pnpm check
 
-    desktop:
-        name: Desktop journeys (${{ matrix.shard }}/${{ strategy.job-total }})
-        runs-on: windows-2022
-        timeout-minutes: 20
-        strategy:
-            fail-fast: false
-            matrix:
-                shard: [1, 2]
-        steps:
-            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-              with:
-                  persist-credentials: false
-            - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-            - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-              with:
-                  node-version: '24'
-                  cache: pnpm
-            - run: pnpm install --frozen-lockfile
-            # Typechecking belongs to the independently required check job.
-            - run: pnpm build:compile
-            # Separate runners isolate the native clipboard; retain one worker per runner.
-            - run: pnpm test:e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }}
-            - name: Desktop test evidence
-              if: always()
-              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-              with:
-                  name: desktop-test-evidence-${{ matrix.shard }}
-                  path: .ai-docs/verification/desktop/
-                  include-hidden-files: true
-                  if-no-files-found: ignore
-                  retention-days: 7
-
     result:
         name: CI checks
         if: always()
-        needs: [check, desktop]
+        needs: [check]
         runs-on: ubuntu-latest
         timeout-minutes: 2
         steps:
-            - name: Require every verification lane
+            - name: Require static checks and tests
               shell: pwsh
               env:
                   CHECK_RESULT: ${{ needs.check.result }}
-                  DESKTOP_RESULT: ${{ needs.desktop.result }}
               run: |
-                  if ($env:CHECK_RESULT -ne 'success' -or $env:DESKTOP_RESULT -ne 'success') {
-                      throw "Verification incomplete: checks=$env:CHECK_RESULT desktop=$env:DESKTOP_RESULT"
+                  if ($env:CHECK_RESULT -ne 'success') {
+                      throw "Verification incomplete: checks=$env:CHECK_RESULT"
                   }

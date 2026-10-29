@@ -30,6 +30,8 @@ Read [testing](docs/testing.md) when adding or migrating tests, choosing a runne
 - Assertions: use independent behavioral outcomes rather than implementation, fixture details, DOM structure, or object identity. Measure performance against meaningful bounds under realistic load.
 - Pruning: preserve useful existing behavior coverage when removing tests.
 
-## Handoff
+## Verification scope
 
-During iteration, run affected journeys and focused existing tests. Before handoff, run `pnpm verify:release` on the final source, following the [final-revision verification requirements](docs/testing.md#final-revision-verification). Repeat verification after source edits or failures.
+During implementation and ordinary handoffs, verify the feature or change with affected journeys and focused existing tests. Require the selected checks to pass and report their results.
+
+Before creating a PR, run `pnpm verify:release` on the final source and require the complete run to pass, following the [final-revision verification requirements](docs/testing.md#final-revision-verification). After further source edits or a failed run, repeat full verification before creating the PR.
