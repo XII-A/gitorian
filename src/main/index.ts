@@ -824,6 +824,19 @@ void app.whenReady().then(async () => {
         return { ...reply, state }
     }
     ipcMain.handle('journal:command', durableCommand)
+    // A document read needs neither a workspace snapshot nor renderer reconciliation.
+    ipcMain.handle('journal:entry', (event, input: unknown) =>
+        runNative(async () => {
+            const window = BrowserWindow.fromWebContents(event.sender)
+            if (!window || event.senderFrame !== window.webContents.mainFrame || closing || restoring || updating)
+                throw new Error('Choose an available journal window.')
+            const request = z.object({ id: z.string().min(1), restoreId: z.string().optional() }).parse(input)
+            if (request.restoreId !== store.generation) throw new Error('The journal changed. Open the entry again.')
+            const entry = await store.entry(request.id)
+            if (request.restoreId !== store.generation) throw new Error('The journal changed. Open the entry again.')
+            return entry
+        })
+    )
     const updates = new ReplyUpdates()
     const updateRequest = z.object({
         command: commandSchema,

@@ -160,47 +160,51 @@ it('checkpoints continuous typing and lets an existing empty draft apply the sav
     expect(state.settings.template).toEqual(body('Weekly template'))
 })
 
-it('puts an uncertain publish in an actionable toast, outside the document', async () => {
-    const state = sampleState('2026-10-05')
-    state.saves = [
-        {
-            id: 'save-1',
-            draftId: state.drafts[0].id,
-            status: 'unknown',
-            marker: 'test',
-            title: 'Week',
-            body: body('My writing'),
-            selections: [],
-            destination: { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' },
-            createdAt: new Date().toISOString()
-        }
-    ]
-    const run = vi.fn(() => Promise.resolve(undefined))
-    await update(() =>
-        root.render(
-            createElement(WorkspaceDraft, {
-                state,
-                week: '2026-10-05',
-                sample: false,
-                notionConnected: true,
-                run,
-                publishTarget: null,
-                onReady: vi.fn(),
-                onSettings: vi.fn()
-            })
+it.each([true, false])(
+    'keeps uncertain publication recovery actionable (Notion connected: %s)',
+    async (notionConnected) => {
+        const state = sampleState('2026-10-05')
+        state.saves = [
+            {
+                id: 'save-1',
+                draftId: state.drafts[0].id,
+                status: 'unknown',
+                marker: 'test',
+                title: 'Week',
+                body: body('My writing'),
+                selections: [],
+                destination: { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' },
+                createdAt: new Date().toISOString()
+            }
+        ]
+        const run = vi.fn(() => Promise.resolve(undefined))
+        await update(() =>
+            root.render(
+                createElement(WorkspaceDraft, {
+                    state,
+                    week: '2026-10-05',
+                    sample: false,
+                    notionConnected,
+                    run,
+                    publishTarget: null,
+                    onReady: vi.fn(),
+                    onSettings: vi.fn()
+                })
+            )
         )
-    )
-    expect(container.querySelector('[role="alert"]')).toBeNull()
-    const toast = notifications.toast.mock.calls.at(-1)?.[0] as {
-        action: { label: string; onClick: () => void }
+        expect(container.querySelector('[role="alert"]')).toBeNull()
+        const toast = notifications.toast.mock.calls.at(-1)?.[0] as {
+            action: { label: string; onClick: () => void }
+        }
+        expect(toast).toMatchObject({ title: 'Verify the Notion save', action: { label: 'Verify save' } })
+        toast.action.onClick()
+        expect(run).toHaveBeenCalledWith({ type: 'reconcile', saveId: 'save-1' })
     }
-    expect(toast).toMatchObject({ title: 'Verify the Notion save', action: { label: 'Verify save' } })
-    toast.action.onClick()
-    expect(run).toHaveBeenCalledWith({ type: 'reconcile', saveId: 'save-1' })
-})
+)
 
 it('reopens published weekly writing as editable with a publish action', async () => {
     const state = sampleState('2026-10-05')
+    state.settings.destination = { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' }
     state.drafts[0].publishedEntryId = 'published-page'
     const run = vi.fn(() => Promise.resolve(undefined))
     await update(() =>
@@ -327,4 +331,48 @@ it('advances dirty writing only to its own save acknowledgment when another writ
             connections: { remote: false, notion: true, protectedStorage: false }
         })
     )
+})
+
+it.each([false, true])('omits publishing and footer connection prompts without Notion (sample: %s)', async (sample) => {
+    const state = sampleState('2026-10-05')
+    await update(() =>
+        root.render(
+            createElement(WorkspaceDraft, {
+                state,
+                week: '2026-10-05',
+                sample,
+                notionConnected: false,
+                run: vi.fn(() => Promise.resolve(undefined)),
+                publishTarget: container,
+                onReady: vi.fn(),
+                onSettings: vi.fn()
+            })
+        )
+    )
+    expect(container.textContent).not.toMatch(/Publish|Connect Notion|Set up Notion/)
+    expect(container.textContent).toContain('/ for formatting')
+})
+
+it('opens settings to finish publishing setup for a connected profile without a destination', async () => {
+    const onSettings = vi.fn()
+    await update(() =>
+        root.render(
+            createElement(WorkspaceDraft, {
+                state: sampleState('2026-10-05'),
+                week: '2026-10-05',
+                sample: false,
+                notionConnected: true,
+                run: vi.fn(() => Promise.resolve(undefined)),
+                publishTarget: container,
+                onReady: vi.fn(),
+                onSettings
+            })
+        )
+    )
+    const button = Array.from(container.querySelectorAll('button')).find(
+        (item) => item.textContent === 'Set up Notion publishing'
+    )!
+    expect(button.disabled).toBe(false)
+    await update(() => button.click())
+    expect(onSettings).toHaveBeenCalledOnce()
 })

@@ -347,7 +347,6 @@ export const commandSchema = z.discriminatedUnion('type', [
         query: z.string().max(2000),
         cursor: z.object({ date: dayOrInstant, id: z.string() }).optional()
     }),
-    z.object({ type: z.literal('entry'), id: z.string() }),
     z.object({ type: z.literal('loadWeek'), since: z.iso.date() }),
     z.object({ type: z.literal('addRepository') }),
     z.object({ type: z.literal('addRepositories') }),
@@ -456,13 +455,18 @@ export interface EntrySummary {
     date: string
     excerpt: string
 }
+/** History reads current local writing or a retained publication snapshot. */
+export interface HistoryEntry extends EntrySummary {
+    body: JournalNode
+    week?: string
+    url?: string
+}
 export interface EntryPage {
     items: EntrySummary[]
     next?: { date: string; id: string }
 }
 export interface Reply {
     entryPage?: EntryPage
-    entry?: Entry
     draftSaved?: { id: string; version: number }
     repositoryScan?: {
         id: string
@@ -485,6 +489,7 @@ export interface Reply {
     detailError?: string
 }
 export interface DesktopBridge {
+    readEntry: (id: string, restoreId?: string) => Promise<HistoryEntry | undefined>
     clipboard?: (action: 'cut' | 'copy' | 'paste') => Promise<void>
     writeClipboardText: (text: string) => Promise<void>
     appUpdates?: {

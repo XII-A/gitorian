@@ -386,8 +386,6 @@ function makeJournal() {
                         return yield* reply({
                             entryPage: yield* local(() => store.entryHistory(command.query, command.cursor))
                         })
-                    case 'entry':
-                        return yield* reply({ entry: yield* local(() => store.entry(command.id)) })
                     case 'draft': {
                         const saved = yield* local(() =>
                             store.saveDraft(command.draft, command.draft.version, generation)

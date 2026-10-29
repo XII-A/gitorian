@@ -1,9 +1,44 @@
-import { app } from 'electron'
+import { app, ipcMain, shell } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { tsImport } from 'tsx/esm/api'
 import { seedJournal } from '../../../tools/seed-journal.mjs'
+
+// Hold the real history request to inspect the waiting state deterministically.
+let searchGate = Promise.resolve()
+let releaseSearch = () => {}
+app.on('history-hold-search', () => {
+    searchGate = new Promise((resolve) => {
+        releaseSearch = resolve
+    })
+})
+app.on('history-release-search', () => releaseSearch())
+let entryGate = Promise.resolve()
+let releaseEntry = () => {}
+let entryReads = 0
+const opened = []
+app.on('history-hold-entry', () => {
+    entryGate = new Promise((resolve) => {
+        releaseEntry = resolve
+    })
+})
+app.on('history-release-entry', () => releaseEntry())
+app.on('history-entry-stats', (state) => Object.assign(state, { reads: entryReads, opened }))
+shell.openExternal = async (url) => {
+    opened.push(url)
+}
+const handle = ipcMain.handle.bind(ipcMain)
+ipcMain.handle = (channel, listener) =>
+    handle(channel, async (event, payload) => {
+        const command = channel === 'journal:updates' ? payload.command : payload
+        if (command?.type === 'entryHistory') await searchGate
+        if (channel === 'journal:entry') {
+            entryReads++
+            await entryGate
+        }
+        return listener(event, payload)
+    })
 
 const profile = process.env.GITORIAN_E2E_PROFILE
 if (!profile) throw new Error('An owned desktop test profile is required')
@@ -30,5 +65,34 @@ state.entries = Array.from({ length: 55 }, (_, index) => ({
         ]
     }
 }))
+// A Monday document must remain editable after switching the calendar preference to Sunday.
+state.settings.weekStart = 0
+state.drafts = [
+    {
+        id: 'local-week',
+        week: '2020-01-06',
+        title: 'Local autosaved entry',
+        version: 2,
+        updatedAt: '2020-01-06T12:00:00Z',
+        publishedEntryId: 'entry-01',
+        selections: [],
+        body: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A unique local lesson.' }] }]
+        }
+    }
+]
+state.drafts.push({
+    ...state.drafts[0],
+    id: 'local-only-week',
+    week: '2020-01-13',
+    title: 'Local-only entry',
+    updatedAt: '2020-01-13T12:00:00Z',
+    publishedEntryId: undefined,
+    body: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A unique unpublished local lesson.' }] }]
+    }
+})
 await seedJournal(profile, state)
 await import(pathToFileURL(resolve('out/main/index.js')).href)

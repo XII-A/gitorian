@@ -89,6 +89,11 @@ it('persists deduplicated images outside state and restores image backups', asyn
         expect(await store.importImage(bytes)).toBe(id)
         const body = { type: 'doc', content: [{ type: 'image', attrs: { assetId: id, alt: 'New design' } }] }
         await store.saveSettings({ ...store.config.settings, template: body })
+        const draft = await store.createDraft('2026-10-26')
+        const history = await store.entryHistory('')
+        expect(history.items).toHaveLength(1)
+        expect(imageIds((await store.entry(history.items[0].id))!.body)).toEqual([id])
+        expect((await store.entry(history.items[0].id))?.week).toBe(draft.week)
         expect(JSON.stringify(await store.readWorkspace())).not.toContain(bytes.toString('base64'))
         const backup = await store.export()
         expect(JSON.parse(backup).images).toHaveLength(1)

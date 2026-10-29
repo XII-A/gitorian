@@ -516,25 +516,32 @@ export function WorkspaceDraft({
     return (
         <section data-journal-drop-zone className="ws-writing" aria-label="Weekly journal">
             {publishTarget &&
+                notionConnected &&
                 createPortal(
                     <Button
                         size="sm"
                         loading={busy}
-                        disabled={!draft || uncertain || needsNotion || !imagesReady || !!recoveryConflict}
+                        disabled={!needsNotion && (!draft || uncertain || !imagesReady || !!recoveryConflict)}
                         title={
-                            !imagesReady
-                                ? 'Finish or dismiss image imports before publishing'
-                                : !draft
-                                  ? 'Start an entry before publishing'
-                                  : uncertain
-                                    ? 'Verify the previous Notion save before publishing again'
-                                    : needsNotion
-                                      ? 'Connect Notion in settings to publish'
+                            needsNotion
+                                ? 'Choose a publishing destination in settings'
+                                : !imagesReady
+                                  ? 'Finish or dismiss image imports before publishing'
+                                  : !draft
+                                    ? 'Start an entry before publishing'
+                                    : uncertain
+                                      ? 'Verify the previous Notion save before publishing again'
                                       : undefined
                         }
-                        onClick={publish}
+                        onClick={needsNotion ? onSettings : publish}
                     >
-                        {sample ? 'Publish sample' : draft?.publishedEntryId ? 'Update in Notion' : 'Publish to Notion'}
+                        {needsNotion
+                            ? 'Set up Notion publishing'
+                            : sample
+                              ? 'Publish sample'
+                              : draft?.publishedEntryId
+                                ? 'Update in Notion'
+                                : 'Publish to Notion'}
                     </Button>,
                     publishTarget
                 )}
@@ -577,21 +584,15 @@ export function WorkspaceDraft({
                     )}
                 </div>
             </ScrollArea>
-            <footer className={`ws-writing-footer${needsNotion ? ' ws-needs-notion' : ''}`}>
+            <footer className="ws-writing-footer">
                 <span>{draft ? `${words} words` : '0 words'}</span>
                 <span role="status">
                     {status && !recoveryConflict && <WorkspaceIcon name="check" width="14" height="14" />}
                     {!recoveryConflict && status}
                 </span>
-                {needsNotion ? (
-                    <Button className="ws-notion-connect" variant="ghost" size="sm" onClick={onSettings}>
-                        Connect Notion in settings
-                    </Button>
-                ) : (
-                    <span className="ws-slash-hint">
-                        <kbd>/</kbd> for formatting
-                    </span>
-                )}
+                <span className="ws-slash-hint">
+                    <kbd>/</kbd> for formatting
+                </span>
             </footer>
             <Dialog open={!!recoveryConflict}>
                 <DialogContent

@@ -109,9 +109,81 @@ it('finds old unlinked entries in bounded history without sending document bodie
         expect(first.items[0]).not.toHaveProperty('body')
         expect((await database.entryHistory('', first.next)).items).toHaveLength(5)
         const found = await database.entryHistory('recovered lesson')
-        expect(found.items.map((item) => item.id)).toEqual(['entry-54'])
-        expect((await database.entry('entry-54'))?.body).toBeDefined()
+        expect(found.items.map((item) => item.id)).toEqual(['notion:entry-54'])
+        expect((await database.entry('notion:entry-54'))?.body).toBeDefined()
+        for (let index = 0; index < 60; index++) {
+            const week = new Date(Date.UTC(2021, 0, 4 + index * 7)).toISOString().slice(0, 10)
+            const draft = await database.createDraft(week)
+            await database.saveDraft({ ...draft, title: `Local ${index}` }, draft.version)
+        }
+        const started = performance.now()
+        const identities: string[] = []
+        let page = await database.entryHistory('')
+        while (true) {
+            identities.push(...page.items.map((item) => item.id))
+            if (!page.next) break
+            page = await database.entryHistory('', page.next)
+        }
+        expect(identities).toHaveLength(115)
+        expect(new Set(identities).size).toBe(115)
+        expect(performance.now() - started).toBeLessThan(2000)
     } finally {
         await database.close()
+    }
+})
+
+it('searches durable local writing and prefers it over linked publication snapshots', async () => {
+    const { database, root } = await open()
+    let localId = ''
+    try {
+        const empty = await database.createDraft('2026-10-19')
+        expect((await database.entryHistory('')).items).toEqual([])
+        const draft = await database.createDraft('2026-10-26')
+        const body = {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A café lesson from local writing.' }] }]
+        }
+        await database.saveDraft({ ...draft, title: 'Local journal', body }, draft.version)
+        await database.saveDraft({ ...empty, title: 'Title alone' }, empty.version)
+        const backup = JSON.parse(await database.export()) as { state: ReturnType<typeof initialState> }
+        const state = backup.state
+        state.entries.push({
+            id: 'remote-copy',
+            title: 'Obsolete title',
+            date: draft.week,
+            body: {
+                type: 'doc',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Obsolete remote content' }] }]
+            },
+            url: 'https://notion.so/example',
+            refreshedAt: draft.updatedAt
+        })
+        state.drafts.find((item) => item.id === draft.id)!.publishedEntryId = 'remote-copy'
+        await database.restore(JSON.stringify({ backupVersion: 3, state, images: [] }))
+        const history = await database.entryHistory('CAFÉ')
+        expect(history.items).toHaveLength(1)
+        localId = history.items[0].id
+        expect(history.items[0]).not.toHaveProperty('body')
+        expect((await database.entry(localId))?.week).toBe(draft.week)
+        expect((await database.entry(localId))?.url).toBe('https://notion.so/example')
+        expect((await database.entryHistory('obsolete')).items).toEqual([])
+        expect((await database.entryHistory('')).items).toHaveLength(2)
+        const linked = await database.draft(draft.id)
+        await database.saveDraft({ ...linked!, title: '', body: emptyDocument }, linked!.version)
+        expect((await database.entryHistory('')).items).toHaveLength(2)
+        expect((await database.entryHistory('obsolete')).items).toEqual([])
+        await database.saveDraft(
+            { ...(await database.draft(draft.id))!, title: 'Local journal', body },
+            linked!.version + 1
+        )
+    } finally {
+        await database.close()
+    }
+    const reopened = await JournalDatabase.open(join(root, 'journal.sqlite'))
+    try {
+        expect((await reopened.entryHistory('café')).items[0].id).toBe(localId)
+        expect((await reopened.entry(localId))?.title).toBe('Local journal')
+    } finally {
+        await reopened.close()
     }
 })

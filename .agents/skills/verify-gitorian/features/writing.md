@@ -91,3 +91,8 @@ The same owning journey exercises seven native wheel jumps from 800 to 2400px an
 
 Flags are not offered: the catalog excludes the Flags category before building search and history lookups. The emoji journey seeds a formerly picked Syria flag, verifies no Flags tab or flag in All/Recent, and verifies `:syria` shows no matches. Stored journal text and the cached atlas stay unchanged.
 
+
+
+## Local history and optional publishing
+
+`pnpm test:e2e entry-history` owns mixed local/remote cursor pagination, gated search waiting feedback, body search, reader close clearing selection while returning keyboard focus, compact Arc header action keyboard navigation, standalone local-only Edit navigation, gated entry-body skeletons, shared warm reads without workspace payloads, generation-fenced document reads, retained remote reading, exact stored-week editing after calendar preference changes, autosave/reload, disconnected publishing absence, and independent SQLite persistence. Local writing replaces linked Notion snapshots in history; image-only and title-only documents count, while empty generated date placeholders do not. Database tests own linked-empty deduplication, locale search, mixed pagination and image history references. Notion remains optional in Settings. Connected profiles missing a destination get an actionable setup control; uncertain publication verification remains in its existing recovery toast after disconnect. Integration transport scenarios remain simulations, never live publishing.
