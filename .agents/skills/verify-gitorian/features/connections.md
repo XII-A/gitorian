@@ -6,7 +6,7 @@ Read the parent skill and `docs/testing.md` first. Compile the final application
 
 Run `pnpm test:e2e provider-accounts` (alias `pnpm verify provider-accounts`). `tests/e2e/provider-accounts.spec.ts` owns the account UI, repository matching and provider contribution journey; `tests/e2e/support/providers-main.mjs` changes only external HTTP/browser behavior. Renderer, preload, IPC, vault, Git and SQLite remain real.
 
-Observe personal and work GitHub accounts plus a GitLab account connected simultaneously. Device authorization must display/copy its exact code, handle expected pending errors, and keep attempt cancellation/retry scoped to the correct account. A wrong-account reconnect must explain the mismatch and preserve all identities. Disconnect confirmation identifies the account and affected repositories; cached work and drafts survive.
+Observe personal and work GitHub accounts plus a GitLab account connected simultaneously. Device authorization must display/copy its exact code, handle expected pending errors, and keep attempt cancellation/retry scoped to the correct account. A wrong-account reconnect must explain the mismatch and preserve all identities. Disconnect confirmation identifies the account with `Disconnect @username?`; cached work and drafts survive.
 
 Import owned Git fixtures with distinct local author emails. Unambiguous repositories match automatically without widening author filters. A public repository readable by both GitHub accounts remains unassigned until chosen. Explicit override persists; resetting to Automatic recomputes evidence. Saving an unrelated form preserves the numeric project ID.
 
@@ -25,3 +25,11 @@ Provider HTTP/browser behavior is simulated; the hosted handler, loopback, rende
 `notion-edit-morph.json` retains timing/frame measurements for manual review. Frame sampling and geometric velocity thresholds are diagnostic appearance data, not automated release gates; cancellation, focus, retry and durable destination outcomes remain automated.
 
 `pnpm verify connections` runs the provider desktop owner followed by the Notion owner sequentially. Do not run overlapping desktop/build commands against the shared checkout.
+
+## Provider panels
+
+Connections renders persisted provider accounts only. There are no demo fixtures, preview controls or account URL overrides. Use the existing provider-account journey's simulated external HTTP/browser boundary to exercise real connection states through IPC.
+
+Review dark provider headings, gray account bodies and the secondary Add account background. Empty panels have equal vertical insets without an empty list allocation. Names and metadata truncate on one line with full-value titles while the original inline disconnect morph expands; its prompt ends after the username and question mark. Further narrow disconnect layout changes are deferred. Healthy accounts expose only Disconnect; Reconnect appears only for reauthorization-required identities, with the email retained beneath the username. Explicit disconnect removes the row, including after reload; adding that identity again restores the same account ID and repository assignment while cached activity and drafts remain intact. The provider journey induces a rejected token through its HTTP fixture to exercise genuine reauthorization and wrong-account recovery. Add account owns the device-code, retry and confirmation morph in its provider heading. New account rows appear after confirmation.
+
+Avatar initials trim surrounding whitespace and preserve whole grapheme clusters, including emoji sequences, with a person icon for blank names. Failed image URLs retain that fallback.

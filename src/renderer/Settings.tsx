@@ -449,7 +449,7 @@ export function Settings({
                                                         focusable="false"
                                                     />
                                                 </span>
-                                                Notion
+                                                <span>Notion</span>
                                             </h3>
                                             <div className="settings-github-controls">
                                                 <NotionSignIn

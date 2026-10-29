@@ -9,6 +9,7 @@ app.setPath('userData', profile)
 mkdirSync(profile, { recursive: true })
 let githubUser = 102
 let offline = false
+let rejectedUser
 let pending = true
 let held = false
 let releaseDiff
@@ -33,6 +34,9 @@ app.on('gitorian-provider-user', (id) => {
 })
 app.on('gitorian-provider-offline', (value) => {
     offline = value
+})
+app.on('gitorian-provider-reject-user', (id) => {
+    rejectedUser = id
 })
 let browserUnavailable = true
 app.on('gitorian-provider-browser-ready', () => {
@@ -99,7 +103,7 @@ globalThis.fetch = async (input, init = {}) => {
     }
     const id = Number(new Headers(init.headers).get('Authorization')?.split('-').at(-1))
     const user = users[id]
-    if (!user) return json({ message: 'Unauthenticated' }, 401)
+    if (!user || id === rejectedUser) return json({ message: 'Unauthenticated' }, 401)
     if (url.pathname.endsWith('/user/emails'))
         return json([{ email: user.email, verified: true, confirmed_at: '2026-01-01T00:00:00Z' }])
     if (url.pathname.endsWith('/user')) return json(user)
