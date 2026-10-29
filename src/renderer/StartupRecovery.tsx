@@ -3,6 +3,7 @@ import { EmptyState } from './components/arc/empty-state/empty-state'
 import { Button } from './components/arc/button/button'
 import { Accordion } from './components/arc/accordion/accordion'
 import { CopyButton } from './components/arc/copy-button/copy-button'
+import logo from '../../resources/icon.svg?raw'
 
 export function StartupRecovery({
     error,
@@ -17,8 +18,14 @@ export function StartupRecovery({
 }) {
     if (!error)
         return (
-            <main className="loading">
-                <p role="status">Opening your journal…</p>
+            <main className="loading" aria-busy="true">
+                <div className="startup-loading-content">
+                    {/* Trusted, bundled SVG keeps the startup mark identical to the application icon. */}
+                    <div className="startup-logo" aria-hidden="true" dangerouslySetInnerHTML={{ __html: logo }} />
+                    <p className="startup-loading-label" role="status">
+                        Opening your journal
+                    </p>
+                </div>
             </main>
         )
     return (

@@ -91,7 +91,9 @@ export function ProviderConnections({
                         kind: /expired/i.test(error instanceof Error ? error.message : '') ? 'expired' : 'error',
                         message: /expired/i.test(error instanceof Error ? error.message : '')
                             ? 'Code expired'
-                            : 'Could not connect'
+                            : /different account/i.test(error instanceof Error ? error.message : '')
+                              ? 'Signed in with a different account'
+                              : 'Could not connect'
                     }
                 })
                 setNotice(
@@ -263,11 +265,6 @@ export function ProviderConnections({
                     {accountRows(provider)}
                 </section>
             ))}
-            {notice && !attempt && (
-                <p role={feedback ? 'alert' : 'status'} className="settings-hint">
-                    {notice}
-                </p>
-            )}
         </div>
     )
 }

@@ -201,11 +201,11 @@ export function RepositoryImportReview({
                 )}
             </AnimatePresence>
             <footer className="repository-import-footer">
-                <p className="settings-hint" role="status">
-                    {scan && showResult
-                        ? `${selected.size} of ${eligible.length} eligible repositories selected`
-                        : 'No repositories have been changed.'}
-                </p>
+                {scan && showResult && (
+                    <p className="settings-hint" role="status">
+                        {selected.size} of {eligible.length} eligible repositories selected
+                    </p>
+                )}
                 <div className="repository-import-actions">
                     <Button variant="ghost" disabled={busy} onClick={cancel}>
                         {error && !scan ? 'Back to Settings' : 'Cancel'}
