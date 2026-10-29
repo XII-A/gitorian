@@ -38,6 +38,8 @@ Run `pnpm verify activity-filters` (also `pnpm smoke:activity-filters`) after a 
 
 ## Day navigation and timeline disclosure
 
+The Hub empty-day path records `hub-empty-day-date-frames.json` while selecting Thursday from a scrolled timeline. The Week value must remain inside its trigger as the shorter list clamps native scrolling. The date picker's closed shared label only measures layout for its own open/close morph, rather than unrelated Hub renders. The same journey still opens the week picker and applies presets afterward.
+
 Run `pnpm verify activity-days` after a build. The disposable real Git fixture contains 120 Monday commits, five Tuesday commits and seven Sunday commits in the previous week. Both the hub and workspace are owning entry points for this journey.
 
 - All days initially shows five records per day, weekday/date headings without daily totals, and an ellipsis timeline node only where more records exist. Show more reveals the remaining records in place; Show fewer closes only that day.

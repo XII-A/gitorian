@@ -998,6 +998,9 @@ export function DateRangePicker({
                         key="shared"
                         layoutId={layoutId}
                         layout="position"
+                        // Only the picker morph moves this label. Unrelated page updates
+                        // can clamp a scrolled ancestor; that is not a label transition.
+                        layoutDependency={open}
                         className={styles.value}
                         data-empty={!committed || undefined}
                         transition={SHRINK}

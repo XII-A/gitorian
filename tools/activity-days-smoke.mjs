@@ -83,7 +83,7 @@ app.on('browser-window-created', (_, window) => {
             })
             await wait(`!!document.querySelector('[aria-label="Open settings"]')`)
             const initial = await js(
-                `window.journal.invoke({type:'state'}).then(r=>({repositories:r.state.repositories.length,activities:r.state.activities.length,github:r.connections.remote,notion:r.connections.notion}))`
+                `window.journal.invoke({type:'state'}).then(r=>({repositories:r.state.repositories.length,activities:r.state.activities.length,remote:r.connections.remote,notion:r.connections.notion}))`
             )
             assert.deepEqual(initial, { repositories: 0, activities: 0, remote: false, notion: false })
             assert.equal(app.getPath('userData'), join(scratch, 'profile'))
@@ -100,6 +100,8 @@ app.on('browser-window-created', (_, window) => {
             await js(`localStorage.setItem('gitorian:onboarding:v1:local','dismissed')`)
             const base = window.webContents.getURL().split('?')[0]
             await window.loadURL(`${base}?week=${day(0)}`)
+            await wait(`!!document.querySelector('[aria-label="Dismiss setup"]')`)
+            await js(`document.querySelector('[aria-label="Dismiss setup"]').click()`)
             await wait(`document.querySelectorAll('.hub-day').length===3`)
             const state = await js(
                 `window.journal.invoke({type:'state'}).then(r=>({activities:r.state.activities.length,timezone:r.state.settings.timezone}))`
@@ -318,7 +320,35 @@ app.on('browser-window-created', (_, window) => {
                 )
                 await pause(100)
                 assert.equal(await js(`document.querySelector('${mondayGroup} [role="region"]').inert`), true)
-                await chooseDay(3)
+                if (surface === 'hub') {
+                    window.setContentSize(1440, 1100)
+                    await pause(100)
+                    await js(`document.querySelector('.hub-scroll').firstElementChild.scrollTop=1000`)
+                    await pause(100)
+                    await js(`document.querySelector('.activity-day-filter [role="combobox"]').click()`)
+                    await pause(500)
+                    await js(`window.emptyDayDateFrames=new Promise(resolve=>{
+                        const samples=[];let frames=0;
+                        const sample=()=>{const field=document.querySelector('[aria-label^="Week:"]');
+                            const bounds=field.getBoundingClientRect();const label=field.children[1].getBoundingClientRect();
+                            samples.push({top:label.top-bounds.top,bottom:label.bottom-bounds.bottom});
+                            if(++frames<100)requestAnimationFrame(sample);else resolve(samples);
+                        };requestAnimationFrame(sample);
+                    })`)
+                }
+                if (surface === 'hub') {
+                    await js(
+                        `Array.from(document.querySelectorAll('[role="option"]')).find(n=>n.textContent.includes('Thursday')).click()`
+                    )
+                } else await chooseDay(3)
+                if (surface === 'hub') {
+                    const frames = await js(`window.emptyDayDateFrames`)
+                    writeFileSync(join(output, 'hub-empty-day-date-frames.json'), JSON.stringify(frames, null, 2))
+                    assert.ok(
+                        frames.length > 0 && frames.every((frame) => frame.top >= -1 && frame.bottom <= 1),
+                        'Week label must stay inside its field when empty-day filtering clamps scrolling'
+                    )
+                }
                 assert.ok(await js(`document.body.textContent.includes('No matching activity for Thursday')`))
                 await js(
                     `Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Show all days').click()`
