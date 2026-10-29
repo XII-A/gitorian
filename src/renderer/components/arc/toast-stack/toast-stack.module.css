@@ -101,7 +101,7 @@
     color: var(--success);
 }
 .icon[data-type='info'] {
-    color: var(--accent);
+    color: var(--accent-text);
 }
 .icon[data-type='warning'] {
     color: var(--warning);

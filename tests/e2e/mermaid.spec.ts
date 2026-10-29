@@ -76,9 +76,8 @@ test('mermaid: shared details, source, recovery, themes and inert diagrams', asy
     await test.step('theme and accent updates regenerate SVG and actual size stays in its scroll viewport', async () => {
         const dark = await image.getAttribute('src')
         const dimensions = await image.evaluate((node: HTMLImageElement) => [node.naturalWidth, node.naturalHeight])
-        await page.evaluate(() => {
-            document.documentElement.dataset.theme = 'light'
-            document.documentElement.dataset.accent = 'blue'
+        await page.evaluate(async () => {
+            await window.journal.appearance!.select({ mode: 'light', theme: 'blue' })
         })
         await loaded()
         await expect(image).not.toHaveAttribute('src', dark!)
@@ -104,9 +103,8 @@ test('mermaid: shared details, source, recovery, themes and inert diagrams', asy
         await shot('04-narrow-actual-size')
         await blocks.first().getByRole('button', { name: 'Fit diagram', exact: true }).click()
         await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1280, 960))
-        await page.evaluate(() => {
-            document.documentElement.dataset.theme = 'dark'
-            document.documentElement.dataset.accent = 'neutral'
+        await page.evaluate(async () => {
+            await window.journal.appearance!.select({ mode: 'dark', theme: 'neutral' })
         })
         await loaded()
         await expect

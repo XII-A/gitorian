@@ -20,22 +20,6 @@ test('repository import: selection, cancellation, recovery and durable tracking'
     const cancel = page.getByRole('button', { name: 'Cancel', exact: true })
     const scan = (status: string) => page.locator(`.repository-scan-status[data-status="${status}"]`)
 
-    await test.step('dark appearance survives light and dark platform preferences', async () => {
-        // Let Electron's native platform preference drive matchMedia rather than Playwright's default.
-        await page.emulateMedia({ colorScheme: null, reducedMotion: 'no-preference' })
-        await expect(page.locator('.window-title-bar-drag')).toHaveText('Gitorian')
-        for (const theme of ['light', 'dark', 'light'] as const) {
-            await app.evaluate(({ nativeTheme }, value) => {
-                nativeTheme.themeSource = value
-            }, theme)
-            await expect
-                .poll(() => page.evaluate((value) => matchMedia(`(prefers-color-scheme: ${value})`).matches, theme))
-                .toBe(true)
-            await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
-            await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark')
-        }
-        await shot('00-dark-theme-light-platform')
-    })
     await test.step('prepare real Git folders and existing tracking choices', async () => {
         for (const name of names) {
             const path = join(folder, name)

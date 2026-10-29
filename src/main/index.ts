@@ -1,5 +1,8 @@
 import { NotionDiscoveryCache } from './notion-discovery-cache'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, protocol } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, protocol, nativeTheme } from 'electron'
+import { openAppearance } from './appearance'
+import { resolveAppearance } from '../shared/appearance'
+import { themePalette } from '../shared/themes'
 import type { IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import { ReplyUpdates } from '../shared/state-updates'
@@ -47,6 +50,7 @@ protocol.registerSchemesAsPrivileged([
     { scheme: 'journal-image', privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ])
 const directory = fileURLToPath(new URL('.', import.meta.url))
+let appearance: Awaited<ReturnType<typeof openAppearance>>
 let mainWindow: BrowserWindow
 let store: JournalDatabase
 let service: JournalService
@@ -85,7 +89,10 @@ function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
         height: 1000,
         minWidth: reference ? 600 : 1000,
         minHeight: 640,
-        backgroundColor: '#151715',
+        backgroundColor: themePalette(
+            appearance.get().theme,
+            resolveAppearance(appearance.get(), nativeTheme.shouldUseDarkColors)
+        )['--background'],
         show: false,
         frame: process.platform !== 'win32',
         webPreferences: {
@@ -140,6 +147,34 @@ async function folder(): Promise<string | undefined> {
     return result.canceled ? undefined : result.filePaths[0]
 }
 void app.whenReady().then(async () => {
+    appearance = await openAppearance(join(app.getPath('userData'), 'appearance.json'))
+    ipcMain.on('journal:appearance-initial', (event) => {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (window && event.senderFrame === window.webContents.mainFrame) event.returnValue = appearance.get()
+    })
+    ipcMain.handle('journal:appearance', (event, input: unknown) => {
+        const window = BrowserWindow.fromWebContents(event.sender)
+        if (!window || event.senderFrame !== window.webContents.mainFrame) throw new Error('Unknown desktop window')
+        return runNative(async () => {
+            const value = await appearance.select(input)
+            for (const target of BrowserWindow.getAllWindows()) {
+                target.setBackgroundColor(
+                    themePalette(value.theme, resolveAppearance(value, nativeTheme.shouldUseDarkColors))['--background']
+                )
+                target.webContents.send('journal:appearance', value)
+            }
+            return value
+        })
+    })
+    nativeTheme.on('updated', () => {
+        for (const target of BrowserWindow.getAllWindows())
+            target.setBackgroundColor(
+                themePalette(
+                    appearance.get().theme,
+                    resolveAppearance(appearance.get(), nativeTheme.shouldUseDarkColors)
+                )['--background']
+            )
+    })
     ipcMain.handle('journal:clipboard', (event, input: unknown) => {
         const action = z.enum(['cut', 'copy', 'paste']).parse(input)
         const window = BrowserWindow.fromWebContents(event.sender)

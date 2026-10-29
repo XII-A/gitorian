@@ -98,7 +98,7 @@
     color: var(--text-muted);
 }
 .history-row[aria-pressed='true'] .history-row-arrow {
-    color: var(--accent);
+    color: var(--accent-text);
 }
 .history-article {
     max-width: none;
@@ -114,7 +114,7 @@
     letter-spacing: var(--tracking-display);
 }
 .history-article .tiptap a {
-    color: var(--accent);
+    color: var(--accent-text);
 }
 
 /* Both surfaces float within the same viewport gutters. */

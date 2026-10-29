@@ -188,7 +188,7 @@ p {
     color: var(--text-secondary);
 }
 .empty svg {
-    color: var(--accent);
+    color: var(--accent-text);
     margin-bottom: 20px;
 }
 .empty h2 {
@@ -283,7 +283,7 @@ p {
     color: var(--text-secondary);
 }
 .tiptap a {
-    color: var(--accent);
+    color: var(--accent-text);
     text-decoration: underline;
     cursor: pointer;
 }

@@ -22,7 +22,7 @@ textarea,
 }
 ::selection {
     background: var(--accent-subtle);
-    color: #fff;
+    color: var(--foreground);
 }
 
 button,
@@ -54,11 +54,11 @@ button svg {
 }
 .app-rail button[aria-pressed='true'] {
     background: var(--accent-subtle);
-    color: var(--accent);
+    color: var(--accent-text);
 }
 .app-mark {
     height: 32px;
-    color: var(--accent);
+    color: var(--accent-text);
     margin-bottom: 16px;
 }
 .rail-spacer {
@@ -212,7 +212,7 @@ label:empty {
 }
 .editor-toolbar button[aria-pressed='true'] {
     background: var(--accent-subtle);
-    color: var(--accent);
+    color: var(--accent-text);
 }
 .editor-toolbar > div:has(input) {
     width: 110px;
@@ -232,10 +232,10 @@ label:empty {
     margin-top: 24px;
 }
 .tiptap a {
-    color: var(--accent);
+    color: var(--accent-text);
 }
 .tiptap blockquote {
-    border-color: var(--accent);
+    border-color: var(--accent-text);
 }
 .selected-work {
     padding-top: 14px;

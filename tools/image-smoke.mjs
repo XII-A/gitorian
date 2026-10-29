@@ -564,7 +564,7 @@ app.on('browser-window-created', (_, window) => {
             const measurements = []
             for (const theme of ['light', 'dark']) {
                 await js(
-                    `document.documentElement.dataset.theme=${JSON.stringify(theme)};document.documentElement.dataset.accent='blue';true`
+                    `window.journal.appearance.select({mode:${JSON.stringify(theme)},theme:'blue'}).then(()=>true)`
                 )
                 for (const width of [320, 390, 768, 1024, 1440]) {
                     await viewport(width)

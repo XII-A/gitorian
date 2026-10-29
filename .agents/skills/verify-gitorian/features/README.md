@@ -18,3 +18,5 @@ The artifact-backed baseline is `pnpm build`, `pnpm verify doctor`, then `pnpm v
 Legacy `pnpm smoke` and `pnpm smoke:week-history` are diagnostic harnesses; they do not yet provide the import runner's full artifact/cleanup contract. Before using those commands from the Codex host, temporarily remove `ELECTRON_RUN_AS_NODE` from the child environment (restore it afterward), as the import runner does automatically. Keep their stdout/stderr and add screenshot/action capture for the feature being changed. Fixtures and programmatic corruption/recovery setup must be distinguished from user actions. A sample workspace can prove UI behavior but cannot prove real publishing or durable real-profile writes.
 
 - [Local database](database.md): schema integrity, migrations, draft conflicts, worker restart, acquisition checkpoints, restore fencing and bounded reads; linked desktop journeys own writing, import, publishing and images.
+
+- [Appearance](appearance.md): persistent device appearance, platform mode, palette readability and theme screenshots.

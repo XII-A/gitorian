@@ -28,6 +28,7 @@ import { Editor } from './Editor'
 import { dateKey, dateValue } from './workspace-model'
 import { hasUnsavedSettings, timezoneOptions } from './settings-model'
 import './settings.css'
+import { AppearanceSettings } from './AppearanceSettings'
 
 export function Settings({
     state,
@@ -469,6 +470,7 @@ export function Settings({
                                     </section>
                                 </TabsContent>
                                 <TabsContent value="preferences" className="settings-content">
+                                    <AppearanceSettings />
                                     <section className="settings-section" aria-label="Time and refresh">
                                         <h3>Time and refresh</h3>
                                         <Combobox
@@ -611,7 +613,7 @@ export function Settings({
                                         {error}
                                     </Alert>
                                 ) : (
-                                    <p role="status">{status || 'Changes apply when saved.'}</p>
+                                    <p role="status">{status || 'Other preferences apply when saved.'}</p>
                                 )}
                             </div>
                             <Button disabled={!!busy} loading={busy === 'save'} onClick={save}>

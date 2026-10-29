@@ -18,7 +18,7 @@
     overflow-wrap: break-word;
     white-space: pre-wrap;
     word-break: break-word;
-    caret-color: var(--accent);
+    caret-color: var(--accent-text);
 }
 .editor[contenteditable='false'] {
     caret-color: transparent;
