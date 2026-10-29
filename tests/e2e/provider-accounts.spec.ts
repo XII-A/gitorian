@@ -46,6 +46,7 @@ test('provider accounts: multiple identities, GitLab, automatic assignment and r
         await page.getByRole('button', { name: 'Add GitHub account', exact: true }).click()
         await expect(page.locator('.github-signin-code')).toHaveText('GHTX-ABCD')
         await expect(page.locator('.provider-connections')).toContainText('Could not open your browser')
+        await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('GHTX-ABCD')
         await page.getByRole('button', { name: 'Copy code', exact: true }).click()
         expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe('GHTX-ABCD')
         await app.evaluate(({ app }) => app.emit('gitorian-provider-browser-ready'))

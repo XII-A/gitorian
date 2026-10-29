@@ -1,3 +1,5 @@
+import sharp from 'sharp'
+import { downloadImage } from './images'
 import { randomUUID } from 'node:crypto'
 import { Context, Effect, Exit, Fiber, Layer, Scope } from 'effect'
 import { z } from 'zod'
@@ -476,6 +478,16 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                         provider === 'github' ? 'https://api.github.com/user' : 'https://gitlab.com/api/v4/user',
                         result.access_token
                     )
+                    // Store the bounded image with the identity so revisiting Settings is offline-ready.
+                    const avatarUrl = yield* Effect.tryPromise(async () => {
+                        if (!user.avatar_url) return undefined
+                        const image = await downloadImage(user.avatar_url)
+                        const bytes = await sharp(image.bytes)
+                            .resize(64, 64, { fit: 'cover' })
+                            .webp({ quality: 80 })
+                            .toBuffer()
+                        return `data:image/webp;base64,${bytes.toString('base64')}`
+                    }).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
                     const userId = String(user.id)
                     if (!Number.isSafeInteger(user.id) || !user.id || !(user.login ?? user.username))
                         return yield* Effect.fail(new ProviderAccountError('The provider returned an invalid account.'))
@@ -531,6 +543,7 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                                         host: provider === 'github' ? 'github.com' : 'gitlab.com',
                                         userId,
                                         username: (user.login ?? user.username)!,
+                                        avatarUrl: avatarUrl ?? existing?.avatarUrl,
                                         emails,
                                         generation: (existing?.generation ?? 0) + 1,
                                         status: vault.protected() ? 'connected' : 'session',

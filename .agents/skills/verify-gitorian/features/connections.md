@@ -6,7 +6,7 @@ Read the parent skill and `docs/testing.md` first. Compile the final application
 
 Run `pnpm test:e2e provider-accounts` (alias `pnpm verify provider-accounts`). `tests/e2e/provider-accounts.spec.ts` owns the account UI, repository matching and provider contribution journey; `tests/e2e/support/providers-main.mjs` changes only external HTTP/browser behavior. Renderer, preload, IPC, vault, Git and SQLite remain real.
 
-Observe personal and work GitHub accounts plus a GitLab account connected simultaneously. Device authorization must display/copy its exact code, handle expected pending errors, and keep attempt cancellation/retry scoped to the correct account. A wrong-account reconnect must explain the mismatch and preserve all identities. Disconnect confirmation identifies the account with `Disconnect @username?`; cached work and drafts survive.
+Observe personal and work GitHub accounts plus a GitLab account connected simultaneously. Device authorization must automatically copy its exact code, retain the manual Copy code control, display its code, handle expected pending errors, and keep attempt cancellation/retry scoped to the correct account. A wrong-account reconnect must explain the mismatch and preserve all identities. Disconnect confirmation identifies the account with `Disconnect @username?`; cached work and drafts survive.
 
 Import owned Git fixtures with distinct local author emails. Unambiguous repositories match automatically without widening author filters. A public repository readable by both GitHub accounts remains unassigned until chosen. Explicit override persists; resetting to Automatic recomputes evidence. Saving an unrelated form preserves the numeric project ID.
 

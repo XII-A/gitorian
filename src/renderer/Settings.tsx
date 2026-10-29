@@ -438,7 +438,11 @@ export function Settings({
                                 </TabsContent>
                                 <TabsContent value="connections" className="settings-content">
                                     <ProviderConnections state={state} refresh={run} />
-                                    <section className="settings-section" aria-label="Notion connection">
+                                    <div className="settings-connections-divider" role="separator" />
+                                    <section
+                                        className="settings-section notion-provider"
+                                        aria-label="Notion connection"
+                                    >
                                         <div className="settings-section-heading settings-github-heading">
                                             <h3 className="settings-connection-title">
                                                 <span className="settings-connection-logo settings-connection-logo--notion">

@@ -1,3 +1,5 @@
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { motionTokens } from './components/arc/motion-tokens'
 import { useEffect, useRef, useState } from 'react'
 import { ConnectionSignIn, type ConnectionFeedback } from './ConnectionSignIn'
 import { AccountAvatar, ProviderLogo } from './ProviderIdentity'
@@ -12,6 +14,7 @@ export function ProviderConnections({
     state: State
     refresh: (command: Command) => Promise<Reply | undefined>
 }) {
+    const reduced = useReducedMotion()
     const [busyAccountId, setBusyAccountId] = useState<string>()
     const [keyboard, setKeyboard] = useState(false)
     const [handoff, setHandoff] = useState<string>()
@@ -172,6 +175,7 @@ export function ProviderConnections({
                 onDisconnect={async () => {
                     if (!account) return
                     await window.journal.invoke({ type: 'providerDisconnect', accountId: account.id })
+                    await new Promise((resolve) => setTimeout(resolve, 900))
                     await refreshRef.current({ type: 'state' })
                 }}
             />
@@ -184,27 +188,43 @@ export function ProviderConnections({
                 account.status !== 'disconnected' &&
                 !(account.id === handoff && feedback?.value.kind === 'success' && !feedback.accountId)
         )
-        if (!visibleAccounts.length) return null
         return (
-            <div className="provider-account-list">
-                {visibleAccounts.map((account) => {
-                    const detail = account.status === 'session' ? 'This session only' : account.emails[0]
-                    return (
-                        <div className="provider-account-row" key={account.id}>
-                            <div className="provider-account-profile">
-                                <AccountAvatar account={account} />
-                                <span>
-                                    <strong title={`@${account.username}`}>@{account.username}</strong>
-                                    <span className="provider-account-status" title={detail}>
-                                        {detail}
+            <motion.div layout="position" className="provider-account-list" data-empty={!visibleAccounts.length}>
+                <AnimatePresence initial={false} mode="popLayout">
+                    {visibleAccounts.map((account) => {
+                        const detail = account.status === 'session' ? 'This session only' : account.emails[0]
+                        return (
+                            <motion.div
+                                layout="position"
+                                className="provider-account-row"
+                                key={account.id}
+                                initial={{ opacity: 0, transform: reduced || keyboard ? 'none' : 'translateY(-4px)' }}
+                                animate={{ opacity: 1, transform: 'none' }}
+                                exit={{
+                                    opacity: 0,
+                                    transform: reduced || keyboard ? 'none' : 'translateY(-4px)',
+                                    transition: { duration: keyboard ? 0 : motionTokens.duration.exit }
+                                }}
+                                transition={{
+                                    duration: keyboard ? 0 : motionTokens.duration.standard,
+                                    ease: [...motionTokens.ease.enter]
+                                }}
+                            >
+                                <div className="provider-account-profile">
+                                    <AccountAvatar account={account} />
+                                    <span>
+                                        <strong title={`@${account.username}`}>@{account.username}</strong>
+                                        <span className="provider-account-status" title={detail}>
+                                            {detail}
+                                        </span>
                                     </span>
-                                </span>
-                            </div>
-                            <div className="provider-account-actions">{signIn(provider, account)}</div>
-                        </div>
-                    )
-                })}
-            </div>
+                                </div>
+                                <div className="provider-account-actions">{signIn(provider, account)}</div>
+                            </motion.div>
+                        )
+                    })}
+                </AnimatePresence>
+            </motion.div>
         )
     }
     const addControl = (provider: Provider) => (

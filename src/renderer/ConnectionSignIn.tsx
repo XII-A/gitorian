@@ -198,6 +198,7 @@ export function ConnectionSignIn({
                                     {device.code && (
                                         <CopyButton
                                             value={device.code}
+                                            autoCopy
                                             label="Copy code"
                                             iconOnly
                                             variant="plain"
