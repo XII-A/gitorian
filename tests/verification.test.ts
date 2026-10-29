@@ -151,7 +151,15 @@ it('retains actionable ownership after a hard process-tree interruption', async 
         // Kill the owner first: /T may kill its child first and let the owner clean up
         // normally before taskkill reaches it, which does not simulate a hard interruption.
         execFileSync('taskkill', ['/PID', String(run.child.pid), '/F'], { windowsHide: true })
-        execFileSync('taskkill', ['/PID', String(childPid), '/T', '/F'], { windowsHide: true })
+        try {
+            execFileSync('taskkill', ['/PID', String(childPid), '/T', '/F'], {
+                windowsHide: true,
+                stdio: 'ignore'
+            })
+        } catch {
+            // Closing the owner's pipes can already have terminated the child.
+            expect(() => process.kill(childPid, 0)).toThrow()
+        }
     } else {
         process.kill(childPid, 'SIGKILL')
         run.child.kill('SIGKILL')
