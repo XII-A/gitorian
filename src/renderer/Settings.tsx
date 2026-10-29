@@ -266,11 +266,6 @@ export function Settings({
                                 }))
                         ]}
                     />
-                    <p className="settings-hint">
-                        {repository.accountId
-                            ? `${repository.assignment === 'explicit' ? 'Selected' : 'Automatically matched'} account. Local author email filters stay unchanged.`
-                            : 'Choose an account if more than one can access this repository. Local Git tracking continues.'}
-                    </p>
                 </div>
             )}
             <Select
