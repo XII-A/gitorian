@@ -4,7 +4,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { AnimatePresence, motion, useAnimate, useReducedMotion } from 'motion/react'
 import { X as Xmark } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './tag-input.module.css'
 
 export interface TagInputProps {

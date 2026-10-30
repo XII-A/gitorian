@@ -4,7 +4,7 @@
 
 ## Run locally
 
-Requirements: Node.js **22.19 or newer**, **pnpm 10.24.0** (pinned in `package.json`), and Git.
+Requirements: Node.js **24.16 or newer**, **pnpm 10.24.0** (pinned in `package.json`), and Git.
 
 ```sh
 git clone https://github.com/XII-A/gitorian.git
@@ -16,8 +16,10 @@ pnpm dev
 `pnpm dev` watches the main process, preload, and renderer. Development uses the application data directory too; back up existing data before experimenting with storage changes.
 
 ```sh
+pnpm verify:release # Pre-PR check, compile and desktop verification
 pnpm check        # TypeScript, lint, formatting, and unit/integration tests
 pnpm build        # Production compilation
+pnpm test:e2e     # Real Electron journeys (after build)
 pnpm start        # Preview the compiled desktop app
 pnpm package:dir  # Build an unpacked desktop app
 pnpm package      # Build an installer for the current platform into release/
@@ -25,19 +27,21 @@ pnpm package      # Build an installer for the current platform into release/
 
 Build on the target operating system for the most predictable installer results. Packaging alone does not publish a GitHub Release. Review build output, signing, and installer behavior before uploading release assets.
 
+See [testing](testing.md) for focused commands, Playwright debugging, retained evidence, and guidance for adding or migrating tests.
+
 The app icon's editable source is `resources/icon.svg`, exported from [Paper](https://app.paper.design/file/01M5S7QJ9BJRNKDCTRHEA0E1CF). After replacing it, run `pnpm icons` and commit the generated PNG, Windows ICO, and macOS ICNS files. The runtime window icon and Linux package use the PNG; Windows and macOS packages use their native formats. Windows resource editing stays enabled to embed the icon while signing remains disabled.
 
 ## Releasing and repository protection
 
-PRs and pushes to `main` run **CI checks** (typecheck, lint, formatting, tests, and production compilation) on Windows. The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, the update feed (`latest.yml`) and installer blockmap, computes SHA-256 checksums for all three, and uploads them to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
+PRs targeting `main`, `release`, or `release/**` run **CI checks** (typecheck, lint, formatting and tests) on Windows. Agents run production compilation and Electron journeys locally through `pnpm verify:release` before creating a PR; see [testing](testing.md). The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, the update feed (`latest.yml`) and installer blockmap, computes SHA-256 checksums for all three, and uploads them to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
 
-After the release changes are merged into `main`, a maintainer creates a release candidate with the commands below. Replace `vX.Y.Z` with the version in `package.json`:
+After the release changes are merged into `main`, a maintainer creates a release candidate with:
 
 ```sh
 git switch main
 git pull --ff-only
-git tag vX.Y.Z
-git push origin vX.Y.Z
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
 When creating or updating a release description, use the [release description template](release-notes.md) and save the finished copy in `.github/release-notes.md`.

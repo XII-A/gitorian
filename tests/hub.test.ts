@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { initialState } from '../src/shared/model'
 import type { Activity } from '../src/shared/model'
 import { journalWeek, offsetDay, rangeActivities } from '../src/renderer/hub-model'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 
 describe('weekly hub calendar ranges', () => {
     it('includes both endpoints in the journal timezone, even across the DST transition', () => {
@@ -77,11 +77,11 @@ describe('weekly hub pull request grouping', () => {
         const pull: Activity = {
             ...state.activities[8],
             id: 'repo:pr:42',
-            prId: 'repo:pr:42',
-            kind: 'pr',
+            changeRequestId: 'repo:pr:42',
+            kind: 'change-request',
             title: '#42 Keep uploads safe',
             date: '2026-10-07T10:00:00Z',
-            pullRequest: {
+            changeRequest: {
                 status: 'merged',
                 openedAt: '2026-09-30T10:00:00Z',
                 commitDates: ['2026-10-02T10:00:00Z', '2026-10-07T10:00:00Z'],
@@ -93,17 +93,17 @@ describe('weekly hub pull request grouping', () => {
             pull,
             {
                 ...pull,
-                pullRequest: undefined,
+                changeRequest: undefined,
                 id: `${pull.id}:opened`,
                 kind: 'opened',
-                date: pull.pullRequest!.openedAt
+                date: pull.changeRequest!.openedAt
             },
             {
                 ...pull,
-                pullRequest: undefined,
+                changeRequest: undefined,
                 id: `${pull.id}:merged`,
                 kind: 'merged',
-                date: pull.pullRequest!.mergedAt!
+                date: pull.changeRequest!.mergedAt!
             }
         ]
         return { state, pull }
@@ -119,8 +119,8 @@ describe('weekly hub pull request grouping', () => {
         ]) {
             const rows = rangeActivities(state, start, end)
             expect(rows).toHaveLength(1)
-            expect(rows[0]).toMatchObject({ id: pull.id, kind: 'pr', title: pull.title, date })
-            expect(rows[0].pullRequest?.status).toBe('merged')
+            expect(rows[0]).toMatchObject({ id: pull.id, kind: 'change-request', title: pull.title, date })
+            expect(rows[0].changeRequest?.status).toBe('merged')
         }
         expect(rangeActivities(state, '2026-10-19', '2026-10-25')).toEqual([])
         expect(state.activities).toEqual(snapshot)
@@ -128,11 +128,11 @@ describe('weekly hub pull request grouping', () => {
 
     it('collapses same-week milestones while keeping commits, reviews and other repositories distinct', () => {
         const { state, pull } = stateWithPull()
-        pull.pullRequest!.openedAt = '2026-10-05T10:00:00Z'
-        pull.pullRequest!.mergedAt = '2026-10-09T10:00:00Z'
-        pull.pullRequest!.closedAt = pull.pullRequest!.mergedAt
-        state.activities[1].date = pull.pullRequest!.openedAt
-        state.activities[2].date = pull.pullRequest!.mergedAt
+        pull.changeRequest!.openedAt = '2026-10-05T10:00:00Z'
+        pull.changeRequest!.mergedAt = '2026-10-09T10:00:00Z'
+        pull.changeRequest!.closedAt = pull.changeRequest!.mergedAt
+        state.activities[1].date = pull.changeRequest!.openedAt
+        state.activities[2].date = pull.changeRequest!.mergedAt
         state.activities.push(
             { ...pull, id: 'commit', kind: 'commit' },
             { ...pull, id: 'review', kind: 'review' },
@@ -140,7 +140,7 @@ describe('weekly hub pull request grouping', () => {
         )
         const rows = rangeActivities(state, '2026-10-05', '2026-10-11')
         expect(rows).toHaveLength(4)
-        expect(rows.filter((item) => item.kind === 'pr')).toHaveLength(2)
+        expect(rows.filter((item) => item.kind === 'change-request')).toHaveLength(2)
         expect(rows.find((item) => item.id === pull.id)?.date).toBe('2026-10-09T10:00:00Z')
         expect(rows.map((item) => item.id)).toContain('commit')
         expect(rows.map((item) => item.id)).toContain('review')
@@ -150,27 +150,27 @@ describe('weekly hub pull request grouping', () => {
         const { state, pull } = stateWithPull()
         state.activities = [pull]
         pull.date = '2026-10-02T10:00:00Z'
-        pull.pullRequest = {
+        pull.changeRequest = {
             status: 'closed',
             openedAt: '2026-09-30T10:00:00Z',
             commitDates: [],
             closedAt: '2026-10-09T12:00:00Z'
         }
         expect(rangeActivities(state, '2026-10-05', '2026-10-11')).toMatchObject([
-            { id: pull.id, kind: 'pr', date: '2026-10-09T12:00:00Z', pullRequest: { status: 'closed' } }
+            { id: pull.id, kind: 'change-request', date: '2026-10-09T12:00:00Z', changeRequest: { status: 'closed' } }
         ])
     })
 
     it('groups legacy records and isolated milestones using a real stored ID', () => {
         const { state, pull } = stateWithPull()
-        pull.pullRequest = undefined
+        pull.changeRequest = undefined
         state.activities[1].date = '2026-10-05T10:00:00Z'
         state.activities[2].date = '2026-10-09T10:00:00Z'
         state.activities[2].title = 'Merged #42 Keep uploads safe'
         expect(rangeActivities(state, '2026-10-05', '2026-10-11')).toHaveLength(1)
         state.activities = state.activities.slice(1)
         expect(rangeActivities(state, '2026-10-05', '2026-10-11')).toMatchObject([
-            { id: `${pull.id}:merged`, kind: 'pr', title: '#42 Keep uploads safe' }
+            { id: `${pull.id}:merged`, kind: 'change-request', title: '#42 Keep uploads safe' }
         ])
     })
 
@@ -179,7 +179,7 @@ describe('weekly hub pull request grouping', () => {
         state.settings.timezone = 'America/New_York'
         state.activities = [pull]
         pull.date = '2026-10-05T02:00:00Z'
-        pull.pullRequest = {
+        pull.changeRequest = {
             status: 'open',
             openedAt: pull.date,
             commitDates: ['2026-10-12T03:59:59Z']

@@ -9,7 +9,7 @@ export default defineConfig({
             rollupOptions: {
                 input: {
                     index: resolve('src/main/index.ts'),
-                    'store-writer': resolve('src/main/store-writer.ts')
+                    'database-worker': resolve('src/main/database-worker.ts')
                 }
             }
         }

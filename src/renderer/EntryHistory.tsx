@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
-import { BookOpen, ChevronRight, History, X } from 'lucide-react'
-import type { JournalNode, State } from '../shared/model'
+import { useEffect, useRef, useState } from 'react'
+import { BookOpen, ChevronRight, History, LoaderCircle, PencilLine, X } from 'lucide-react'
+import type { Command, EntryPage, Reply, State } from '../shared/model'
 import { Dialog, DialogClose, DialogContent } from './components/arc/dialog/dialog'
 import { useHistoryMotion } from './use-history-motion'
 import { Drawer, DrawerContent, DrawerTrigger, useDrawerItem } from './components/arc/drawer/drawer'
@@ -11,12 +11,11 @@ import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import { Editor } from './Editor'
 import { HistoryHover } from './HistoryHover'
-import { journalWeek } from './hub-model'
+import { useHistoryEntry } from './use-history-entry'
+import { ExpandingButtonGroup } from './components/arc/expanding-button-group/expanding-button-group'
+import { Skeleton } from './components/arc/skeleton/skeleton'
+import { NotionLogoIcon } from '@phosphor-icons/react/dist/csr/NotionLogo'
 import './entry-history.css'
-
-function documentText(node: JournalNode): string {
-    return node.text ?? (node.content ?? []).map(documentText).join(' ')
-}
 
 function entryDate(date: string, options: Intl.DateTimeFormatOptions) {
     return new Date(`${date.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', {
@@ -25,7 +24,15 @@ function entryDate(date: string, options: Intl.DateTimeFormatOptions) {
     })
 }
 
-export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week: string) => void }) {
+export function EntryHistory({
+    state,
+    onWrite,
+    run
+}: {
+    state: State
+    onWrite: (week: string) => void
+    run: (command: Command) => Promise<Reply | undefined>
+}) {
     const [open, setOpen] = useState(false)
     const [query, setQuery] = useState('')
     const [selectedId, setSelectedId] = useState<string>()
@@ -36,17 +43,54 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
     })
     const reader = useRef<HTMLDivElement>(null)
     const selectedRow = useRef<HTMLButtonElement>(null)
-    const entries = [...state.entries].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id))
-    const search = query.trim().toLocaleLowerCase('en-US')
-    const visible = entries.filter((entry) =>
-        `${entry.title} ${entry.date} ${documentText(entry.body)}`.toLocaleLowerCase('en-US').includes(search)
-    )
-    const selected = useDrawerItem(entries.find((entry) => entry.id === selectedId))
+    const [page, setPage] = useState<EntryPage>({ items: [] })
+    const [loading, setLoading] = useState(false)
+    const {
+        entry: loadedEntry,
+        loading: detailLoading,
+        error: detailError,
+        prefetch
+    } = useHistoryEntry(selectedId, reading, state.restoreId, state.snapshotVersion)
+    const [error, setError] = useState('')
+    const request = useRef(0)
+    useEffect(() => {
+        const token = ++request.current
+        let active = true
+        if (!open) return
+        setLoading(true)
+        setError('')
+        setPage({ items: [] })
+        const timer = setTimeout(() => {
+            void run({ type: 'entryHistory', query }).then((reply) => {
+                if (!active || token !== request.current) return
+                setPage(reply?.entryPage ?? { items: [] })
+                setError(reply?.entryPage ? '' : 'Could not load entries. Close and reopen to retry.')
+                setLoading(false)
+            })
+        }, 150)
+        return () => {
+            clearTimeout(timer)
+            active = false
+        }
+    }, [open, query, run, state.restoreId])
+    const more = async () => {
+        const token = request.current
+        setLoading(true)
+        const reply = await run({ type: 'entryHistory', query, cursor: page.next })
+        if (token !== request.current) return
+        if (reply?.entryPage)
+            setPage((previous) => ({ ...reply.entryPage!, items: [...previous.items, ...reply.entryPage!.items] }))
+        else setError('Could not load more entries. Retry loading.')
+        setLoading(false)
+    }
+    const search = query.trim()
+    const visible = page.items
+    const selected = useDrawerItem(loadedEntry)
     const months = [...new Set(visible.map((entry) => entry.date.slice(0, 7)))]
     const openWeek = (date?: string) => {
         setReading(false)
         setOpen(false)
-        onWrite(date ? journalWeek(date.slice(0, 10), state.settings.weekStart) : '')
+        onWrite(date ?? '')
     }
 
     return (
@@ -77,14 +121,14 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                     }
                 }}
                 title="Previous entries"
-                description="Search published entries by title, date, or text."
+                description="Search your writing by title, date, or text."
             >
                 <div className="history-layout">
                     <section className="history-index" aria-label="Saved entries">
                         <SearchField
                             label="Search entries"
                             hideLabel
-                            placeholder={`Search ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}...`}
+                            placeholder="Search entries..."
                             value={query}
                             onValueChange={setQuery}
                         />
@@ -94,6 +138,21 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                             label="Previous weekly entries"
                             fade={16}
                         >
+                            {loading && !visible.length && (
+                                <div
+                                    className="history-list-loading"
+                                    role="status"
+                                    aria-label={search ? 'Searching entries' : 'Loading entries'}
+                                >
+                                    <LoaderCircle
+                                        className="history-spinner"
+                                        size={20}
+                                        strokeWidth={1.75}
+                                        aria-hidden="true"
+                                    />
+                                </div>
+                            )}
+                            {error && <p role="status">{error}</p>}
                             {visible.length ? (
                                 <HistoryHover>
                                     {months.map((month) => (
@@ -117,9 +176,11 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                                                             <button
                                                                 type="button"
                                                                 className="history-row"
-                                                                aria-pressed={selectedId === entry.id}
+                                                                aria-pressed={reading && selectedId === entry.id}
                                                                 ref={selectedId === entry.id ? selectedRow : undefined}
                                                                 aria-controls="history-reader"
+                                                                onPointerEnter={() => prefetch(entry.id)}
+                                                                onFocus={() => prefetch(entry.id)}
                                                                 onClick={() => {
                                                                     setSelectedId(entry.id)
                                                                     setReading(true)
@@ -132,10 +193,11 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                                                                         day: 'numeric'
                                                                     })}
                                                                 </span>
-                                                                <span className="history-row-title">{entry.title}</span>
+                                                                <span className="history-row-title">
+                                                                    <bdi>{entry.title || 'Untitled entry'}</bdi>
+                                                                </span>
                                                                 <span className="history-excerpt">
-                                                                    {documentText(entry.body) ||
-                                                                        'An entry without body text.'}
+                                                                    {entry.excerpt || 'An entry without body text.'}
                                                                 </span>
                                                                 <ChevronRight
                                                                     className="history-row-arrow"
@@ -150,15 +212,15 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                                         </section>
                                     ))}
                                 </HistoryHover>
-                            ) : (
+                            ) : !loading && !error ? (
                                 <EmptyState
                                     icon={<BookOpen size={24} />}
                                     iconVariant="plain"
-                                    title={search ? 'No matching entries' : 'No published entries yet'}
+                                    title={search ? 'No matching entries' : 'No entries yet'}
                                     description={
                                         search
                                             ? 'Try another word, title, or date.'
-                                            : 'Published entries appear here after you save them to Notion and refresh your journal.'
+                                            : 'Your writing appears here automatically as you write.'
                                     }
                                     action={
                                         <Button
@@ -170,6 +232,11 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                                         </Button>
                                     }
                                 />
+                            ) : null}
+                            {page.next && (
+                                <Button variant="ghost" size="sm" loading={loading} onClick={more}>
+                                    Load more entries
+                                </Button>
                             )}
                         </ScrollArea>
                     </section>
@@ -196,9 +263,50 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                             if (open) selectedRow.current?.focus()
                         }}
                     >
-                        <DialogClose className="history-reader-close" aria-label="Close entry">
-                            <X size={16} strokeWidth={1.75} aria-hidden="true" />
-                        </DialogClose>
+                        <div className="history-reader-actions">
+                            {!detailLoading &&
+                                !detailError &&
+                                selected &&
+                                (selected.url ? (
+                                    <ExpandingButtonGroup
+                                        key={selected.id}
+                                        label="Entry actions"
+                                        size="sm"
+                                        items={[
+                                            ...(selected.week
+                                                ? [
+                                                      {
+                                                          id: 'edit',
+                                                          label: 'Edit',
+                                                          icon: <PencilLine />,
+                                                          onSelect: () => openWeek(selected.week)
+                                                      }
+                                                  ]
+                                                : []),
+                                            {
+                                                id: 'notion',
+                                                label: 'Open in Notion',
+                                                icon: <NotionLogoIcon />,
+                                                onSelect: async () =>
+                                                    !!(await run({ type: 'open', url: selected.url! }))
+                                            }
+                                        ]}
+                                    />
+                                ) : selected.week ? (
+                                    <Button
+                                        className="history-reader-edit"
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => openWeek(selected.week)}
+                                    >
+                                        <PencilLine size={14} strokeWidth={1.75} aria-hidden="true" />
+                                        Edit
+                                    </Button>
+                                ) : null)}
+                            <DialogClose className="history-reader-close" aria-label="Close entry">
+                                <X size={16} strokeWidth={1.75} aria-hidden="true" />
+                            </DialogClose>
+                        </div>
                         <section className="history-reader" id="history-reader" aria-label="Entry preview">
                             <ScrollArea
                                 className="history-document"
@@ -206,9 +314,30 @@ export function EntryHistory({ state, onWrite }: { state: State; onWrite: (week:
                                 viewportRef={reader}
                                 fade={16}
                             >
-                                {selected && (
+                                {detailLoading && (
+                                    <div className="history-article">
+                                        <h2>
+                                            {visible.find((entry) => entry.id === selectedId)?.title ||
+                                                'Untitled entry'}
+                                        </h2>
+                                        <div
+                                            className="history-entry-skeleton"
+                                            role="status"
+                                            aria-label="Loading entry"
+                                            aria-busy="true"
+                                        >
+                                            <div aria-hidden="true">
+                                                <Skeleton lines={5} />
+                                                <Skeleton lines={4} />
+                                                <Skeleton lines={3} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {detailError && <p role="alert">{detailError}</p>}
+                                {!detailLoading && !detailError && selected && (
                                     <article className="history-article">
-                                        <h2>{selected.title}</h2>
+                                        <h2 dir="auto">{selected.title || 'Untitled entry'}</h2>
                                         <Editor value={selected.body} readOnly />
                                     </article>
                                 )}

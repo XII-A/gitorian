@@ -1,16 +1,16 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, FocusEvent, KeyboardEvent, ReactElement, ReactNode } from 'react'
 import * as TooltipPrimitive from '@radix-ui/react-tooltip'
 import { AnimatePresence, animate, motion, useIsPresent, useMotionValue, useReducedMotion } from 'motion/react'
 import type { TargetAndTransition } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import { Tooltip } from '../tooltip/tooltip'
 import styles from './floating-button-group.module.css'
 
 export type FloatingButtonGroupVariant = 'muted' | 'floating'
-export type FloatingButtonGroupSize = 'sm' | 'md'
+export type FloatingButtonGroupSize = 'xs' | 'sm' | 'md'
 export type FloatingButtonGroupOrientation = 'horizontal' | 'vertical'
 
 export interface FloatingButtonGroupAction {
@@ -46,6 +46,10 @@ export interface FloatingButtonGroupProps {
     /** muted sits quietly on a page; floating raises the tray with the floating shadow for overlays such as a selection toolbar. */
     variant?: FloatingButtonGroupVariant
     size?: FloatingButtonGroupSize
+    /** Compact property pickers share the tray's glide while keeping their own keyboard navigation. */
+    startContent?: ReactNode
+    /** Disable the floating tray's shadow for overlays on a muted surface. */
+    shadow?: boolean
     orientation?: FloatingButtonGroupOrientation
     /** Shows every item as an icon only, with its label in a tooltip. Items with their own iconOnly win. */
     iconOnly?: boolean
@@ -164,6 +168,8 @@ export function FloatingButtonGroup({
     label,
     variant = 'muted',
     size = 'md',
+    startContent,
+    shadow = true,
     orientation = 'horizontal',
     iconOnly: groupIconOnly = false,
     tooltipSide,
@@ -173,6 +179,8 @@ export function FloatingButtonGroup({
 }: FloatingButtonGroupProps) {
     const reduced = useReducedMotion() ?? false
     const tray = useRef<HTMLDivElement>(null)
+    const start = useRef<HTMLDivElement>(null)
+    const startId = useId()
     const nodes = useRef(new Map<string, HTMLButtonElement>())
     const [hoverId, setHoverId] = useState<string | null>(null)
     const [focusId, setFocusId] = useState<string | null>(null)
@@ -181,9 +189,19 @@ export function FloatingButtonGroup({
 
     const actions = items.filter(isAction)
     const byId = new Map(actions.map((action) => [action.id, action]))
-    const enabled = (id: string | null) => !!id && !!byId.get(id) && !byId.get(id)?.disabled
+    const enabled = (id: string | null) => {
+        if (id === startId) {
+            const button = nodes.current.get(startId)
+            return !!startContent && !!button && !button.disabled && button.getAttribute('aria-disabled') !== 'true'
+        }
+        return !!id && !!byId.get(id) && !byId.get(id)?.disabled
+    }
     // Pointer wins over keyboard focus while it is in the tray; a disabled item under the pointer hands back to focus.
-    const activeId = enabled(hoverId) ? hoverId : focusId && byId.has(focusId) ? focusId : null
+    const activeId = enabled(hoverId)
+        ? hoverId
+        : focusId && (byId.has(focusId) || (focusId === startId && enabled(startId)))
+          ? focusId
+          : null
     const stop = enabled(tabStop) ? tabStop : (actions.find((action) => !action.disabled)?.id ?? null)
     const vertical = orientation === 'vertical'
     const side = tooltipSide ?? (vertical ? 'right' : 'top')
@@ -333,6 +351,21 @@ export function FloatingButtonGroup({
         setPressing(false)
     }
 
+    // A composed picker shares the tray's highlight while owning its own keys.
+    // DOM containment excludes its portaled menu from hover/focus registration.
+    const startButton = (target: EventTarget | null) => {
+        const button = target instanceof Element ? target.closest('button') : null
+        if (
+            !button ||
+            !start.current?.contains(button) ||
+            button.disabled ||
+            button.getAttribute('aria-disabled') === 'true'
+        )
+            return null
+        nodes.current.set(startId, button)
+        return button
+    }
+
     const classes = [styles.group, styles[variant], styles[size], vertical ? styles.vertical : '', className]
         .filter(Boolean)
         .join(' ')
@@ -347,15 +380,42 @@ export function FloatingButtonGroup({
             aria-label={label}
             aria-orientation={orientation}
             data-variant={variant}
+            data-shadowless={!shadow || undefined}
             onKeyDown={onKeyDown}
             onBlur={onBlur}
         >
             <motion.span
                 className={styles.highlight}
+                data-fbg-highlight=""
                 data-pressing={pressing && activeId ? '' : undefined}
                 style={{ x, y, width, height, opacity, scale }}
                 aria-hidden="true"
             />
+            {startContent && (
+                <div
+                    ref={start}
+                    role="presentation"
+                    className={styles.startContent}
+                    onPointerMoveCapture={(event) => {
+                        if (event.pointerType === 'mouse' || event.pointerType === 'pen')
+                            setHoverId(startButton(event.target) ? startId : null)
+                    }}
+                    onPointerDownCapture={(event) => {
+                        if (event.button !== 0 || !startButton(event.target)) return
+                        setHoverId(startId)
+                        setPressing(true)
+                    }}
+                    onPointerUpCapture={() => setPressing(false)}
+                    onPointerCancel={() => setPressing(false)}
+                    onPointerLeave={() => setPressing(false)}
+                    onFocusCapture={(event) => {
+                        const button = startButton(event.target)
+                        if (button) setFocusId(button.matches(':focus-visible') ? startId : null)
+                    }}
+                >
+                    {startContent}
+                </div>
+            )}
             {items.map((item, position) => {
                 if (!isAction(item))
                     return (
@@ -436,7 +496,7 @@ export function FloatingButtonGroup({
                         />
                     </button>
                 )
-                // Tooltips render no wrapper element, so every button stays a direct child of the tray and measures against it.
+                // Tooltips render no wrapper element, so every button measures against the tray.
                 if (!iconOnly && !shortcut) return <Fragment key={id}>{button}</Fragment>
                 const tip = <TipContent label={itemLabel} shortcut={shortcut} />
                 return side === 'top' || side === 'bottom' ? (

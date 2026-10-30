@@ -262,7 +262,7 @@ try {
     report.initial = await js(`window.journal.invoke({type:'state'})`)
     assert(
         report.initial.state.drafts.length === 0 &&
-            !report.initial.connections.github &&
+            !report.initial.connections.remote &&
             !report.initial.connections.notion,
         'Installed app starts with disposable data and no credentials'
     )
@@ -328,9 +328,11 @@ try {
     await screenshot('05-backup-restored')
     await button('Save settings')
     await stop()
-    const db = new DatabaseSync(join(profile, 'gitorian.sqlite'), { readOnly: true })
+    const db = new DatabaseSync(join(profile, 'journal.sqlite'), { readOnly: true })
     const persisted = db
-        .prepare("SELECT json FROM state_records WHERE collection='drafts'")
+        .prepare(
+            "SELECT json_object('id',id,'title',title,'body',json(body),'week',week,'version',version,'updatedAt',updatedAt) AS json FROM drafts"
+        )
         .all()
         .map((row) => JSON.parse(String(row.json)))
     db.close()
@@ -342,7 +344,7 @@ try {
     await run(uninstaller, ['/S', '/currentuser', `_?=${installed}`], 'uninstall')
     installedOwned = false
     assert(!existsSync(executable), 'Uninstall removes the packaged executable')
-    assert(existsSync(join(profile, 'gitorian.sqlite')), 'Normal uninstall preserves journal data')
+    assert(existsSync(join(profile, 'journal.sqlite')), 'Normal uninstall preserves journal data')
     assert(hash(installer) === report.installerSha256, 'The verified draft installer bytes remain unchanged')
     report.passed = true
 } catch (error) {

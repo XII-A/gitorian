@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { WorkspaceInspector } from './WorkspaceInspector'
-import { sampleState } from './workspace-sample'
 import { Button } from './components/arc/button/button'
 import { Editor } from './Editor'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -19,13 +18,10 @@ export function WorkspaceReference({
     kind: string
     id: string
 }) {
-    const sampleWeek = /^sample:(\d{4}-\d{2}-\d{2}):/.exec(id)?.[1]
-    const example = useMemo(() => (sampleWeek ? sampleState(sampleWeek) : undefined), [sampleWeek])
-    const source = example ?? state
     const [selectedId, setSelectedId] = useState(id)
     const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('details')
-    const activity = source.activities.find((item) => item.id === selectedId)
-    const entry = source.entries.find((item) => item.id === id)
+    const activity = state.activities.find((item) => item.id === selectedId)
+    const entry = state.entries.find((item) => item.id === id)
     const [status, setStatus] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
@@ -65,7 +61,7 @@ export function WorkspaceReference({
             setSelectedId(item.id)
             setInspectionTab(tab)
             setError('')
-            if (example || hasCachedDetails(state, item, tab === 'details' ? 'files' : 'diff')) {
+            if (hasCachedDetails(state, item, tab === 'details' ? 'files' : 'diff')) {
                 setLoading(false)
                 return
             }
@@ -80,7 +76,7 @@ export function WorkspaceReference({
                 setError(reply?.detailError ?? 'Could not load this diff. Retry loading it.')
             setLoading(false)
         },
-        [example, run, state]
+        [run, state]
     )
     const loaded = useRef(false)
     useEffect(() => {
@@ -109,7 +105,7 @@ export function WorkspaceReference({
                 <ScrollArea className="ws-reference-entry-scroll" label="Published journal entry" fade={20}>
                     <section className="ws-reference-entry">
                         <header>
-                            <h1>{entry.title}</h1>
+                            <h1 dir="auto">{entry.title}</h1>
                             <Button variant="secondary" size="sm" onClick={dock}>
                                 Back to workspace
                             </Button>
@@ -123,17 +119,9 @@ export function WorkspaceReference({
             ) : activity ? (
                 <>
                     <WorkspaceInspector
-                        state={source}
+                        state={state}
                         activity={activity}
-                        run={
-                            example
-                                ? () =>
-                                      Promise.resolve({
-                                          state: source,
-                                          connections: { github: false, notion: false, protectedStorage: false }
-                                      })
-                                : run
-                        }
+                        run={run}
                         reference
                         initialTab={inspectionTab}
                         loading={loading}

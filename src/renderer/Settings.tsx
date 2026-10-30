@@ -1,4 +1,5 @@
-import { useConnectionProfile } from './useConnectionProfile'
+import { ProviderConnections } from './ProviderConnections'
+import { providerRemote } from '../shared/provider-accounts'
 import { RepositoryImportReview } from './RepositoryImportReview'
 import { Alert } from './components/arc/alert/alert'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -13,8 +14,7 @@ import { Combobox } from './components/arc/combobox/combobox'
 import { DatePicker } from './components/arc/date-picker/date-picker'
 import { TagInput } from './components/arc/tag-input/tag-input'
 import { ImportProgressLabel } from './ImportProgressLabel'
-import { Folder, RefreshCw } from 'lucide-react'
-import { ConnectionSignIn, connectionFailure, type ConnectionFeedback } from './ConnectionSignIn'
+import { Download, Upload, Folder, RefreshCw } from 'lucide-react'
 import { NotionSignIn } from './NotionSignIn'
 import { Switch } from './components/arc/switch/switch'
 import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
@@ -54,14 +54,6 @@ export function Settings({
         return () => query.removeEventListener('change', update)
     }, [])
     const [repositories, setRepositories] = useState(state.repositories)
-    const [device, setDevice] = useState<Reply['device']>()
-    const [githubFeedback, setGithubFeedback] = useState<ConnectionFeedback>()
-    const { profile: githubIdentity } = useConnectionProfile(
-        'github',
-        connections.github || githubFeedback?.kind === 'authorizing' || githubFeedback?.kind === 'success'
-    )
-    const [githubNotice, setGithubNotice] = useState('')
-    const githubAttempt = useRef(0)
     const [error, setError] = useState('')
     const [status, setStatus] = useState('')
     const [busy, setBusy] = useState('')
@@ -134,6 +126,10 @@ export function Settings({
                     return {
                         ...item,
                         ...edited,
+                        accountId: item.accountId,
+                        providerProjectId: item.providerProjectId,
+                        accountGeneration: item.accountGeneration,
+                        assignment: item.assignment,
                         path: item.path,
                         available: item.available,
                         branches: item.branches,
@@ -143,64 +139,6 @@ export function Settings({
             ),
         [state.repositories]
     )
-    useEffect(() => {
-        if (!device) return
-        const attempt = githubAttempt.current
-        let cancelled = false
-        let timer: ReturnType<typeof setTimeout>
-        const poll = async () => {
-            try {
-                const result = await window.journal.invoke({ type: 'githubPoll' })
-                if (cancelled || githubAttempt.current !== attempt) return
-                if (result.devicePending) timer = setTimeout(() => void poll(), result.devicePending.interval * 1000)
-                else {
-                    setDevice(undefined)
-                    setGithubNotice('')
-                    setGithubFeedback({ kind: 'authorizing', login: result.state.settings.githubLogin })
-                    setSettings((current) => ({ ...current, githubLogin: result.state.settings.githubLogin }))
-                    setRepositories((local) =>
-                        result.state.repositories.map((item) => {
-                            const edited = local.find((old) => old.id === item.id)
-                            return edited
-                                ? { ...item, ...edited, emails: [...new Set([...item.emails, ...edited.emails])] }
-                                : item
-                        })
-                    )
-                }
-            } catch (failure) {
-                if (!cancelled && githubAttempt.current === attempt) {
-                    setGithubFeedback(connectionFailure(failure))
-                    setDevice(undefined)
-                    setGithubNotice('')
-                }
-            }
-        }
-        timer = setTimeout(() => void poll(), device.interval * 1000)
-        return () => {
-            cancelled = true
-            clearTimeout(timer)
-        }
-    }, [device, run])
-    useEffect(() => {
-        if (githubFeedback?.kind !== 'authorizing' && githubFeedback?.kind !== 'success') return
-        let cancelled = false
-        const timer = setTimeout(
-            () => {
-                if (githubFeedback.kind === 'authorizing') {
-                    setGithubFeedback({ kind: 'success', login: githubFeedback.login })
-                    return
-                }
-                void run({ type: 'state' }).then(() => {
-                    if (!cancelled) setGithubFeedback(undefined)
-                })
-            },
-            githubFeedback.kind === 'authorizing' ? 450 : 900
-        )
-        return () => {
-            cancelled = true
-            clearTimeout(timer)
-        }
-    }, [githubFeedback, run])
     const notionDestination = useCallback((destination: State['settings']['destination']) => {
         setSettings((current) => ({ ...current, destination }))
     }, [])
@@ -220,25 +158,6 @@ export function Settings({
     useEffect(() => {
         mergeRepositories(state.repositories)
     }, [state.repositories, mergeRepositories])
-    const startSignIn = () =>
-        action('github', async () => {
-            const attempt = ++githubAttempt.current
-            setGithubNotice('')
-            setGithubFeedback(undefined)
-            try {
-                const result = await invoke({ type: 'githubStart' })
-                if (githubAttempt.current !== attempt) return
-                if (!result.device) throw new Error('GitHub did not provide a sign-in code')
-                setDevice(result.device)
-                setGithubFeedback(undefined)
-                if (result.message)
-                    setGithubNotice(
-                        'Your browser could not be opened. Use Open GitHub, or visit github.com/login/device.'
-                    )
-            } catch (failure) {
-                if (githubAttempt.current === attempt) setGithubFeedback(connectionFailure(failure))
-            }
-        })
     const repositoryFields = (repository: Repository) => (
         <div className="settings-fields settings-repository-fields">
             <div className="settings-actions settings-repository-actions">
@@ -312,8 +231,45 @@ export function Settings({
                     <span>Fetch activity from this date</span>
                 </span>
             </Button>
+            {providerRemote(repository.remote) && (
+                <div className="settings-provider-assignment">
+                    <Select
+                        label="Account"
+                        disabled={
+                            !!busy ||
+                            repository.remote !== state.repositories.find((r) => r.id === repository.id)?.remote
+                        }
+                        value={repository.accountId ?? 'automatic'}
+                        onValueChange={(id) =>
+                            action('assign', async () => {
+                                const result = await invoke({
+                                    type: 'providerAssign',
+                                    repositoryId: repository.id,
+                                    automatic: id === 'automatic',
+                                    accountId: id === 'automatic' ? undefined : id
+                                })
+                                mergeRepositories(result.state.repositories)
+                                setStatus(
+                                    result.state.repositories.find((r) => r.id === repository.id)?.accountId
+                                        ? 'Account selected.'
+                                        : 'Choose an account to refresh this repository.'
+                                )
+                            })
+                        }
+                        options={[
+                            { value: 'automatic', label: 'Automatic matching' },
+                            ...state.accounts
+                                .filter((a) => a.provider === providerRemote(repository.remote)?.provider)
+                                .map((a) => ({
+                                    value: a.id,
+                                    label: `@${a.username}${a.status === 'disconnected' || a.status === 'reconnect' ? ' (reconnect)' : ''}`
+                                }))
+                        ]}
+                    />
+                </div>
+            )}
             <Select
-                label="GitHub remote"
+                label="Remote"
                 value={repository.remote || '__local__'}
                 options={[
                     { value: '__local__', label: 'Local only' },
@@ -407,7 +363,9 @@ export function Settings({
                             >
                                 <TabsContent value="repositories" className="settings-content">
                                     <div className="settings-section-heading">
-                                        <h3>Repositories</h3>
+                                        <header className="settings-page-heading">
+                                            <h3>Repositories</h3>
+                                        </header>
                                         <Button
                                             variant="secondary"
                                             size="sm"
@@ -442,11 +400,6 @@ export function Settings({
                                             />
                                         </Button>
                                     </div>
-                                    {!repositories.length && (
-                                        <p className="settings-hint">
-                                            Choose the folder containing your Git repositories.
-                                        </p>
-                                    )}
                                     {!!repositories.length && (
                                         <SearchField
                                             label="Search repositories"
@@ -476,99 +429,12 @@ export function Settings({
                                     )}
                                 </TabsContent>
                                 <TabsContent value="connections" className="settings-content">
-                                    <section className="settings-section" aria-label="GitHub connection">
-                                        <div className="settings-section-heading settings-github-heading">
-                                            <h3 className="settings-connection-title">
-                                                <span
-                                                    className="settings-connection-logo settings-connection-logo--github"
-                                                    aria-hidden="true"
-                                                />
-                                                GitHub
-                                            </h3>
-                                            <div className="settings-github-controls">
-                                                <ConnectionSignIn
-                                                    provider="GitHub"
-                                                    identity={
-                                                        connections.github ||
-                                                        githubFeedback?.kind === 'success' ||
-                                                        githubFeedback?.kind === 'authorizing' ? (
-                                                            <span className="settings-github-identity">
-                                                                {settings.githubLogin && (
-                                                                    <span
-                                                                        className="settings-github-avatar"
-                                                                        aria-hidden="true"
-                                                                    >
-                                                                        {settings.githubLogin.slice(0, 1).toUpperCase()}
-                                                                        {githubIdentity?.avatarUrl && (
-                                                                            <img
-                                                                                src={githubIdentity.avatarUrl}
-                                                                                width={32}
-                                                                                height={32}
-                                                                                alt=""
-                                                                                onLoad={(event) => {
-                                                                                    event.currentTarget.dataset.loaded =
-                                                                                        'true'
-                                                                                }}
-                                                                                onError={(event) => {
-                                                                                    event.currentTarget.hidden = true
-                                                                                }}
-                                                                            />
-                                                                        )}
-                                                                    </span>
-                                                                )}
-                                                                <span title={settings.githubLogin}>
-                                                                    {settings.githubLogin || 'Connected'}
-                                                                </span>
-                                                            </span>
-                                                        ) : undefined
-                                                    }
-                                                    connected={connections.github}
-                                                    onDisconnect={async () => {
-                                                        setBusy('disconnect-github')
-                                                        setError('')
-                                                        try {
-                                                            await invoke({ type: 'disconnect', service: 'github' })
-                                                            setSettings((current) => ({ ...current, githubLogin: '' }))
-                                                            setStatus('GitHub disconnected.')
-                                                        } finally {
-                                                            setBusy('')
-                                                        }
-                                                    }}
-                                                    device={device}
-                                                    feedback={githubFeedback}
-                                                    notice={githubNotice}
-                                                    pending={busy === 'github'}
-                                                    openingBrowser={busy === 'browser'}
-                                                    disabled={!!busy && busy !== 'github' && busy !== 'browser'}
-                                                    onStart={startSignIn}
-                                                    onOpen={() =>
-                                                        action('browser', async () => {
-                                                            if (!device) return
-                                                            const attempt = githubAttempt.current
-                                                            try {
-                                                                await invoke({ type: 'open', url: device.url })
-                                                                if (githubAttempt.current === attempt)
-                                                                    setGithubNotice('')
-                                                            } catch {
-                                                                if (githubAttempt.current === attempt)
-                                                                    setGithubNotice(
-                                                                        'Your browser could not be opened. Visit github.com/login/device and enter this code.'
-                                                                    )
-                                                            }
-                                                        })
-                                                    }
-                                                    onCancel={() => {
-                                                        githubAttempt.current++
-                                                        setDevice(undefined)
-                                                        setGithubFeedback(undefined)
-                                                        setGithubNotice('')
-                                                        setStatus('')
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-                                    </section>
-                                    <section className="settings-section" aria-label="Notion connection">
+                                    <ProviderConnections state={state} refresh={run} />
+                                    <div className="settings-connections-divider" role="separator" />
+                                    <section
+                                        className="settings-section notion-provider"
+                                        aria-label="Notion connection"
+                                    >
                                         <div className="settings-section-heading settings-github-heading">
                                             <h3 className="settings-connection-title">
                                                 <span className="settings-connection-logo settings-connection-logo--notion">
@@ -579,7 +445,7 @@ export function Settings({
                                                         focusable="false"
                                                     />
                                                 </span>
-                                                Notion
+                                                <span>Notion</span>
                                             </h3>
                                             <div className="settings-github-controls">
                                                 <NotionSignIn
@@ -591,7 +457,7 @@ export function Settings({
                                                 />
                                             </div>
                                         </div>
-                                        {(connections.github || connections.notion) &&
+                                        {(connections.remote || connections.notion) &&
                                             !connections.protectedStorage && (
                                                 <p className="settings-hint">
                                                     Credentials are kept for this session only.
@@ -600,8 +466,13 @@ export function Settings({
                                     </section>
                                 </TabsContent>
                                 <TabsContent value="preferences" className="settings-content">
-                                    <section className="settings-section" aria-label="Time and refresh">
-                                        <h3>Time and refresh</h3>
+                                    <section
+                                        className="settings-section settings-refreshed"
+                                        aria-label="Time and refresh"
+                                    >
+                                        <header className="settings-page-heading">
+                                            <h3>Preferences</h3>
+                                        </header>
                                         <Combobox
                                             label="Timezone"
                                             options={zones}
@@ -641,38 +512,41 @@ export function Settings({
                                     </section>
                                 </TabsContent>
                                 <TabsContent value="template" className="settings-content">
-                                    <section className="settings-section" aria-label="Entry template">
-                                        <div className="settings-section-heading">
-                                            <h3>Entry template</h3>
-                                        </div>
-                                        <p className="settings-hint">
-                                            Used for new entries. Existing writing stays as it is.
-                                        </p>
+                                    <section
+                                        className="settings-section settings-refreshed"
+                                        aria-label="Entry template"
+                                    >
+                                        <header className="settings-page-heading">
+                                            <h3>Template</h3>
+                                        </header>
                                         <div className="settings-template">
                                             <header className="settings-template-header">
-                                                <div className="settings-template-history">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        aria-label="Undo template edit"
-                                                        disabled={!templateHistory.canUndo}
-                                                        onClick={() => templateEditor.current?.undo()}
-                                                    >
-                                                        <ArrowCounterClockwiseIcon aria-hidden="true" />
-                                                    </Button>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        aria-label="Redo template edit"
-                                                        disabled={!templateHistory.canRedo}
-                                                        onClick={() => templateEditor.current?.redo()}
-                                                    >
-                                                        <ArrowClockwiseIcon aria-hidden="true" />
-                                                    </Button>
+                                                <span className="settings-template-label">New entry</span>
+                                                <div className="settings-template-tools">
+                                                    <div className="settings-template-history">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            aria-label="Undo template edit"
+                                                            disabled={!templateHistory.canUndo}
+                                                            onClick={() => templateEditor.current?.undo()}
+                                                        >
+                                                            <ArrowCounterClockwiseIcon aria-hidden="true" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            aria-label="Redo template edit"
+                                                            disabled={!templateHistory.canRedo}
+                                                            onClick={() => templateEditor.current?.redo()}
+                                                        >
+                                                            <ArrowClockwiseIcon aria-hidden="true" />
+                                                        </Button>
+                                                    </div>
+                                                    <span>
+                                                        {templateWords} {templateWords === 1 ? 'word' : 'words'}
+                                                    </span>
                                                 </div>
-                                                <span>
-                                                    {templateWords} {templateWords === 1 ? 'word' : 'words'}
-                                                </span>
                                             </header>
                                             <div className="settings-template-body" data-journal-drop-zone>
                                                 <Editor
@@ -688,49 +562,65 @@ export function Settings({
                                                 />
                                             </div>
                                         </div>
+                                        <p className="settings-hint">Used for new entries only.</p>
                                     </section>
                                 </TabsContent>
                                 <TabsContent value="backup" className="settings-content">
-                                    <section className="settings-section" aria-label="Journal backup">
-                                        <h3>Journal backup</h3>
-                                        <p className="settings-hint">
-                                            Includes writing, images, and tracking. Excludes credentials and repository
-                                            files.
-                                        </p>
-                                        <div className="settings-actions">
-                                            <Button
-                                                variant="secondary"
-                                                size="sm"
-                                                disabled={!!busy}
-                                                loading={busy === 'export'}
-                                                onClick={() =>
-                                                    action('export', async () => {
-                                                        await invoke({ type: 'export' })
-                                                    })
-                                                }
-                                            >
-                                                Export backup
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                disabled={!!busy}
-                                                loading={busy === 'import'}
-                                                onClick={() =>
-                                                    action('import', async () => {
-                                                        const result = await invoke({ type: 'import' })
-                                                        if (result.message === 'Backup imported.') {
-                                                            setSettings(result.state.settings)
-                                                            setRepositories(result.state.repositories)
-                                                            setStatus(result.message)
-                                                        }
-                                                    })
-                                                }
-                                            >
-                                                Import backup
-                                            </Button>
+                                    <section
+                                        className="settings-section settings-refreshed"
+                                        aria-label="Journal backup"
+                                    >
+                                        <header className="settings-page-heading">
+                                            <h3>Backup</h3>
+                                        </header>
+                                        <div className="settings-backup-group">
+                                            <div className="settings-backup-row">
+                                                <Download size={20} strokeWidth={1.75} aria-hidden="true" />
+                                                <div className="settings-group-heading">
+                                                    <h4>Export your journal</h4>
+                                                    <p>Includes writing, images, and tracking.</p>
+                                                </div>
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    disabled={!!busy}
+                                                    loading={busy === 'export'}
+                                                    onClick={() =>
+                                                        action('export', async () => {
+                                                            await invoke({ type: 'export' })
+                                                        })
+                                                    }
+                                                >
+                                                    Export backup
+                                                </Button>
+                                            </div>
+                                            <div className="settings-backup-row">
+                                                <Upload size={20} strokeWidth={1.75} aria-hidden="true" />
+                                                <div className="settings-group-heading">
+                                                    <h4>Restore a backup</h4>
+                                                    <p>Import replaces the journal on this device.</p>
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    disabled={!!busy}
+                                                    loading={busy === 'import'}
+                                                    onClick={() =>
+                                                        action('import', async () => {
+                                                            const result = await invoke({ type: 'import' })
+                                                            if (result.message === 'Backup imported.') {
+                                                                setSettings(result.state.settings)
+                                                                setRepositories(result.state.repositories)
+                                                                setStatus(result.message)
+                                                            }
+                                                        })
+                                                    }
+                                                >
+                                                    Import backup
+                                                </Button>
+                                            </div>
                                         </div>
-                                        <p className="settings-hint">Import replaces this device’s journal.</p>
+                                        <p className="settings-hint">Excludes credentials and repository files.</p>
                                     </section>
                                 </TabsContent>
                             </ScrollArea>
@@ -742,10 +632,10 @@ export function Settings({
                                         {error}
                                     </Alert>
                                 ) : (
-                                    <p role="status">{status || 'Changes apply when saved.'}</p>
+                                    <p role="status">{status}</p>
                                 )}
                             </div>
-                            <Button disabled={!!busy || !!device} loading={busy === 'save'} onClick={save}>
+                            <Button disabled={!!busy} loading={busy === 'save'} onClick={save}>
                                 Save settings
                             </Button>
                         </footer>

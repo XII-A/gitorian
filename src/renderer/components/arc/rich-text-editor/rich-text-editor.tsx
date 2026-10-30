@@ -47,7 +47,7 @@ import { QuotesIcon as Quote } from '@phosphor-icons/react/dist/csr/Quotes'
 import { CodeBlockIcon as SquareCode } from '@phosphor-icons/react/dist/csr/CodeBlock'
 import { TextStrikethroughIcon as Strikethrough } from '@phosphor-icons/react/dist/csr/TextStrikethrough'
 import { LinkBreakIcon as Unlink } from '@phosphor-icons/react/dist/csr/LinkBreak'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './rich-text-editor.module.css'
 import { ScrollArea } from '../scroll-area/scroll-area'
 
@@ -124,11 +124,14 @@ export function markdownToHtml(markdown: string) {
         const line = lines[index]
         if (/^\s*```/.test(line)) {
             flush()
+            const language = /^\s*```([^\s`]*)/.exec(line)?.[1] ?? ''
             const code: string[] = []
             index++
             while (index < lines.length && !/^\s*```/.test(lines[index])) code.push(lines[index++])
             index++
-            out.push(`<pre>${escapeHtml(code.join('\n')) || '<br>'}</pre>`)
+            out.push(
+                `<pre><code${language ? ` class="language-${escapeHtml(language)}"` : ''}>${escapeHtml(code.join('\n'))}</code></pre>`
+            )
             continue
         }
         if (!line.trim()) {

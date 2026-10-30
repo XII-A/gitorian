@@ -14,7 +14,7 @@ export function OnboardingActivityPreview() {
         <section className="hub-activity-preview" aria-labelledby={heading}>
             <div className="hub-preview-heading">
                 <h2 id={heading}>Activity this week</h2>
-                <p>Your commits, pull requests, and reviews will appear here.</p>
+                <p>Your commits, requests, and reviews will appear here.</p>
             </div>
             <div className="hub-preview-illustration" aria-hidden="true" inert>
                 <div className="hub-preview-timeline">

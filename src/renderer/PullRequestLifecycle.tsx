@@ -3,7 +3,7 @@ import { GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, Gi
 import type { Activity } from '../shared/model'
 import { Badge, type BadgeTone } from './components/arc/badge/badge'
 import { Timeline, type TimelineEvent } from './components/arc/timeline/timeline'
-import { pullRequestContext } from './pull-request'
+import { changeRequestContext } from './pull-request'
 
 const statuses = {
     open: { label: 'Open', Icon: GitPullRequest, tone: 'info' },
@@ -13,7 +13,7 @@ const statuses = {
 } satisfies Record<string, { label: string; Icon: typeof GitPullRequest; tone: BadgeTone }>
 
 export function PullRequestStatus({ activity, activities }: { activity: Activity; activities: Activity[] }) {
-    const { status } = pullRequestContext(activity, activities)
+    const { status } = changeRequestContext(activity, activities)
     const presentation = status ? statuses[status] : undefined
     const Icon = presentation?.Icon ?? GitPullRequest
     return (
@@ -39,7 +39,8 @@ export function PullRequestLifecycle({
     timezone: string
     refreshedAt?: string
 }) {
-    const context = pullRequestContext(activity, activities)
+    const context = changeRequestContext(activity, activities)
+    const requestName = activity.remoteSource?.provider === 'gitlab' ? 'merge request' : 'pull request'
     const [now, setNow] = useState(() => Date.parse(refreshedAt ?? activity.date))
     useEffect(() => {
         setNow(Date.now())
@@ -51,7 +52,7 @@ export function PullRequestLifecycle({
         events.push({
             id: 'opened',
             at: context.openedAt,
-            title: 'Opened pull request',
+            title: `Opened ${requestName}`,
             icon: <GitPullRequest aria-hidden="true" />
         })
     if (context.latestCommitAt && context.latestCommitAt !== context.openedAt)
@@ -65,7 +66,7 @@ export function PullRequestLifecycle({
         events.push({
             id: 'merged',
             at: context.mergedAt,
-            title: 'Merged pull request',
+            title: `Merged ${requestName}`,
             tone: 'success',
             icon: <GitMerge aria-hidden="true" />
         })
@@ -77,21 +78,24 @@ export function PullRequestLifecycle({
             icon: <GitPullRequestClosed aria-hidden="true" />
         })
     return (
-        <section className="hub-detail-section" aria-label="Pull request lifecycle">
+        <section
+            className="hub-detail-section"
+            aria-label={`${requestName === 'merge request' ? 'Merge' : 'Pull'} request lifecycle`}
+        >
             <h3>Lifecycle</h3>
             {events.length ? (
                 <Timeline
                     key={activity.id}
                     events={events}
                     now={now}
-                    label="Pull request history"
+                    label={`${requestName === 'merge request' ? 'Merge' : 'Pull'} request history`}
                     timeZone={timezone}
                     groupByDay={false}
                     scrollToNew={false}
                     className="hub-detail-lifecycle"
                 />
             ) : (
-                <p className="hub-detail-muted">Refresh activity to load this pull request’s status and history.</p>
+                <p className="hub-detail-muted">Refresh activity to load this {requestName}’s status and history.</p>
             )}
         </section>
     )

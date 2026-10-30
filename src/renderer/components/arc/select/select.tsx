@@ -6,7 +6,7 @@ import * as SelectPrimitive from '@radix-ui/react-select'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { Variants } from 'motion/react'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './select.module.css'
 
 export interface SelectProps extends Omit<ComponentPropsWithoutRef<typeof SelectPrimitive.Root>, 'children'> {

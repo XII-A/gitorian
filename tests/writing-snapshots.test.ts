@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { App } from '../src/renderer/App'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 import type { Command, Reply, State } from '../src/shared/model'
 import { ReplyUpdates } from '../src/shared/state-updates'
 import { shareSnapshot } from '../src/shared/snapshot'
@@ -28,13 +28,15 @@ it('keeps unchanged activity and settings references across draft saves and upda
     const state = sampleState('2026-10-05')
     state.snapshotVersion = 1
     window.journal = {
+        readEntry: vi.fn(() => Promise.resolve(undefined)),
+        writeClipboardText: vi.fn(() => Promise.resolve()),
         invoke: vi.fn((command: Command) => {
             if (command.type === 'draft') {
                 state.drafts[0] = command.draft
                 state.snapshotVersion = (state.snapshotVersion ?? 0) + 1
             }
             return Promise.resolve(
-                structuredClone({ state, connections: { github: false, notion: false, protectedStorage: false } })
+                structuredClone({ state, connections: { remote: false, notion: false, protectedStorage: false } })
             )
         })
     }
@@ -91,13 +93,18 @@ it('uses incremental desktop replies while preserving the captured baseline thro
         return Promise.resolve(
             structuredClone(
                 server.pack(
-                    { state: snapshot, connections: { github: false, notion: false, protectedStorage: false } },
+                    { state: snapshot, connections: { remote: false, notion: false, protectedStorage: false } },
                     base
                 )
             )
         )
     })
-    window.journal = { invoke, updates }
+    window.journal = {
+        invoke,
+        updates,
+        readEntry: vi.fn(() => Promise.resolve(undefined)),
+        writeClipboardText: vi.fn(() => Promise.resolve())
+    }
     const host = document.createElement('div')
     document.body.append(host)
     const root = createRoot(host)

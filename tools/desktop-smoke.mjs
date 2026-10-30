@@ -1,3 +1,5 @@
+import { tsImport } from 'tsx/esm/api'
+import { journalFixtureBackup } from './seed-journal.mjs'
 import { app, BrowserWindow, dialog, nativeTheme } from 'electron'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -9,6 +11,22 @@ const directory = process.env.GITORIAN_VERIFY_STATE
     ? join(process.env.GITORIAN_VERIFY_STATE, 'profile')
     : mkdtempSync(join(tmpdir(), 'gitorian-desktop-'))
 app.setPath('userData', directory)
+const { sampleState } = await tsImport('../tests/workspace-fixture.ts', import.meta.url)
+const fixtureBackup = join(directory, 'workspace-fixture.json')
+mkdirSync(directory, { recursive: true })
+writeFileSync(fixtureBackup, journalFixtureBackup(sampleState('2026-10-05')))
+async function restoreWorkspaceFixture(window) {
+    const picker = dialog.showOpenDialog
+    const confirm = dialog.showMessageBox
+    try {
+        dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [fixtureBackup] })
+        dialog.showMessageBox = () => Promise.resolve({ response: 1, checkboxChecked: false })
+        await window.webContents.executeJavaScript("window.journal.invoke({ type: 'import' })")
+    } finally {
+        dialog.showOpenDialog = picker
+        dialog.showMessageBox = confirm
+    }
+}
 const repositoryFolder = join(directory, 'repositories')
 for (const name of process.env.INSPECTOR_TABS_ONLY === '1' ? [] : ['first-project', 'second-project']) {
     const path = join(repositoryFolder, name)
@@ -106,7 +124,10 @@ app.on('browser-window-created', (_, window) => {
             await pause(600)
             if (process.env.INSPECTOR_TABS_ONLY === '1') {
                 const base = window.webContents.getURL().split('?')[0]
-                await window.loadURL(base + '?workspace=true&data=sample&week=2026-10-05')
+                await restoreWorkspaceFixture(window)
+                await window.loadURL(base + '?workspace=true&week=2026-10-05')
+                await waitForElement(window, '.ws-activity-row')
+                await window.webContents.executeJavaScript("document.querySelector('.ws-activity-row').click()")
                 await waitForElement(window, '[aria-label="Pop out diff"]')
                 const detailsFirst = (target) =>
                     target.webContents.executeJavaScript(`(() => {
@@ -369,7 +390,7 @@ app.on('browser-window-created', (_, window) => {
                 `document.querySelector('[aria-label="Journal body"]').textContent.includes('The draft survives a restart.')`
             )
             result.disconnectedWritingReady = await window.webContents.executeJavaScript(
-                `document.querySelector('[aria-label="Journal body"]').getAttribute('contenteditable') === 'true' && !document.querySelector('.ws-paper').textContent.includes('Your writing stays here.') && document.querySelector('.ws-writing-footer').textContent.includes('Connect Notion in settings') && document.querySelector('.ws-publish button').disabled`
+                `document.querySelector('[aria-label="Journal body"]').getAttribute('contenteditable') === 'true' && !document.querySelector('.ws-paper').textContent.includes('Your writing stays here.') && !document.querySelector('.ws-writing-footer').textContent.includes('Connect Notion') && !document.querySelector('.ws-publish button')`
             )
             // A newer recovery copy must win over an older backend draft, then persist.
             await window.webContents.executeJavaScript(`(async () => {
@@ -383,7 +404,10 @@ app.on('browser-window-created', (_, window) => {
             result.interruptedSaveRecovered = await window.webContents.executeJavaScript(
                 `document.querySelector('[aria-label="Journal body"]').textContent.includes('Recovered an interrupted save.')`
             )
-            await window.loadURL(base + '?workspace=true&data=sample&week=2026-10-05')
+            await restoreWorkspaceFixture(window)
+            await window.loadURL(base + '?workspace=true&week=2026-10-05')
+            await waitForElement(window, '.ws-activity-row')
+            await window.webContents.executeJavaScript("document.querySelector('.ws-activity-row').click()")
             await waitForElement(window, '[aria-label="Journal body"]')
             const realDraftsBefore = await window.webContents.executeJavaScript(
                 `(async () => (await window.journal.invoke({type:'state'})).state.drafts.length)()`
@@ -402,7 +426,7 @@ app.on('browser-window-created', (_, window) => {
                 if (!removedRow.textContent.includes('Commit')) throw new Error('Expected a commit hover fixture')
                 removedRow.dispatchEvent(new PointerEvent('pointermove', {bubbles:true,pointerType:'mouse'}))
                 await pause()
-                filter('PRs & reviews').click()
+                filter('Requests & reviews').click()
                 await pause()
                 const bounds = viewport.getBoundingClientRect()
                 const content = viewport.querySelector('.activity-hover').getBoundingClientRect()
@@ -416,7 +440,7 @@ app.on('browser-window-created', (_, window) => {
                 viewport.scrollTop = 100
                 const offset = viewport.scrollTop
                 if (offset === 0) throw new Error('Expected a scrollable PR fixture')
-                filter('PRs & reviews').click()
+                filter('Requests & reviews').click()
                 await pause()
                 const activityUnchangedFilterKeepsScroll = viewport.scrollTop === offset
                 document.querySelector('[aria-label="Refresh activity"]').click()
@@ -471,7 +495,7 @@ app.on('browser-window-created', (_, window) => {
             result.noReferenceNotes = await reference.webContents.executeJavaScript(
                 `!document.querySelector('.ws-reference-note') && !Array.from(document.querySelectorAll('button')).some(button => button.textContent.includes('Add note')) && document.querySelector('.ws-inspector-footer [role="status"]').textContent.includes('Added to your entry.')`
             )
-            result.sampleIsolated = await window.webContents.executeJavaScript(
+            result.fixtureDraftCountStable = await window.webContents.executeJavaScript(
                 `(async () => (await window.journal.invoke({type:'state'})).state.drafts.length === ${realDraftsBefore})()`
             )
             await reference.webContents.executeJavaScript(
@@ -489,7 +513,7 @@ app.on('browser-window-created', (_, window) => {
                 return {
                     fillsViewport: frame.left === 0 && Math.abs(frame.right - innerWidth) < 1 && Math.abs(frame.bottom - innerHeight) < 1,
                     cleanWritingSurface: !document.querySelector('.ws-writing-bar') && !document.querySelector('.ws-review-footer'),
-                    publishIsLastHeaderAction: buttons.at(-1) === document.querySelector('.ws-publish button'),
+                    fixtureHasNoPublishing: !document.querySelector('.ws-publish button'),
                     matchingPaneFooters: document.querySelector('.ws-writing-footer').getBoundingClientRect().height === document.querySelector('.ws-inspector-footer').getBoundingClientRect().height,
                     // The hidden smoke window pauses Motion; inspect the date mount while the visible preview verifies the trigger.
                     centeredDatePicker: Math.abs((document.querySelector('.ws-date').getBoundingClientRect().left + document.querySelector('.ws-date').getBoundingClientRect().right) / 2 - innerWidth / 2) < 1,
@@ -497,16 +521,6 @@ app.on('browser-window-created', (_, window) => {
                     keyboardScrollablePanes: ['.ws-activity-scroll','.ws-paper-scroll','.ws-diff-scroll'].every(selector => document.querySelector(selector+' [role="region"]')?.tabIndex === 0)
                 }
             })()`)
-            )
-            await window.webContents.executeJavaScript(`document.querySelector('.ws-publish button').click()`)
-            await pause(200)
-            result.headerPublishesSample = await window.webContents.executeJavaScript(
-                `document.querySelector('.ws-publish button').textContent.includes('Start another entry') && document.querySelector('.ws-writing-footer').textContent.includes('Nothing was sent to Notion')`
-            )
-            await window.webContents.executeJavaScript(`document.querySelector('.ws-publish button').click()`)
-            await pause(200)
-            result.newEntryAfterPublishing = await window.webContents.executeJavaScript(
-                `document.querySelector('[aria-label="Entry title"]').value === '' && document.querySelector('[aria-label="Journal body"]').getAttribute('contenteditable') === 'true'`
             )
             passed = Object.entries(result).every(([key, value]) =>
                 key === 'node' ? value === 'undefined' : key === 'version' ? value === 1 : value === true

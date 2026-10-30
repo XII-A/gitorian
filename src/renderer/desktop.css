@@ -96,14 +96,6 @@ button svg {
 .week-picker {
     gap: 2px;
 }
-.week-picker .field-caption {
-    display: none;
-}
-.week-picker .field-group {
-    min-width: 190px;
-    margin: 0;
-    gap: 0;
-}
 .workspace-toolbar {
     min-height: 42px;
     padding: 5px 16px;
@@ -163,38 +155,8 @@ button svg {
     padding: 8px 14px 14px;
     border-bottom: 1px solid var(--border-subtle);
 }
-.field-group {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
-    margin-block: 12px;
-}
-.field-caption {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 12px;
-    display: block;
-}
-.field-group.row {
-    flex-direction: row;
-    align-items: center;
-}
-.field-group.row .field-caption {
-    order: 2;
-    flex: 1;
-}
-.field-group > div {
-    min-width: 0;
-}
-.field-group > div:has(> label:empty) {
-    gap: 0;
-}
 label:empty {
     display: none;
-}
-.row > .field-group {
-    flex: 1;
 }
 .activity-list {
     padding: 10px 8px;
@@ -227,14 +189,6 @@ label:empty {
     color: var(--text-secondary);
     font-size: 11px;
 }
-.local-label {
-    color: var(--text-secondary);
-    font-size: 11px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    padding: 3px 7px;
-    border-radius: var(--radius-control);
-}
 .separator {
     width: 5px;
     border: 0;
@@ -243,32 +197,6 @@ label:empty {
 .separator:hover,
 .separator:focus-visible {
     background: var(--accent);
-}
-.draft-pane {
-    background: var(--background);
-}
-.draft-pane .pane-content {
-    padding: 20px 32px;
-}
-.draft-pane .pane-content > .row {
-    padding-bottom: 14px;
-}
-.draft-pane .pane-content > .row .field-caption {
-    display: none;
-}
-.draft-pane .pane-content > .row > .field-group {
-    max-width: 65%;
-}
-.draft-title {
-    font-size: 29px;
-    font-weight: 650;
-    line-height: 1.25;
-    letter-spacing: -0.8px;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    padding: 12px 0 22px;
-    min-height: 68px;
 }
 .editor-toolbar {
     gap: 2px;
@@ -323,10 +251,6 @@ label:empty {
     border-radius: var(--radius-control);
     padding: 6px 10px;
     margin-bottom: 5px;
-}
-.draft-footer {
-    bottom: -20px;
-    padding: 16px 0;
 }
 .details {
     background: var(--surface);
@@ -425,17 +349,11 @@ legend {
     .brand span {
         display: none;
     }
-    .draft-pane .pane-content {
-        padding: 16px 20px;
-    }
     .pane-content {
         padding: 18px;
     }
     .workspace-toolbar {
         padding-inline: 10px;
-    }
-    .draft-title {
-        font-size: 25px;
     }
 }
 @media (max-width: 600px) {

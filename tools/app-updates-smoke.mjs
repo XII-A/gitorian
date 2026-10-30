@@ -110,9 +110,11 @@ app.quit = () => {
 const launchInstaller = async (_file, args) => {
     await pause(10)
     if (failLaunch) throw Object.assign(new Error('Simulated asynchronous installer launch failure'), { code: 'EPERM' })
-    const db = new DatabaseSync(join(directory, 'profile', 'gitorian.sqlite'), { readOnly: true })
+    const db = new DatabaseSync(join(directory, 'profile', 'journal.sqlite'), { readOnly: true })
     const drafts = db
-        .prepare("SELECT json FROM state_records WHERE collection='drafts'")
+        .prepare(
+            "SELECT json_object('id',id,'title',title,'body',json(body),'week',week,'version',version,'updatedAt',updatedAt) AS json FROM drafts"
+        )
         .all()
         .map((row) => JSON.parse(row.json))
     db.close()
@@ -201,7 +203,7 @@ app.on('browser-window-created', (_, window) => {
             await wait(`!!document.querySelector('[aria-label="Open settings"]') && !!window.journal.appUpdates`)
             const initial = await js(`window.journal.invoke({type:'state'})`)
             assert(
-                initial.state.repositories.length === 0 && !initial.connections.github && !initial.connections.notion,
+                initial.state.repositories.length === 0 && !initial.connections.remote && !initial.connections.notion,
                 'Empty journal-only fixture without personal accounts'
             )
             await hidden('Hub has no update button before an update is ready')

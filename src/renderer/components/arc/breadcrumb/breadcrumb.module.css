@@ -21,7 +21,7 @@
     width: 16px;
     height: 16px;
     flex: 0 0 auto;
-    color: var(--border-strong);
+    color: var(--foreground);
     stroke-width: 1.75;
 }
 /* Each crumb reserves the width of its medium weight label, so becoming the current page never shifts the path. */

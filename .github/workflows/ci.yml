@@ -2,9 +2,8 @@ name: CI
 
 on:
     pull_request:
-        branches: [main]
-    push:
-        branches: [main]
+        types: [opened, synchronize, reopened, edited]
+        branches: [main, release, 'release/**']
 
 permissions:
     contents: read
@@ -15,7 +14,7 @@ concurrency:
 
 jobs:
     check:
-        name: CI checks
+        name: Static checks and tests
         runs-on: windows-2022
         timeout-minutes: 20
         steps:
@@ -29,4 +28,19 @@ jobs:
                   cache: pnpm
             - run: pnpm install --frozen-lockfile
             - run: pnpm check
-            - run: pnpm build
+
+    result:
+        name: CI checks
+        if: always()
+        needs: [check]
+        runs-on: ubuntu-latest
+        timeout-minutes: 2
+        steps:
+            - name: Require static checks and tests
+              shell: pwsh
+              env:
+                  CHECK_RESULT: ${{ needs.check.result }}
+              run: |
+                  if ($env:CHECK_RESULT -ne 'success') {
+                      throw "Verification incomplete: checks=$env:CHECK_RESULT"
+                  }

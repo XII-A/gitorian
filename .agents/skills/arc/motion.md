@@ -11,7 +11,7 @@ Motion shows cause and effect: what opened, what changed, where it came from, wh
 
 ## Tokens
 
-Import from `@/components/arc/lib/motion-tokens` (installed with the first Arc item).
+Import from `@/components/arc/motion-tokens` (installed with the first Arc item).
 
 | Token | Value | Use for |
 | --- | --- | --- |
@@ -49,7 +49,7 @@ Selected highlight that glides between options (what `segmented-control` and `ta
 
 ```tsx
 import { motion, useReducedMotion } from "motion/react";
-import { motionTokens } from "@/components/arc/lib/motion-tokens";
+import { motionTokens } from "@/components/arc/motion-tokens";
 
 const reduce = useReducedMotion();
 {options.map(option => (

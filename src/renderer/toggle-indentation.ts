@@ -55,6 +55,7 @@ export function moveToggleBlock(editor: Editor, outdent: boolean): boolean {
     }
 
     let target: number
+    let placeholderSize = 0
     let togglePosition: number
     if (outdent) {
         if (!depth || $from.node(depth - 1).type.name !== 'toggle') return false
@@ -66,11 +67,16 @@ export function moveToggleBlock(editor: Editor, outdent: boolean): boolean {
         const previous = container.child(first - 1)
         togglePosition = start - previous.nodeSize
         target = start - 2 // Immediately before the preceding toggleContent's closing token.
+        const body = previous.lastChild!
+        if (body.childCount === 1 && body.firstChild?.type.name === 'paragraph' && !body.firstChild.content.size) {
+            placeholderSize = body.firstChild.nodeSize
+            target -= placeholderSize
+        }
     }
 
     const tr = closeHistory(editor.state.tr).replaceWith(start, finish, remaining)
     const destination = tr.mapping.map(target, outdent ? 1 : -1)
-    tr.insert(destination, moved)
+    tr.replaceWith(destination, destination + placeholderSize, moved)
     tr.setSelection(
         selection instanceof NodeSelection
             ? NodeSelection.create(tr.doc, destination)

@@ -15,7 +15,7 @@ import {
     type Transition
 } from 'motion/react'
 import { Folder } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './empty-state.module.css'
 
 export interface EmptyStateProps {

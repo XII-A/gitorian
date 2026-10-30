@@ -95,6 +95,20 @@ export function applyBlockFormat(
             const sourceBlock = $from.node(depth)
             const reuse = convert || !source.content.size
             const target = formattedBlock(state.schema, format, convert ? source.content : Fragment.empty)
+            if (format !== 'code') {
+                const preserveDirection = (node: Node): Node => {
+                    if (['paragraph', 'heading', 'toggleSummary'].includes(node.type.name))
+                        return node.type.create(
+                            { ...node.attrs, direction: source.attrs.direction ?? null },
+                            node.content,
+                            node.marks
+                        )
+                    const children: Node[] = []
+                    node.forEach((child) => children.push(preserveDirection(child)))
+                    return node.copy(Fragment.fromArray(children))
+                }
+                target.node = preserveDirection(target.node)
+            }
             if (!reuse) {
                 // Find the nearest container that accepts a sibling of this type.
                 // A toggle summary is part of its toggle, never an insertion container.

@@ -207,7 +207,7 @@
 }
 .journal-editor .tiptap[contenteditable='true'] > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
     content: 'Type / for formatting';
-    float: left;
+    float: inline-start;
     height: 0;
     color: var(--text-secondary);
     pointer-events: none;
@@ -253,6 +253,92 @@
 .journal-editor .tiptap pre code {
     padding: 0;
 }
+.journal-code-block {
+    position: relative;
+    min-width: 0;
+    margin-block: var(--space-4);
+    border-radius: var(--radius-inset);
+    background: var(--surface-muted);
+}
+.journal-code-tools {
+    position: absolute;
+    z-index: 1;
+    top: var(--space-2);
+    right: var(--space-2);
+    max-width: calc(100% - var(--space-4));
+    font-family: var(--font-body);
+    white-space: normal;
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.journal-code-block:hover .journal-code-tools,
+.journal-code-block:focus-within .journal-code-tools,
+.journal-code-tools:has([data-open]) {
+    opacity: 1;
+}
+.journal-code-scroll {
+    border-radius: inherit;
+}
+.journal-code-language-trigger {
+    max-width: 144px;
+}
+.journal-code-language-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.journal-editor .tiptap .journal-code-block pre {
+    margin: 0;
+    box-sizing: border-box;
+    width: max-content;
+    min-width: 100%;
+    padding: var(--space-6);
+    overflow: visible;
+    white-space: pre;
+    overflow-wrap: normal;
+    tab-size: 4;
+}
+.journal-editor .tiptap .journal-code-block[data-wrapped] pre {
+    width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.journal-code-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+.journal-code-block :is(.hljs-keyword, .hljs-selector-tag, .hljs-type, .hljs-built_in) {
+    color: var(--syntax-keyword);
+}
+.journal-code-block :is(.hljs-string, .hljs-regexp, .hljs-attr) {
+    color: var(--syntax-string);
+}
+.journal-code-block :is(.hljs-number, .hljs-literal, .hljs-symbol) {
+    color: var(--syntax-value);
+}
+.journal-code-block :is(.hljs-title, .hljs-property, .hljs-name) {
+    color: var(--syntax-name);
+}
+.journal-code-block :is(.hljs-comment, .hljs-quote) {
+    color: var(--text-muted);
+    font-style: italic;
+}
+@media (hover: none) {
+    .journal-code-tools {
+        opacity: 1;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .journal-code-tools {
+        transition: none;
+    }
+}
 .journal-editor .tiptap :is(ul, ol):not([data-type='taskList']) {
     /* Rotate through three marker styles at every depth. The li below passes
        resolved values to the next list without circular custom properties. */
@@ -262,7 +348,7 @@
     --ordered-marker: var(--nested-ordered-marker, decimal);
     --ordered-marker-next: var(--nested-ordered-marker-next, lower-alpha);
     --ordered-marker-last: var(--nested-ordered-marker-last, lower-roman);
-    padding-left: var(--space-6);
+    padding-inline-start: var(--space-6);
 }
 .journal-editor .tiptap :is(ul, ol):not([data-type='taskList']) > li {
     --nested-bullet-marker: var(--bullet-marker-next);
@@ -279,13 +365,13 @@
     list-style-type: var(--ordered-marker);
 }
 .journal-editor .tiptap blockquote {
-    border-left: 2px solid var(--border-strong);
-    padding-left: var(--space-4);
+    border-inline-start: 2px solid var(--border-strong);
+    padding-inline-start: var(--space-4);
     color: var(--text-secondary);
 }
 .journal-editor .tiptap [data-type='taskList'] {
     list-style: none;
-    padding-left: 0;
+    padding-inline-start: 0;
 }
 .journal-editor .tiptap [data-type='taskItem'] {
     display: flex;
@@ -297,13 +383,13 @@
 }
 .journal-editor [data-type='toggle'] {
     position: relative;
-    padding-left: calc(1lh + var(--space-1));
+    padding-inline-start: calc(1lh + var(--space-1));
     margin-block: var(--space-2);
 }
 .journal-editor [data-type='toggle'] > button {
     position: absolute;
     top: 0;
-    left: 0;
+    inset-inline-start: 0;
     width: 1lh;
     height: 1lh;
     display: grid;
@@ -316,11 +402,14 @@
     cursor: pointer;
     font: inherit;
 }
+.journal-editor [data-type='toggle'][data-has-content='true'] > button {
+    color: var(--foreground);
+}
 .journal-editor [data-type='toggle'] > button > svg {
     display: block;
     transform: rotate(0deg);
     transform-origin: center;
-    transition: transform var(--duration-fast) var(--ease-standard);
+    transition: transform var(--toggle-duration) var(--toggle-ease);
 }
 .journal-editor [data-type='toggle'][data-open='true'] > button > svg {
     transform: rotate(90deg);
@@ -336,7 +425,7 @@
 }
 @media (pointer: coarse) {
     .journal-editor [data-type='toggle'] {
-        padding-left: var(--space-12);
+        padding-inline-start: var(--space-12);
     }
     .journal-editor [data-type='toggle'] > button {
         width: 44px;
@@ -364,4 +453,110 @@
     .journal-editor [data-type='toggle'] > button > svg {
         transition: none;
     }
+}
+.ws-block-menu.journal-emoji-menu {
+    max-width: min(384px, calc(100vw - 32px));
+    width: min(384px, calc(100vw - 32px));
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    animation: none;
+    --emoji-highlight: color-mix(in oklab, var(--foreground) 12%, var(--surface-raised));
+}
+
+.journal-emoji-tabs {
+    min-width: 0;
+}
+.ws-block-menu .journal-emoji-categories button {
+    min-width: 0;
+    min-height: 40px;
+    justify-content: center;
+    padding: var(--space-2);
+}
+.journal-emoji-tabs [role='tabpanel'] {
+    margin-block-start: var(--space-4);
+}
+.journal-emoji-rows {
+    position: relative;
+    contain: layout style;
+}
+.journal-emoji-section {
+    display: flex;
+    align-items: center;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    padding-inline: var(--space-2);
+}
+
+.journal-emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    content-visibility: auto;
+    contain-intrinsic-size: auto 44px;
+}
+.ws-block-menu .journal-emoji-grid button {
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: var(--radius-inset);
+    min-width: 0;
+    height: 44px;
+    font-size: var(--text-2xl);
+    cursor: pointer;
+}
+.ws-block-menu .journal-emoji-grid button[aria-selected='true'] {
+    background: var(--emoji-highlight);
+}
+.ws-block-menu .journal-emoji-grid button:active {
+    transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+    .ws-block-menu .journal-emoji-grid button:hover {
+        background: var(--emoji-highlight);
+    }
+}
+
+.journal-emoji-glyph {
+    display: block;
+    width: 40px;
+    height: 40px;
+    flex: none;
+    background-image: url('./assets/emoji-atlas.webp');
+    background-repeat: no-repeat;
+}
+
+.journal-editor .tiptap {
+    text-align: start;
+}
+.journal-editor .tiptap :is(ul, ol):not([data-type='taskList']) {
+    padding-inline: var(--space-6);
+}
+.journal-editor .tiptap li:has(> p:first-child:dir(rtl)),
+.journal-editor .tiptap [data-type='taskItem']:has(> div > p:first-child:dir(rtl)),
+.journal-editor .tiptap [data-type='toggle']:has(> div > [data-type='toggleSummary']:dir(rtl)) {
+    direction: rtl;
+}
+.journal-editor .tiptap li:has(> p:first-child:dir(ltr)),
+.journal-editor .tiptap [data-type='taskItem']:has(> div > p:first-child:dir(ltr)),
+.journal-editor .tiptap [data-type='toggle']:has(> div > [data-type='toggleSummary']:dir(ltr)) {
+    direction: ltr;
+}
+.journal-editor .tiptap .journal-image-caption[dir='auto'] {
+    unicode-bidi: plaintext;
+}
+.journal-image-tools,
+.journal-code-tools {
+    direction: ltr;
+}
+
+.journal-editor
+    .tiptap
+    [data-type='toggle'][data-open='false']:has(> div > [data-type='toggleSummary']:dir(rtl))
+    > button
+    > svg {
+    transform: rotate(180deg);
+}
+.journal-editor .tiptap [data-type='toggle'][data-open='true'] > button > svg {
+    transform: rotate(90deg);
 }

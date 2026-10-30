@@ -1,30 +1,30 @@
+import { NotionRequests } from '../src/main/notion-request'
+import { Effect, ManagedRuntime } from 'effect'
+import { journalLayer } from '../src/main/journal-layer'
+import { JournalService } from '../src/main/service'
+import { RemoteContributions } from '../src/main/remote-contributions'
+import { Notion } from '../src/main/notion'
+import { run } from './effect-fixtures'
 import { randomUUID } from 'node:crypto'
 import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { Store } from '../src/main/store'
-import { Http } from '../src/main/http'
-import { Notion } from '../src/main/notion'
-import { GitHub } from '../src/main/github'
-import { JournalService } from '../src/main/service'
+import { JournalDatabase } from '../src/main/journal-database'
 import type { NotionBlock } from '../src/shared/notion-format'
 import { afterAll } from 'vitest'
-
 const execute = promisify(execFile)
 const gitAt =
     (directory: string) =>
     async (...args: string[]) =>
         (await execute('git', args, { cwd: directory, windowsHide: true })).stdout.trim()
-
 async function removeFixture(directory: string) {
     const target = resolve(directory)
     if (dirname(target) !== resolve(tmpdir()) || !target.startsWith(resolve(tmpdir()) + sep + 'gitorian-'))
         throw new Error(`Unexpected fixture directory: ${target}`)
     await rm(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 }
-
 let gitTemplate: Promise<string> | undefined
 let templateDirectory: string | undefined
 async function createGitTemplate() {
@@ -39,32 +39,56 @@ async function createGitTemplate() {
     await git('branch', 'main')
     return templateDirectory
 }
-
 afterAll(async () => {
     if (templateDirectory) await removeFixture(templateDirectory)
 })
 export const patch =
     'diff --git a/a.ts b/a.ts\nindex 1111111..2222222 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n'
-export async function journal() {
+export async function journal(
+    credential: { access_token: string; refresh_token?: string; expires?: number } = { access_token: 'test-token' }
+) {
     const directory = await mkdtemp(join(tmpdir(), 'gitorian-test-'))
-    const store = new Store(join(directory, 'tracking.sqlite'))
+    const store = await JournalDatabase.open(join(directory, 'tracking.sqlite'))
     const remote = transport()
-    const http = new Http(remote.fetch)
-    const github = new GitHub(
-        http,
-        () => 'test-token',
-        (token) => {
-            remote.token = token
-        }
+    const accountId = randomUUID()
+    const secrets = new Map<string, string>([
+        ['provider-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', JSON.stringify(credential)]
+    ])
+    await store.prepareProviderAccount({
+        id: accountId,
+        provider: 'github',
+        host: 'github.com',
+        userId: '42',
+        username: 'me',
+        emails: ['first@example.com'],
+        generation: 1,
+        status: 'connected',
+        credentialKey: 'provider-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+    })
+    await store.activateProviderAccount(accountId, 1)
+    await store.finishProviderAccount(accountId)
+    const runtime = ManagedRuntime.make(
+        journalLayer({
+            store,
+            fetcher: (...args) => remote.fetch(...args),
+            vault: {
+                get: (key) => secrets.get(key) ?? '',
+                set: (key, value) => {
+                    secrets.set(key, value)
+                },
+                protected: () => true
+            },
+            notionToken: () => Effect.succeed('test-token'),
+            connections: () => ({ remote: remote.github, notion: true, protectedStorage: true })
+        })
     )
-    const notion = new Notion(http, () => 'test-token')
-    const service = new JournalService(store, github, notion, () => ({
-        github: remote.github,
-        notion: true,
-        protectedStorage: true
-    }))
-    store.state.settings.githubLogin = 'me'
-    store.state.settings.destination = { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' }
+    const [service, github, notion, requests] = await Promise.all([
+        runtime.runPromise(JournalService),
+        runtime.runPromise(RemoteContributions),
+        runtime.runPromise(Notion),
+        runtime.runPromise(NotionRequests)
+    ])
+    await store.setDestination({ kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' })
     return {
         directory,
         store,
@@ -72,8 +96,10 @@ export async function journal() {
         service,
         github,
         notion,
+        requests,
         close: async () => {
-            store.close()
+            await runtime.dispose()
+            await store.close()
             await removeFixture(directory)
         }
     }
@@ -85,9 +111,18 @@ export async function workspace() {
         // Copy a pristine real repository, never hardlink it or share mutable refs.
         // Each scenario still owns its checkout, SQLite store, and transport state.
         await cp(await (gitTemplate ??= createGitTemplate()), app.directory, { recursive: true })
-        await app.service.addRepository(app.directory)
-        const repository = app.store.state.repositories[0]
+        await run(app.service.addRepository(app.directory))
+        const repository = app.store.config.repositories[0]
         repository.remote = 'https://github.com/example/project.git'
+        repository.accountId = app.store.config.accounts[0].id
+        repository.accountGeneration = 1
+        await app.store.saveRepository(repository)
+        const { remoteConfiguration } = await import('../src/shared/provider-accounts')
+        await app.store.assignProviderAccount(repository.id, remoteConfiguration(app.store.config.repositories[0]), {
+            accountId: repository.accountId,
+            accountGeneration: 1,
+            assignment: 'automatic'
+        })
         return { ...app, git, repository }
     } catch (error) {
         await app.close()
@@ -105,7 +140,11 @@ export function transport() {
         properties: Record<string, unknown>
         blocks: NotionBlock[]
     }[] = []
-    const requests: { url: string; method: string; body?: Record<string, unknown> }[] = []
+    const requests: {
+        url: string
+        method: string
+        body?: Record<string, unknown>
+    }[] = []
     const remote = {
         pages,
         requests,

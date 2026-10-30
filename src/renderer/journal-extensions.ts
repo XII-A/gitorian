@@ -1,12 +1,15 @@
-import { Extension, InputRule, Node, textInputRule } from '@tiptap/react'
+import { motionTokens } from './components/arc/motion-tokens'
+import { JournalDirection, JournalBlockquote } from './journal-direction'
+import { Extension, InputRule, Node, textInputRule, mergeAttributes } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import type { JournalNode } from '../shared/model'
 import StarterKit from '@tiptap/starter-kit'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
-import { Plugin } from '@tiptap/pm/state'
+import { Plugin, TextSelection } from '@tiptap/pm/state'
 import { moveToggleBlock } from './toggle-indentation'
 import { JournalImageNode, ImageImportPositions } from './journal-images'
+import { JournalCodeBlock } from './journal-code-block'
 
 function deleteToggleWordBackward(editor: Editor): boolean {
     const { $from, from, empty } = editor.state.selection
@@ -26,18 +29,15 @@ function deleteToggleWordBackward(editor: Editor): boolean {
     }
     const prefix = $from.parent.textBetween(0, $from.parentOffset, '\n', '\uFFFC')
     const trimmed = prefix.trimEnd()
-    const word = /[\p{L}\p{N}_]+$|[^\p{L}\p{N}_\s]+$/u.exec(trimmed)
+    const word = /[\p{L}\p{M}\p{N}_]+$|[^\p{L}\p{M}\p{N}_\s]+$/u.exec(trimmed)
     const start = word?.index ?? 0
     return editor.commands.deleteRange({ from: from - (prefix.length - start), to: from })
 }
 
 function backspaceFromToggleBody(editor: Editor, depth: number): boolean {
     const { $from } = editor.state.selection
-    if (!$from.parent.content.size) {
-        const summary = $from.node(depth).firstChild!
-        return editor.commands.setTextSelection($from.before(depth) + 2 + summary.content.size)
-    }
-    return unwrapToggle(editor, depth)
+    const summary = $from.node(depth).firstChild!
+    return editor.commands.setTextSelection($from.before(depth) + 2 + summary.content.size)
 }
 
 function unwrapToggle(editor: Editor, depth: number) {
@@ -46,7 +46,13 @@ function unwrapToggle(editor: Editor, depth: number) {
     const position = $from.before(depth)
     const summary = toggle.firstChild!
     const contents = toggle.lastChild!
-    const blocks: JournalNode[] = [{ type: 'paragraph', content: (summary.toJSON() as JournalNode).content }]
+    const blocks: JournalNode[] = [
+        {
+            type: 'paragraph',
+            attrs: { direction: summary.attrs.direction },
+            content: (summary.toJSON() as JournalNode).content
+        }
+    ]
     const emptyBody =
         contents.childCount === 1 && contents.firstChild?.type.name === 'paragraph' && !contents.firstChild.content.size
     if (!emptyBody) contents.forEach((node) => blocks.push(node.toJSON() as JournalNode))
@@ -86,27 +92,23 @@ const Toggle = Node.create({
         ]
     },
     addNodeView() {
-        return ({ editor, getPos }) => {
+        return ({ editor, getPos, node }) => {
             const dom = document.createElement('div')
             dom.dataset.type = 'toggle'
-            dom.dataset.open = 'true'
+            dom.dataset.open = 'false'
             const button = document.createElement('button')
             button.type = 'button'
             button.contentEditable = 'false'
             button.setAttribute('aria-label', 'Toggle content')
-            button.setAttribute('aria-expanded', 'true')
+            button.setAttribute('aria-expanded', 'false')
             const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
             icon.setAttribute('viewBox', '0 0 16 16')
             icon.setAttribute('width', '16')
             icon.setAttribute('height', '16')
             icon.setAttribute('aria-hidden', 'true')
             const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-            path.setAttribute('d', 'm6 4 4 4-4 4')
-            path.setAttribute('fill', 'none')
-            path.setAttribute('stroke', 'currentColor')
-            path.setAttribute('stroke-width', '1.5')
-            path.setAttribute('stroke-linecap', 'round')
-            path.setAttribute('stroke-linejoin', 'round')
+            path.setAttribute('d', 'M5 3 12 8 5 13Z')
+            path.setAttribute('fill', 'currentColor')
             icon.append(path)
             button.append(icon)
             const contentDOM = document.createElement('div')
@@ -123,10 +125,24 @@ const Toggle = Node.create({
                         editor.commands.setTextSelection(position + 2)
                 }
             })
+            const updateContent = (current: typeof node) => {
+                const body = current.lastChild!
+                const empty =
+                    body.childCount === 1 && body.firstChild?.type.name === 'paragraph' && !body.firstChild.content.size
+                dom.dataset.hasContent = String(!empty)
+            }
+            updateContent(node)
+            dom.style.setProperty('--toggle-duration', `${motionTokens.duration.fast}s`)
+            dom.style.setProperty('--toggle-ease', `cubic-bezier(${motionTokens.ease.standard.join(',')})`)
             dom.append(button, contentDOM)
             return {
                 dom,
                 contentDOM,
+                update: (current) => {
+                    if (current.type !== node.type) return false
+                    updateContent(current)
+                    return true
+                },
                 stopEvent: (event) => event.target instanceof window.Node && button.contains(event.target),
                 ignoreMutation: (mutation) =>
                     mutation.type === 'attributes' && (mutation.target === dom || mutation.target === button)
@@ -139,7 +155,7 @@ const ToggleSummary = Node.create({
     content: 'inline*',
     defining: true,
     parseHTML: () => [{ tag: 'div[data-type="toggleSummary"]' }],
-    renderHTML: () => ['div', { 'data-type': 'toggleSummary' }, 0],
+    renderHTML: ({ HTMLAttributes }) => ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'toggleSummary' }), 0],
     addKeyboardShortcuts() {
         return {
             Backspace: () => {
@@ -155,12 +171,33 @@ const ToggleSummary = Node.create({
                 return unwrapToggle(this.editor, $from.depth - 1)
             },
             Enter: () => {
-                const { $from } = this.editor.state.selection
-                if ($from.parent.type.name !== 'toggleSummary') return false
-                const dom = this.editor.view.nodeDOM($from.before($from.depth - 1))
-                if (dom instanceof HTMLElement && dom.dataset.open === 'false')
-                    dom.querySelector<HTMLButtonElement>(':scope > button')?.click()
-                return this.editor.commands.setTextSelection($from.after() + 2)
+                const { $from, $to } = this.editor.state.selection
+                if (!this.editor.isEditable || $from.parent.type.name !== 'toggleSummary' || !$from.sameParent($to))
+                    return false
+                const depth = $from.depth - 1
+                const position = $from.before(depth)
+                const dom = this.editor.view.nodeDOM(position)
+                if (dom instanceof HTMLElement && dom.dataset.open === 'false') {
+                    const toggle = $from.node(depth)
+                    const summary = $from.parent
+                    const next = toggle.type.create(null, [
+                        summary.type.create(summary.attrs, summary.content.cut($to.parentOffset)),
+                        this.editor.schema.nodes.toggleContent.create(null, this.editor.schema.nodes.paragraph.create())
+                    ])
+                    const tr = this.editor.state.tr.delete($from.pos, $from.end())
+                    const after = tr.mapping.map($from.after(depth))
+                    tr.insert(after, next)
+                    tr.setSelection(TextSelection.create(tr.doc, after + 2))
+                    this.editor.view.dispatch(tr.scrollIntoView())
+                    return true
+                }
+                const bodyStart = $from.after() + 1
+                const tr = this.editor.state.tr
+                if (!$from.node(depth).lastChild!.firstChild!.isTextblock)
+                    tr.insert(bodyStart, this.editor.schema.nodes.paragraph.create())
+                tr.setSelection(TextSelection.create(tr.doc, bodyStart + 1))
+                this.editor.view.dispatch(tr.scrollIntoView())
+                return true
             }
         }
     }
@@ -173,18 +210,46 @@ const ToggleContent = Node.create({
     renderHTML: () => ['div', { 'data-type': 'toggleContent' }, 0],
     addKeyboardShortcuts() {
         return {
+            Enter: () => {
+                const { $from, empty } = this.editor.state.selection
+                if (
+                    !this.editor.isEditable ||
+                    this.editor.view.composing ||
+                    !empty ||
+                    $from.parent.type.name !== 'paragraph' ||
+                    $from.parent.content.size ||
+                    $from.node($from.depth - 1).type.name !== 'toggleContent'
+                )
+                    return false
+                // StarterKit lifts empty blocks before splitting them; toggle bodies keep blank lines.
+                return this.editor.commands.splitBlock()
+            },
             Backspace: () => {
                 const { $from, empty } = this.editor.state.selection
                 if (
                     !this.editor.isEditable ||
                     !empty ||
-                    $from.parent.type.name !== 'paragraph' ||
+                    !$from.parent.isTextblock ||
                     $from.parentOffset ||
                     $from.depth < 3 ||
-                    $from.node($from.depth - 1).type.name !== 'toggleContent' ||
-                    $from.index($from.depth - 1) !== 0
+                    $from.node($from.depth - 1).type.name !== 'toggleContent'
                 )
                     return false
+                if (!$from.parent.content.size) {
+                    const bodyDepth = $from.depth - 1
+                    if ($from.node(bodyDepth).childCount === 1)
+                        return backspaceFromToggleBody(this.editor, $from.depth - 2)
+                    if ($from.index(bodyDepth) === $from.node(bodyDepth).childCount - 1)
+                        return moveToggleBlock(this.editor, true)
+                    // Remove only this blank line; following blocks must stay in the toggle.
+                    const start = $from.before()
+                    const tr = this.editor.state.tr.delete(start, $from.after())
+                    // Backward deletion returns to the previous block, not the following text.
+                    tr.setSelection(TextSelection.near(tr.doc.resolve(start), -1))
+                    this.editor.view.dispatch(tr.scrollIntoView())
+                    return true
+                }
+                if ($from.index($from.depth - 1) !== 0) return false
                 return backspaceFromToggleBody(this.editor, $from.depth - 2)
             }
         }
@@ -230,12 +295,46 @@ const DashTypography = Extension.create({
     }
 })
 
+const BlockSelectAll = Extension.create({
+    name: 'blockSelectAll',
+    priority: 1100,
+    addKeyboardShortcuts() {
+        return {
+            'Mod-a': () => {
+                const { selection } = this.editor.state
+                const { $from, $to, from, to } = selection
+                if (
+                    selection instanceof TextSelection &&
+                    $from.sameParent($to) &&
+                    $from.parent.isTextblock &&
+                    $from.parent.content.size > 0 &&
+                    (from !== $from.start() || to !== $from.end())
+                ) {
+                    return this.editor.commands.setTextSelection({ from: $from.start(), to: $from.end() })
+                }
+                return this.editor.commands.selectAll()
+            }
+        }
+    }
+})
+
 export const journalExtensions = () => [
+    JournalDirection,
+    JournalBlockquote,
+    BlockSelectAll,
     JournalImageNode,
     ImageImportPositions,
-    StarterKit.configure({ heading: { levels: [1, 2, 3, 4] }, link: { openOnClick: false } }),
+    JournalCodeBlock,
+    StarterKit.configure({
+        blockquote: false,
+        codeBlock: false,
+        heading: { levels: [1, 2, 3, 4] },
+        link: { openOnClick: false }
+    }),
     TaskList,
-    TaskItem.configure({ nested: true }),
+    // TaskItem's live node view uses HTMLAttributes, not renderHTML's data-type.
+    // Keep its editable content beside the checkbox in both rendered forms.
+    TaskItem.configure({ nested: true, HTMLAttributes: { 'data-type': 'taskItem' } }),
     Toggle,
     ToggleSummary,
     ToggleContent,

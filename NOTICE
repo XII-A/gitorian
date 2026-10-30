@@ -13,3 +13,9 @@ Electron's LICENSES.chromium.html. No Arc Pro source is included.
 The GitHub circular mark is from GitHub's MIT-licensed Primer Octicons:
 https://github.com/primer/octicons/blob/main/icons/mark-github-24.svg
 Its full MIT notice is embedded in src/renderer/assets/github-mark.svg.
+
+Header sky cloud/glass shader and seeded noise adapted from 23rd by radiumcoders:
+https://github.com/radiumcoders/23rd.dev/tree/main/registry/shader-sky
+The upstream README explicitly invites copying registry modules into applications
+and shipping them. Gitorian supplies a time palette and bounded header lifecycle;
+no upstream demo, theme integration, pointer interaction or lightning is used.

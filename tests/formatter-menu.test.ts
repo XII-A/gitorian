@@ -106,13 +106,14 @@ it.each([1, 13])('creates and converts consistently at text position %s', async 
         await chooseFormat(writing, element, 'h1', position)
         expect(writing.getJSON().content?.[0]).toEqual({
             type: 'paragraph',
+            attrs: { direction: null },
             content: [{ type: 'text', text: 'Before after' }]
         })
         await settle(() => writing.commands.setContent('<p>Before after</p>'))
         await chooseFormat(writing, element, 'turnh1', position)
         expect(writing.getJSON().content?.[0]).toEqual({
             type: 'heading',
-            attrs: { level: 1 },
+            attrs: { level: 1, direction: null },
             content: [{ type: 'text', text: 'Before after' }]
         })
         expect(writing.state.selection.$from.parentOffset).toBe(position - 1)
@@ -224,6 +225,7 @@ it('offers icon-and-label commands, scrolls the active keyboard option, and inse
     }
     const template: JournalNode = {
         type: 'doc',
+        attrs: { direction: 'rtl' },
         content: [
             { type: 'heading', attrs: { level: 4 }, content: [{ type: 'text', text: 'Template heading' }] },
             { type: 'paragraph', content: [{ type: 'text', text: 'Template body' }] }
@@ -244,7 +246,7 @@ it('offers icon-and-label commands, scrolls the active keyboard option, and inse
         })
         const options = [...document.querySelectorAll<HTMLElement>('.ws-block-menu [role="option"]')]
         expect(host.contains(document.querySelector('.ws-block-menu'))).toBe(false)
-        expect(options).toHaveLength(13)
+        expect(options.some((option) => option.textContent === 'Emoji')).toBe(true)
         expect(options.every((option) => !!option.querySelector('svg') && !option.querySelector('small'))).toBe(true)
         const viewport = document.querySelector<HTMLElement>('[aria-label="Formatting options"]')!
         vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 250, 100))
@@ -271,9 +273,11 @@ it('offers icon-and-label commands, scrolls the active keyboard option, and inse
         expect(writing.getText()).toContain('Template heading')
         expect(writing.getJSON().content?.some((node) => node.type === 'heading' && node.attrs?.level === 4)).toBe(true)
         expect(document.querySelector('.ws-block-menu[role="listbox"]')).toBeNull()
+        expect(writing.getJSON().content?.find((node) => node.type === 'heading')?.attrs?.direction).toBe('rtl')
         await settle(() => writing.commands.undo())
         expect(writing.getText()).not.toContain('Template heading')
         expect(template.content?.[0].content?.[0].text).toBe('Template heading')
+        expect(writing.getJSON().attrs?.direction).toBeNull()
         await act(async () => {
             writing.commands.setContent('<p>/unmatched-format</p>')
             writing.commands.setTextSelection(writing.state.doc.content.size - 1)

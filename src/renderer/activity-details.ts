@@ -1,4 +1,11 @@
 import type { Activity, Repository } from '../shared/model'
+import { providerRemote } from '../shared/provider-accounts'
+
+export function activityProvider(activity: Activity) {
+    if (activity.remoteSource) return activity.remoteSource.provider
+    if (activity.url?.startsWith('https://gitlab.com/')) return 'gitlab'
+    if (activity.url?.startsWith('https://github.com/')) return 'github'
+}
 
 /** Commit membership does not establish origin. A matching PR head supplies a known source branch. */
 export function activityBranches(activity: Activity, activities: Activity[] = []) {
@@ -58,19 +65,20 @@ export function orderedFiles(files: Activity['files']): Activity['files'] {
     )
 }
 
-/** GitHub resolves relative Markdown paths against the repository's base branch. */
+/** Resolve relative descriptions against their originating project and base branch. */
 export function markdownUrl(value: string, activity: Activity, repository?: Repository): string {
     try {
         if (!value) return ''
-        const remote = repository?.remote.replace(/\.git\/?$/, '').replace(/\/$/, '')
-        const githubRepository =
-            /^(?:https?:\/\/|git@|ssh:\/\/git@)github\.com[:/]([^/]+\/[^/]+)$/.exec(remote ?? '')?.[1] ??
-            /^https:\/\/github\.com\/([^/]+\/[^/]+)\//.exec(activity.url ?? '')?.[1]
-        const repositoryUrl = githubRepository ? `https://github.com/${githubRepository}` : remote
+        const fromUrl = /^(https:\/\/(?:github\.com|gitlab\.com)\/.+?)\/(?:-\/)?(?:pull|merge_requests|commit)\//.exec(
+            activity.url ?? ''
+        )?.[1]
+        const remote =
+            activity.remoteSource ?? providerRemote(fromUrl ?? '') ?? providerRemote(repository?.remote ?? '')
+        const repositoryUrl = remote ? `https://${remote.host}/${remote.path}` : undefined
         const base = value.startsWith('#')
             ? activity.url
             : repositoryUrl && /^https?:\/\//.test(repositoryUrl)
-              ? `${repositoryUrl}/blob/${encodeURIComponent(activity.base ?? repository?.base ?? 'HEAD')}/`
+              ? `${repositoryUrl}/${remote?.provider === 'gitlab' ? '-/' : ''}blob/${encodeURIComponent(activity.base ?? repository?.base ?? 'HEAD')}/`
               : activity.url
         const url = new URL(value, base)
         if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return ''

@@ -10,14 +10,24 @@ const output = process.env.GITORIAN_VERIFY_OUTPUT
 if (!scratch || !output) throw new Error('Run pnpm verify hub-dialog')
 app.setPath('userData', join(scratch, 'profile'))
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
-const repository = join(scratch, 'counted-work')
-mkdirSync(repository)
-const git = (...args) => execFileSync('git', args, { cwd: repository, windowsHide: true, stdio: 'ignore' })
-git('init', '-b', 'main')
-git('config', 'user.name', 'Fixture author')
-git('config', 'user.email', 'fixture@example.com')
-git('commit', '--allow-empty', '-m', 'First activity')
-dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [repository] })
+const samples = [
+    { name: 'weekly-j', count: 18, title: 'Polish the weekly overview' },
+    { name: 'design-system', count: 11, title: 'Refine chart interactions' },
+    { name: 'api-service', count: 7, title: 'Improve request validation' },
+    { name: 'docs-site', count: 4, title: 'Document the new workflow' }
+]
+const repositories = samples.map((sample) => {
+    const repository = join(scratch, sample.name)
+    mkdirSync(repository)
+    const git = (...args) => execFileSync('git', args, { cwd: repository, windowsHide: true, stdio: 'ignore' })
+    git('init', '-b', 'main')
+    git('config', 'user.name', 'Fixture author')
+    git('config', 'user.email', 'fixture@example.com')
+    for (let i = 0; i < sample.count; i++) git('commit', '--allow-empty', '-m', `${sample.title} (${i + 1})`)
+    return repository
+})
+let importIndex = 0
+dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [repositories[importIndex++]] })
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
 let started = false
 app.on('browser-window-created', (_, window) => {
@@ -38,21 +48,55 @@ app.on('browser-window-created', (_, window) => {
         try {
             await wait(`!!document.querySelector('[aria-label="Open settings"]')`)
             // Retire onboarding only in this disposable profile. Repository import is fixture setup.
-            await js(`localStorage.setItem('gitorian:onboarding:v1:local', 'dismissed')`)
+            await js(
+                `Object.keys(localStorage).filter(key => key.startsWith('gitorian:onboarding:v1:')).forEach(key => localStorage.setItem(key, 'dismissed')); localStorage.setItem('gitorian:onboarding:v1:local', 'dismissed')`
+            )
             await new Promise((done) => {
                 window.webContents.once('did-finish-load', done)
                 window.webContents.reload()
             })
             await wait('!!document.querySelector(".hub-filters")')
-            record({ setup: await js(`window.journal.invoke({type:'addRepository'})`) })
+            for (const sample of samples)
+                record({ sample, setup: await js(`window.journal.invoke({type:'addRepository'})`) })
             await new Promise((done) => {
                 window.webContents.once('did-finish-load', done)
                 window.webContents.reload()
             })
             await wait(`!!document.querySelector('[aria-label="Refresh activity"]')`)
             await js(`document.querySelector('[aria-label="Refresh activity"]').click()`)
-            await wait(`document.querySelectorAll('.hub-activity').length === 1`)
+            await wait(`document.querySelectorAll('.hub-activity').length >= 5`)
+            await wait(`document.querySelectorAll('.repository-chart button').length === 4`)
+            const fixture = await js(`window.journal.invoke({type:'state'})`)
+            assert.equal(fixture.state.activities.length, 40, 'Sample activity count')
+            assert.equal(fixture.state.repositories.length, 4, 'Sample repository count')
+            record({ fixture: samples, totalActivities: fixture.state.activities.length })
             await pause(500)
+            window.setSize(1440, 1000)
+            await js(`document.querySelector('.repository-activity').scrollIntoView({block:'center'})`)
+            await pause(900)
+            writeFileSync(join(output, 'repository-waffle.png'), (await window.webContents.capturePage()).toPNG())
+            // Expand the real timeline to give the sidebar room to remain docked.
+            await js(
+                `Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('Show 35 more')).click()`
+            )
+            await wait(`document.querySelectorAll('.hub-activity').length === 40`)
+            await pause(700)
+            const dock = await js(`(() => {
+                const card = document.querySelector('.repository-activity')
+                const viewport = document.querySelector('.hub-scroll').firstElementChild
+                const top = card.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop
+                viewport.scrollTop = top + 180
+                return { top, inset: parseFloat(getComputedStyle(card).top) }
+            })()`)
+            await pause(500)
+            const firstDock = await js(`document.querySelector('.repository-activity').getBoundingClientRect().top`)
+            await js(`document.querySelector('.hub-scroll').firstElementChild.scrollTop += 160`)
+            await pause(500)
+            const secondDock = await js(`document.querySelector('.repository-activity').getBoundingClientRect().top`)
+            assert.ok(Math.abs(firstDock - secondDock) < 2, 'Repository card stays docked while activity scrolls')
+            record({ action: 'Scroll expanded activity with sticky repository card', dock, firstDock, secondDock })
+            writeFileSync(join(output, 'repository-sticky.png'), (await window.webContents.capturePage()).toPNG())
+            await js(`document.querySelector('.hub-scroll').firstElementChild.scrollTop = 0`)
             const measure = () =>
                 js(`(() => {
                 const rect = node => { const r = node.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height} }

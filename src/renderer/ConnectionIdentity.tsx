@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { motionTokens } from './components/arc/lib/motion-tokens'
+import { motionTokens } from './components/arc/motion-tokens'
 
 /** Prepare the account in layout while hidden; reveal only after the action has landed. */
 export function ConnectionIdentity({ ready, children }: { ready: boolean; children: ReactNode }) {

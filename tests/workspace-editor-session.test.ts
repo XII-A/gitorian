@@ -4,11 +4,12 @@ import { createRoot } from 'react-dom/client'
 import type { Editor as TiptapEditor } from '@tiptap/react'
 import { expect, it, vi } from 'vitest'
 import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 import type { Command, Reply } from '../src/shared/model'
 
+const notifications = vi.hoisted(() => ({ toast: vi.fn(), dismiss: vi.fn(), update: vi.fn() }))
 vi.mock('../src/renderer/components/arc/toast-stack/toast-stack', () => ({
-    useToastStack: () => ({ toast: vi.fn(), dismiss: vi.fn() })
+    useToastStack: () => notifications
 }))
 
 it('keeps actual editor revisions through idle saves, title edits, citations, in-flight writes and pagehide', async () => {
@@ -27,13 +28,18 @@ it('keeps actual editor revisions through idle saves, title edits, citations, in
     const run = vi.fn((command: Command) => {
         saved.push(structuredClone(command))
         return new Promise<Reply>((resolve) => {
-            finish = resolve
+            finish = (reply) =>
+                resolve({
+                    ...reply,
+                    ...(command.type === 'draft'
+                        ? { draftSaved: { id: command.draft.id, version: command.draft.version + 1 } }
+                        : {})
+                })
         })
     })
     const props = {
         state,
         week: '2026-10-05',
-        sample: false,
         notionConnected: true,
         run,
         publishTarget: null,
@@ -61,7 +67,7 @@ it('keeps actual editor revisions through idle saves, title edits, citations, in
         expect(serialize).toHaveBeenCalledTimes(1)
         expect(saved[0]).toMatchObject({ type: 'draft', draft: { body: writing.getJSON() } })
         await update(() => {
-            finish?.({ state, connections: { github: false, notion: true, protectedStorage: false } })
+            finish?.({ state, connections: { remote: false, notion: true, protectedStorage: false } })
         })
         await update(() => writing.commands.insertContent(' second'))
         // A title change must read the current editor revision rather than feed an older saved body back into it.
@@ -88,14 +94,14 @@ it('keeps actual editor revisions through idle saves, title edits, citations, in
         expect(saved[1]).toMatchObject({ type: 'draft', draft: { title: 'New title', body: writing.getJSON() } })
         await update(() => writing.commands.insertContent(' last'))
         await update(() => {
-            finish?.({ state, connections: { github: false, notion: true, protectedStorage: false } })
+            finish?.({ state, connections: { remote: false, notion: true, protectedStorage: false } })
         })
         expect(host.querySelector('[role="status"]')?.textContent).toContain('Saving')
         await update(() => window.dispatchEvent(new Event('pagehide')))
         expect(saved[2]).toMatchObject({ type: 'draft', draft: { body: writing.getJSON() } })
         expect(localStorage.getItem(localStorage.key(0)!)).toContain('last')
         await update(() => {
-            finish?.({ state, connections: { github: false, notion: true, protectedStorage: false } })
+            finish?.({ state, connections: { remote: false, notion: true, protectedStorage: false } })
         })
     } finally {
         await update(() => root.unmount())

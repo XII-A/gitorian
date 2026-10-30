@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react'
 import type { Activity, Repository } from '../shared/model'
-import { localDate } from '../shared/model'
+import { ActivityDayRows, groupActivityDays } from './ActivityDays'
+import type { useActivityDays } from './ActivityDays'
 import { formatDay } from './workspace-model'
 import { ActivityRow } from './ActivityRow'
 import { ActivityHover } from './ActivityHover'
@@ -40,6 +41,7 @@ const WorkspaceActivityRow = memo(function WorkspaceActivityRow({
 
 export const WorkspaceActivityList = memo(function WorkspaceActivityList({
     activities,
+    dayFilter,
     repositories,
     timezone,
     selectedId,
@@ -50,6 +52,7 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
     refreshing = false
 }: {
     activities: Activity[]
+    dayFilter: ReturnType<typeof useActivityDays>
     repositories: Repository[]
     timezone: string
     selectedId?: string
@@ -59,16 +62,10 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
     onEmptyAction: () => void
     refreshing?: boolean
 }) {
-    const groups = useMemo(() => {
-        const days = new Map<string, Activity[]>()
-        for (const activity of activities) {
-            const day = localDate(new Date(activity.date), timezone)
-            const group = days.get(day) ?? []
-            group.push(activity)
-            days.set(day, group)
-        }
-        return [...days]
-    }, [activities, timezone])
+    const groups = useMemo(
+        () => groupActivityDays(activities, timezone, dayFilter.day),
+        [activities, timezone, dayFilter.day]
+    )
     const names = useMemo(
         () => new Map(repositories.map((repository) => [repository.id, repository.name])),
         [repositories]
@@ -82,22 +79,34 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
                             <h3>{formatDay(day, { weekday: 'long' })}</h3>
                             <span>{formatDay(day)}</span>
                         </header>
-                        <ul className="activity-row-list">
-                            {items.map((activity, index) => (
-                                <li key={activity.id}>
-                                    <WorkspaceActivityRow
-                                        activity={activity}
-                                        repositoryName={names.get(activity.repositoryId) ?? 'Repository'}
-                                        connected={index < items.length - 1}
-                                        selected={selectedId === activity.id}
-                                        canCite={canCite}
-                                        onInspect={onInspect}
-                                    />
-                                </li>
-                            ))}
-                        </ul>
+                        <ActivityDayRows
+                            day={day}
+                            virtualize={activities.length > 500}
+                            items={items}
+                            focused={dayFilter.day !== 'all'}
+                            expanded={dayFilter.expanded.has(day)}
+                            onExpandedChange={(open) => dayFilter.toggle(day, open)}
+                            renderRow={(activity, connected) => (
+                                <WorkspaceActivityRow
+                                    activity={activity}
+                                    repositoryName={names.get(activity.repositoryId) ?? 'Repository'}
+                                    connected={connected}
+                                    selected={selectedId === activity.id}
+                                    canCite={canCite}
+                                    onInspect={onInspect}
+                                />
+                            )}
+                        />
                     </section>
                 ))
+            ) : dayFilter.day !== 'all' ? (
+                <div className="ws-activity-empty">
+                    <h3>No matching activity for {formatDay(dayFilter.day, { weekday: 'long' })}</h3>
+                    <p>Choose another day or adjust the activity filters.</p>
+                    <Button variant="secondary" size="sm" onClick={() => dayFilter.setDay('all')}>
+                        Show all days
+                    </Button>
+                </div>
             ) : (
                 <div className="ws-activity-empty">
                     <h3>

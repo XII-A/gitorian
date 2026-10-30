@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 
 /** Runs inside the existing provider-boundary fixture, through the real renderer, preload and store. */
-export async function onboardingJourney({ window, directory, output, js, wait, assert, click, approveNotion, record }) {
+export async function onboardingJourney({ window, directory, output, js, wait, assert, click, record }) {
     if (process.env.GITORIAN_VERIFY_ONBOARDING_DISCLOSURE === '1') {
         await onboardingDisclosureJourney({ window, output, js, wait })
         return
@@ -141,7 +141,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         writeFileSync(join(output, `${name}.png`), (await window.webContents.capturePage()).toPNG())
         record({ screenshot: `${name}.png`, text: await js('document.body.innerText') })
     }
-    const key = 'gitorian:onboarding:v1:local'
+    const key = await js(`window.journal.invoke({type:'state'}).then(r=>'gitorian:onboarding:v1:'+r.state.restoreId)`)
     const reload = async () => {
         const loaded = new Promise((done) => window.webContents.once('did-finish-load', done))
         window.webContents.reload()
@@ -172,7 +172,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
     await assert(`(() => {
         const preview=document.querySelector('.hub-activity-preview');
         const illustration=preview?.querySelector('[aria-hidden="true"][inert]');
-        return preview?.textContent.includes('Your commits, pull requests, and reviews will appear here.') && illustration && !preview.querySelector('button,a,input,[tabindex], [aria-busy="true"]') && illustration.getAnimations({subtree:true}).length===0;
+        return preview?.textContent.includes('Your commits, requests, and reviews will appear here.') && illustration && !preview.querySelector('button,a,input,[tabindex], [aria-busy="true"]') && illustration.getAnimations({subtree:true}).length===0;
     })()`)
     await shot('01-first-launch')
     await checkHeaderShape('first-launch')
@@ -416,34 +416,17 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         await wait(`!!${setupCard}`)
         await actStep('accounts')
         await wait(
-            `!!document.querySelector('[aria-label="GitHub connection"]') && !document.querySelector('.hub-setup-popover')`
+            `!!document.querySelector('[aria-label="GitHub accounts"]') && !document.querySelector('.hub-setup-popover')`
         )
     } else {
         await shot('05-inline-setup')
         await actStep('accounts')
     }
-    await click('Connect GitHub')
-    await wait(`window.journal.invoke({type:'state'}).then(r=>r.connections.github)`)
+    await click('Add GitHub account')
+    await wait(`window.journal.invoke({type:'state'}).then(r=>r.connections.remote)`)
     await closeSettings()
     await resume()
-    await wait(`document.querySelector('[role="progressbar"]').getAttribute('aria-valuenow')==='0'`)
-    await shot('06-one-account-incomplete')
-    await actStep('accounts')
-    await wait(`!!document.querySelector('[aria-label="Notion connection"]')`)
-    const notionScope = `document.querySelector('[aria-label="Notion connection"]')`
-    await click('Connect', notionScope)
-    await wait(`${notionScope}.querySelector('.github-signin-surface')?.dataset.phase==='device'`)
-    await approveNotion()
-    await wait(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)') !== null`)
-    await js(`${notionScope}.querySelector('[role="combobox"]:not([inert] *)').click()`)
-    await wait(`!!document.querySelector('button[aria-label="Expand Personal"]')`)
-    await click('Expand Personal')
-    await wait(`!!document.querySelector('[role="treeitem"][title="Engineering notes"]')`)
-    await js(`document.querySelector('[role="treeitem"][title="Engineering notes"]').click()`)
-    await click('Confirm', notionScope)
-    await wait(`window.journal.invoke({type:'state'}).then(r=>r.connections.notion)`)
-    await closeSettings()
-    await resume()
+    await assert(`window.journal.invoke({type:'state'}).then(r=>!r.connections.notion)`)
     await wait(`document.querySelector('[role="progressbar"]').getAttribute('aria-valuenow')==='1'`)
     await wait(`!${setupCard}.querySelector('[data-step="accounts"]')`)
     await shot('07-accounts-complete')
@@ -478,7 +461,9 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
     await assert(`!document.querySelector('.hub-setup-trigger') && !${setupCard}`)
     await assert(`localStorage.getItem(${JSON.stringify(key)})==='complete'`)
     // Explicit fixture command proves completion is permanent after a later disconnect.
-    await js(`window.journal.invoke({type:'disconnect',service:'github'})`)
+    await js(
+        `window.journal.invoke({type:'state'}).then(r=>window.journal.invoke({type:'providerDisconnect',accountId:r.state.accounts.find(a=>a.status==='connected').id}))`
+    )
     await reload()
     await assert(`!document.querySelector('.hub-setup-trigger') && !${setupCard}`)
     writeFileSync(
@@ -502,12 +487,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         JSON.stringify(
             {
                 passed: true,
-                simulated: [
-                    'GitHub and Notion provider HTTP',
-                    'OAuth browser launch',
-                    'avatar transport',
-                    'native folder picker'
-                ],
+                simulated: ['GitHub provider HTTP', 'OAuth browser launch', 'avatar transport', 'native folder picker'],
                 real: [
                     'Electron renderer',
                     'preload',
@@ -524,8 +504,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
                     'separate dismiss target and tooltip',
                     'dismiss while collapsed and reload',
                     'keyboard popover Escape and focus return',
-                    'one provider incomplete',
-                    'both providers complete',
+                    'one provider completes account setup without Notion',
                     'real repository import',
                     'completed reload and later disconnect',
                     'existing profile',

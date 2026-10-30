@@ -316,7 +316,7 @@ export default defineConfig({
             version: '19.3.0'
         }
     },
-    ignorePatterns: ['.ai-docs', 'node_modules', 'out', 'release', 'dist', 'coverage'],
+    ignorePatterns: ['.ai-docs', '.reference', 'node_modules', 'out', 'release', 'dist', 'coverage'],
     overrides: [
         {
             files: frontendFiles,

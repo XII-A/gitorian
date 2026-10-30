@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 import { activityLink, filterWorkspaceActivity } from '../src/renderer/workspace-model'
 
 describe('weekly activity and sample references', () => {
@@ -17,7 +17,7 @@ describe('weekly activity and sample references', () => {
         })
         expect(found.map((activity) => activity.id)).toEqual(['sample:2026-10-05:0'])
         expect(
-            filterWorkspaceActivity(state, '2026-10-05', { ...filters, kind: 'pr' }).every(
+            filterWorkspaceActivity(state, '2026-10-05', { ...filters, kind: 'change-request' }).every(
                 (activity) => activity.kind !== 'commit'
             )
         ).toBe(true)

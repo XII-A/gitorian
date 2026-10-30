@@ -4,7 +4,7 @@ import type { Command, Reply } from '../shared/model'
 import { WeeklyHub } from './WeeklyHub'
 import { Settings } from './Settings'
 import { CommandMenu } from './components/CommandMenu'
-import { Button } from './components/arc/button/button'
+import { StartupRecovery } from './StartupRecovery'
 import { Workspace } from './Workspace'
 import { WorkspaceReference } from './WorkspaceReference'
 import { localDate, weekOf } from '../shared/model'
@@ -12,7 +12,7 @@ import type { Activity } from '../shared/model'
 import { journalWeek } from './hub-model'
 import { AcquisitionStatus } from './AcquisitionStatus'
 import { BackgroundNotifications } from './BackgroundNotifications'
-import { ToastStack, ToastStackProvider } from './components/arc/toast-stack/toast-stack'
+import { ToastStack, ToastStackProvider, useToastStack } from './components/arc/toast-stack/toast-stack'
 import { reconcileReply } from './activity-cache'
 import { expandReply, stateCursor } from '../shared/state-updates'
 import { WindowTitleBar } from './WindowTitleBar'
@@ -36,6 +36,10 @@ function JournalApp() {
     const [reply, setReply] = useState<Reply>()
     const [remotes, setRemotes] = useState<Record<string, string[]>>({})
     const [error, setError] = useState('')
+    const [startupPending, setStartupPending] = useState(false)
+    const [startupFailures, setStartupFailures] = useState(0)
+    const startupInFlight = useRef(false)
+    const startupFocus = useRef(false)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [settingsSection, setSettingsSection] = useState<SetupSection>('repositories')
     const onboarding = useOnboarding(reply)
@@ -45,39 +49,78 @@ function JournalApp() {
     const [workspaceWriting, setWorkspaceWriting] = useState(false)
     const [reference, setReference] = useState<{ kind: string; id: string }>()
     const [sourcesOpen, setSourcesOpen] = useState(false)
+    const { toast, update, dismiss } = useToastStack()
+    const commandSurfaceVisible = useRef(false)
+    commandSurfaceVisible.current = !settingsOpen && !reference
     const polling = useRef(false)
     const currentReply = useRef(reply)
     currentReply.current = reply
-    const run = useCallback(async (command: Command): Promise<Reply | undefined> => {
-        try {
-            const base = currentReply.current?.state
-            const result = window.journal.updates
-                ? expandReply(await window.journal.updates(command, base && stateCursor(base)), base)
-                : await window.journal.invoke(command)
-            startTransition(() => setReply((current) => reconcileReply(current, result, command)))
-            if ('remotes' in result) {
-                const next = result.remotes as Record<string, string[]>
-                setRemotes((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next))
+    const run = useCallback(
+        async (command: Command): Promise<Reply | undefined> => {
+            const startup = !currentReply.current
+            if (startup && startupInFlight.current) return undefined
+            if (startup) {
+                startupInFlight.current = true
+                setStartupPending(true)
             }
-            setError('')
-            return result
-        } catch (failure) {
-            if (['publish', 'reconcile'].includes(command.type)) {
-                // The writing pane owns actionable publishing toasts. Refresh save state
-                // even when the command failed, so uncertain writes stay blocked.
-                try {
-                    const refreshed = await window.journal.invoke({ type: 'state' })
-                    startTransition(() => setReply((current) => reconcileReply(current, refreshed, { type: 'state' })))
-                    setError('')
-                    return refreshed
-                } catch {
-                    /* Keep the current draft available. */
+            try {
+                const base = currentReply.current?.state
+                const result = window.journal.updates
+                    ? expandReply(await window.journal.updates(command, base && stateCursor(base)), base)
+                    : await window.journal.invoke(command)
+                startTransition(() => setReply((current) => reconcileReply(current, result, command)))
+                if ('remotes' in result) {
+                    const next = result.remotes as Record<string, string[]>
+                    setRemotes((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next))
                 }
+                if (command.type !== 'state') dismiss(`journal-command:${command.type}`)
                 setError('')
-            } else setError(String(failure))
-            return undefined
-        }
-    }, [])
+                return result
+            } catch (failure) {
+                if (startup) setStartupFailures((count) => count + 1)
+                if (['draft', 'publish', 'reconcile'].includes(command.type)) {
+                    // The writing pane owns save recovery. A refreshed snapshot is not
+                    // a draftSaved acknowledgment; it lets the pane detect stale versions.
+                    try {
+                        const refreshed = await window.journal.invoke({ type: 'state' })
+                        startTransition(() =>
+                            setReply((current) => reconcileReply(current, refreshed, { type: 'state' }))
+                        )
+                        setError('')
+                        return refreshed
+                    } catch {
+                        /* Keep the current draft available. */
+                    }
+                    setError('')
+                } else if (commandSurfaceVisible.current && currentReply.current) {
+                    // These surfaces own their recovery. Polling must not replay notifications.
+                    if (!['state', 'details', 'history'].includes(command.type)) {
+                        const refresh = command.type === 'refresh'
+                        toast({
+                            id: `journal-command:${command.type}`,
+                            type: 'error',
+                            duration: 0,
+                            title: refresh ? 'Could not refresh activity' : 'Could not complete action',
+                            action: {
+                                label: refresh ? 'Retry refresh' : 'Retry action',
+                                onClick: (id) => {
+                                    update(id, { type: 'loading', title: 'Retrying?', action: undefined })
+                                    void run(command)
+                                }
+                            }
+                        })
+                    }
+                } else setError(String(failure))
+                return undefined
+            } finally {
+                if (startup) {
+                    startupInFlight.current = false
+                    setStartupPending(false)
+                }
+            }
+        },
+        [toast, update, dismiss]
+    )
     useEffect(() => {
         const parameters = new URLSearchParams(window.location.search)
         const referenceKind = parameters.get('reference')
@@ -94,7 +137,8 @@ function JournalApp() {
         void run({ type: 'state' })
         let lastPoll = Date.now()
         const timer = setInterval(() => {
-            if (polling.current) return
+            // A failed startup waits for explicit recovery; polling must not race Retry.
+            if (polling.current || !currentReply.current) return
             const state = currentReply.current?.state
             const active = state?.repositoryImport?.status === 'running' || (!!state && activityUpdating(state))
             if (!active && Date.now() - lastPoll < 15000) return
@@ -137,6 +181,17 @@ function JournalApp() {
         window.addEventListener('keydown', keyboard)
         return () => window.removeEventListener('keydown', keyboard)
     }, [screen, settingsOpen, commandsOpen, reference])
+    useEffect(() => {
+        if (!reply || !startupFocus.current) return
+        startupFocus.current = false
+        // The recovery action has unmounted. Preserve focus on surviving controls.
+        if (document.activeElement !== document.body) return
+        const heading = document.querySelector<HTMLElement>('main h1, main h2, main h3')
+        if (heading) {
+            heading.tabIndex = -1
+            heading.focus({ preventScroll: true })
+        }
+    }, [reply])
     const openWorkspace = (date?: string, writing = false) => {
         setWorkspaceWeek(date ?? (reply ? weekOf(new Date(), reply.state.settings) : ''))
         setWorkspaceActivity(undefined)
@@ -172,6 +227,7 @@ function JournalApp() {
                         onOpenChange={setSourcesOpen}
                         onSettings={() => {
                             setSourcesOpen(false)
+                            setSettingsSection('repositories')
                             setSettingsOpen(true)
                         }}
                     />
@@ -179,7 +235,10 @@ function JournalApp() {
                         state={reply.state}
                         run={run}
                         settingsOpen={settingsOpen}
-                        onSources={() => setSourcesOpen(true)}
+                        onSources={() => {
+                            dismiss('activity-problems')
+                            setSourcesOpen(true)
+                        }}
                     />
                 </>
             )}
@@ -190,12 +249,14 @@ function JournalApp() {
                     state={reply.state}
                     notionConnected={reply.connections.notion}
                     run={run}
-                    error={error}
                     initialWeek={workspaceWeek || weekOf(new Date(), reply.state.settings)}
                     initialActivity={workspaceActivity}
                     initialWrite={workspaceWriting}
                     onBack={backToHub}
-                    onSources={() => setSourcesOpen(true)}
+                    onSources={() => {
+                        dismiss('activity-problems')
+                        setSourcesOpen(true)
+                    }}
                     onSettings={() => setSettingsOpen(true)}
                 />
             ) : reply && !reference ? (
@@ -204,7 +265,10 @@ function JournalApp() {
                     state={reply.state}
                     run={run}
                     error={error}
-                    onSources={() => setSourcesOpen(true)}
+                    onSources={() => {
+                        dismiss('activity-problems')
+                        setSourcesOpen(true)
+                    }}
                     onSettings={() => setSettingsOpen(true)}
                     onWrite={(date) => openWorkspace(date, true)}
                     onActivity={openActivity}
@@ -216,10 +280,15 @@ function JournalApp() {
                     }}
                 />
             ) : (
-                <main className="loading">
-                    <p role={error ? 'alert' : 'status'}>{error || 'Opening your journal…'}</p>
-                    {error && <Button onClick={() => run({ type: 'state' })}>Try again</Button>}
-                </main>
+                <StartupRecovery
+                    error={error}
+                    pending={startupPending}
+                    failures={startupFailures}
+                    onRetry={() => {
+                        startupFocus.current = true
+                        return run({ type: 'state' })
+                    }}
+                />
             )}
             {settingsOpen && reply && (
                 <Settings
@@ -232,7 +301,7 @@ function JournalApp() {
                     close={() => setSettingsOpen(false)}
                 />
             )}
-            {commandsOpen && (
+            {commandsOpen && reply && (
                 <CommandMenu
                     close={() => setCommandsOpen(false)}
                     commands={[

@@ -178,8 +178,7 @@ p {
     letter-spacing: 1px;
     color: var(--text-secondary);
 }
-.coverage-label,
-.local-label {
+.coverage-label {
     font-size: 10px;
     color: var(--text-secondary);
 }
@@ -237,14 +236,6 @@ p {
 .separator:focus-visible {
     background: var(--border-strong);
 }
-.draft-title {
-    font-size: 24px;
-    font-weight: 600;
-    letter-spacing: -0.6px;
-    background: transparent;
-    border: 0;
-    padding: 20px 0;
-}
 .editor-toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -286,11 +277,6 @@ p {
         12px ui-monospace,
         monospace;
 }
-.tiptap blockquote {
-    border-left: 3px solid var(--border-strong);
-    padding-left: 18px;
-    color: var(--text-secondary);
-}
 .tiptap a {
     color: var(--accent);
     text-decoration: underline;
@@ -323,17 +309,6 @@ p {
 }
 .selected-work p {
     margin-top: 12px;
-}
-.draft-footer {
-    position: sticky;
-    bottom: -24px;
-    background: var(--background);
-    border-top: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 0;
-    margin-top: 24px;
 }
 .file-diff {
     margin-top: 20px;
@@ -393,9 +368,62 @@ legend {
 }
 .loading {
     display: grid;
-    place-content: center;
-    height: 100vh;
-    text-align: center;
+    place-items: center;
+    min-height: 100dvh;
+    padding: var(--space-8);
+}
+.startup-loading-content {
+    display: grid;
+    justify-items: center;
+    position: relative;
+    min-width: 0;
+}
+.startup-logo,
+.startup-logo svg {
+    display: block;
+    width: 112px;
+    height: 112px;
+}
+.startup-logo [data-logo-band] {
+    animation: startup-band-wake calc(var(--duration-considered) * 3) var(--ease-in-out) infinite both;
+}
+.startup-logo [data-logo-band='2'] {
+    animation-delay: calc(var(--duration-fast) / 2);
+}
+.startup-logo [data-logo-band='3'] {
+    animation-delay: var(--duration-fast);
+}
+.startup-loading-label {
+    position: absolute;
+    top: calc(100% + var(--space-6));
+    white-space: nowrap;
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    opacity: 0;
+    animation: startup-label-reveal var(--duration-fast) var(--ease-enter) calc(var(--duration-considered) * 4) forwards;
+}
+@keyframes startup-band-wake {
+    0%,
+    70%,
+    100% {
+        opacity: 0.25;
+    }
+    18%,
+    42% {
+        opacity: 1;
+    }
+}
+@keyframes startup-label-reveal {
+    to {
+        opacity: 1;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .startup-logo [data-logo-band] {
+        animation: none;
+        opacity: 1;
+    }
 }
 .reference {
     height: 100vh;
@@ -432,32 +460,6 @@ legend {
         scroll-behavior: auto !important;
     }
 }
-/* Source recovery stays in its dialog. */
-.acquisition-sources {
-    display: grid;
-    gap: 16px;
-    font-size: var(--text-sm);
-}
-.acquisition-sources > div {
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border);
-    overflow-wrap: anywhere;
-    font-variant-numeric: tabular-nums;
-}
-.acquisition-sources > div:last-child {
-    border-bottom: 0;
-}
-.acquisition-sources p {
-    margin: 8px 0;
-    color: var(--text-secondary);
-}
-.acquisition-sources strong {
-    font-weight: 500;
-}
-.source-actions {
-    display: flex;
-    gap: 8px;
-}
 #root:has(> .writing-workspace) {
     display: flex;
     flex-direction: column;
@@ -481,4 +483,50 @@ legend {
 
 .journal-notifications {
     width: min(28rem, calc(100% - var(--space-8)));
+}
+
+.startup-recovery {
+    min-height: 100dvh;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    padding: var(--space-8);
+}
+.startup-recovery-content {
+    width: min(100%, 28rem);
+    min-width: 0;
+}
+.startup-retry {
+    min-width: 7rem;
+}
+.startup-diagnostics-block {
+    display: grid;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-inset);
+    background: color-mix(in oklab, var(--background) 80%, var(--foreground));
+}
+.startup-diagnostics-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+}
+.startup-diagnostics {
+    margin: 0;
+    padding: var(--space-4);
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    max-height: 12rem;
+    overflow: auto;
+    text-align: left;
 }

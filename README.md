@@ -6,7 +6,7 @@
 
 Turn your week's work into a journal you can return to.
 
-Gitorian is a desktop journal for developers. Review your Git commits, GitHub pull requests, and code reviews, then write about what you built and learned, with links back to the work. Keep drafts on your computer and publish to Notion when you're ready.
+Gitorian is a desktop journal for developers. Review your Git commits, GitHub and GitLab pull requests, and code reviews, then write about what you built and learned, with links back to the work. Autosave entries locally, search previous writing, and optionally publish to Notion.
 
 [Download for Windows](https://github.com/XII-A/gitorian/releases/latest) · [Read the user guide](docs/user-guide.md) · [Report a bug or request a feature](https://github.com/XII-A/gitorian/issues)
 
@@ -26,7 +26,7 @@ macOS and Linux packaging is available for development; published installers cur
 2. **Add repositories.** Open **Settings > Repositories**, choose the folder containing your local Git repositories, and select the ones to track.
 3. **Start writing.** Open a week, review the activity and diffs, and write an entry. Drafts save locally as you work.
 
-You can connect GitHub and Notion in **Settings > Connections** whenever you need them. See the [user guide](docs/user-guide.md) for images, repository settings, and integration setup.
+Connect GitHub or GitLab in **Settings > Connections** for pull requests and reviews to complete onboarding. Notion publishing is optional. See the [user guide](docs/user-guide.md) for images, repository settings, and integration setup.
 
 ## Your data and connections
 
@@ -40,7 +40,7 @@ Read the [data storage and privacy details](docs/user-guide.md#data-storage-and-
 
 ## For developers
 
-Gitorian uses Electron, React, TypeScript, and SQLite. To run it locally, install **Node.js 22.19 or newer**, **pnpm 10.24.0**, and Git:
+Gitorian uses Electron, React, TypeScript, and SQLite. To run it locally, install **Node.js 24.16 or newer**, **pnpm 10.24.0**, and Git:
 
 ```sh
 git clone https://github.com/XII-A/gitorian.git

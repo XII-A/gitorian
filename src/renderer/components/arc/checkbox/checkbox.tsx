@@ -1,11 +1,11 @@
-﻿'use client'
+'use client'
 
 import { forwardRef, useId, useState } from 'react'
 import type { ComponentPropsWithoutRef, ComponentRef } from 'react'
 import * as CheckboxPrimitive from '@radix-ui/react-checkbox'
 import { motion, useReducedMotion } from 'motion/react'
 import type { Transition } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './checkbox.module.css'
 
 export interface CheckboxProps extends ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root> {

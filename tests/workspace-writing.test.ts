@@ -3,8 +3,8 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
-import { sampleState } from '../src/renderer/workspace-sample'
-import type { Command, JournalNode } from '../src/shared/model'
+import { sampleState } from './workspace-fixture'
+import type { Command, JournalNode, Reply } from '../src/shared/model'
 import type { EditorSnapshot } from '../src/renderer/editor-snapshot'
 
 const notifications = vi.hoisted(() => ({
@@ -71,14 +71,13 @@ const body = (text: string): JournalNode => ({
 it('does no synchronous recovery writes or backend saves during a typing burst, then saves the latest document once', async () => {
     const state = sampleState('2026-10-05')
     const run = vi.fn((_command: Command) =>
-        Promise.resolve({ state, connections: { github: false, notion: true, protectedStorage: false } })
+        Promise.resolve({ state, connections: { remote: false, notion: true, protectedStorage: false } })
     )
     await update(() =>
         root.render(
             createElement(WorkspaceDraft, {
                 state,
                 week: '2026-10-05',
-                sample: false,
                 notionConnected: true,
                 run,
                 publishTarget: null,
@@ -110,7 +109,6 @@ it('keeps unsaved writing in recovery storage when leaving before the debounce f
             createElement(WorkspaceDraft, {
                 state,
                 week: '2026-10-05',
-                sample: false,
                 notionConnected: true,
                 run,
                 publishTarget: null,
@@ -131,14 +129,13 @@ it('checkpoints continuous typing and lets an existing empty draft apply the sav
     state.drafts[0].body = { type: 'doc', content: [{ type: 'paragraph' }] }
     state.settings.template = body('Weekly template')
     const run = vi.fn(() =>
-        Promise.resolve({ state, connections: { github: false, notion: true, protectedStorage: false } })
+        Promise.resolve({ state, connections: { remote: false, notion: true, protectedStorage: false } })
     )
     await update(() =>
         root.render(
             createElement(WorkspaceDraft, {
                 state,
                 week: '2026-10-05',
-                sample: false,
                 notionConnected: true,
                 run,
                 publishTarget: null,
@@ -160,47 +157,50 @@ it('checkpoints continuous typing and lets an existing empty draft apply the sav
     expect(state.settings.template).toEqual(body('Weekly template'))
 })
 
-it('puts an uncertain publish in an actionable toast, outside the document', async () => {
-    const state = sampleState('2026-10-05')
-    state.saves = [
-        {
-            id: 'save-1',
-            draftId: state.drafts[0].id,
-            status: 'unknown',
-            marker: 'test',
-            title: 'Week',
-            body: body('My writing'),
-            selections: [],
-            destination: { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' },
-            createdAt: new Date().toISOString()
-        }
-    ]
-    const run = vi.fn(() => Promise.resolve(undefined))
-    await update(() =>
-        root.render(
-            createElement(WorkspaceDraft, {
-                state,
-                week: '2026-10-05',
-                sample: false,
-                notionConnected: true,
-                run,
-                publishTarget: null,
-                onReady: vi.fn(),
-                onSettings: vi.fn()
-            })
+it.each([true, false])(
+    'keeps uncertain publication recovery actionable (Notion connected: %s)',
+    async (notionConnected) => {
+        const state = sampleState('2026-10-05')
+        state.saves = [
+            {
+                id: 'save-1',
+                draftId: state.drafts[0].id,
+                status: 'unknown',
+                marker: 'test',
+                title: 'Week',
+                body: body('My writing'),
+                selections: [],
+                destination: { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' },
+                createdAt: new Date().toISOString()
+            }
+        ]
+        const run = vi.fn(() => Promise.resolve(undefined))
+        await update(() =>
+            root.render(
+                createElement(WorkspaceDraft, {
+                    state,
+                    week: '2026-10-05',
+                    notionConnected,
+                    run,
+                    publishTarget: null,
+                    onReady: vi.fn(),
+                    onSettings: vi.fn()
+                })
+            )
         )
-    )
-    expect(container.querySelector('[role="alert"]')).toBeNull()
-    const toast = notifications.toast.mock.calls.at(-1)?.[0] as {
-        action: { label: string; onClick: () => void }
+        expect(container.querySelector('[role="alert"]')).toBeNull()
+        const toast = notifications.toast.mock.calls.at(-1)?.[0] as {
+            action: { label: string; onClick: () => void }
+        }
+        expect(toast).toMatchObject({ title: 'Verify the Notion save', action: { label: 'Verify save' } })
+        toast.action.onClick()
+        expect(run).toHaveBeenCalledWith({ type: 'reconcile', saveId: 'save-1' })
     }
-    expect(toast).toMatchObject({ title: 'Verify the Notion save', action: { label: 'Verify save' } })
-    toast.action.onClick()
-    expect(run).toHaveBeenCalledWith({ type: 'reconcile', saveId: 'save-1' })
-})
+)
 
 it('reopens published weekly writing as editable with a publish action', async () => {
     const state = sampleState('2026-10-05')
+    state.settings.destination = { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' }
     state.drafts[0].publishedEntryId = 'published-page'
     const run = vi.fn(() => Promise.resolve(undefined))
     await update(() =>
@@ -208,7 +208,6 @@ it('reopens published weekly writing as editable with a publish action', async (
             createElement(WorkspaceDraft, {
                 state,
                 week: '2026-10-05',
-                sample: false,
                 notionConnected: true,
                 run,
                 publishTarget: container,
@@ -253,14 +252,13 @@ it.each([false, true])(
             }
         ]
         const run = vi.fn(() =>
-            Promise.resolve({ state: saved, connections: { github: false, notion: true, protectedStorage: false } })
+            Promise.resolve({ state: saved, connections: { remote: false, notion: true, protectedStorage: false } })
         )
         await update(() =>
             root.render(
                 createElement(WorkspaceDraft, {
                     state,
                     week: '2026-10-05',
-                    sample: false,
                     notionConnected: true,
                     run,
                     publishTarget: container,
@@ -280,3 +278,92 @@ it.each([false, true])(
         expect(container.textContent).toContain('Update in Notion')
     }
 )
+
+it('advances dirty writing only to its own save acknowledgment when another writer changes the snapshot', async () => {
+    const state = sampleState('2026-10-05')
+    state.drafts[0].version = 1
+    let release!: (value: Reply) => void
+    const run = vi.fn(
+        (_command: Command) =>
+            new Promise<Reply>((resolve) => {
+                release = resolve
+            })
+    )
+    await update(() =>
+        root.render(
+            createElement(WorkspaceDraft, {
+                state,
+                week: '2026-10-05',
+                notionConnected: true,
+                run,
+                publishTarget: null,
+                onReady: vi.fn(),
+                onSettings: vi.fn()
+            })
+        )
+    )
+    await update(() => writer.change?.(body('First edit')))
+    await update(() => vi.advanceTimersByTime(1000))
+    await update(() => writer.change?.(body('Continued local writing')))
+    await update(() =>
+        release({
+            state: { ...state, drafts: [{ ...state.drafts[0], version: 3, body: body('Another writer') }] },
+            draftSaved: { id: state.drafts[0].id, version: 2 },
+            connections: { remote: false, notion: true, protectedStorage: false }
+        })
+    )
+    await update(() => vi.advanceTimersByTime(1000))
+    expect(run.mock.calls[1][0]).toMatchObject({
+        type: 'draft',
+        draft: { version: 2, body: body('Continued local writing') }
+    })
+    await update(() =>
+        release({
+            state,
+            draftSaved: { id: state.drafts[0].id, version: 3 },
+            connections: { remote: false, notion: true, protectedStorage: false }
+        })
+    )
+})
+
+it('omits publishing and footer connection prompts without Notion', async () => {
+    const state = sampleState('2026-10-05')
+    await update(() =>
+        root.render(
+            createElement(WorkspaceDraft, {
+                state,
+                week: '2026-10-05',
+                notionConnected: false,
+                run: vi.fn(() => Promise.resolve(undefined)),
+                publishTarget: container,
+                onReady: vi.fn(),
+                onSettings: vi.fn()
+            })
+        )
+    )
+    expect(container.textContent).not.toMatch(/Publish|Connect Notion|Set up Notion/)
+    expect(container.textContent).toContain('/ for formatting')
+})
+
+it('opens settings to finish publishing setup for a connected profile without a destination', async () => {
+    const onSettings = vi.fn()
+    await update(() =>
+        root.render(
+            createElement(WorkspaceDraft, {
+                state: sampleState('2026-10-05'),
+                week: '2026-10-05',
+                notionConnected: true,
+                run: vi.fn(() => Promise.resolve(undefined)),
+                publishTarget: container,
+                onReady: vi.fn(),
+                onSettings
+            })
+        )
+    )
+    const button = Array.from(container.querySelectorAll('button')).find(
+        (item) => item.textContent === 'Set up Notion publishing'
+    )!
+    expect(button.disabled).toBe(false)
+    await update(() => button.click())
+    expect(onSettings).toHaveBeenCalledOnce()
+})

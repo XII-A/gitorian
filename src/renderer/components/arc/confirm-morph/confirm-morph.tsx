@@ -25,7 +25,7 @@ import {
 } from 'motion/react'
 import type { AnimationPlaybackControls, MotionValue, Transition, Variants } from 'motion/react'
 import { CircleAlert, LoaderCircle } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './confirm-morph.module.css'
 
 /** Where the control is in its life: resting, asking, working, finished, or failed. */

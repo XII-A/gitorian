@@ -1,0 +1,22 @@
+.trigger {
+    flex: none;
+    width: var(--control-height-sm);
+    padding: 0;
+}
+.icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+}
+.dot {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: var(--warning);
+}

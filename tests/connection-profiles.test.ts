@@ -48,7 +48,7 @@ it('persists a bounded thumbnail and reads a warm profile after restart without 
     const f = await fixture(),
         cache = f.create()
     expect(cache.snapshot()).toEqual({})
-    const profile = await cache.refresh('github')
+    const profile = await cache.refresh('notion')
     expect(profile?.name).toBe('Journal author')
     expect(profile?.avatarUrl).toMatch(/^data:image\/webp;base64,/)
     const metadata = await sharp(Buffer.from(profile!.avatarUrl!.split(',')[1], 'base64')).metadata()
@@ -56,8 +56,8 @@ it('persists a bounded thumbnail and reads a warm profile after restart without 
     expect(metadata.height).toBe(64)
     expect(readFileSync(f.path, 'utf8')).not.toContain('private-fixture-token')
     const restarted = f.create()
-    expect(restarted.snapshot().github).toEqual(profile)
-    await restarted.refresh('github')
+    expect(restarted.snapshot().notion).toEqual(profile)
+    await restarted.refresh('notion')
     expect(f.load).toHaveBeenCalledTimes(1)
     expect(f.download).toHaveBeenCalledTimes(1)
 })
@@ -77,9 +77,9 @@ it('deduplicates cold requests and keeps stale images when offline', async () =>
 it('rejects another account and a late refresh after disconnect, including reuse of the same token', async () => {
     const f = await fixture(),
         cache = f.create()
-    await cache.refresh('github')
+    await cache.refresh('notion')
     f.setToken('different-account')
-    expect(cache.snapshot().github).toBeUndefined()
+    expect(cache.snapshot().notion).toBeUndefined()
     let finish!: () => void
     f.load.mockImplementationOnce(
         () =>
@@ -87,13 +87,13 @@ it('rejects another account and a late refresh after disconnect, including reuse
                 finish = () => resolve({ name: 'Old account', avatarUrl: undefined })
             })
     )
-    const pending = cache.refresh('github')
-    cache.clear('github')
+    const pending = cache.refresh('notion')
+    cache.clear('notion')
     finish()
     expect(await pending).toBeUndefined()
-    expect(cache.snapshot().github).toBeUndefined()
-    expect(f.create().snapshot().github).toBeUndefined()
-    expect((await cache.refresh('github'))?.name).toBe('Journal author')
+    expect(cache.snapshot().notion).toBeUndefined()
+    expect(f.create().snapshot().notion).toBeUndefined()
+    expect((await cache.refresh('notion'))?.name).toBe('Journal author')
 })
 it('keeps the last image on a failed download, retries soon, and removes an explicitly absent avatar', async () => {
     const f = await fixture(),
@@ -114,7 +114,7 @@ it('treats corrupt cache storage and missing images as optional profile data', a
     const cache = f.create()
     expect(cache.snapshot()).toEqual({})
     f.download.mockRejectedValueOnce(new Error('unavailable'))
-    expect(await cache.refresh('github')).toEqual({ name: 'Journal author' })
+    expect(await cache.refresh('notion')).toEqual({ name: 'Journal author' })
     f.setToken('')
     expect(cache.snapshot()).toEqual({})
 })

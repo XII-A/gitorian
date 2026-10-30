@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import type { PointerEvent, ReactNode } from 'react'
 import { animate, useMotionValue, useReducedMotion } from 'motion/react'
-import { motionTokens } from './components/arc/lib/motion-tokens'
+import { motionTokens } from './components/arc/motion-tokens'
 
 /** Shared by the hub and history so their pointer feedback stays consistent. */
 export function useRowHover(selector: string, children: ReactNode) {
@@ -13,14 +13,19 @@ export function useRowHover(selector: string, children: ReactNode) {
     const width = useMotionValue(0)
     const height = useMotionValue(0)
     const opacity = useMotionValue(0)
+    const targets = useRef<number[]>([])
 
     const hide = useCallback(() => {
         if (!active.current) return
         active.current = null
         animate(opacity, 0, { duration: reduced ? 0 : motionTokens.duration.fast })
     }, [opacity, reduced])
+    const hideOnScroll = useCallback(() => {
+        active.current = null
+        opacity.jump(0)
+    }, [opacity])
     const position = useCallback(
-        (row: HTMLButtonElement, instant: boolean) => {
+        (row: HTMLButtonElement, mode: 'instant' | 'animate' | 'sync') => {
             if (!root.current) return
             const bounds = root.current.getBoundingClientRect()
             const rect = row.getBoundingClientRect()
@@ -30,8 +35,12 @@ export function useRowHover(selector: string, children: ReactNode) {
                 [width, rect.width],
                 [height, rect.height]
             ] as const
-            for (const [value, target] of dimensions) {
-                if (instant || reduced) value.jump(target)
+            for (const [index, [value, target]] of dimensions.entries()) {
+                // Disclosing a day resizes the list on every frame. Unchanged
+                // row geometry must not cancel a hover spring with jump().
+                if (mode === 'sync' && !reduced && targets.current[index] === target) continue
+                targets.current[index] = target
+                if (reduced || mode === 'instant' || (mode === 'sync' && !value.isAnimating())) value.jump(target)
                 else animate(value, target, motionTokens.spring.morph)
             }
         },
@@ -39,22 +48,23 @@ export function useRowHover(selector: string, children: ReactNode) {
     )
     const sync = useCallback(() => {
         const row = active.current
-        if (!row || !row.isConnected || !root.current?.contains(row)) {
+        if (!row || !row.isConnected || row.closest('[inert]') || !root.current?.contains(row)) {
             // Opacity alone leaves transformed decorations in the scroll overflow.
             active.current = null
+            targets.current = []
             for (const value of [x, y, width, height, opacity]) value.jump(0)
-        } else position(row, true)
+        } else position(row, 'sync')
     }, [x, y, width, height, opacity, position])
     const hover = (event: PointerEvent<HTMLDivElement>) => {
         if (event.pointerType === 'touch' || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
         const row = event.target instanceof Element ? event.target.closest<HTMLButtonElement>(selector) : null
-        if (!row || row.disabled || !event.currentTarget.contains(row)) {
+        if (!row || row.disabled || row.closest('[inert]') || !event.currentTarget.contains(row)) {
             hide()
             return
         }
         if (row === active.current) return
         active.current = row
-        position(row, opacity.get() === 0)
+        position(row, opacity.get() === 0 ? 'instant' : 'animate')
         animate(opacity, 1, { duration: reduced ? 0 : motionTokens.duration.instant })
     }
 
@@ -65,13 +75,13 @@ export function useRowHover(selector: string, children: ReactNode) {
     useEffect(() => {
         const observer = new ResizeObserver(sync)
         if (root.current) observer.observe(root.current)
-        window.addEventListener('scroll', hide, true)
+        window.addEventListener('scroll', hideOnScroll, true)
         return () => {
             observer.disconnect()
-            window.removeEventListener('scroll', hide, true)
+            window.removeEventListener('scroll', hideOnScroll, true)
             for (const value of [x, y, width, height, opacity]) value.stop()
         }
-    }, [sync, hide, x, y, width, height, opacity])
+    }, [sync, hideOnScroll, x, y, width, height, opacity])
 
     return {
         root,

@@ -27,7 +27,7 @@
     position: relative;
     isolation: isolate;
     width: 100%;
-    height: 100dvh;
+    height: var(--window-content-height, 100dvh);
     min-height: 600px;
     display: flex;
     flex-direction: column;
@@ -45,22 +45,6 @@
 .ws-reference ::selection {
     background: var(--accent-subtle);
     color: var(--foreground);
-}
-.ws-atmosphere {
-    position: absolute;
-    inset: 0 0 auto;
-    height: 140px;
-    overflow: hidden;
-    z-index: -1;
-    pointer-events: none;
-}
-.ws-atmosphere img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: center 40%;
-    opacity: 0.08;
-    filter: saturate(0.3);
 }
 .ws-topbar {
     width: 100%;
@@ -100,13 +84,14 @@
     overflow: hidden;
 }
 .ws-activity {
+    --activity-surface: color-mix(in oklab, var(--surface-muted) 35%, var(--surface));
     grid-column: 1;
     grid-row: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
     overflow: visible;
-    background: color-mix(in oklab, var(--surface-muted) 35%, var(--surface));
+    background: var(--activity-surface);
     border-right: 1px solid var(--border);
 }
 .ws-draft-host {
@@ -218,7 +203,6 @@
     width: 100%;
     height: auto;
     min-height: 1.2em;
-    max-height: 4em;
     field-sizing: content;
     padding: 0;
     border: 0;
@@ -228,7 +212,7 @@
     font: inherit;
     line-height: 1.15;
     letter-spacing: inherit;
-    overflow-y: auto;
+    overflow-y: hidden;
 }
 .ws-title textarea::placeholder {
     color: var(--text-secondary);
@@ -252,57 +236,25 @@
     align-items: center;
     gap: var(--space-1);
 }
+.ws-conflict-form {
+    display: grid;
+    gap: var(--space-6);
+}
+.ws-conflict-options {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+.ws-conflict-error {
+    margin: 0;
+    color: var(--danger);
+}
 .ws-writing-footer kbd {
     padding: 0 var(--space-1);
     border: 1px solid var(--border);
     border-radius: var(--radius-key);
     background: var(--surface-muted);
-}
-.ws-writing-footer.ws-needs-notion {
-    display: grid;
-    grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
-    column-gap: var(--space-2);
-    row-gap: var(--space-1);
-    padding-block: var(--space-2);
-}
-.ws-needs-notion > [role='status'] {
-    grid-column: 2;
-    grid-row: 1;
-    justify-self: center;
-}
-.ws-notion-connect {
-    grid-column: 3;
-    grid-row: 1;
-    justify-self: end;
-    min-height: var(--control-height-md);
-    font-size: var(--text-xs);
-}
-.ws-needs-notion > .ws-retry-saving {
-    grid-column: 2;
-    justify-self: center;
-}
-.ws-needs-notion:has(.ws-retry-saving) {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    height: auto;
-    min-height: var(--workspace-footer-height);
-}
-@container writing-pane (max-width: 460px) {
-    .ws-writing-footer.ws-needs-notion {
-        grid-template-columns: minmax(0, 1fr) auto;
-    }
-    .ws-needs-notion > [role='status'] {
-        grid-column: 1;
-        grid-row: 2;
-        justify-self: start;
-    }
-    .ws-notion-connect {
-        grid-column: 2;
-        grid-row: 1 / span 2;
-    }
-    .ws-needs-notion > .ws-retry-saving {
-        grid-column: 1;
-        justify-self: start;
-    }
 }
 .ws-new-entry {
     padding-block: var(--space-16);
@@ -736,7 +688,7 @@
     text-align: center;
     color: var(--text-secondary);
 }
-.ws-block-menu button {
+.ws-block-menu [role='option'] {
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -749,7 +701,7 @@
     border-radius: var(--radius-control);
     padding: var(--space-2);
 }
-.ws-block-menu button[aria-selected='true'] {
+.ws-block-menu [role='option'][aria-selected='true'] {
     background: var(--surface-muted);
 }
 .writing-workspace[data-focus='true'] .ws-frame {
@@ -960,7 +912,10 @@
     padding: 0 var(--space-6) var(--space-4);
     flex: none;
 }
-.ws-activity-filters,
+.ws-activity-filters {
+    padding: 0 var(--space-6) var(--space-4);
+    flex: none;
+}
 .ws-extra-filters {
     display: flex;
     flex-wrap: wrap;
@@ -1013,6 +968,7 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .ws-history-chip:not([aria-pressed='true']) {
     width: var(--control-height-sm);

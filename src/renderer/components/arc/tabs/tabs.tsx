@@ -6,7 +6,7 @@ import type { ComponentPropsWithoutRef, RefObject } from 'react'
 import { ChevronLeft as NavArrowLeft, ChevronRight as NavArrowRight } from 'lucide-react'
 import { AnimatePresence, LayoutGroup, animate, motion, useReducedMotion } from 'motion/react'
 import type { AnimationPlaybackControls, Variants } from 'motion/react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './tabs.module.css'
 
 type RootProps = ComponentPropsWithoutRef<typeof TabsPrimitive.Root> & { variant?: 'pill' | 'underline' }
@@ -81,10 +81,13 @@ export function Tabs({
 export function TabsList({
     className,
     edgeToEdge,
+    fullWidth,
     ...props
 }: ComponentPropsWithoutRef<typeof TabsPrimitive.List> & {
     /** A square strip spanning the full pane; individual tabs retain their radii. */
     edgeToEdge?: boolean
+    /** Distribute tabs equally across the available width. */
+    fullWidth?: boolean
 }) {
     const { active, orientation, variant } = useContext(TabsContext)
     const reduced = useReducedMotion()
@@ -154,6 +157,7 @@ export function TabsList({
                     .filter(Boolean)
                     .join(' ')}
                 data-edge-to-edge={edgeToEdge || undefined}
+                data-full-width={fullWidth || undefined}
             >
                 <TabsPrimitive.List {...props} className={[styles.list, className].filter(Boolean).join(' ')} />
             </div>
@@ -163,6 +167,7 @@ export function TabsList({
             ref={shell}
             className={[styles.listShell, variant === 'underline' && styles.underlineShell].filter(Boolean).join(' ')}
             data-edge-to-edge={edgeToEdge || undefined}
+            data-full-width={fullWidth || undefined}
             data-overflow={edges.overflow}
             data-left={edges.left}
             data-right={edges.right}

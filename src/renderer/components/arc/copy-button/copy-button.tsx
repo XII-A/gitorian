@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion, type TargetAndTransition, type Transition } from 'motion/react'
 import { CircleAlert, Copy } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import { useCopyFeedback } from '../lib/use-copy-feedback'
 import styles from './copy-button.module.css'
 
@@ -14,6 +14,8 @@ export interface CopyButtonProps {
     iconOnly?: boolean
     variant?: 'outline' | 'plain'
     disabled?: boolean
+    /** Copy once when this value is presented, using the same feedback as a press. */
+    autoCopy?: boolean
     onCopied?: () => void
 }
 
@@ -142,9 +144,18 @@ export function CopyButton({
     iconOnly = false,
     variant = 'outline',
     disabled,
+    autoCopy = false,
     onCopied
 }: CopyButtonProps) {
     const { state, copy } = useCopyFeedback()
+    const automaticallyCopied = useRef<string | undefined>(undefined)
+    useEffect(() => {
+        if (!autoCopy || disabled || automaticallyCopied.current === value) return
+        automaticallyCopied.current = value
+        void copy(value).then((copied) => {
+            if (copied) onCopied?.()
+        })
+    }, [autoCopy, disabled, value, copy, onCopied])
     const reduced = useReducedMotion() ?? false
     const text = state === 'copied' ? 'Copied' : state === 'error' ? 'Failed' : label
 

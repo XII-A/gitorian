@@ -22,8 +22,8 @@ export function GettingStarted({
             steps={[
                 {
                     id: 'accounts',
-                    title: 'Connect accounts',
-                    description: 'Connect GitHub for pull requests and Notion to publish your entries.',
+                    title: 'Connect an account',
+                    description: 'Connect GitHub or GitLab to include pull requests and reviews.',
                     actionLabel: 'Connect',
                     onAction: () => onSettings('connections')
                 },

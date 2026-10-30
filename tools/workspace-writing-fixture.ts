@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from '../tests/workspace-fixture'
 import type { JournalNode } from '../src/shared/model'
 import sharp from 'sharp'
 import { createHash, randomFillSync } from 'node:crypto'
@@ -7,6 +7,8 @@ import { createHash, randomFillSync } from 'node:crypto'
 const week = '2026-10-12'
 const state = sampleState(week)
 state.settings.refreshMinutes = 0
+// Typing fixtures replace activity identities and do not inspect changes.
+state.diffs = {}
 state.activities = Array.from({ length: 600 }, (_, index) => ({
     ...structuredClone(state.activities[index % state.activities.length]),
     id: `writing-profile-${index}`

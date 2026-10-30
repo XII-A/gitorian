@@ -1,12 +1,12 @@
+import { contributionPages, ContributionIncomplete } from './contribution-pages'
+import { DurabilityError } from './durability-error'
 import type { Activity, Repository } from '../shared/model'
 import { localDate } from '../shared/model'
-import type { Http } from './http'
+import { HttpError, TransportError } from './http'
+import { Effect } from 'effect'
 import { fingerprint, githubRemote } from './git'
-import { HttpError } from './http'
-
-// Public identifier for Gitorian's OAuth registration. Device flow needs no client secret.
-const githubClientId = 'Ov23li9PFMAWRrbZQ6Xy'
-
+import { remoteConfiguration } from '../shared/provider-accounts'
+import type { ActivityScan } from './contribution-reader'
 interface User {
     login: string
 }
@@ -23,21 +23,24 @@ interface Pull {
     merged_at: string | null
     merge_commit_sha: string | null
     user: User
-    base: { ref: string; sha: string }
-    head: { ref: string; sha: string }
-}
-export interface ActivityScan {
-    timezone?: string
-    since?: string
-    page?: number
-    versions?: Record<string, string>
-    background?: boolean
-    checkpoint?: (page: number, complete: boolean) => void
-    batch?: (activities: Activity[]) => Promise<void>
+    base: {
+        ref: string
+        sha: string
+    }
+    head: {
+        ref: string
+        sha: string
+    }
 }
 interface Commit {
     sha: string
-    commit: { author: { email: string; date: string }; message: string }
+    commit: {
+        author: {
+            email: string
+            date: string
+        }
+        message: string
+    }
 }
 interface Review {
     id: number
@@ -64,436 +67,398 @@ function activityFile(file: File): Activity['files'][number] {
             : {})
     }
 }
-interface Device {
-    device_code: string
-    user_code: string
-    verification_uri: string
-    interval: number
-    expires_in: number
+export class GitHubFailure extends Error {
+    readonly _tag = 'GitHubFailure'
 }
-interface Credential {
-    access_token: string
-    refresh_token?: string
-    expires?: number
+export type GitHubError = GitHubFailure | HttpError | TransportError | DurabilityError
+function toGitHubError(error: unknown): GitHubError {
+    if (
+        error instanceof GitHubFailure ||
+        error instanceof HttpError ||
+        error instanceof TransportError ||
+        error instanceof DurabilityError
+    )
+        return error
+    return new GitHubFailure(error instanceof Error ? error.message : String(error), { cause: error })
 }
-interface TokenResponse {
-    access_token?: string
-    refresh_token?: string
-    expires_in?: number
-    error?: string
-}
-export class GitHub {
-    private device?: Device & { expires: number; nextPoll: number }
-    private renewal?: { stored: string; work: Promise<string> }
-    constructor(
-        private readonly http: Http,
-        private readonly credential: () => string,
-        private readonly setToken: (token: string) => void
-    ) {}
-    private session(): Credential {
-        const stored = this.credential()
-        // Earlier releases stored just the non-expiring access token.
-        if (!stored.startsWith('{')) return { access_token: stored }
-        return JSON.parse(stored) as Credential
-    }
-    private token(): string {
-        return this.session().access_token
-    }
-    private save(result: TokenResponse): string {
-        const session: Credential = {
-            access_token: result.access_token!,
-            refresh_token: result.refresh_token,
-            expires: result.expires_in ? Date.now() + result.expires_in * 1000 : undefined
-        }
-        this.setToken(result.refresh_token ? JSON.stringify(session) : session.access_token)
-        return session.access_token
-    }
-    private async renew(rejected?: string): Promise<string> {
-        const stored = this.credential()
-        const session = this.session()
-        if (rejected && rejected !== session.access_token) return session.access_token
-        if (!session.refresh_token) return session.access_token
-        if (!rejected && (!session.expires || session.expires > Date.now() + 60_000)) return session.access_token
-        if (this.renewal?.stored === stored) return this.renewal.work
-        const work = (async () => {
-            const response = await fetch('https://github.com/login/oauth/access_token', {
-                method: 'POST',
-                signal: AbortSignal.timeout(30000),
-                headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    client_id: githubClientId,
-                    grant_type: 'refresh_token',
-                    refresh_token: session.refresh_token
-                })
-            })
-            if (!response.ok)
-                throw new HttpError(
-                    response.status,
-                    `GitHub connection renewal failed (${response.status}). Try again.`
+export type GitHub = ReturnType<typeof makeGitHub>
+export type GitHubRequest = <A>(
+    url: string,
+    init?: RequestInit,
+    format?: 'json' | 'text',
+    background?: boolean
+) => Effect.Effect<A, Error>
+/** GitHub contribution reads. Account authorization and credential lifetime have one owner. */
+export function makeGitHub(providerRequest: GitHubRequest) {
+    const list = <T>(path: string, background = false): Effect.Effect<T[], Error> =>
+        Effect.gen(function* () {
+            const result: T[] = []
+            for (let page = 1; page <= 30; page++) {
+                const items = yield* request<T[]>(
+                    `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`,
+                    background
                 )
-            const result = (await response.json()) as TokenResponse
-            if (this.credential() !== stored) throw new Error('GitHub connection changed during renewal. Try again.')
-            if (result.error === 'bad_refresh_token')
-                throw new HttpError(401, 'GitHub connection expired. Reconnect in Settings.')
-            if (result.error || !result.access_token || !result.refresh_token)
-                throw new Error('GitHub connection renewal failed. Try again.')
-            return this.save(result)
-        })()
-        const renewal = { stored, work }
-        this.renewal = renewal
-        try {
-            return await work
-        } finally {
-            if (this.renewal === renewal) this.renewal = undefined
-        }
-    }
-    private async authenticated<T>(request: (token: string) => Promise<T>): Promise<T> {
-        const token = await this.renew()
-        try {
-            return await request(token)
-        } catch (error) {
-            if (!(error instanceof HttpError) || error.status !== 401 || !this.session().refresh_token) throw error
-            return request(await this.renew(token))
-        }
-    }
-    private request<T>(path: string, background = false): Promise<T> {
-        return this.authenticated((token) =>
-            this.http.request<T>(`https://api.github.com/${path}`, token, {}, 'json', { background })
-        )
-    }
-    private async list<T>(path: string, background = false): Promise<T[]> {
-        const result: T[] = []
-        for (let page = 1; page <= 30; page++) {
-            const items = await this.request<T[]>(
-                `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`,
-                background
+                result.push(...items)
+                if (items.length < 100) return result
+            }
+            return yield* Effect.fail(
+                new GitHubFailure(
+                    'This activity has more than 3,000 detail records. Open it in GitHub for the complete source.'
+                )
             )
-            result.push(...items)
-            if (items.length < 100) return result
-        }
-        throw new Error('This activity has more than 3,000 detail records. Open it in GitHub for the complete source.')
-    }
-    async start(): Promise<{ code: string; url: string; interval: number }> {
-        const response = await fetch('https://github.com/login/device/code', {
-            method: 'POST',
-            signal: AbortSignal.timeout(30000),
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ client_id: githubClientId, scope: 'repo read:user user:email' })
         })
-        if (!response.ok) throw new Error(`GitHub sign-in failed (${response.status})`)
-        const device = (await response.json()) as Device & { error?: string }
-        if (device.error || !device.device_code)
-            throw new Error(
-                device.error === 'device_flow_disabled' || device.error === 'incorrect_client_credentials'
-                    ? 'GitHub sign-in is unavailable in this version of Gitorian. Check for an app update or contact the maintainer.'
-                    : (device.error ?? 'Invalid device authorization response')
-            )
-        this.device = {
-            ...device,
-            expires: Date.now() + device.expires_in * 1000,
-            nextPoll: Date.now() + device.interval * 1000
-        }
-        return { code: device.user_code, url: device.verification_uri, interval: device.interval }
-    }
-    async poll(): Promise<{ login: string; emails: string[] } | { pending: true; interval: number }> {
-        const device = this.device
-        if (!device || Date.now() > device.expires) throw new Error('Device sign-in expired; start again')
-        if (Date.now() < device.nextPoll)
-            return { pending: true, interval: Math.ceil((device.nextPoll - Date.now()) / 1000) }
-        device.nextPoll = Date.now() + device.interval * 1000
-        const response = await fetch('https://github.com/login/oauth/access_token', {
-            method: 'POST',
-            signal: AbortSignal.timeout(30000),
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                client_id: githubClientId,
-                device_code: device.device_code,
-                grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-            })
-        })
-        if (!response.ok) throw new Error(`GitHub sign-in failed (${response.status}); try again`)
-        const result = (await response.json()) as TokenResponse
-        if (result.error === 'slow_down') {
-            device.interval += 5
-            device.nextPoll = Date.now() + device.interval * 1000
-        }
-        if (result.error === 'authorization_pending' || result.error === 'slow_down')
-            return { pending: true, interval: device.interval }
-        if (!result.access_token)
-            throw new Error(
-                result.error === 'access_denied'
-                    ? 'GitHub authorization was declined; start sign-in again'
-                    : result.error === 'expired_token'
-                      ? 'GitHub sign-in expired; start again'
-                      : (result.error ?? 'GitHub sign-in failed')
-            )
-        const user = await this.http.request<User>('https://api.github.com/user', result.access_token)
-        const emails = await this.http.request<{ email: string }[]>(
-            'https://api.github.com/user/emails',
-            result.access_token
-        )
-        this.save(result)
-        this.device = undefined
-        return { login: user.login, emails: emails.map((item) => item.email) }
-    }
-    async activities(
+    const activities = (
         repository: Repository,
         login: string,
         trackedPrIds: string[],
         scan: ActivityScan = {}
-    ): Promise<Activity[]> {
-        const remote = githubRemote(repository.remote)
-        if (!remote || !this.token()) return []
-        const activities: Activity[] = []
-        const since = scan.since ?? repository.trackingStart
-        const firstPage = Math.max(1, (scan.page ?? 1) - 1)
-        let complete = false
-        let hydrated = 0
-        for (let page = firstPage; page < firstPage + 2; page++) {
-            const pulls = await this.request<Pull[]>(
-                `repos/${remote}/pulls?state=all&sort=updated&direction=desc&per_page=100&page=${page}`,
-                scan.background
-            )
-            for (const summary of pulls) {
-                if (localDate(new Date(summary.updated_at ?? summary.created_at), scan.timezone ?? 'UTC') < since) {
-                    complete = true
-                    break
-                }
-                const version = JSON.stringify([
-                    summary.updated_at,
-                    summary.base.sha,
-                    summary.head.sha,
-                    summary.merged_at,
-                    summary.merge_commit_sha,
-                    login,
-                    repository.emails,
-                    summary.state,
-                    summary.draft,
-                    summary.closed_at
-                ])
-                if (scan.versions?.[String(summary.number)] === version) continue
-                if (hydrated >= 20) {
-                    scan.checkpoint?.(page, false)
-                    return activities
-                }
-                hydrated++
-                const path = `repos/${remote}/pulls/${summary.number}`
-                const pr = summary
-                const commits = await this.list<Commit>(`${path}/commits`, scan.background)
-                const reviews = await this.list<Review>(`${path}/reviews`, scan.background)
-                const id = `${repository.id}:pr:${pr.number}`
-                const mine = commits.filter((commit) =>
-                    repository.emails.some((email) => email.toLowerCase() === commit.commit.author.email.toLowerCase())
-                )
-                const myReviews = reviews.filter(
-                    (review) => review.user.login === login && review.submitted_at && review.state !== 'PENDING'
-                )
-                if (pr.user.login !== login && !mine.length && !myReviews.length && !trackedPrIds.includes(id)) {
-                    if (scan.versions) scan.versions[String(summary.number)] = version
-                    scan.checkpoint?.(page, false)
-                    continue
-                }
-                const batch: Activity[] = []
-                const latest =
-                    commits
-                        .map((commit) => commit.commit.author.date)
-                        .sort()
-                        .at(-1) ?? pr.created_at
-                const common = {
-                    repositoryId: repository.id,
-                    title: `#${pr.number} ${pr.title}`,
-                    author: pr.user.login,
-                    branches: [pr.head.ref],
-                    prId: id,
-                    url: pr.html_url,
-                    description: pr.body ?? '',
-                    files: [],
-                    base: pr.base.ref,
-                    head: pr.head.sha,
-                    sourceVersion: version,
-                    disposition: 'inbox' as const,
-                    explicit: false,
-                    deletedBranches: []
-                }
-                batch.push({
-                    ...common,
-                    id,
-                    kind: 'pr',
-                    date: latest,
-                    pullRequest: {
-                        status: pr.merged_at
-                            ? 'merged'
-                            : pr.state === 'closed'
-                              ? 'closed'
-                              : pr.draft
-                                ? 'draft'
-                                : pr.state === 'open'
-                                  ? 'open'
-                                  : undefined,
-                        openedAt: pr.created_at,
-                        commitDates: [...new Set(commits.map((commit) => commit.commit.author.date))]
-                            .filter((date) => date >= pr.created_at)
-                            .sort(),
-                        closedAt: pr.closed_at ?? undefined,
-                        mergedAt: pr.merged_at ?? undefined
+    ): Effect.Effect<Activity[], Error> =>
+        Effect.gen(function* () {
+            const remote = githubRemote(repository.remote)
+            if (!remote) return []
+            const activities: Activity[] = []
+            const pages = contributionPages(scan)
+            const read = <A>(path: string, staged = false) =>
+                pages.read(path, () => request<A>(path, scan.background), staged)
+            const details = <A>(path: string) =>
+                Effect.gen(function* () {
+                    const result: A[] = []
+                    for (let p = 1; p <= 30; p++) {
+                        const items = yield* read<A[]>(`${path}?per_page=100&page=${p}`, true)
+                        result.push(...items)
+                        if (items.length < 100) return result
                     }
+                    return yield* Effect.fail(
+                        new ContributionIncomplete(
+                            'Contribution detail records exceed the provider completeness limit.'
+                        )
+                    )
                 })
-                batch.push({
-                    ...common,
-                    id: `${id}:opened`,
-                    kind: 'opened',
-                    date: pr.created_at,
-                    title: `Opened ${common.title}`
-                })
-                if (pr.merged_at)
-                    batch.push({
-                        ...common,
-                        id: `${id}:merged`,
-                        kind: 'merged',
-                        date: pr.merged_at,
-                        title: `Merged ${common.title}`,
-                        integrationSha: pr.merge_commit_sha ?? undefined
-                    })
-                for (const commit of mine)
-                    batch.push({
-                        ...common,
-                        id: `${repository.id}:commit:${commit.sha}`,
-                        kind: 'commit',
-                        sha: commit.sha,
-                        author: commit.commit.author.email,
-                        date: commit.commit.author.date,
-                        title: commit.commit.message.split('\n')[0],
-                        description: commit.commit.message
-                    })
-                for (const review of myReviews)
-                    batch.push({
-                        ...common,
-                        id: `${id}:review:${review.id}`,
-                        kind: 'review',
-                        author: login,
-                        date: review.submitted_at!,
-                        title: `${review.state}: ${common.title}`,
-                        description: review.body,
-                        url: review.html_url
-                    })
-                const eligible = batch.filter(
-                    (item) =>
-                        item.kind === 'pr' ||
-                        localDate(new Date(item.date), scan.timezone ?? 'UTC') >= repository.trackingStart
+            const since = scan.since ?? repository.trackingStart
+            const firstPage = Math.max(1, (scan.page ?? 1) - 1)
+            let complete = false
+            let hydrated = 0
+            for (let page = firstPage; page < firstPage + 2; page++) {
+                const pulls = yield* read<Pull[]>(
+                    `repos/${remote}/pulls?state=all&sort=updated&direction=desc&per_page=100&page=${page}`
                 )
-                // Keep all events from hydrated PRs in the local cache. Otherwise an
-                // unchanged version would hide older reviews/commits when history expands.
-                if (scan.batch) await scan.batch(batch)
-                else activities.push(...eligible)
-                if (scan.versions) scan.versions[String(summary.number)] = version
-                scan.checkpoint?.(page, false)
+                if (scan.pending)
+                    pulls.sort(
+                        (a, b) =>
+                            Number(scan.pending!.key.startsWith(`${b.number}:`)) -
+                            Number(scan.pending!.key.startsWith(`${a.number}:`))
+                    )
+                for (const summary of pulls) {
+                    if (localDate(new Date(summary.updated_at ?? summary.created_at), scan.timezone ?? 'UTC') < since) {
+                        complete = true
+                        break
+                    }
+                    const version = JSON.stringify([
+                        summary.updated_at,
+                        summary.base.sha,
+                        summary.head.sha,
+                        summary.merged_at,
+                        summary.merge_commit_sha,
+                        login,
+                        repository.emails,
+                        summary.state,
+                        summary.draft,
+                        summary.closed_at
+                    ])
+                    if (scan.versions?.[String(summary.number)] === version) continue
+                    if (hydrated >= 20) {
+                        yield* scan.checkpoint?.(page, false) ?? Effect.void
+                        return activities
+                    }
+                    hydrated++
+                    if (!(yield* pages.select(`${summary.number}:${version}`))) continue
+                    const path = `repos/${remote}/pulls/${summary.number}`
+                    const pr = summary
+                    const detail = yield* pages.guard(
+                        Effect.gen(function* () {
+                            const commits = yield* details<Commit>(`${path}/commits`)
+                            if (commits.length >= 250) {
+                                const total = yield* read<Pull & { commits?: number }>(path, true)
+                                if (commits.length > 250 || total.commits !== commits.length)
+                                    return yield* Effect.fail(
+                                        new ContributionIncomplete(
+                                            'GitHub limits this pull-request commit endpoint to 250 commits. Complete contribution evidence is unavailable; open the source in GitHub.'
+                                        )
+                                    )
+                            }
+                            const reviews = yield* details<Review>(`${path}/reviews`)
+                            return { commits, reviews }
+                        })
+                    )
+                    if (!detail) continue
+                    const { commits, reviews } = detail
+                    const id = `${repository.id}:pr:${pr.number}`
+                    const mine = commits.filter((commit) =>
+                        repository.emails.some(
+                            (email) => email.toLowerCase() === commit.commit.author.email.toLowerCase()
+                        )
+                    )
+                    const myReviews = reviews.filter(
+                        (review) => review.user.login === login && review.submitted_at && review.state !== 'PENDING'
+                    )
+                    if (pr.user.login !== login && !mine.length && !myReviews.length && !trackedPrIds.includes(id)) {
+                        if (scan.versions) scan.versions[String(summary.number)] = version
+                        yield* scan.checkpoint?.(page, false) ?? Effect.void
+                        yield* pages.complete
+                        continue
+                    }
+                    const batch: Activity[] = []
+                    const latest =
+                        commits
+                            .map((commit) => commit.commit.author.date)
+                            .sort()
+                            .at(-1) ?? pr.created_at
+                    const common = {
+                        repositoryId: repository.id,
+                        remoteSource: {
+                            provider: 'github' as const,
+                            host: 'github.com',
+                            path: remote,
+                            number: pr.number,
+                            eventId: String(pr.number),
+                            configuration: remoteConfiguration(repository),
+                            accountId: repository.accountId,
+                            sessionGeneration: repository.accountGeneration
+                        },
+                        title: `#${pr.number} ${pr.title}`,
+                        author: pr.user.login,
+                        branches: [pr.head.ref],
+                        changeRequestId: id,
+                        url: pr.html_url,
+                        description: pr.body ?? '',
+                        files: [],
+                        base: pr.base.ref,
+                        head: pr.head.sha,
+                        sourceVersion: version,
+                        revisionSource: {
+                            base: pr.base.sha,
+                            head: pr.head.sha,
+                            mergedAt: pr.merged_at,
+                            integrationSha: pr.merge_commit_sha
+                        },
+                        disposition: 'inbox' as const,
+                        explicit: false,
+                        deletedBranches: []
+                    }
+                    batch.push({
+                        ...common,
+                        id,
+                        kind: 'change-request',
+                        date: latest,
+                        changeRequest: {
+                            status: pr.merged_at
+                                ? 'merged'
+                                : pr.state === 'closed'
+                                  ? 'closed'
+                                  : pr.draft
+                                    ? 'draft'
+                                    : pr.state === 'open'
+                                      ? 'open'
+                                      : undefined,
+                            openedAt: pr.created_at,
+                            commitDates: [...new Set(commits.map((commit) => commit.commit.author.date))]
+                                .filter((date) => date >= pr.created_at)
+                                .sort(),
+                            closedAt: pr.closed_at ?? undefined,
+                            mergedAt: pr.merged_at ?? undefined
+                        }
+                    })
+                    batch.push({
+                        ...common,
+                        id: `${id}:opened`,
+                        kind: 'opened',
+                        date: pr.created_at,
+                        title: `Opened ${common.title}`
+                    })
+                    if (pr.merged_at)
+                        batch.push({
+                            ...common,
+                            id: `${id}:merged`,
+                            kind: 'merged',
+                            date: pr.merged_at,
+                            title: `Merged ${common.title}`,
+                            integrationSha: pr.merge_commit_sha ?? undefined
+                        })
+                    for (const commit of mine)
+                        batch.push({
+                            ...common,
+                            id: `${repository.id}:commit:${commit.sha}`,
+                            kind: 'commit',
+                            sha: commit.sha,
+                            author: commit.commit.author.email,
+                            date: commit.commit.author.date,
+                            title: commit.commit.message.split('\n')[0],
+                            description: commit.commit.message
+                        })
+                    for (const review of myReviews)
+                        batch.push({
+                            ...common,
+                            id: `${id}:review:${review.id}`,
+                            kind: 'review',
+                            author: login,
+                            date: review.submitted_at!,
+                            title: `${review.state}: ${common.title}`,
+                            description: review.body,
+                            url: review.html_url
+                        })
+                    const eligible = batch.filter(
+                        (item) =>
+                            item.kind === 'change-request' ||
+                            localDate(new Date(item.date), scan.timezone ?? 'UTC') >= repository.trackingStart
+                    )
+                    // Keep all events from hydrated PRs in the local cache. Otherwise an
+                    // unchanged version would hide older reviews/commits when history expands.
+                    if (scan.batch) yield* scan.batch(batch)
+                    else activities.push(...eligible)
+                    if (scan.versions) scan.versions[String(summary.number)] = version
+                    yield* scan.checkpoint?.(page, false) ?? Effect.void
+                    yield* pages.complete
+                }
+                if (pulls.length < 100) complete = true
+                yield* scan.checkpoint?.(complete ? 1 : page + 1, complete) ?? Effect.void
+                if (complete) break
             }
-            if (pulls.length < 100) complete = true
-            scan.checkpoint?.(complete ? 1 : page + 1, complete)
-            if (complete) break
-        }
-        return activities
-    }
-    async files(repository: Repository, activity: Activity): Promise<Activity['files']> {
-        const remote = githubRemote(repository.remote)
-        const number = activity.prId?.split(':').at(-1)
-        if (!remote || !number) return []
-        return (await this.list<File>(`repos/${remote}/pulls/${number}/files`)).map(activityFile)
-    }
-    async commitDetails(
+            return activities
+        })
+    const files = (repository: Repository, activity: Activity): Effect.Effect<Activity['files'], Error> =>
+        Effect.gen(function* () {
+            const remote = githubRemote(repository.remote)
+            const number = activity.remoteSource?.number ?? activity.changeRequestId?.split(':').at(-1)
+            if (!remote || !number) return []
+            return (yield* list<File>(`repos/${remote}/pulls/${number}/files`)).map(activityFile)
+        })
+    const commitDetails = (
         repository: Repository,
         sha: string,
         includeDiff = true
-    ): Promise<{ diff: string; files: Activity['files'] }> {
-        const remote = githubRemote(repository.remote)
-        if (!remote || !/^[a-f0-9]{40,64}$/.test(sha)) throw new Error('GitHub commit source is unavailable')
-        const path = `repos/${remote}/commits/${sha}`
-        const files: File[] = []
-        for (let page = 1; page <= 30; page++) {
-            const metadata = await this.request<{ files: File[] }>(`${path}?per_page=100&page=${page}`)
-            files.push(...metadata.files)
-            if (metadata.files.length < 100) break
-            if (page === 30)
-                throw new Error('This commit has too many changed files. Open it in GitHub for the complete source.')
-        }
-        const diff = includeDiff
-            ? await this.diff(`https://api.github.com/${path}`, {
-                  headers: { Accept: 'application/vnd.github.diff' }
-              })
-            : ''
-        return {
-            diff: diff.length <= 2_000_000 ? diff : 'Diff is too large. Open in GitHub.',
-            files: files.map(activityFile)
-        }
-    }
-    private async diff(url: string, init: RequestInit, background = false): Promise<string> {
-        try {
-            return await this.authenticated((token) =>
-                this.http.request<string>(url, token, init, 'text', { maxBytes: 2_000_000, background })
-            )
-        } catch (error) {
-            if (error instanceof HttpError && error.status === 413) return 'Diff is too large. Open in GitHub.'
-            // GitHub may reject the diff representation (for example, when its
-            // server-side rendering limit is exceeded) while JSON metadata works.
-            // Keep acquisition moving, but never fingerprint unavailable evidence.
-            if (error instanceof HttpError && error.status === 406)
-                return "GitHub could not provide this diff (HTTP 406). It may exceed GitHub's rendering limits. Open in GitHub or inspect the changes locally."
-            throw error
-        }
-    }
-    async snapshot(
+    ): Effect.Effect<
+        {
+            diff: string
+            files: Activity['files']
+        },
+        Error
+    > =>
+        Effect.gen(function* () {
+            const remote = githubRemote(repository.remote)
+            if (!remote || !/^[a-f0-9]{40,64}$/.test(sha))
+                return yield* Effect.fail(new GitHubFailure('GitHub commit source is unavailable'))
+            const path = `repos/${remote}/commits/${sha}`
+            const files: File[] = []
+            for (let page = 1; page <= 30; page++) {
+                const metadata = yield* request<{
+                    files: File[]
+                }>(`${path}?per_page=100&page=${page}`)
+                files.push(...metadata.files)
+                if (metadata.files.length < 100) break
+                if (page === 30)
+                    return yield* Effect.fail(
+                        new GitHubFailure(
+                            'This commit has too many changed files. Open it in GitHub for the complete source.'
+                        )
+                    )
+            }
+            const diff = includeDiff
+                ? yield* fetchDiff(`https://api.github.com/${path}`, {
+                      headers: { Accept: 'application/vnd.github.diff' }
+                  })
+                : ''
+            return {
+                diff: diff.length <= 2000000 ? diff : 'Diff is too large. Open in GitHub.',
+                files: files.map(activityFile)
+            }
+        })
+    const snapshot = (
         repository: Repository,
         activity: Activity,
         background = false
-    ): Promise<{ diff: string; fingerprint?: string; base: string; head: string }> {
-        const remote = githubRemote(repository.remote)
-        const number = activity.prId?.split(':').at(-1)
-        if (!remote || !number) throw new Error('GitHub remote is unavailable')
-        const path = `repos/${remote}/pulls/${number}`
-        const before = await this.request<Pull>(path, background)
-        if (activity.sourceVersion) {
-            const [, base, head, merged, integration] = JSON.parse(activity.sourceVersion) as unknown[]
-            if (
-                before.base.sha !== base ||
-                before.head.sha !== head ||
-                before.merged_at !== merged ||
-                before.merge_commit_sha !== integration
+    ): Effect.Effect<
+        {
+            diff: string
+            fingerprint?: string
+            base: string
+            head: string
+        },
+        Error
+    > =>
+        Effect.gen(function* () {
+            const remote = githubRemote(repository.remote)
+            const number = activity.remoteSource?.number ?? activity.changeRequestId?.split(':').at(-1)
+            if (!remote || !number) return yield* Effect.fail(new GitHubFailure('GitHub remote is unavailable'))
+            const path = `repos/${remote}/pulls/${number}`
+            const before = yield* request<Pull>(path, background)
+            if (activity.revisionSource) {
+                const { base, head, mergedAt: merged, integrationSha: integration } = activity.revisionSource
+                if (
+                    before.base.sha !== base ||
+                    before.head.sha !== head ||
+                    before.merged_at !== merged ||
+                    before.merge_commit_sha !== integration
+                )
+                    return yield* Effect.fail(
+                        new GitHubFailure('PR changed since activity refresh. Refresh this repository and try again.')
+                    )
+            }
+            const integration =
+                before.merged_at && before.merge_commit_sha
+                    ? yield* request<{
+                          parents: {
+                              sha: string
+                          }[]
+                      }>(`repos/${remote}/commits/${before.merge_commit_sha}`, background)
+                    : undefined
+            // A linear integration tip may be only the last of several rebased commits.
+            // Only a true merge proves that its first-parent diff includes the full integration.
+            const provenIntegration = integration && integration.parents.length > 1
+            const diffPath = provenIntegration ? `repos/${remote}/commits/${before.merge_commit_sha}` : path
+            const diff = yield* fetchDiff(
+                `https://api.github.com/${diffPath}`,
+                { headers: { Accept: 'application/vnd.github.diff' } },
+                background
             )
-                throw new Error('PR changed since activity refresh. Refresh this repository and try again.')
-        }
-        const integration =
-            before.merged_at && before.merge_commit_sha
-                ? await this.request<{ parents: { sha: string }[] }>(
-                      `repos/${remote}/commits/${before.merge_commit_sha}`,
-                      background
-                  )
-                : undefined
-        // A linear integration tip may be only the last of several rebased commits.
-        // Only a true merge proves that its first-parent diff includes the full integration.
-        const provenIntegration = integration && integration.parents.length > 1
-        const diffPath = provenIntegration ? `repos/${remote}/commits/${before.merge_commit_sha}` : path
-        const diff = await this.diff(
-            `https://api.github.com/${diffPath}`,
-            { headers: { Accept: 'application/vnd.github.diff' } },
-            background
+            const after = yield* request<Pull>(path, background)
+            if (
+                before.base.sha !== after.base.sha ||
+                before.head.sha !== after.head.sha ||
+                before.merge_commit_sha !== after.merge_commit_sha ||
+                before.merged_at !== after.merged_at
+            )
+                return yield* Effect.fail(
+                    new GitHubFailure('PR changed while capturing its revision; refresh and try again')
+                )
+            const comparable =
+                (!integration || provenIntegration) &&
+                !/Binary files .* differ/.test(diff) &&
+                !diff.includes('GIT binary patch')
+            return {
+                diff: diff.length <= 2000000 ? diff : 'Diff is too large. Open in GitHub.',
+                fingerprint: comparable ? fingerprint(diff) : undefined,
+                base: provenIntegration ? integration.parents[0].sha : before.base.sha,
+                head: integration ? before.merge_commit_sha! : before.head.sha
+            }
+        })
+    const request = <T>(path: string, background = false): Effect.Effect<T, Error> =>
+        providerRequest<T>('https://api.github.com/' + path, {}, 'json', background)
+    const fetchDiff = (url: string, init: RequestInit, background = false): Effect.Effect<string, Error> =>
+        providerRequest<string>(url, init, 'text', background).pipe(
+            Effect.catchAll((error) => {
+                if (error instanceof HttpError && error.status === 413)
+                    return Effect.succeed('Diff is too large. Open in GitHub.')
+                if (error instanceof HttpError && error.status === 406)
+                    return Effect.succeed(
+                        "GitHub could not provide this diff (HTTP 406). It may exceed GitHub's rendering limits. Open in GitHub or inspect the changes locally."
+                    )
+                return Effect.fail(error)
+            })
         )
-        const after = await this.request<Pull>(path, background)
-        if (
-            before.base.sha !== after.base.sha ||
-            before.head.sha !== after.head.sha ||
-            before.merge_commit_sha !== after.merge_commit_sha ||
-            before.merged_at !== after.merged_at
-        )
-            throw new Error('PR changed while capturing its revision; refresh and try again')
-        const comparable =
-            (!integration || provenIntegration) &&
-            !/Binary files .* differ/.test(diff) &&
-            !diff.includes('GIT binary patch')
-        return {
-            diff: diff.length <= 2_000_000 ? diff : 'Diff is too large. Open in GitHub.',
-            fingerprint: comparable ? fingerprint(diff) : undefined,
-            base: provenIntegration ? integration.parents[0].sha : before.base.sha,
-            head: integration ? before.merge_commit_sha! : before.head.sha
-        }
+    return {
+        activities: Effect.fn('GitHub.activities')(activities, Effect.mapError(toGitHubError)),
+        files: Effect.fn('GitHub.files')(files, Effect.mapError(toGitHubError)),
+        commitDetails: Effect.fn('GitHub.commitDetails')(commitDetails, Effect.mapError(toGitHubError)),
+        snapshot: Effect.fn('GitHub.snapshot')(snapshot, Effect.mapError(toGitHubError))
     }
 }

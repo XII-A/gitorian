@@ -5,7 +5,7 @@ import type { ComponentPropsWithoutRef, CSSProperties, KeyboardEvent, ReactNode 
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
 import type { Transition, Variants } from 'motion/react'
 import { ChevronDown as NavArrowDown } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './expandable-card.module.css'
 
 export interface ExpandableCardProps extends Omit<

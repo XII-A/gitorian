@@ -46,5 +46,21 @@ const state = {
     }
 }
 contextBridge.exposeInMainWorld('journal', {
-    invoke: async () => ({ state, connections: { github: false, notion: false, protectedStorage: false } })
+    invoke: async (command) => ({
+        state,
+        connections: { remote: false, notion: false, protectedStorage: false },
+        ...(command.type === 'entryHistory'
+            ? {
+                  entryPage: {
+                      items: entries
+                          .filter((entry) => JSON.stringify(entry).toLowerCase().includes(command.query.toLowerCase()))
+                          .map(({ body, ...entry }) => ({
+                              ...entry,
+                              excerpt: body.content[0].content[0].text.slice(0, 200)
+                          }))
+                  }
+              }
+            : {}),
+        ...(command.type === 'entry' ? { entry: entries.find((entry) => entry.id === command.id) } : {})
+    })
 })

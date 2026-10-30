@@ -2,8 +2,7 @@
 import type { MouseEvent } from 'react'
 import { CaretRightIcon as NavArrowRight } from '@phosphor-icons/react/dist/csr/CaretRight'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { ArcLink } from '../lib/arc-provider'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './breadcrumb.module.css'
 export interface BreadcrumbItem {
     label: string
@@ -62,9 +61,9 @@ export function Breadcrumb({ items, ariaLabel = 'Breadcrumb' }: BreadcrumbProps)
                             >
                                 {index > 0 && <NavArrowRight weight="bold" width={14} height={14} aria-hidden="true" />}
                                 {!current && item.href ? (
-                                    <ArcLink href={item.href} data-label={item.label} onClick={item.onClick}>
+                                    <a href={item.href} data-label={item.label} onClick={item.onClick}>
                                         {item.label}
-                                    </ArcLink>
+                                    </a>
                                 ) : !current && item.onClick ? (
                                     <button type="button" data-label={item.label} onClick={item.onClick}>
                                         {item.label}

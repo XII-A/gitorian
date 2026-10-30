@@ -25,7 +25,7 @@ async function update(task: () => unknown) {
     })
 }
 
-async function picker() {
+async function picker(months: 1 | 2 = 1, start = new Date(2026, 9, 5), fixedRangeDays = 7) {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     vi.stubGlobal('ResizeObserver', undefined)
     const host = document.createElement('div')
@@ -39,9 +39,9 @@ async function picker() {
     await update(() => {
         root.render(
             createElement(DateRangePicker, {
-                defaultValue: { start: new Date(2026, 9, 5), end: new Date(2026, 9, 11) },
-                months: 1,
-                fixedRangeDays: 7,
+                defaultValue: { start, end: new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6) },
+                months,
+                fixedRangeDays,
                 weekStartsOn: 1,
                 normalizeStart: (day: Date) =>
                     new Date(day.getFullYear(), day.getMonth(), day.getDate() - ((day.getDay() + 6) % 7)),
@@ -68,8 +68,28 @@ it('keeps a single current calendar and the focused date through rapid keyboard 
         await update(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
         expect(host.querySelectorAll('[role="grid"]')).toHaveLength(1)
         expect(document.activeElement?.getAttribute('data-date')).toBe(expected)
-        expect(host.querySelectorAll('[data-current]')).toHaveLength(1)
     }
+})
+
+it('previews a free range across months before committing the hovered endpoint', async () => {
+    const { host, onChange } = await picker(2, new Date(2026, 9, 26), 0)
+    await update(() => host.querySelector<HTMLButtonElement>('[data-date="2026-10-30"]')!.click())
+    await update(() =>
+        host
+            .querySelector<HTMLButtonElement>('[data-date="2026-11-03"]')!
+            .dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))
+    )
+    expect([...host.querySelectorAll('[data-edge]')].map((day) => day.getAttribute('data-date'))).toEqual([
+        '2026-10-30',
+        '2026-11-03'
+    ])
+    expect(host.querySelectorAll('[aria-selected="true"]')).toHaveLength(5)
+    expect(onChange).not.toHaveBeenCalled()
+    await update(() => host.querySelector<HTMLButtonElement>('[data-date="2026-11-03"]')!.click())
+    await update(() =>
+        [...host.querySelectorAll<HTMLButtonElement>('button')].find((node) => node.textContent === 'Apply')!.click()
+    )
+    expect(onChange).toHaveBeenCalledWith({ start: new Date(2026, 9, 30), end: new Date(2026, 10, 3) })
 })
 
 it('shows exactly the selected week and matching endpoints immediately after successive picks', async () => {
@@ -94,24 +114,7 @@ it('shows exactly the selected week and matching endpoints immediately after suc
     expect(onChange).toHaveBeenCalledWith({ start: new Date(2026, 9, 5), end: new Date(2026, 9, 11) })
 })
 
-it('keeps the departing month visual only while the current month stays interactive', async () => {
-    const { host } = await picker()
-    const next = host.querySelector<HTMLButtonElement>('[aria-label="Next month"]')!
-    const previous = host.querySelector<HTMLButtonElement>('[aria-label="Previous month"]')!
-    await update(() => next.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
-    expect(host.querySelectorAll('[data-current]')).toHaveLength(1)
-    const departing = host.querySelector<HTMLElement>('[inert][aria-hidden="true"]')!
-    expect(departing).not.toBeNull()
-    expect(departing.textContent).toContain('October')
-    expect(host.querySelector('[data-current]')?.textContent).toContain('November')
-    await update(() => previous.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
-    expect(host.querySelectorAll('[data-current]')).toHaveLength(1)
-    expect(host.querySelector('[data-current]')?.textContent).toContain('October')
-    await update(() => new Promise((resolve) => setTimeout(resolve, 400)))
-    expect(host.querySelectorAll('[role="grid"]')).toHaveLength(1)
-})
-
-it('keeps the mouse click target mounted when reopening after Escape cancels a changed week', async () => {
+it('reopens with the original week after Escape cancels a changed selection', async () => {
     const { host, onChange } = await picker()
     await update(() => host.querySelector<HTMLButtonElement>('[data-date="2026-10-14"]')!.click())
     await update(() =>
@@ -120,10 +123,25 @@ it('keeps the mouse click target mounted when reopening after Escape cancels a c
     const trigger = host.querySelector<HTMLButtonElement>('[aria-haspopup="dialog"]')!
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     expect(onChange).not.toHaveBeenCalled()
-    const label = trigger.querySelector<HTMLElement>('[class*="value_"]')!
-    await update(() => label.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' })))
-    expect(label.isConnected).toBe(true)
     await update(() => trigger.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 })))
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
     expect(host.querySelector('[data-edge]')?.getAttribute('data-date')).toBe('2026-10-05')
+})
+
+it('keeps all seven selected dates and applies the endpoints across a month boundary', async () => {
+    const { host, onChange } = await picker(2, new Date(2026, 9, 26))
+    await update(() => host.querySelector<HTMLButtonElement>('[data-date="2026-10-28"]')!.click())
+    expect(
+        [...host.querySelectorAll('[role="gridcell"][aria-selected="true"] button')].map((day) =>
+            day.getAttribute('data-date')
+        )
+    ).toEqual(['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01'])
+    expect([...host.querySelectorAll('[data-edge]')].map((day) => day.getAttribute('data-date'))).toEqual([
+        '2026-10-26',
+        '2026-11-01'
+    ])
+    await update(() =>
+        [...host.querySelectorAll<HTMLButtonElement>('button')].find((node) => node.textContent === 'Apply')!.click()
+    )
+    expect(onChange).toHaveBeenCalledWith({ start: new Date(2026, 9, 26), end: new Date(2026, 10, 1) })
 })

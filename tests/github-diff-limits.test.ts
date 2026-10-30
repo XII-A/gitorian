@@ -1,60 +1,71 @@
+import { journalState } from './database-fixtures'
+import { run, transportClient } from './effect-fixtures'
 import { expect, it } from 'vitest'
 import { workspace } from './fixtures'
-import { Http, HttpError } from '../src/main/http'
-
+import { HttpError } from '../src/main/http'
 it('finishes remote acquisition when GitHub refuses an old PR diff with 406', async () => {
     const app = await workspace()
     try {
         app.remote.github = true
-        app.repository.trackingStart = '2026-10-05'
+        {
+            app.repository.trackingStart = '2026-10-05'
+            await app.store.saveRepository(app.repository)
+        }
         app.remote.authorDate = '2026-09-29T10:00:00Z'
         app.remote.diffStatus = 406
-        await app.service.refresh({ source: 'github' })
-        const status = app.store.state.acquisition?.[`github:${app.repository.id}`]
+        await run(app.service.refresh({ source: 'remote' }))
+        const status = (await journalState(app.store)).acquisition?.[`remote:${app.repository.id}`]
         expect(status?.error).toBeUndefined()
         expect(status?.lastSuccess).toBeDefined()
         expect(status?.windowEnd).toBeUndefined()
         expect(status?.versions?.['1']).toBeDefined()
-        const pr = app.store.state.activities.find((item) => item.kind === 'pr')!
-        expect(pr.revision).toBeDefined()
-        expect(pr.fingerprint).toBeUndefined()
-        const details = await app.service.handle({ type: 'details', activityId: pr.id })
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
+        expect((await app.store.activity(pr.id))!.revision).toBeDefined()
+        expect((await app.store.activity(pr.id))!.fingerprint).toBeUndefined()
+        const details = await run(app.service.handle({ type: 'details', activityId: pr.id }))
         expect(details.diff).toContain('GitHub')
         expect(details.diff).toContain('406')
-        expect(pr.files[0].name).toBe('a.ts')
+        expect((await app.store.activity(pr.id))!.files[0].name).toBe('a.ts')
         const start = app.remote.requests.length
-        await app.service.refresh({ source: 'github' })
-        expect(app.remote.requests.slice(start)).toHaveLength(1)
+        await run(app.service.refresh({ source: 'remote' }))
+        expect(
+            app.remote.requests
+                .slice(start)
+                .filter((request) => /\/(commits|reviews|files|compare)(?:[/?]|$)/.test(request.url))
+        ).toHaveLength(0)
     } finally {
         await app.close()
     }
 })
-
 it('does not reuse an old comparison fingerprint when a changed PR diff returns 406', async () => {
     const app = await workspace()
     try {
         app.remote.github = true
-        app.repository.trackingStart = '2026-10-05'
-        await app.service.refresh({ source: 'github' })
-        const pr = app.store.state.activities.find((item) => item.kind === 'pr')!
-        await app.service.handle({ type: 'details', activityId: pr.id })
+        {
+            app.repository.trackingStart = '2026-10-05'
+            await app.store.saveRepository(app.repository)
+        }
+        await run(app.service.refresh({ source: 'remote' }))
+        const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
+        await run(app.service.handle({ type: 'details', activityId: pr.id }))
         const previous = pr.revision
-        expect(pr.fingerprint).toBeDefined()
+        expect((await app.store.activity(pr.id))!.fingerprint).toBeDefined()
         app.remote.head = 'e'.repeat(40)
         app.remote.diffStatus = 406
-        await app.service.refresh({ source: 'github' })
-        expect(app.store.state.acquisition?.[`github:${app.repository.id}`].error).toBeUndefined()
-        expect(pr.revision).not.toBe(previous)
-        expect(pr.fingerprint).toBeUndefined()
-        expect(app.store.state.diffs[pr.id]).toContain('406')
+        await run(app.service.refresh({ source: 'remote' }))
+        expect((await journalState(app.store)).acquisition?.[`remote:${app.repository.id}`].error).toBeUndefined()
+        expect((await app.store.activity(pr.id))!.revision).not.toBe(previous)
+        expect((await app.store.activity(pr.id))!.fingerprint).toBeUndefined()
+        expect((await journalState(app.store)).diffs[pr.id]).toContain('406')
     } finally {
         await app.close()
     }
 })
-
 it('continues to reject a 406 on JSON metadata rather than masking a source failure', async () => {
-    const http = new Http(() => Promise.resolve(new Response('{}', { status: 406, statusText: 'Not Acceptable' })))
-    await expect(http.request('https://api.github.com/repos/example/project/pulls/1', 'test')).rejects.toBeInstanceOf(
-        HttpError
+    const http = await transportClient(() =>
+        Promise.resolve(new Response('{}', { status: 406, statusText: 'Not Acceptable' }))
     )
+    await expect(
+        run(http.request('https://api.github.com/repos/example/project/pulls/1', 'test'))
+    ).rejects.toBeInstanceOf(HttpError)
 })

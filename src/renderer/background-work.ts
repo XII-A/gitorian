@@ -20,11 +20,7 @@ export function actionableSources(state: State) {
 }
 
 export function sourceProblems(state: State) {
-    return activitySources(state).filter(
-        ([, status]) =>
-            status.status !== 'cancelled' &&
-            (status.status === 'error' || !!status.error || (status.status === 'paused' && !!status.retryAt))
-    )
+    return activitySources(state).filter(([, status]) => status.status === 'error')
 }
 
 export function readableError(error: string) {

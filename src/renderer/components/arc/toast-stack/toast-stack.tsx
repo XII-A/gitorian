@@ -23,7 +23,7 @@ import {
 } from 'motion/react'
 import type { HTMLMotionProps, MotionProps, TargetAndTransition, Transition } from 'motion/react'
 import { CircleCheck, CircleX, Info, TriangleAlert, X } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './toast-stack.module.css'
 
 export type ToastType = 'success' | 'info' | 'warning' | 'error' | 'loading'

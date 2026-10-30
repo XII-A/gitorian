@@ -1,3 +1,4 @@
+import { renderEmoji } from './provider-emoji'
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
 import { readableError } from './background-work'
@@ -15,6 +16,7 @@ import { PullRequestStatus } from './PullRequestLifecycle'
 import { isPullRequest } from './pull-request'
 import { Badge } from './components/arc/badge/badge'
 import { activityLink } from './workspace-model'
+import { activityProvider } from './activity-details'
 import { hasCachedDetails } from './activity-cache'
 import { hasFileStatistics } from '../shared/change-statistics'
 
@@ -58,12 +60,19 @@ export function WorkspaceInspector({
                 (item) =>
                     item.id !== activity.id &&
                     item.repositoryId === activity.repositoryId &&
-                    ((activity.prId && item.prId === activity.prId) ||
+                    ((activity.changeRequestId && item.changeRequestId === activity.changeRequestId) ||
                         item.branches.some(
                             (branch) => branch !== repository?.base && activity.branches.includes(branch)
                         ))
             ),
-        [state.activities, activity.id, activity.repositoryId, activity.prId, activity.branches, repository?.base]
+        [
+            state.activities,
+            activity.id,
+            activity.repositoryId,
+            activity.changeRequestId,
+            activity.branches,
+            repository?.base
+        ]
     )
     const url = activityLink(activity, state)
     return (
@@ -86,15 +95,21 @@ export function WorkspaceInspector({
                 <header className="ws-inspector-header">
                     <div className="ws-inspector-heading">
                         <div className="ws-inspector-summary">
-                            <h2 id={titleId} className="ws-inspector-title" title={activity.title}>
-                                {activity.title}
+                            <h2
+                                id={titleId}
+                                className="ws-inspector-title"
+                                title={activity.kind === 'commit' ? activity.title : renderEmoji(activity.title)}
+                            >
+                                {activity.kind === 'commit' ? activity.title : renderEmoji(activity.title)}
                             </h2>
                             {(activity.sha || isPullRequest(activity) || activity.kind === 'review') && (
                                 <div className="ws-inspector-identity">
                                     {isPullRequest(activity) ? (
                                         <PullRequestStatus activity={activity} activities={state.activities} />
                                     ) : activity.kind === 'review' ? (
-                                        <Badge animateChanges={false}>Review</Badge>
+                                        <Badge animateChanges={false}>
+                                            {activity.remoteSource?.provider === 'gitlab' ? 'Review comment' : 'Review'}
+                                        </Badge>
                                     ) : null}
                                     {activity.sha && (
                                         <Badge
@@ -180,7 +195,8 @@ export function WorkspaceInspector({
                                                         size="sm"
                                                         onClick={() => run({ type: 'open', url })}
                                                     >
-                                                        Open on GitHub
+                                                        Open on{' '}
+                                                        {activityProvider(activity) === 'gitlab' ? 'GitLab' : 'GitHub'}
                                                     </Button>
                                                 )}
                                             </>
@@ -208,10 +224,11 @@ export function WorkspaceInspector({
                                     </Button>
                                 </div>
                             )}
-                            {activity.kind === 'pr' && activity.diffRevision !== activity.revision && !error && (
-                                <p className="ws-diff-notice">Showing changes from an earlier revision.</p>
-                            )}
+                            {activity.kind === 'change-request' &&
+                                activity.diffRevision !== activity.revision &&
+                                !error && <p className="ws-diff-notice">Showing changes from an earlier revision.</p>}
                             <DiffViewer
+                                provider={activityProvider(activity)}
                                 key={activity.id}
                                 text={state.diffs[activity.id]}
                                 onOpenSource={
@@ -238,7 +255,7 @@ export function WorkspaceInspector({
                             />
                             {url && (
                                 <Button variant="secondary" size="sm" onClick={() => run({ type: 'open', url })}>
-                                    Open in GitHub
+                                    Open in {activityProvider(activity) === 'gitlab' ? 'GitLab' : 'GitHub'}
                                     <WorkspaceIcon name="popout" />
                                 </Button>
                             )}

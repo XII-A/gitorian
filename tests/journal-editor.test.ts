@@ -1,12 +1,42 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it } from 'vitest'
-import { Editor } from '@tiptap/react'
+import { Editor, EditorContent, generateJSON } from '@tiptap/react'
+import { render, cleanup } from '@testing-library/react'
+import { createElement } from 'react'
 import { journalExtensions } from '../src/renderer/journal-extensions'
-import { journalFromHTML, journalHTML } from '../src/renderer/workspace-model'
+import type { JournalNode } from '../src/shared/model'
 import { plainText } from '../src/shared/notion-format'
+import { markdownToHtml } from '../src/renderer/components/arc/rich-text-editor/rich-text-editor'
+
+it('retains fenced language and raw whitespace through HTML and editor serialization', () => {
+    const writing = open(markdownToHtml('```custom-language\n  <raw>\n\tend\n```'))
+    const saved = writing.getJSON()
+    expect(saved.content?.[0].attrs?.language).toBe('custom-language')
+    expect(plainText(saved)).toBe('  <raw>\n\tend')
+    expect(generateJSON(writing.getHTML(), journalExtensions())).toEqual(saved)
+    expect(writing.getHTML()).not.toContain('Copy code')
+})
 
 let editor: Editor | undefined
-afterEach(() => editor?.destroy())
+afterEach(() => {
+    cleanup()
+    editor?.destroy()
+})
+
+it('highlights selected code languages without serializing decorations or guessing plain and unknown languages', async () => {
+    const writing = open('<pre data-language="typescript"><code>const count: number = 42</code></pre>')
+    render(createElement(EditorContent, { editor: writing }))
+    await expect.poll(() => writing.view.dom.querySelector('.hljs-keyword')?.textContent).toBe('const')
+    expect(writing.getHTML()).not.toContain('hljs-')
+    writing.commands.setTextSelection(2)
+    writing.commands.updateAttributes('codeBlock', { language: null })
+    expect(writing.view.dom.querySelector('[class*="hljs-"]')).toBeNull()
+    writing.commands.updateAttributes('codeBlock', { language: 'custom-language' })
+    expect(writing.view.dom.querySelector('[class*="hljs-"]')).toBeNull()
+    writing.commands.updateAttributes('codeBlock', { language: 'python' })
+    expect(writing.view.dom.querySelector('.hljs-number')?.textContent).toBe('42')
+    expect(writing.state.doc.firstChild?.textContent).toBe('const count: number = 42')
+})
 
 function open(content = '<p>First thought</p>') {
     editor = new Editor({ element: document.createElement('div'), extensions: journalExtensions(), content })
@@ -83,7 +113,7 @@ it('leaves pasted and loaded double hyphens literal', () => {
 it('keeps Enter as a separate paragraph and Shift+Enter as a hard break after reload', () => {
     const writing = open()
     writing.commands.setTextSelection(14)
-    writing.commands.keyboardShortcut('Enter')
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     writing.commands.insertContent('Second thought')
     writing.commands.keyboardShortcut('Shift-Enter')
     writing.commands.insertContent('Next line')
@@ -100,7 +130,7 @@ it('retains blank blocks and hard breaks without cleaning them out of saved writ
     writing.commands.setContent(saved)
     expect(writing.getJSON()).toEqual(saved)
     expect(saved.content).toHaveLength(3)
-    expect(journalFromHTML(journalHTML(saved)).content).toHaveLength(3)
+    expect(generateJSON(writing.getHTML(), journalExtensions()).content).toHaveLength(3)
 })
 
 it('supports heading four, toggles, nested content, and inline code across serialization', () => {
@@ -111,13 +141,13 @@ it('supports heading four, toggles, nested content, and inline code across seria
     expect(saved.content?.[0].attrs?.level).toBe(4)
     expect(saved.content?.[1].type).toBe('toggle')
     expect(plainText(saved)).toContain('run()')
-    expect(journalFromHTML(journalHTML(saved))).toEqual(saved)
+    expect(generateJSON(writing.getHTML(), journalExtensions())).toEqual(saved)
     const toggle = writing.view.dom.querySelector('[data-type="toggle"]')!
     const button = toggle.querySelector('button')!
-    button.click()
     expect(button.getAttribute('aria-expanded')).toBe('false')
     expect(writing.getJSON()).toEqual(saved)
-    // Entering a collapsed summary opens its body before moving the caret.
+    // Entering an expanded summary moves into the body.
+    button.click()
     writing.state.doc.descendants((node, position) => {
         if (node.type.name === 'toggleSummary') writing.commands.setTextSelection(position + 1)
     })
@@ -164,7 +194,7 @@ it.each(['Backspace', 'Delete'])('removes a newly inserted empty toggle with %s 
     expect(writing.getJSON().content?.[0].type).toBe('toggle')
 })
 
-it('unwraps from the first body paragraph while preserving the summary and body', () => {
+it('preserves the toggle from the first body paragraph', () => {
     const writing = open(
         '<div data-type="toggle"><div data-type="toggleSummary">Notes</div><div data-type="toggleContent"><p>Keep this text</p></div></div>'
     )
@@ -174,7 +204,7 @@ it('unwraps from the first body paragraph while preserving the summary and body'
     })
     writing.commands.setTextSelection(position)
     writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
-    expect(writing.getJSON().content?.some((node) => node.type === 'toggle')).toBe(false)
+    expect(writing.getJSON().content?.some((node) => node.type === 'toggle')).toBe(true)
     expect(writing.getText()).toContain('Notes')
     expect(writing.getText()).toContain('Keep this text')
 })
@@ -195,6 +225,7 @@ it.each([
     writing.state.doc.descendants((node, offset) => {
         if (node.type.name === 'toggleSummary') titleEnd = offset + 1 + node.content.size
     })
+    writing.view.dom.querySelector<HTMLButtonElement>('[data-type=toggle] > button')!.click()
     writing.commands.setTextSelection(titleEnd)
     writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     expect(writing.state.selection.$from.parent.type.name).toBe('paragraph')
@@ -264,3 +295,142 @@ it.each(['beforeinput', 'ctrl'])('deletes words inside the toggle before safely 
     writing.commands.undo()
     expect(writing.state.doc.firstChild?.textContent).toBe('Keep the previous line')
 })
+
+it.each([0, 2, 4])('continues a closed marked summary at offset %s without moving its body', (offset) => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary"><strong>ABCD</strong></div><div data-type="toggleContent"><p>Keep child</p></div></div>'
+    )
+    writing.commands.setTextSelection(2 + offset)
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    const blocks = (writing.getJSON() as JournalNode).content!
+    expect(blocks.slice(0, 2).map((node) => node.type)).toEqual(['toggle', 'toggle'])
+    expect(blocks[0].content?.[0].content?.[0]?.text ?? '').toBe('ABCD'.slice(0, offset))
+    expect(blocks[1].content?.[0].content?.[0]?.text ?? '').toBe('ABCD'.slice(offset))
+    if (offset < 4) expect(blocks[1].content?.[0].content?.[0]?.marks).toEqual([{ type: 'bold' }])
+    expect(plainText(blocks[0])).toContain('Keep child')
+    expect(writing.state.selection.$from.parent.type.name).toBe('toggleSummary')
+    expect(writing.state.selection.$from.parentOffset).toBe(0)
+})
+
+it('moves a following paragraph into a closed toggle with Tab and restores it with undo', () => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary">Title</div><div data-type="toggleContent"><p></p></div></div><p><strong>Move me</strong></p>'
+    )
+    const before = writing.getJSON()
+    let position = 0
+    writing.state.doc.descendants((node, pos) => {
+        if (node.textContent === 'Move me' && node.type.name === 'paragraph') position = pos + 3
+    })
+    writing.commands.setTextSelection(position)
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(writing.state.selection.$from.parent.textContent).toBe('Move me')
+    expect(writing.state.selection.$from.parentOffset).toBe(2)
+    expect(writing.state.doc.firstChild!.lastChild!.childCount).toBe(1)
+    expect(writing.state.doc.firstChild!.lastChild!.firstChild!.textContent).toBe('Move me')
+    expect(writing.state.selection.$from.node(-1).type.name).toBe('toggleContent')
+    expect(writing.view.dom.querySelector('button')?.getAttribute('aria-expanded')).toBe('true')
+    writing.commands.undo()
+    expect(writing.getJSON()).toEqual(before)
+})
+
+it('continues an empty closed toggle and derives content state after editing', () => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary"></div><div data-type="toggleContent"><p></p></div></div>'
+    )
+    writing.commands.setTextSelection(2)
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(writing.state.doc.child(1).type.name).toBe('toggle')
+    expect(writing.state.selection.$from.parentOffset).toBe(0)
+    const toggles = writing.view.dom.querySelectorAll<HTMLElement>('[data-type=toggle]')
+    expect(toggles[1].dataset.hasContent).toBe('false')
+    toggles[1].querySelector('button')!.click()
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    writing.commands.insertContent('Body')
+    expect(toggles[1].dataset.hasContent).toBe('true')
+})
+
+it.each([0, 2, 4])('enters an open summary body at offset %s without losing marked text', (offset) => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary"><strong>ABCD</strong></div><div data-type="toggleContent"><p>Child</p></div></div>'
+    )
+    const before = writing.getJSON()
+    writing.view.dom.querySelector<HTMLButtonElement>('button')!.click()
+    writing.commands.setTextSelection(2 + offset)
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(writing.getJSON().content?.[0]).toEqual(before.content?.[0])
+    expect(writing.state.selection.$from.parent.textContent).toBe('Child')
+    expect(writing.state.selection.$from.parentOffset).toBe(0)
+})
+
+it('creates a writable paragraph before an image-only toggle body', () => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary">Image</div><div data-type="toggleContent"><p></p></div></div>'
+    )
+    const image = writing.schema.nodes.journalImage ?? writing.schema.nodes.image
+    let bodyStart = 0
+    writing.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'toggleContent') bodyStart = pos + 1
+    })
+    writing.view.dispatch(writing.state.tr.replaceWith(bodyStart, bodyStart + 2, image.create({ src: 'test.png' })))
+    writing.view.dom.querySelector<HTMLButtonElement>('button')!.click()
+    writing.commands.setTextSelection(2)
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(writing.state.selection.$from.parent.type.name).toBe('paragraph')
+    writing.commands.insertContent('Caption context')
+    expect(writing.state.doc.firstChild!.lastChild!.childCount).toBe(2)
+})
+
+it('keeps repeated Enter inside toggle content and outdents an empty block with Backspace', () => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary">Title</div><div data-type="toggleContent"><p>Keep child</p></div></div>'
+    )
+    writing.view.dom.querySelector<HTMLButtonElement>('button')!.click()
+    let end = 0
+    writing.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'paragraph' && node.textContent === 'Keep child') end = pos + 1 + node.content.size
+    })
+    writing.commands.setTextSelection(end)
+    const key = (key: string) =>
+        writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    key('Enter')
+    key('Enter')
+    expect(writing.state.selection.$from.node(-1).type.name).toBe('toggleContent')
+    expect(writing.state.doc.firstChild!.lastChild!.childCount).toBe(3)
+    const before = writing.getJSON()
+    key('Backspace')
+    expect(writing.state.selection.$from.depth).toBe(1)
+    expect(writing.state.selection.$from.parent.content.size).toBe(0)
+    expect(writing.state.doc.firstChild!.lastChild!.childCount).toBe(2)
+    expect(writing.state.doc.firstChild!.textContent).toBe('TitleKeep child')
+    writing.commands.undo()
+    expect(writing.getJSON()).toEqual(before)
+    expect(writing.state.selection.$from.node(-1).type.name).toBe('toggleContent')
+})
+
+it.each([false, true])(
+    'deletes an empty toggle block before following content (has preceding content: %s)',
+    (preceding) => {
+        const writing = open(
+            `<div data-type="toggle"><div data-type="toggleSummary">Title</div><div data-type="toggleContent">${preceding ? '<p>Before</p>' : ''}<p></p><p><strong>Following</strong></p></div></div>`
+        )
+        let blank = 0
+        writing.state.doc.descendants((node, pos) => {
+            if (node.type.name === 'paragraph' && !node.content.size && !blank) blank = pos + 1
+        })
+        writing.commands.setTextSelection(blank)
+        const before = writing.getJSON()
+        writing.view.dom.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true })
+        )
+        const body = writing.state.doc.firstChild!.lastChild!
+        expect(body.childCount).toBe(preceding ? 2 : 1)
+        expect(body.lastChild!.textContent).toBe('Following')
+        expect(body.lastChild!.firstChild!.marks[0].type.name).toBe('bold')
+        if (preceding) {
+            expect(writing.state.selection.$from.parent.textContent).toBe('Before')
+            expect(writing.state.selection.$from.parentOffset).toBe(6)
+        }
+        writing.commands.undo()
+        expect(writing.getJSON()).toEqual(before)
+    }
+)

@@ -1,272 +1,335 @@
+import { randomUUID } from 'node:crypto'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { Effect, Fiber, Layer, ManagedRuntime } from 'effect'
 import { afterEach, expect, it, vi } from 'vitest'
-import { GitHub } from '../src/main/github'
-import { Http } from '../src/main/http'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { ProviderAccounts, ProviderAccountsLive } from '../src/main/provider-accounts'
+import { JournalStore } from '../src/main/journal-context'
+import { JournalDatabase } from '../src/main/journal-database'
+import { HttpLive } from '../src/main/http'
+import { run } from './effect-fixtures'
+import type { Provider } from '../src/shared/provider-accounts'
 
-// Failure modes: discarded refresh credentials, simultaneous repository refreshes,
-// rotation after a restart, and a disconnect while rotation is in flight.
-it('renews an expired device credential after restart for multiple repositories without reconnecting', async () => {
-    vi.useFakeTimers()
-    let stored = ''
-    let rotations = 0
-    const transport: typeof fetch = (input, init) => {
-        const url = input instanceof Request ? input.url : input.toString()
-        if (url.endsWith('/device/code'))
-            return Promise.resolve(
-                Response.json({
-                    device_code: 'device',
-                    user_code: 'CODE',
-                    verification_uri: 'https://github.com/login/device',
-                    interval: 1,
-                    expires_in: 600
-                })
-            )
-        if (url.endsWith('/oauth/access_token')) {
-            if (typeof init?.body !== 'string') throw new Error('Expected a JSON exchange body')
-            const body = JSON.parse(init.body) as Record<string, string>
-            if (body.grant_type === 'refresh_token') {
-                rotations++
-                expect(body.refresh_token).toBe(`refresh-${rotations - 1}`)
-                expect(body.client_secret).toBeUndefined()
-            }
-            return Promise.resolve(
-                Response.json({
-                    access_token: `access-${rotations}`,
-                    refresh_token: `refresh-${rotations}`,
-                    expires_in: 28800
-                })
-            )
-        }
-        if (url.endsWith('/user')) return Promise.resolve(Response.json({ login: 'author' }))
-        if (url.endsWith('/user/emails')) return Promise.resolve(Response.json([]))
-        const expected = rotations > 0 ? `access-${rotations}` : 'expired'
-        return Promise.resolve(
-            new Headers(init?.headers).get('Authorization') === `Bearer ${expected}`
-                ? Response.json([])
-                : new Response('{}', { status: 401 })
-        )
-    }
-    vi.stubGlobal('fetch', transport)
-    const create = () =>
-        new GitHub(
-            new Http(transport),
-            () => stored,
-            (value) => {
-                stored = value
-            }
-        )
-    const signin = create()
-    await signin.start()
-    vi.advanceTimersByTime(1000)
-    await signin.poll()
-    vi.advanceTimersByTime(9 * 60 * 60 * 1000)
-    const state = sampleState('2026-10-05')
-    const reopened = create()
-    await expect(
-        Promise.all(state.repositories.slice(0, 2).map((repo) => reopened.files(repo, state.activities[8])))
-    ).resolves.toEqual([[], []])
-    expect(rotations).toBe(1)
-    vi.advanceTimersByTime(9 * 60 * 60 * 1000)
-    await expect(create().files(state.repositories[0], state.activities[8])).resolves.toEqual([])
-    expect(rotations).toBe(2)
-})
-
-afterEach(() => {
+// Migrate the retired authenticator's outcomes to the actual account interface:
+// restart, renewal, rejection, cancellation, late disconnect and owned shutdown.
+const cleanups: (() => Promise<void>)[] = []
+afterEach(async () => {
     vi.useRealTimers()
-    vi.unstubAllGlobals()
+    for (const close of cleanups.splice(0).reverse()) await close()
 })
-
-it('respects GitHub device polling intervals and discovers identities after authorization', async () => {
-    vi.useFakeTimers()
-    let token = ''
-    let authorized = false
-    let attempts = 0
-    const requests: { url: string; body: Record<string, string> }[] = []
-    const transport: typeof fetch = (input, init) =>
-        Promise.resolve().then(() => {
-            const url = input instanceof Request ? input.url : String(input)
-            if (typeof init?.body === 'string') requests.push({ url, body: JSON.parse(init.body) })
-            const json = (value: unknown) => new Response(JSON.stringify(value))
-            if (url.endsWith('/device/code'))
-                return json({
-                    device_code: 'private-device-code',
-                    user_code: 'ABCD-EFGH',
-                    verification_uri: 'https://github.com/login/device',
-                    interval: 5,
-                    expires_in: 900
-                })
-            if (url.endsWith('/oauth/access_token')) {
-                attempts++
-                return json(authorized ? { access_token: 'private-token' } : { error: 'authorization_pending' })
-            }
-            if (url.endsWith('/user/emails')) return json([{ email: 'one@example.com' }, { email: 'two@example.com' }])
-            return json({ login: 'journal-author' })
-        })
-    vi.stubGlobal('fetch', transport)
-    const github = new GitHub(
-        new Http(transport),
-        () => token,
-        (value) => {
-            token = value
-        }
-    )
-    const device = await github.start()
-    expect(device).toEqual({ code: 'ABCD-EFGH', url: 'https://github.com/login/device', interval: 5 })
-    expect(JSON.stringify(device)).not.toContain('private-device-code')
-    expect(await github.poll()).toEqual({ pending: true, interval: 5 })
-    expect(attempts).toBe(0)
-    vi.advanceTimersByTime(5000)
-    expect(await github.poll()).toEqual({ pending: true, interval: 5 })
-    authorized = true
-    vi.advanceTimersByTime(5000)
-    expect(await github.poll()).toEqual({ login: 'journal-author', emails: ['one@example.com', 'two@example.com'] })
-    expect(token).toBe('private-token')
-    expect(
-        requests
-            .filter(({ url }) => url.includes('github.com/login/'))
-            .every(({ body }) => body.client_id === 'Ov23li9PFMAWRrbZQ6Xy' && !('client_secret' in body))
-    ).toBe(true)
-})
-
-it('renews once on an early 401, including a diff request, while preserving legacy tokens', async () => {
-    let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: Date.now() + 3600_000 })
-    let rotations = 0
-    const transport: typeof fetch = (input, init) => {
-        if ((input instanceof Request ? input.url : input.toString()).includes('/oauth/access_token')) {
-            rotations++
-            return Promise.resolve(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
-        }
-        if (
-            new Headers(init?.headers).get('Authorization') === 'Bearer old' &&
-            new Headers(init?.headers).get('Accept') === 'application/vnd.github.diff'
-        )
-            return Promise.resolve(new Response('{}', { status: 401 }))
-        return Promise.resolve(
-            new Headers(init?.headers).get('Accept') === 'application/vnd.github.diff'
-                ? new Response('fixture diff')
-                : Response.json({ files: [] })
-        )
+async function fixture() {
+    const directory = await mkdtemp(join(tmpdir(), 'gitorian-accounts-'))
+    const store = await JournalDatabase.open(join(directory, 'journal.sqlite'))
+    const secrets = new Map<string, string>()
+    const calls: { url: string; body?: Record<string, string>; token: string }[] = []
+    const control = {
+        user: 42,
+        rotations: 0,
+        oauthError: '',
+        failRenewal: false,
+        rejectOld: false,
+        renewal: undefined as (() => Promise<void>) | undefined,
+        device: undefined as ((signal: AbortSignal) => Promise<void>) | undefined
     }
-    vi.stubGlobal('fetch', transport)
-    const github = new GitHub(
-        new Http(transport),
-        () => stored,
-        (value) => {
-            stored = value
-        }
-    )
-    const repo = sampleState('2026-10-05').repositories[0]
-    expect((await github.commitDetails(repo, 'a'.repeat(40))).diff).toBe('fixture diff')
-    expect(rotations).toBe(1)
-    stored = 'legacy-token'
-    await github.commitDetails(repo, 'b'.repeat(40))
-    expect(rotations).toBe(1)
-})
-
-it('keeps credentials on a temporary renewal failure and permits retry', async () => {
-    let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: 1 })
-    const original = stored
-    const exchange = vi
-        .fn<typeof fetch>()
-        .mockRejectedValueOnce(new TypeError('fetch failed'))
-        .mockResolvedValueOnce(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
-    vi.stubGlobal('fetch', exchange)
-    const github = new GitHub(
-        new Http(() => Promise.resolve(Response.json([]))),
-        () => stored,
-        (value) => {
-            stored = value
-        }
-    )
-    const state = sampleState('2026-10-05')
-    await expect(github.files(state.repositories[0], state.activities[8])).rejects.toThrow('fetch failed')
-    expect(stored).toBe(original)
-    await expect(github.files(state.repositories[0], state.activities[8])).resolves.toEqual([])
-    expect(exchange).toHaveBeenCalledTimes(2)
-})
-
-it('does not restore a disconnected credential when a renewal completes late', async () => {
-    let stored = JSON.stringify({ access_token: 'old', refresh_token: 'refresh', expires: 1 })
-    let finish!: (response: Response) => void
-    vi.stubGlobal(
-        'fetch',
-        () =>
-            new Promise<Response>((resolve) => {
-                finish = resolve
+    const fetcher: typeof fetch = async (input, init = {}) => {
+        const url = input instanceof Request ? input.url : input.toString()
+        const body =
+            typeof init.body === 'string'
+                ? new Headers(init.headers).get('content-type') === 'application/x-www-form-urlencoded'
+                    ? Object.fromEntries(new URLSearchParams(init.body))
+                    : (JSON.parse(init.body) as Record<string, string>)
+                : undefined
+        const token = new Headers(init.headers).get('Authorization') ?? ''
+        calls.push({ url, body, token })
+        if (url.endsWith('/device/code') || url.endsWith('/authorize_device')) {
+            await control.device?.(init.signal!)
+            if (control.oauthError === 'device_flow_disabled') return Response.json({ error: control.oauthError })
+            return Response.json({
+                device_code: 'synthetic-device',
+                user_code: 'ABCD-EFGH',
+                verification_uri: url.includes('gitlab.com')
+                    ? 'https://gitlab.com/oauth/device'
+                    : 'https://github.com/login/device',
+                interval: 5,
+                expires_in: 60
             })
-    )
-    const api = vi.fn<typeof fetch>()
-    const github = new GitHub(
-        new Http(api),
-        () => stored,
-        (value) => {
-            stored = value
         }
-    )
-    const state = sampleState('2026-10-05')
-    const pending = github.files(state.repositories[0], state.activities[8])
-    stored = ''
-    finish(Response.json({ access_token: 'new', refresh_token: 'next', expires_in: 28800 }))
-    await expect(pending).rejects.toThrow('connection changed')
-    expect(stored).toBe('')
-    expect(api).not.toHaveBeenCalled()
-})
-
-it('backs off after a rate limit without issuing repeated requests', async () => {
-    vi.useFakeTimers()
-    let attempts = 0
-    const transport: typeof fetch = () =>
-        Promise.resolve().then(() => {
-            attempts++
-            return new Response('{}', { status: 429, headers: { 'retry-after': '30' } })
-        })
-    const http = new Http(transport)
-    await expect(http.request('https://api.notion.com/v1/users/me', 'private-token')).rejects.toThrow('429')
-    await expect(http.request('https://api.notion.com/v1/users/me', 'private-token')).rejects.toThrow('rate limit')
-    expect(attempts).toBe(1)
-    vi.advanceTimersByTime(30000)
-    await expect(http.request('https://api.notion.com/v1/users/me', 'private-token')).rejects.toThrow('429')
-    expect(attempts).toBe(2)
-})
-
-it('keeps polling GitHub after slow_down and reports expiry without connecting', async () => {
-    vi.useFakeTimers()
-    let attempts = 0
-    const setToken = vi.fn()
-    const transport: typeof fetch = (input) =>
-        Promise.resolve().then(() => {
-            const url = input instanceof Request ? input.url : String(input)
-            return new Response(
-                JSON.stringify(
-                    url.endsWith('/device/code')
-                        ? {
-                              device_code: 'test-device',
-                              user_code: 'ABCD-EFGH',
-                              verification_uri: 'https://github.com/login/device',
-                              interval: 5,
-                              expires_in: 900
-                          }
-                        : ++attempts === 1
-                          ? { error: 'slow_down' }
-                          : { error: 'expired_token' }
-                )
+        if (body?.grant_type === 'refresh_token') {
+            control.rotations++
+            await control.renewal?.()
+            if (control.failRenewal) return Response.json({}, { status: 503 })
+            return Response.json({ access_token: 'renewed', refresh_token: 'refresh-next', expires_in: 7200 })
+        }
+        if (url.endsWith('/access_token') || url.endsWith('/oauth/token'))
+            return Response.json(
+                control.oauthError
+                    ? { error: control.oauthError }
+                    : { access_token: 'authorized', refresh_token: 'refresh', expires_in: 7200 },
+                { status: control.oauthError ? 400 : 200 }
             )
+        if (url.endsWith('/user/emails'))
+            return Response.json([
+                { email: 'work@example.test', verified: true, confirmed_at: '2026-01-01T00:00:00Z' },
+                { email: 'unverified@example.test', verified: false, confirmed_at: null }
+            ])
+        if (url.endsWith('/user')) return Response.json({ id: control.user, login: 'work', username: 'work' })
+        if (control.rejectOld && token === 'Bearer old') return Response.json({}, { status: 401 })
+        return new Headers(init.headers).get('Accept') === 'application/vnd.github.diff'
+            ? new Response('diff --git a/a b/a')
+            : Response.json({ ok: true })
+    }
+    const vault = {
+        get: (key: string) => secrets.get(key) ?? '',
+        set: (key: string, value: string) => {
+            if (value) secrets.set(key, value)
+            else secrets.delete(key)
+        },
+        protected: () => true
+    }
+    const native = Layer.merge(
+        Layer.succeed(JournalStore, store),
+        HttpLive(fetcher, {
+            pauses: () => store.config.transportPauses,
+            changed: (key, until) => store.savePause(key, until).then(() => undefined)
         })
-    vi.stubGlobal('fetch', transport)
-    const github = new GitHub(new Http(transport), () => '', setToken)
-    await github.start()
-    vi.advanceTimersByTime(5000)
-    expect(await github.poll()).toEqual({ pending: true, interval: 10 })
-    vi.advanceTimersByTime(5000)
-    expect(await github.poll()).toEqual({ pending: true, interval: 5 })
-    expect(attempts).toBe(1)
-    vi.advanceTimersByTime(5000)
-    await expect(github.poll()).rejects.toThrow('expired')
-    expect(setToken).not.toHaveBeenCalled()
+    )
+    const boot = async () => {
+        const runtime = ManagedRuntime.make(ProviderAccountsLive({ vault, fetcher }).pipe(Layer.provide(native)))
+        return { runtime, accounts: await runtime.runPromise(ProviderAccounts) }
+    }
+    let installed = await boot()
+    cleanups.push(async () => {
+        await installed.runtime.dispose()
+        await store.close()
+        await rm(directory, { recursive: true, force: true })
+    })
+    const seed = async (expired = true, provider: Provider = 'github') => {
+        const id = randomUUID(),
+            key = `provider-${randomUUID()}`
+        await store.prepareProviderAccount({
+            id,
+            provider,
+            host: provider === 'github' ? 'github.com' : 'gitlab.com',
+            userId: String(control.user++),
+            username: 'work',
+            emails: [],
+            generation: 1,
+            status: 'connected',
+            credentialKey: key
+        })
+        vault.set(
+            key,
+            JSON.stringify({
+                access_token: 'old',
+                refresh_token: 'refresh-old',
+                expires: Date.now() + (expired ? -1000 : 3600000)
+            })
+        )
+        await store.activateProviderAccount(id, 1)
+        await store.finishProviderAccount(id)
+        return id
+    }
+    return {
+        store,
+        secrets,
+        calls,
+        control,
+        seed,
+        get accounts() {
+            return installed.accounts
+        },
+        get runtime() {
+            return installed.runtime
+        },
+        restart: async () => {
+            await installed.runtime.dispose()
+            installed = await boot()
+        }
+    }
+}
+
+it.each(['github', 'gitlab'] as const)(
+    'honors %s polling intervals and installs verified identity without exporting credentials',
+    async (provider) => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        const f = await fixture(),
+            start = await run(f.accounts.begin(provider))
+        expect(start.code).toBe('ABCD-EFGH')
+        expect(await run(f.accounts.complete(start.id))).toEqual({ pending: true, interval: 5 })
+        f.control.oauthError = 'authorization_pending'
+        vi.setSystemTime(Date.now() + 5000)
+        expect(await run(f.accounts.complete(start.id))).toEqual({ pending: true, interval: 5 })
+        f.control.oauthError = ''
+        vi.setSystemTime(Date.now() + 5000)
+        await run(f.accounts.complete(start.id))
+        expect(f.accounts.accounts()[0]).toMatchObject({ userId: '42', provider, emails: ['work@example.test'] })
+        expect(await f.store.export()).not.toContain('authorized')
+        expect(f.calls.filter((c) => c.body).every((c) => !c.body?.client_secret)).toBe(true)
+    }
+)
+it('backs off slow_down, expires attempts, and explains disabled sign-in', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const f = await fixture(),
+        start = await run(f.accounts.begin('github'))
+    f.control.oauthError = 'slow_down'
+    vi.setSystemTime(Date.now() + 5000)
+    expect(await run(f.accounts.complete(start.id))).toEqual({ pending: true, interval: 10 })
+    vi.setSystemTime(Date.now() + 60000)
+    await expect(run(f.accounts.complete(start.id))).rejects.toThrow(/expired/i)
+    expect(f.accounts.accounts()).toHaveLength(0)
+    f.control.oauthError = 'device_flow_disabled'
+    await expect(run(f.accounts.begin('github'))).rejects.toThrow(/unavailable/i)
+})
+it('renews once after restart for parallel reads and retains the replacement pair', async () => {
+    const f = await fixture(),
+        id = await f.seed()
+    await f.restart()
+    expect(await Promise.all([run(f.accounts.token(id)), run(f.accounts.token(id))])).toEqual(['renewed', 'renewed'])
+    expect(f.control.rotations).toBe(1)
+    await f.restart()
+    expect(await run(f.accounts.token(id))).toBe('renewed')
+    expect(f.control.rotations).toBe(1)
+})
+it('renews an early 401 for both metadata and text diff reads', async () => {
+    const f = await fixture(),
+        id = await f.seed(false)
+    f.control.rejectOld = true
+    expect(await run(f.accounts.request(id, 'https://api.github.com/repos/team/work'))).toEqual({ ok: true })
+    expect(
+        await run(
+            f.accounts.request<string>(
+                id,
+                'https://api.github.com/repos/team/work/pulls/1',
+                false,
+                { headers: { Accept: 'application/vnd.github.diff' } },
+                'text'
+            )
+        )
+    ).toContain('diff --git')
+    expect(f.control.rotations).toBe(1)
+})
+it('keeps the prior pair on a declared temporary renewal failure and permits explicit retry', async () => {
+    const f = await fixture(),
+        id = await f.seed()
+    f.control.failRenewal = true
+    await expect(run(f.accounts.token(id))).rejects.toThrow()
+    expect(f.accounts.accounts()[0]?.status).toBe('connected')
+    f.control.failRenewal = false
+    expect(await run(f.accounts.token(id))).toBe('renewed')
+})
+it('does not reinstall credentials after disconnect wins an in-flight rotation', async () => {
+    const f = await fixture(),
+        id = await f.seed()
+    let release!: () => void
+    f.control.renewal = () =>
+        new Promise<void>((done) => {
+            release = done
+        })
+    const pending = run(f.accounts.token(id))
+    const rejected = expect(pending).rejects.toThrow()
+    await vi.waitFor(() => expect(f.control.rotations).toBe(1))
+    await run(f.accounts.disconnect(id))
+    release()
+    await rejected
+    expect(f.accounts.accounts()[0]?.status).toBe('disconnected')
+    expect(f.secrets.size).toBe(0)
+})
+it('keeps a rotation alive after its reader cancels and does not block another account', async () => {
+    const f = await fixture(),
+        first = await f.seed(),
+        other = await f.seed(false)
+    let release!: () => void
+    f.control.renewal = () =>
+        new Promise<void>((done) => {
+            release = done
+        })
+    const fiber = Effect.runFork(f.accounts.token(first))
+    await vi.waitFor(() => expect(f.control.rotations).toBe(1))
+    const interrupted = Effect.runPromise(Fiber.interrupt(fiber))
+    expect(await run(f.accounts.token(other))).toBe('old')
+    release()
+    await interrupted
+    expect(await run(f.accounts.token(first))).toBe('renewed')
+    expect(f.control.rotations).toBe(1)
+})
+it('settles accepted rotation before disposal and aborts ordinary owned device reads', async () => {
+    const f = await fixture(),
+        id = await f.seed()
+    let release!: () => void
+    f.control.renewal = () =>
+        new Promise<void>((done) => {
+            release = done
+        })
+    const pending = Effect.runPromiseExit(f.accounts.token(id))
+    await vi.waitFor(() => expect(f.control.rotations).toBe(1))
+    let disposed = false
+    const closing = f.runtime.dispose().then(() => {
+        disposed = true
+    })
+    await Promise.resolve()
+    expect(disposed).toBe(false)
+    release()
+    await closing
+    await pending
+    expect([...f.secrets.values()].some((s) => s.includes('renewed'))).toBe(true)
+    await f.restart()
+    f.control.device = (signal) =>
+        new Promise<void>((_, reject) =>
+            signal.addEventListener(
+                'abort',
+                () => reject(new Error('Device request aborted', { cause: signal.reason })),
+                { once: true }
+            )
+        )
+    const begin = Effect.runPromiseExit(f.accounts.begin('github'))
+    await vi.waitFor(() => expect(f.calls.some((c) => c.url.endsWith('/device/code'))).toBe(true))
+    await f.runtime.dispose()
+    await begin
+    await expect(run(f.accounts.begin('github'))).rejects.toThrow(/closed/i)
+})
+it('reports malformed saved credentials through the recoverable failure channel', async () => {
+    const f = await fixture(),
+        id = await f.seed(false),
+        key = f.store.config.accounts[0].credentialKey!
+    f.secrets.set(key, '{invalid')
+    await expect(run(f.accounts.token(id))).rejects.toThrow(/credentials|reconnect/i)
 })
 
-it('explains disabled GitHub device flow before attempting browser authorization', async () => {
-    vi.stubGlobal('fetch', () => Promise.resolve(new Response(JSON.stringify({ error: 'device_flow_disabled' }))))
-    const github = new GitHub(new Http(), () => '', vi.fn())
-    await expect(github.start()).rejects.toThrow('GitHub sign-in is unavailable')
+it('serializes simultaneous sign-ins for the same provider identity', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const f = await fixture()
+    const first = await run(f.accounts.begin('github')),
+        second = await run(f.accounts.begin('github'))
+    vi.setSystemTime(Date.now() + 5000)
+    await Promise.all([run(f.accounts.complete(first.id)), run(f.accounts.complete(second.id))])
+    expect(f.accounts.accounts()).toHaveLength(1)
+    expect(f.accounts.accounts()[0]?.generation).toBe(2)
+    expect(f.secrets.size).toBe(1)
+    await f.restart()
+    expect(await run(f.accounts.token(f.accounts.accounts()[0].id))).toBe('authorized')
+})
+
+it('settles a live token rotation before installing a reconnect without orphaning either pair', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const f = await fixture(),
+        id = await f.seed()
+    f.control.user = 42
+    let release!: () => void
+    f.control.renewal = () =>
+        new Promise<void>((done) => {
+            release = done
+        })
+    const rotation = run(f.accounts.token(id))
+    await vi.waitFor(() => expect(f.control.rotations).toBe(1))
+    const start = await run(f.accounts.begin('github', id))
+    vi.setSystemTime(Date.now() + 5000)
+    const reconnect = run(f.accounts.complete(start.id))
+    await vi.waitFor(() => expect(f.calls.some((c) => c.url.endsWith('/user/emails'))).toBe(true))
+    release()
+    await Promise.all([rotation, reconnect])
+    expect(f.accounts.accounts()).toHaveLength(1)
+    expect(f.accounts.accounts()[0]?.generation).toBe(2)
+    expect(f.secrets.size).toBe(1)
+    expect(await run(f.accounts.token(id))).toBe('authorized')
 })

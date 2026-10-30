@@ -2,6 +2,8 @@
 
 Windows NSIS installs check stable GitHub Releases shortly after startup and every six hours. Updates download without blocking writing. Installation requires an explicit Update now action; normal exit never installs. Development and unsupported platforms hide the control.
 
+`ApplicationWorkLive` constructs a scoped functional record of lazy Effects for accepted work, detached follow-ups, periodic refresh, and durable shutdown. Electron owns the managed runtime and executes those operations. Update preparation drains accepted tasks before flushing; a failed preparation must leave admission usable. Backup restore drains other tasks while excluding its own command. Normal quit pauses periodic scheduling, drains active ticks and accepted descendants, flushes, then disposes the Electron runtime. Failed saving resumes admission and scheduling. Concurrent shutdowns serialize; competing maintenance drains reject instead of waiting on each other. Preserve `tests/application-work.test.ts` and `tests/store-worker.test.ts`, then run the desktop app-updates and repository-import journeys for durability and recovery.
+
 ## Entry points and outcomes
 
 - **Header:** The icon-only update control appears in the hub and writing workspace only after an update is downloaded and ready to install. Its primary foreground dot, accessible name and tooltip announce Update ready. Idle, checking, current, downloading, failed download and installing states have no header control. The desktop journey verifies these hidden states, then opens the ready popover from both headers and captures `06-hub-update-popover.png` alongside the workspace screenshot.
@@ -31,3 +33,4 @@ The installed journey also quits with an update ready and reopens the old versio
 ## Release assets
 
 The existing draft-only workflow must include the NSIS installer, its blockmap, latest.yml and SHA256SUMS covering all assets. Production uses the GitHub provider configured under win.publish. Unsigned Windows updates intentionally omit publisher-name verification; download hashes remain verified. Signing is deferred. A real GitHub release is not part of local verification and needs release authorization.
+

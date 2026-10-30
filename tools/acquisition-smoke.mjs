@@ -26,7 +26,7 @@ dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [rep
 const pause = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds))
 let checking = false
 app.on('browser-window-created', (_, window) => {
-    window.show = () => window.hide()
+    window.show = () => window.showInactive()
     window.webContents.setBackgroundThrottling(false)
     window.webContents.on('console-message', (event) => {
         if (event.level === 'error') console.error(event.message)
@@ -117,19 +117,47 @@ app.on('browser-window-created', (_, window) => {
             if (!activityId) throw new Error('No activity acquired')
             await window.loadURL(base)
             for (let attempt = 0; attempt < 100; attempt++) {
+                if (
+                    await window.webContents.executeJavaScript(
+                        `!!document.querySelector('[aria-label="Dismiss setup"]')`
+                    )
+                )
+                    break
+                await pause(50)
+            }
+            await window.webContents.executeJavaScript(
+                `document.querySelector('[aria-label="Dismiss setup"]')?.click()`
+            )
+            for (let attempt = 0; attempt < 100; attempt++) {
                 if (await window.webContents.executeJavaScript(`!!document.querySelector('.hub-activity')`)) break
                 await pause(50)
             }
+            console.info('Opening hub activity details')
             await window.webContents.executeJavaScript(`document.querySelector('.hub-activity').click()`)
-            await pause(400)
+            for (let attempt = 0; attempt < 100; attempt++) {
+                if (await window.webContents.executeJavaScript(`!!document.querySelector('.hub-detail-files')`)) break
+                await pause(50)
+            }
             result.hubFilesWithoutPatch = await window.webContents.executeJavaScript(
                 `(async()=>{const state=(await window.journal.invoke({type:'state'})).state;return !!document.querySelector('.hub-detail-files') && Object.keys(state.diffs).length===0})()`
             )
-            const database = new DatabaseSync(join(directory, 'gitorian.sqlite'))
-            result.hubFilesWithoutPatch &&=
-                database.prepare("SELECT count(*) AS count FROM patches WHERE id LIKE 'diff:%'").get().count === 0
+            const database = new DatabaseSync(join(directory, 'journal.sqlite'))
+            result.hubFilesWithoutPatch &&= database.prepare('SELECT count(*) AS count FROM patches').get().count === 0
             database.close()
+            console.info('Opening selected activity in workspace')
             await window.webContents.executeJavaScript(`document.querySelector('.hub-detail-footer button').click()`)
+            for (let attempt = 0; attempt < 100; attempt++) {
+                if (
+                    await window.webContents.executeJavaScript(`!!document.querySelector('.ws-inspector [role="tab"]')`)
+                )
+                    break
+                await pause(50)
+            }
+            const diffTab = await window.webContents.executeJavaScript(
+                `(()=>{const rect=Array.from(document.querySelectorAll('.ws-inspector [role="tab"]')).find(tab=>tab.textContent==='Diff').getBoundingClientRect();return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}})()`
+            )
+            window.webContents.sendInputEvent({ type: 'mouseDown', ...diffTab, button: 'left', clickCount: 1 })
+            window.webContents.sendInputEvent({ type: 'mouseUp', ...diffTab, button: 'left', clickCount: 1 })
             for (let attempt = 0; attempt < 100; attempt++) {
                 if (await window.webContents.executeJavaScript(`!!document.querySelector('.diff-viewer .file-diff')`))
                     break
@@ -163,6 +191,7 @@ app.on('browser-window-created', (_, window) => {
             app.exit(0)
         } catch (error) {
             console.error(error)
+            console.error(await window.webContents.executeJavaScript(`document.body.innerText.slice(0,4000)`))
             app.exit(1)
         }
     })

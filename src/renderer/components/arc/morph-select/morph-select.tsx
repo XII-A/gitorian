@@ -1,16 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import type {
     CSSProperties,
     FocusEvent as ReactFocusEvent,
     KeyboardEvent as ReactKeyboardEvent,
     ReactNode
 } from 'react'
-import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'motion/react'
-import type { Transition, Variants } from 'motion/react'
+import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react'
+import type { MotionStyle, Transition, Variants } from 'motion/react'
 import { Check, ChevronDown, Search, X } from 'lucide-react'
-import { motionTokens } from '../lib/motion-tokens'
+import { motionTokens } from '../motion-tokens'
 import styles from './morph-select.module.css'
 import { ScrollArea } from '../scroll-area/scroll-area'
 
@@ -83,6 +84,8 @@ export interface MorphSelectProps {
     maxTriggerWidth?: number
     /** Keep toolbar layout stable while the floating picker still morphs. */
     animateTriggerWidth?: boolean
+    /** Let the morph escape a clipped toolbar while keeping its closed trigger in the normal tab order. */
+    portal?: boolean
 }
 
 interface Section {
@@ -201,7 +204,8 @@ export function MorphSelect({
     renderTree,
     title,
     maxTriggerWidth,
-    animateTriggerWidth = true
+    animateTriggerWidth = true,
+    portal = false
 }: MorphSelectProps) {
     const reduced = useReducedFlag()
     const uid = useId()
@@ -210,6 +214,9 @@ export function MorphSelect({
         optionId = (index: number) => `${uid}-option-${index}`
 
     const rootRef = useRef<HTMLDivElement>(null)
+    const anchorRef = useRef<HTMLDivElement>(null)
+    const portalRef = useRef<HTMLDivElement>(null)
+    const returnFocus = useRef(false)
     const measureRef = useRef<HTMLSpanElement>(null)
     const listFaceRef = useRef<HTMLDivElement>(null)
     const scrollRef = useRef<HTMLDivElement>(null)
@@ -228,6 +235,8 @@ export function MorphSelect({
     const selectedOption = selected === null ? undefined : all.find((option) => option.value === selected)
 
     const [open, setOpen] = useState(false)
+    const [floating, setFloating] = useState(false)
+    const [position, setPosition] = useState({ left: 0, top: 0, width: 0, viewportHeight: 0, align })
     const [query, setQuery] = useState('')
     const [active, setActive] = useState<string | null>(null)
     const [change, setChange] = useState<Change>({ key: 0, value: null, dir: 1, fly: null })
@@ -259,6 +268,14 @@ export function MorphSelect({
         shapeH = useMotionValue<number | string>('100%'),
         radius = useMotionValue(22)
     const sizes = useRef({ trigger: 0, lid: 0, listW: 0, listH: 0 })
+    const layerTransform = useTransform(shapeH, (height) => {
+        if (typeof height !== 'number' || !floating) return 'none'
+        const shift = Math.min(
+            Math.max(0, position.top - 8),
+            Math.max(0, height - (position.viewportHeight - position.top - 8))
+        )
+        return `translateY(${-shift}px)`
+    })
     const live = useRef({ open: false, reduced: false, measured: false })
     useLayoutEffect(() => {
         live.current.reduced = reduced
@@ -278,6 +295,7 @@ export function MorphSelect({
                 shapeH.jump(next.h)
                 radius.jump(next.r)
                 live.current.measured = true
+                if (portal && !isOpen) setFloating(false)
                 return
             }
             const lastW = typeof shapeW.get() === 'number' ? (shapeW.get() as number) : next.w
@@ -287,10 +305,14 @@ export function MorphSelect({
             if (animateTriggerWidth) animate(anchorW, trigger, trigger < lastAnchor ? NARROW : WIDTH)
             else anchorW.jump(trigger)
             animate(shapeW, next.w, isOpen ? transition : next.w < lastW ? NARROW : WIDTH)
-            animate(shapeH, next.h, transition)
+            const heightAnimation = animate(shapeH, next.h, transition)
+            if (portal && !isOpen)
+                void heightAnimation.then(() => {
+                    if (!live.current.open) setFloating(false)
+                })
             animate(radius, next.r, transition)
         },
-        [anchorW, radius, shapeH, shapeW, animateTriggerWidth]
+        [anchorW, radius, shapeH, shapeW, animateTriggerWidth, portal]
     )
 
     useLayoutEffect(() => {
@@ -322,7 +344,39 @@ export function MorphSelect({
         observer.observe(measure)
         observer.observe(face)
         return () => observer.disconnect()
-    }, [place, selectedOption?.label])
+    }, [place, selectedOption?.label, floating])
+
+    const positionPortal = useCallback(() => {
+        const rect = anchorRef.current?.getBoundingClientRect()
+        if (!rect) return
+        const width = Math.min(panelWidth, window.innerWidth - 32)
+        const edge = rect.left + width > window.innerWidth - 8 ? 'end' : rect.right - width < 8 ? 'start' : align
+        setPosition((previous) =>
+            previous.left === rect.left &&
+            previous.top === rect.top &&
+            previous.width === rect.width &&
+            previous.viewportHeight === window.innerHeight &&
+            previous.align === edge
+                ? previous
+                : { left: rect.left, top: rect.top, width: rect.width, viewportHeight: window.innerHeight, align: edge }
+        )
+    }, [align, panelWidth])
+    useLayoutEffect(() => {
+        if (!floating) {
+            if (returnFocus.current) {
+                returnFocus.current = false
+                triggerRef.current?.focus({ preventScroll: true })
+            }
+            return
+        }
+        positionPortal()
+        window.addEventListener('resize', positionPortal)
+        window.addEventListener('scroll', positionPortal, true)
+        return () => {
+            window.removeEventListener('resize', positionPortal)
+            window.removeEventListener('scroll', positionPortal, true)
+        }
+    }, [floating, positionPortal])
 
     useLayoutEffect(() => {
         if (live.current.open === open) return
@@ -394,10 +448,15 @@ export function MorphSelect({
         scrollIntent.current = true
         pendingFocus.current = canSearch ? 'input' : 'trigger'
         setAnnouncement('')
+        if (portal) {
+            positionPortal()
+            setFloating(true)
+        }
         setOpen(true)
     }
 
     const close = useCallback((restoreFocus: boolean) => {
+        returnFocus.current = restoreFocus
         typeahead.current.buffer = ''
         if (restoreFocus) pendingFocus.current = 'trigger'
         setOpen(false)
@@ -490,7 +549,7 @@ export function MorphSelect({
                 (!caretKeys && (key === 'Home' || key === 'End')))
         ) {
             event.preventDefault()
-            const tree = rootRef.current?.querySelector<HTMLElement>("[role='tree']")
+            const tree = (portalRef.current ?? rootRef.current)?.querySelector<HTMLElement>("[role='tree']")
             const rows = [...(tree?.querySelectorAll<HTMLElement>("[role='treeitem']") ?? [])]
             const selectedRow = rows.findIndex((row) => row.getAttribute('aria-selected') === 'true')
             const at = Math.max(0, selectedRow >= 0 ? selectedRow : rows.findIndex((row) => row.tabIndex === 0))
@@ -553,6 +612,32 @@ export function MorphSelect({
                 close(true)
                 return
             case 'Tab':
+                if (portal) {
+                    event.preventDefault()
+                    const root = rootRef.current
+                    const candidates = [
+                        ...document.querySelectorAll<HTMLElement>(
+                            'button, input, select, textarea, a[href], [tabindex]'
+                        )
+                    ].filter(
+                        (node) =>
+                            node.tabIndex >= 0 &&
+                            !node.matches(':disabled') &&
+                            !node.closest('[inert]') &&
+                            !portalRef.current?.contains(node) &&
+                            !root?.contains(node) &&
+                            !node.contains(root) &&
+                            node.getClientRects().length
+                    )
+                    const direction = event.shiftKey
+                        ? Node.DOCUMENT_POSITION_PRECEDING
+                        : Node.DOCUMENT_POSITION_FOLLOWING
+                    const ordered = candidates.filter((node) => root && root.compareDocumentPosition(node) & direction)
+                    const next = event.shiftKey ? ordered.at(-1) : ordered[0]
+                    close(false)
+                    next?.focus()
+                    return
+                }
                 close(false)
                 return
         }
@@ -572,14 +657,15 @@ export function MorphSelect({
     useEffect(() => {
         if (!open) return
         const down = (event: PointerEvent) => {
-            if (!rootRef.current?.contains(event.target as Node)) close(false)
+            if (!rootRef.current?.contains(event.target as Node) && !portalRef.current?.contains(event.target as Node))
+                close(false)
         }
         document.addEventListener('pointerdown', down)
         return () => document.removeEventListener('pointerdown', down)
     }, [close, open])
     const onBlur = (event: ReactFocusEvent<HTMLDivElement>) => {
         const next = event.relatedTarget
-        if (open && next && !event.currentTarget.contains(next)) close(false)
+        if (open && next && !event.currentTarget.contains(next) && !portalRef.current?.contains(next)) close(false)
     }
 
     const onQuery = (next: string) => {
@@ -615,6 +701,283 @@ export function MorphSelect({
         '--ms-trigger-max': maxTriggerWidth ? `${maxTriggerWidth}px` : undefined
     } as CSSProperties
 
+    const surface = (
+        <motion.div className={styles.shape} style={{ width: shapeW, height: shapeH, borderRadius: radius }}>
+            <div className={styles.lid}>
+                <button
+                    ref={triggerRef}
+                    type="button"
+                    className={styles.trigger}
+                    title={title}
+                    role="combobox"
+                    aria-labelledby={labelId}
+                    aria-haspopup={renderTree ? 'tree' : 'listbox'}
+                    aria-expanded={open}
+                    aria-controls={listId}
+                    aria-activedescendant={
+                        open && !renderTree && !canSearch && current !== null
+                            ? optionId(indexOf.get(current) ?? 0)
+                            : undefined
+                    }
+                    disabled={disabled}
+                    inert={showSearch || undefined}
+                    tabIndex={showSearch ? -1 : 0}
+                    onClick={() => {
+                        if (suppressClick.current) {
+                            suppressClick.current = false
+                            return
+                        }
+                        if (open) close(true)
+                        else openList()
+                    }}
+                    onKeyDown={(event) => onKey(event, false)}
+                    onKeyUp={(event) => {
+                        if (event.key === ' ')
+                            window.setTimeout(() => {
+                                suppressClick.current = false
+                            })
+                    }}
+                >
+                    <span ref={slotRef} className={styles.slot} data-hidden={showSearch || undefined}>
+                        <AnimatePresence initial={false} custom={changeForLayer}>
+                            <motion.span
+                                key={layerKey}
+                                className={styles.layer}
+                                custom={changeForLayer}
+                                variants={reduced ? valueFade : valueVariants}
+                                initial="enter"
+                                animate="rest"
+                                exit="exit"
+                                transition={
+                                    reduced
+                                        ? { duration: 0.12 }
+                                        : changeForLayer.fly
+                                          ? { x: FLY, y: FLY, opacity: { duration: 0 } }
+                                          : {
+                                                y: GLIDE,
+                                                opacity: { duration: 0.2, ease: enter },
+                                                filter: { duration: 0.22, ease: enter }
+                                            }
+                                }
+                            >
+                                {renderValue(selectedOption)}
+                            </motion.span>
+                        </AnimatePresence>
+                    </span>
+                </button>
+
+                {canSearch && (
+                    <motion.div
+                        className={styles.searchRow}
+                        inert={!showSearch || undefined}
+                        aria-hidden={!showSearch || undefined}
+                        initial={false}
+                        animate={
+                            showSearch
+                                ? { opacity: 1, filter: 'blur(0px)' }
+                                : { opacity: 0, filter: reduced ? 'blur(0px)' : `blur(${blur.subtle}px)` }
+                        }
+                        transition={
+                            showSearch
+                                ? { duration: 0.18, ease: enter, delay: reduced ? 0 : 0.04 }
+                                : { duration: 0.1, ease: standard }
+                        }
+                    >
+                        <Search className={styles.searchIcon} size={16} strokeWidth={1.75} aria-hidden="true" />
+                        <input
+                            ref={inputRef}
+                            className={styles.input}
+                            type="text"
+                            role="combobox"
+                            aria-label={`Search ${label.toLowerCase()}`}
+                            aria-expanded={open}
+                            aria-haspopup={renderTree ? 'tree' : 'listbox'}
+                            aria-controls={listId}
+                            aria-autocomplete="list"
+                            aria-activedescendant={
+                                open && !renderTree && current !== null
+                                    ? optionId(indexOf.get(current) ?? 0)
+                                    : undefined
+                            }
+                            placeholder={searchPlaceholder ?? selectedOption?.label ?? 'Search'}
+                            value={query}
+                            autoComplete="off"
+                            spellCheck={false}
+                            onChange={(event) => onQuery(event.target.value)}
+                            onKeyDown={(event) => onKey(event, true)}
+                        />
+                        <AnimatePresence initial={false}>
+                            {query && (
+                                <motion.button
+                                    key="clear"
+                                    type="button"
+                                    className={styles.clear}
+                                    aria-label="Clear search"
+                                    onPointerDown={(event) => event.preventDefault()}
+                                    onClick={() => {
+                                        onQuery('')
+                                        inputRef.current?.focus()
+                                    }}
+                                    initial={{ opacity: 0, scale: 0.6 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.1 } }}
+                                    transition={reduced ? { duration: 0 } : GLIDE}
+                                >
+                                    <X size={14} strokeWidth={1.75} aria-hidden="true" />
+                                </motion.button>
+                            )}
+                        </AnimatePresence>
+                        <button
+                            type="button"
+                            className={styles.closeHit}
+                            aria-label={`Close ${label.toLowerCase()}`}
+                            onClick={() => close(true)}
+                        />
+                    </motion.div>
+                )}
+
+                <motion.span
+                    className={styles.chevron}
+                    aria-hidden="true"
+                    initial={false}
+                    animate={{ rotate: open ? 180 : 0 }}
+                    transition={reduced ? { duration: 0 } : GLIDE}
+                >
+                    <ChevronDown size={16} strokeWidth={1.75} />
+                </motion.span>
+            </div>
+
+            <motion.div
+                ref={listFaceRef}
+                className={styles.listFace}
+                inert={!open || undefined}
+                aria-hidden={!open || undefined}
+                initial={false}
+                animate={
+                    open
+                        ? { opacity: 1, y: 0, filter: 'blur(0px)' }
+                        : {
+                              opacity: 0,
+                              y: reduced ? 0 : -6,
+                              filter: reduced ? 'blur(0px)' : `blur(${blur.subtle}px)`
+                          }
+                }
+                transition={
+                    open
+                        ? {
+                              y: GROW,
+                              opacity: { duration: 0.2, ease: enter, delay: reduced ? 0 : 0.04 },
+                              filter: { duration: 0.22, ease: enter, delay: 0.04 }
+                          }
+                        : { duration: 0.1, ease: standard }
+                }
+            >
+                <ScrollArea
+                    viewportRef={scrollRef}
+                    viewportClassName={styles.scroll}
+                    maxHeight={maxListHeight}
+                    fade={8}
+                >
+                    {renderTree ? (
+                        renderTree({
+                            id: listId,
+                            query,
+                            selected,
+                            select: (next) => commit(all.find((option) => option.value === next)),
+                            close: () => close(true)
+                        })
+                    ) : (
+                        <div id={listId} className={styles.options} role="listbox" aria-labelledby={labelId}>
+                            <motion.span
+                                className={styles.highlight}
+                                style={{ y: hy, height: hh, opacity: ho }}
+                                aria-hidden="true"
+                            />
+                            {visibleSections.map((section) => {
+                                const rows = section.options.map((option) => {
+                                    const index = indexOf.get(option.value) ?? 0
+                                    const isSelected = option.value === selected,
+                                        isActive = option.value === current
+                                    return (
+                                        <div
+                                            key={option.value}
+                                            id={optionId(index)}
+                                            role="option"
+                                            aria-selected={isSelected}
+                                            aria-disabled={option.disabled || undefined}
+                                            tabIndex={-1}
+                                            onKeyDown={(event) => {
+                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                    event.preventDefault()
+                                                    commit(option, event.currentTarget)
+                                                }
+                                            }}
+                                            className={styles.option}
+                                            data-active={isActive || undefined}
+                                            ref={(node) => {
+                                                if (node) optionRefs.current.set(option.value, node)
+                                                else optionRefs.current.delete(option.value)
+                                            }}
+                                            onPointerMove={(event) => {
+                                                if (
+                                                    event.pointerType === 'mouse' &&
+                                                    !option.disabled &&
+                                                    option.value !== current
+                                                )
+                                                    setActive(option.value)
+                                            }}
+                                            onPointerDown={(event) => event.preventDefault()}
+                                            onClick={(event) => commit(option, event.currentTarget)}
+                                        >
+                                            <span className={styles.optionValue} data-part="value">
+                                                {option.icon && (
+                                                    <span className={styles.icon} aria-hidden="true">
+                                                        {option.icon}
+                                                    </span>
+                                                )}
+                                                <span className={styles.valueText}>{option.label}</span>
+                                            </span>
+                                            {option.meta && <span className={styles.meta}>{option.meta}</span>}
+                                            <span
+                                                className={styles.check}
+                                                data-on={isSelected || undefined}
+                                                aria-hidden="true"
+                                            >
+                                                <Check size={16} strokeWidth={1.75} />
+                                            </span>
+                                        </div>
+                                    )
+                                })
+                                return section.label ? (
+                                    <div
+                                        key={section.key}
+                                        role="group"
+                                        aria-labelledby={`${uid}-${section.key}`}
+                                        className={styles.group}
+                                    >
+                                        <div
+                                            id={`${uid}-${section.key}`}
+                                            className={styles.groupLabel}
+                                            role="presentation"
+                                        >
+                                            {section.label}
+                                        </div>
+                                        {rows}
+                                    </div>
+                                ) : (
+                                    <div key={section.key} role="presentation" className={styles.group}>
+                                        {rows}
+                                    </div>
+                                )
+                            })}
+                            {resultCount === 0 && <p className={styles.empty}>No matches for “{query.trim()}”</p>}
+                        </div>
+                    )}
+                </ScrollArea>
+            </motion.div>
+        </motion.div>
+    )
+
     return (
         <div
             ref={rootRef}
@@ -631,287 +994,42 @@ export function MorphSelect({
                 {label}
             </span>
 
-            <motion.div className={styles.anchor} style={{ width: anchorW }}>
+            <motion.div ref={anchorRef} className={styles.anchor} style={{ width: anchorW }}>
                 {/* Sizes the closed trigger. It holds the chosen label with the trigger's own padding, so the width spring has a target before anything moves. */}
                 <span ref={measureRef} className={`${styles.trigger} ${styles.measure}`} aria-hidden="true">
                     {renderValue(selectedOption)}
                 </span>
 
-                <motion.div className={styles.shape} style={{ width: shapeW, height: shapeH, borderRadius: radius }}>
-                    <div className={styles.lid}>
-                        <button
-                            ref={triggerRef}
-                            type="button"
-                            className={styles.trigger}
-                            title={title}
-                            role="combobox"
-                            aria-labelledby={labelId}
-                            aria-haspopup={renderTree ? 'tree' : 'listbox'}
-                            aria-expanded={open}
-                            aria-controls={listId}
-                            aria-activedescendant={
-                                open && !renderTree && !canSearch && current !== null
-                                    ? optionId(indexOf.get(current) ?? 0)
-                                    : undefined
-                            }
-                            disabled={disabled}
-                            inert={showSearch || undefined}
-                            tabIndex={showSearch ? -1 : 0}
-                            onClick={() => {
-                                if (suppressClick.current) {
-                                    suppressClick.current = false
-                                    return
-                                }
-                                if (open) close(true)
-                                else openList()
-                            }}
-                            onKeyDown={(event) => onKey(event, false)}
-                            onKeyUp={(event) => {
-                                if (event.key === ' ')
-                                    window.setTimeout(() => {
-                                        suppressClick.current = false
-                                    })
-                            }}
-                        >
-                            <span ref={slotRef} className={styles.slot} data-hidden={showSearch || undefined}>
-                                <AnimatePresence initial={false} custom={changeForLayer}>
-                                    <motion.span
-                                        key={layerKey}
-                                        className={styles.layer}
-                                        custom={changeForLayer}
-                                        variants={reduced ? valueFade : valueVariants}
-                                        initial="enter"
-                                        animate="rest"
-                                        exit="exit"
-                                        transition={
-                                            reduced
-                                                ? { duration: 0.12 }
-                                                : changeForLayer.fly
-                                                  ? { x: FLY, y: FLY, opacity: { duration: 0 } }
-                                                  : {
-                                                        y: GLIDE,
-                                                        opacity: { duration: 0.2, ease: enter },
-                                                        filter: { duration: 0.22, ease: enter }
-                                                    }
-                                        }
-                                    >
-                                        {renderValue(selectedOption)}
-                                    </motion.span>
-                                </AnimatePresence>
-                            </span>
-                        </button>
-
-                        {canSearch && (
-                            <motion.div
-                                className={styles.searchRow}
-                                inert={!showSearch || undefined}
-                                initial={false}
-                                animate={
-                                    showSearch
-                                        ? { opacity: 1, filter: 'blur(0px)' }
-                                        : { opacity: 0, filter: reduced ? 'blur(0px)' : `blur(${blur.subtle}px)` }
-                                }
-                                transition={
-                                    showSearch
-                                        ? { duration: 0.18, ease: enter, delay: reduced ? 0 : 0.04 }
-                                        : { duration: 0.1, ease: standard }
-                                }
-                            >
-                                <Search className={styles.searchIcon} size={16} strokeWidth={1.75} aria-hidden="true" />
-                                <input
-                                    ref={inputRef}
-                                    className={styles.input}
-                                    type="text"
-                                    role="combobox"
-                                    aria-label={`Search ${label.toLowerCase()}`}
-                                    aria-expanded={open}
-                                    aria-haspopup={renderTree ? 'tree' : 'listbox'}
-                                    aria-controls={listId}
-                                    aria-autocomplete="list"
-                                    aria-activedescendant={
-                                        open && !renderTree && current !== null
-                                            ? optionId(indexOf.get(current) ?? 0)
-                                            : undefined
-                                    }
-                                    placeholder={searchPlaceholder ?? selectedOption?.label ?? 'Search'}
-                                    value={query}
-                                    autoComplete="off"
-                                    spellCheck={false}
-                                    onChange={(event) => onQuery(event.target.value)}
-                                    onKeyDown={(event) => onKey(event, true)}
-                                />
-                                <AnimatePresence initial={false}>
-                                    {query && (
-                                        <motion.button
-                                            key="clear"
-                                            type="button"
-                                            className={styles.clear}
-                                            aria-label="Clear search"
-                                            onPointerDown={(event) => event.preventDefault()}
-                                            onClick={() => {
-                                                onQuery('')
-                                                inputRef.current?.focus()
-                                            }}
-                                            initial={{ opacity: 0, scale: 0.6 }}
-                                            animate={{ opacity: 1, scale: 1 }}
-                                            exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.1 } }}
-                                            transition={reduced ? { duration: 0 } : GLIDE}
-                                        >
-                                            <X size={14} strokeWidth={1.75} aria-hidden="true" />
-                                        </motion.button>
-                                    )}
-                                </AnimatePresence>
-                                <button
-                                    type="button"
-                                    className={styles.closeHit}
-                                    aria-label={`Close ${label.toLowerCase()}`}
-                                    onClick={() => close(true)}
-                                />
-                            </motion.div>
-                        )}
-
-                        <motion.span
-                            className={styles.chevron}
-                            aria-hidden="true"
-                            initial={false}
-                            animate={{ rotate: open ? 180 : 0 }}
-                            transition={reduced ? { duration: 0 } : GLIDE}
-                        >
-                            <ChevronDown size={16} strokeWidth={1.75} />
-                        </motion.span>
-                    </div>
-
-                    <motion.div
-                        ref={listFaceRef}
-                        className={styles.listFace}
-                        inert={!open || undefined}
-                        aria-hidden={!open || undefined}
-                        initial={false}
-                        animate={
-                            open
-                                ? { opacity: 1, y: 0, filter: 'blur(0px)' }
-                                : {
-                                      opacity: 0,
-                                      y: reduced ? 0 : -6,
-                                      filter: reduced ? 'blur(0px)' : `blur(${blur.subtle}px)`
-                                  }
-                        }
-                        transition={
-                            open
-                                ? {
-                                      y: GROW,
-                                      opacity: { duration: 0.2, ease: enter, delay: reduced ? 0 : 0.04 },
-                                      filter: { duration: 0.22, ease: enter, delay: 0.04 }
-                                  }
-                                : { duration: 0.1, ease: standard }
-                        }
-                    >
-                        <ScrollArea
-                            viewportRef={scrollRef}
-                            viewportClassName={styles.scroll}
-                            maxHeight={maxListHeight}
-                            fade={8}
-                        >
-                            {renderTree ? (
-                                renderTree({
-                                    id: listId,
-                                    query,
-                                    selected,
-                                    select: (next) => commit(all.find((option) => option.value === next)),
-                                    close: () => close(true)
-                                })
-                            ) : (
-                                <div id={listId} className={styles.options} role="listbox" aria-labelledby={labelId}>
-                                    <motion.span
-                                        className={styles.highlight}
-                                        style={{ y: hy, height: hh, opacity: ho }}
-                                        aria-hidden="true"
-                                    />
-                                    {visibleSections.map((section) => {
-                                        const rows = section.options.map((option) => {
-                                            const index = indexOf.get(option.value) ?? 0
-                                            const isSelected = option.value === selected,
-                                                isActive = option.value === current
-                                            return (
-                                                <div
-                                                    key={option.value}
-                                                    id={optionId(index)}
-                                                    role="option"
-                                                    aria-selected={isSelected}
-                                                    aria-disabled={option.disabled || undefined}
-                                                    tabIndex={-1}
-                                                    onKeyDown={(event) => {
-                                                        if (event.key === 'Enter' || event.key === ' ') {
-                                                            event.preventDefault()
-                                                            commit(option, event.currentTarget)
-                                                        }
-                                                    }}
-                                                    className={styles.option}
-                                                    data-active={isActive || undefined}
-                                                    ref={(node) => {
-                                                        if (node) optionRefs.current.set(option.value, node)
-                                                        else optionRefs.current.delete(option.value)
-                                                    }}
-                                                    onPointerMove={(event) => {
-                                                        if (
-                                                            event.pointerType === 'mouse' &&
-                                                            !option.disabled &&
-                                                            option.value !== current
-                                                        )
-                                                            setActive(option.value)
-                                                    }}
-                                                    onPointerDown={(event) => event.preventDefault()}
-                                                    onClick={(event) => commit(option, event.currentTarget)}
-                                                >
-                                                    <span className={styles.optionValue} data-part="value">
-                                                        {option.icon && (
-                                                            <span className={styles.icon} aria-hidden="true">
-                                                                {option.icon}
-                                                            </span>
-                                                        )}
-                                                        <span className={styles.valueText}>{option.label}</span>
-                                                    </span>
-                                                    {option.meta && <span className={styles.meta}>{option.meta}</span>}
-                                                    <span
-                                                        className={styles.check}
-                                                        data-on={isSelected || undefined}
-                                                        aria-hidden="true"
-                                                    >
-                                                        <Check size={16} strokeWidth={1.75} />
-                                                    </span>
-                                                </div>
-                                            )
-                                        })
-                                        return section.label ? (
-                                            <div
-                                                key={section.key}
-                                                role="group"
-                                                aria-labelledby={`${uid}-${section.key}`}
-                                                className={styles.group}
-                                            >
-                                                <div
-                                                    id={`${uid}-${section.key}`}
-                                                    className={styles.groupLabel}
-                                                    role="presentation"
-                                                >
-                                                    {section.label}
-                                                </div>
-                                                {rows}
-                                            </div>
-                                        ) : (
-                                            <div key={section.key} role="presentation" className={styles.group}>
-                                                {rows}
-                                            </div>
-                                        )
-                                    })}
-                                    {resultCount === 0 && (
-                                        <p className={styles.empty}>No matches for “{query.trim()}”</p>
-                                    )}
-                                </div>
-                            )}
-                        </ScrollArea>
-                    </motion.div>
-                </motion.div>
+                {floating
+                    ? createPortal(
+                          <motion.div
+                              ref={portalRef}
+                              className={[styles.root, className].filter(Boolean).join(' ')}
+                              data-open=""
+                              data-align={position.align}
+                              data-variant={variant}
+                              data-size={size}
+                              data-ready=""
+                              style={
+                                  {
+                                      ...rootStyle,
+                                      '--ms-trigger-w': `${sizes.current.trigger}px`,
+                                      '--ms-list-max': `${Math.min(maxListHeight, Math.max(48, position.viewportHeight - sizes.current.lid - 24))}px`,
+                                      position: 'fixed',
+                                      left: position.left,
+                                      top: position.top,
+                                      width: position.width,
+                                      height: sizes.current.lid,
+                                      zIndex: 80,
+                                      transform: layerTransform
+                                  } as MotionStyle
+                              }
+                          >
+                              {surface}
+                          </motion.div>,
+                          document.body
+                      )
+                    : surface}
             </motion.div>
 
             {name && <input type="hidden" name={name} value={selected ?? ''} />}

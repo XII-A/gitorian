@@ -48,32 +48,6 @@
     color: var(--text-secondary);
     text-wrap: pretty;
 }
-.hub-atmosphere {
-    position: absolute;
-    inset: 0 0 auto;
-    height: 400px;
-    z-index: -1;
-    overflow: hidden;
-    pointer-events: none;
-}
-.hub-atmosphere img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: center 46%;
-    opacity: 0.3;
-    filter: saturate(0.45);
-}
-.hub-atmosphere::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-        to bottom,
-        color-mix(in oklab, var(--background) 25%, transparent),
-        var(--background) 98%
-    );
-}
 .hub-topbar {
     max-width: 1440px;
     margin-inline: auto;
@@ -179,14 +153,102 @@
     font-size: var(--text-xs);
     color: var(--text-secondary);
 }
-.hub-filters {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-1);
+.hub-filter-sentinel {
+    height: 1px;
+    margin-bottom: -1px;
+    pointer-events: none;
+}
+.hub-filter-dock {
+    position: sticky;
+    top: var(--space-3);
+    z-index: 2;
+    isolation: isolate;
     margin-bottom: var(--space-5);
 }
-.hub-filters > button {
+.hub-filter-dock::before {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--space-1)) calc(-1 * var(--space-2));
+    z-index: -1;
+    pointer-events: none;
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-raised);
+    opacity: 0;
+    transform: scaleX(0.98) scaleY(0.92);
+    transition:
+        transform var(--duration-standard) var(--ease-in-out),
+        opacity var(--duration-fast) var(--ease-standard);
+}
+.hub-filter-dock::after {
+    content: '';
+    position: absolute;
+    inset: calc(-1 * var(--space-3)) calc(-1 * var(--space-3)) calc(-1 * var(--space-5));
+    z-index: -2;
+    pointer-events: none;
+    background: color-mix(in oklab, var(--background) 85%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    mask-image: linear-gradient(to bottom, black 0%, black calc(100% - var(--space-5)), transparent 100%);
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.hub-filter-dock[data-stuck]::after {
+    opacity: 1;
+}
+.hub-filter-dock[data-stuck]::before {
+    opacity: 1;
+    transform: scale(1);
+}
+.hub-filters {
+    background: transparent;
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: var(--space-1);
+}
+.hub-filters .activity-filter-items {
+    min-width: 100%;
+    justify-content: center;
+}
+/* Keep the overflow scrims inside the dock's concentric inner curve. */
+.hub-filters .activity-filter-scroll {
+    border-radius: var(--radius-control);
+}
+.hub-filters .activity-filter-edge {
+    width: calc(var(--control-height-sm) + var(--space-6));
+}
+.hub-filters .activity-filter-edge-start {
+    background: linear-gradient(
+        to right,
+        var(--activity-filter-surface) 0%,
+        color-mix(in oklab, var(--activity-filter-surface) 90%, transparent) 45%,
+        color-mix(in oklab, var(--activity-filter-surface) 40%, transparent) 75%,
+        transparent
+    );
+}
+.hub-filters .activity-filter-edge-end {
+    background: linear-gradient(
+        to left,
+        var(--activity-filter-surface) 0%,
+        color-mix(in oklab, var(--activity-filter-surface) 90%, transparent) 45%,
+        color-mix(in oklab, var(--activity-filter-surface) 40%, transparent) 75%,
+        transparent
+    );
+}
+@media (pointer: coarse) {
+    .hub-filters .activity-filter-edge {
+        width: calc(var(--control-height-md) + var(--space-6));
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .hub-filter-dock::before {
+        transform: none;
+        transition: opacity var(--duration-fast) var(--ease-standard);
+    }
+}
+.hub-filters .hub-filter-chip {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -202,15 +264,12 @@
     min-height: var(--control-height-sm);
     font-size: var(--text-xs);
 }
-.hub-filters > button[aria-pressed='true'] {
+.hub-filters .hub-filter-chip[aria-pressed='true'] {
     color: var(--foreground);
     background: var(--surface-muted);
 }
-.hub-filters > button > span {
+.hub-filters .hub-filter-chip > span {
     font-variant-numeric: tabular-nums;
-}
-.hub-filters > .project-filter {
-    margin-inline-start: auto;
 }
 .hub-project-summary {
     padding: var(--space-6);
@@ -520,6 +579,14 @@
     flex-direction: column;
     gap: var(--space-2);
 }
+@media (min-width: 1001px) {
+    .hub-day-date {
+        position: sticky;
+        align-self: start;
+        /* Filter inset + pill height + a gap; existing top padding clears the fading scrim. */
+        top: calc(var(--space-3) + var(--control-height-sm) + var(--space-2) * 2);
+    }
+}
 .hub-day-date strong {
     font-weight: 500;
 }
@@ -571,7 +638,7 @@
 }
 
 @media (hover: hover) {
-    .hub-filters > button:hover {
+    .hub-filters .hub-filter-chip:hover {
         color: var(--foreground);
     }
 }
@@ -656,7 +723,7 @@
     .hub-stats > div > span {
         font-size: 0.6875rem;
     }
-    .hub-filters > button {
+    .hub-filters .hub-filter-chip {
         padding-inline: var(--space-2);
         font-size: var(--text-xs);
     }
