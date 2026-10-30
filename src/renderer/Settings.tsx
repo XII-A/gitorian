@@ -14,7 +14,7 @@ import { Combobox } from './components/arc/combobox/combobox'
 import { DatePicker } from './components/arc/date-picker/date-picker'
 import { TagInput } from './components/arc/tag-input/tag-input'
 import { ImportProgressLabel } from './ImportProgressLabel'
-import { Folder, RefreshCw } from 'lucide-react'
+import { Download, Upload, Folder, RefreshCw } from 'lucide-react'
 import { NotionSignIn } from './NotionSignIn'
 import { Switch } from './components/arc/switch/switch'
 import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
@@ -363,7 +363,9 @@ export function Settings({
                             >
                                 <TabsContent value="repositories" className="settings-content">
                                     <div className="settings-section-heading">
-                                        <h3>Repositories</h3>
+                                        <header className="settings-page-heading">
+                                            <h3>Repositories</h3>
+                                        </header>
                                         <Button
                                             variant="secondary"
                                             size="sm"
@@ -398,11 +400,6 @@ export function Settings({
                                             />
                                         </Button>
                                     </div>
-                                    {!repositories.length && (
-                                        <p className="settings-hint">
-                                            Choose the folder containing your Git repositories.
-                                        </p>
-                                    )}
                                     {!!repositories.length && (
                                         <SearchField
                                             label="Search repositories"
@@ -469,8 +466,13 @@ export function Settings({
                                     </section>
                                 </TabsContent>
                                 <TabsContent value="preferences" className="settings-content">
-                                    <section className="settings-section" aria-label="Time and refresh">
-                                        <h3>Time and refresh</h3>
+                                    <section
+                                        className="settings-section settings-refreshed"
+                                        aria-label="Time and refresh"
+                                    >
+                                        <header className="settings-page-heading">
+                                            <h3>Preferences</h3>
+                                        </header>
                                         <Combobox
                                             label="Timezone"
                                             options={zones}
@@ -510,38 +512,41 @@ export function Settings({
                                     </section>
                                 </TabsContent>
                                 <TabsContent value="template" className="settings-content">
-                                    <section className="settings-section" aria-label="Entry template">
-                                        <div className="settings-section-heading">
-                                            <h3>Entry template</h3>
-                                        </div>
-                                        <p className="settings-hint">
-                                            Used for new entries. Existing writing stays as it is.
-                                        </p>
+                                    <section
+                                        className="settings-section settings-refreshed"
+                                        aria-label="Entry template"
+                                    >
+                                        <header className="settings-page-heading">
+                                            <h3>Template</h3>
+                                        </header>
                                         <div className="settings-template">
                                             <header className="settings-template-header">
-                                                <div className="settings-template-history">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        aria-label="Undo template edit"
-                                                        disabled={!templateHistory.canUndo}
-                                                        onClick={() => templateEditor.current?.undo()}
-                                                    >
-                                                        <ArrowCounterClockwiseIcon aria-hidden="true" />
-                                                    </Button>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        aria-label="Redo template edit"
-                                                        disabled={!templateHistory.canRedo}
-                                                        onClick={() => templateEditor.current?.redo()}
-                                                    >
-                                                        <ArrowClockwiseIcon aria-hidden="true" />
-                                                    </Button>
+                                                <span className="settings-template-label">New entry</span>
+                                                <div className="settings-template-tools">
+                                                    <div className="settings-template-history">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            aria-label="Undo template edit"
+                                                            disabled={!templateHistory.canUndo}
+                                                            onClick={() => templateEditor.current?.undo()}
+                                                        >
+                                                            <ArrowCounterClockwiseIcon aria-hidden="true" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            aria-label="Redo template edit"
+                                                            disabled={!templateHistory.canRedo}
+                                                            onClick={() => templateEditor.current?.redo()}
+                                                        >
+                                                            <ArrowClockwiseIcon aria-hidden="true" />
+                                                        </Button>
+                                                    </div>
+                                                    <span>
+                                                        {templateWords} {templateWords === 1 ? 'word' : 'words'}
+                                                    </span>
                                                 </div>
-                                                <span>
-                                                    {templateWords} {templateWords === 1 ? 'word' : 'words'}
-                                                </span>
                                             </header>
                                             <div className="settings-template-body" data-journal-drop-zone>
                                                 <Editor
@@ -557,49 +562,65 @@ export function Settings({
                                                 />
                                             </div>
                                         </div>
+                                        <p className="settings-hint">Used for new entries only.</p>
                                     </section>
                                 </TabsContent>
                                 <TabsContent value="backup" className="settings-content">
-                                    <section className="settings-section" aria-label="Journal backup">
-                                        <h3>Journal backup</h3>
-                                        <p className="settings-hint">
-                                            Includes writing, images, and tracking. Excludes credentials and repository
-                                            files.
-                                        </p>
-                                        <div className="settings-actions">
-                                            <Button
-                                                variant="secondary"
-                                                size="sm"
-                                                disabled={!!busy}
-                                                loading={busy === 'export'}
-                                                onClick={() =>
-                                                    action('export', async () => {
-                                                        await invoke({ type: 'export' })
-                                                    })
-                                                }
-                                            >
-                                                Export backup
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                disabled={!!busy}
-                                                loading={busy === 'import'}
-                                                onClick={() =>
-                                                    action('import', async () => {
-                                                        const result = await invoke({ type: 'import' })
-                                                        if (result.message === 'Backup imported.') {
-                                                            setSettings(result.state.settings)
-                                                            setRepositories(result.state.repositories)
-                                                            setStatus(result.message)
-                                                        }
-                                                    })
-                                                }
-                                            >
-                                                Import backup
-                                            </Button>
+                                    <section
+                                        className="settings-section settings-refreshed"
+                                        aria-label="Journal backup"
+                                    >
+                                        <header className="settings-page-heading">
+                                            <h3>Backup</h3>
+                                        </header>
+                                        <div className="settings-backup-group">
+                                            <div className="settings-backup-row">
+                                                <Download size={20} strokeWidth={1.75} aria-hidden="true" />
+                                                <div className="settings-group-heading">
+                                                    <h4>Export your journal</h4>
+                                                    <p>Includes writing, images, and tracking.</p>
+                                                </div>
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    disabled={!!busy}
+                                                    loading={busy === 'export'}
+                                                    onClick={() =>
+                                                        action('export', async () => {
+                                                            await invoke({ type: 'export' })
+                                                        })
+                                                    }
+                                                >
+                                                    Export backup
+                                                </Button>
+                                            </div>
+                                            <div className="settings-backup-row">
+                                                <Upload size={20} strokeWidth={1.75} aria-hidden="true" />
+                                                <div className="settings-group-heading">
+                                                    <h4>Restore a backup</h4>
+                                                    <p>Import replaces the journal on this device.</p>
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    disabled={!!busy}
+                                                    loading={busy === 'import'}
+                                                    onClick={() =>
+                                                        action('import', async () => {
+                                                            const result = await invoke({ type: 'import' })
+                                                            if (result.message === 'Backup imported.') {
+                                                                setSettings(result.state.settings)
+                                                                setRepositories(result.state.repositories)
+                                                                setStatus(result.message)
+                                                            }
+                                                        })
+                                                    }
+                                                >
+                                                    Import backup
+                                                </Button>
+                                            </div>
                                         </div>
-                                        <p className="settings-hint">Import replaces this device’s journal.</p>
+                                        <p className="settings-hint">Excludes credentials and repository files.</p>
                                     </section>
                                 </TabsContent>
                             </ScrollArea>
