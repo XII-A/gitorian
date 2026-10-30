@@ -246,8 +246,8 @@ export function ProviderConnections({
             onPointerDownCapture={() => setKeyboard(false)}
             onKeyDownCapture={() => setKeyboard(true)}
         >
-            <header className="provider-connections-heading">
-                <h2>Accounts</h2>
+            <header className="settings-page-heading">
+                <h3>Connections</h3>
             </header>
             {(['github', 'gitlab'] as const).map((provider) => (
                 <section
