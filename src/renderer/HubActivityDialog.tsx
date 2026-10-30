@@ -1,3 +1,4 @@
+import { renderEmoji } from './provider-emoji'
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { ArrowRight, ExternalLink, GitCommitHorizontal, GitPullRequest } from 'lucide-react'
 import { type Activity, type State } from '../shared/model'
@@ -108,7 +109,13 @@ export function HubActivityDialog({
             <DialogContent
                 className="hub-detail-dialog"
                 backdrop="dim"
-                title={activity?.title ?? 'Activity details'}
+                title={
+                    activity
+                        ? activity.kind === 'commit'
+                            ? activity.title
+                            : renderEmoji(activity.title)
+                        : 'Activity details'
+                }
                 onCloseAutoFocus={(event) => {
                     event.preventDefault()
                     returnFocus.current?.focus()
