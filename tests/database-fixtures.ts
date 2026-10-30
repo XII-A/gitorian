@@ -5,6 +5,15 @@ import { stateSchema, type Draft, type State } from '../src/shared/model'
 export async function journalState(database: JournalDatabase): Promise<State> {
     const state = stateSchema.parse(JSON.parse(await database.export()).state)
     state.repositories = structuredClone(database.config.repositories)
+    // Runtime checkpoints are intentionally excluded from portable backups.
+    state.acquisition = Object.fromEntries(
+        await Promise.all(
+            Object.keys(database.config.acquisition).map(async (key) => [
+                key,
+                await database.acquisitionCheckpoint(key)
+            ])
+        )
+    )
     return state
 }
 

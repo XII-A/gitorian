@@ -306,6 +306,7 @@ describe('local journal workflow through application commands', () => {
             const backup = await app.store.export()
             expect(backup).not.toContain('test-token')
             expect(backup).toContain('diff --git')
+            expect(JSON.parse(backup).state.acquisition).toBeUndefined()
             expect(backup).not.toContain(app.directory.replaceAll('\\', '\\\\'))
             await app.store.restore(backup)
             expect((await journalState(app.store)).drafts).toHaveLength(1)

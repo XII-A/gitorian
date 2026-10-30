@@ -15,7 +15,11 @@ concurrency:
 jobs:
     check:
         name: Static checks and tests
-        runs-on: windows-2022
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [windows-2022, ubuntu-24.04]
+        runs-on: ${{ matrix.os }}
         timeout-minutes: 20
         steps:
             - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
