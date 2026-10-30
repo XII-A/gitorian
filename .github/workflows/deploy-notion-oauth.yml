@@ -51,7 +51,12 @@ jobs:
                   test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
                   git merge-base --is-ancestor HEAD origin/main
             - run: pnpm install --frozen-lockfile
-            - run: pnpm check
+            - name: Check the tagged OAuth service and desktop protocol
+              run: |
+                  pnpm typecheck
+                  pnpm lint
+                  pnpm format:check
+                  pnpm test tests/notion-oauth.test.ts
             - run: pnpm --filter @gitorian/notion-oauth build
             - name: Deploy the released OAuth module
               env:

@@ -1711,16 +1711,10 @@ export class JournalEngine {
                 sequence,
                 accountPreparations: _preparations,
                 credentialCleanup: _cleanup,
+                acquisition: _acquisition,
                 ...config
             } = this.config(),
             state = { ...initialState(), ...config, restoreId: generation, snapshotVersion: sequence }
-        state.acquisition = Object.fromEntries(
-            this.db
-                .select({ key: t.acquisition.key })
-                .from(t.acquisition)
-                .all()
-                .map((r) => [r.key, this.acquisitionCheckpoint(r.key)!])
-        )
         state.activities = this.listActivities()
         state.repositories = config.repositories.map((r) => ({ ...r, path: '' }))
         state.drafts = this.db

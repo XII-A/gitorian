@@ -1,4 +1,4 @@
-﻿# Developing Gitorian
+# Developing Gitorian
 
 [Back to the Gitorian overview](../README.md)
 
@@ -33,7 +33,7 @@ The app icon's editable source is `resources/icon.svg`, exported from [Paper](ht
 
 ## Releasing and repository protection
 
-PRs targeting `main`, `release`, or `release/**` run **CI checks** (typecheck, lint, formatting and tests) on Windows. Agents run production compilation and Electron journeys locally through `pnpm verify:release` before creating a PR; see [testing](testing.md). The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, the update feed (`latest.yml`) and installer blockmap, computes SHA-256 checksums for all three, and uploads them to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
+PRs targeting `main`, `release`, or `release/**` run **CI checks** (typecheck, lint, formatting and tests) on Windows and Linux. Agents run production compilation and Electron journeys locally through `pnpm verify:release` before creating a PR; see [testing](testing.md). The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, the update feed (`latest.yml`) and installer blockmap, computes SHA-256 checksums for all three, and uploads them to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
 
 After the release changes are merged into `main`, a maintainer creates a release candidate with:
 

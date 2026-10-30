@@ -8,6 +8,7 @@ import { expect, it, vi } from 'vitest'
 import { useWeekHistory } from '../src/renderer/use-week-history'
 import { sampleState } from './workspace-fixture'
 import { gitConfiguration } from '../src/shared/activity-history'
+import { remoteConfiguration } from '../src/shared/provider-accounts'
 import type { State } from '../src/shared/model'
 import { workspace } from './fixtures'
 import * as gitModule from '../src/main/git'
@@ -193,10 +194,17 @@ it('automatically rehydrates the same week when its journal timezone changes wit
             await Promise.resolve()
         })
     try {
+        // This scenario owns local Git reprojection, without remote history to acquire.
+        await app.store.assignProviderAccount(app.repository.id, remoteConfiguration(app.repository), {
+            accountId: undefined,
+            accountGeneration: undefined,
+            assignment: 'explicit'
+        })
         await app.store.saveSettings({ ...app.store.config.settings, timezone: 'UTC' })
         await app.git('commit', '--allow-empty', '--date=2026-10-04T22:00:00Z', '-m', 'Timezone boundary')
         await execute(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
         await render()
+        await Promise.all(command.mock.results.map((result) => result.value))
         expect(command.mock.calls.every(([input]) => input.type === 'view')).toBe(true)
         expect(rangeActivities(await journalState(app.store), '2026-10-05', '2026-10-11')).toHaveLength(0)
         index.mockClear()
