@@ -142,6 +142,17 @@ test('multilingual writing keeps direction, native editing and policy across a f
                 )
             )
             .toBe('')
+        await page.keyboard.press('Enter')
+        await expect(toggles.nth(1).locator('[data-type=toggleContent] > p')).toHaveCount(4)
+        await page.keyboard.press('Backspace')
+        await expect(toggles.nth(1).locator('[data-type=toggleContent] > p')).toHaveCount(3)
+        await expect
+            .poll(() =>
+                body().evaluate(
+                    (el) => (el as HTMLElement & { editor: Editor }).editor.state.selection.$from.parent.textContent
+                )
+            )
+            .toBe('')
         await page.keyboard.press('Backspace')
         await expect(toggles.nth(1).locator('[data-type=toggleContent] > p')).toHaveCount(2)
         await expect(toggles.nth(1)).toContainText('Following child')
@@ -152,6 +163,14 @@ test('multilingual writing keeps direction, native editing and policy across a f
                 )
             )
             .toBe('toggleContent')
+        await expect
+            .poll(() =>
+                body().evaluate((el) => {
+                    const { $from } = (el as HTMLElement & { editor: Editor }).editor.state.selection
+                    return { text: $from.parent.textContent, offset: $from.parentOffset }
+                })
+            )
+            .toEqual({ text: 'Protected child', offset: 'Protected child'.length })
         await desktop.shot('toggle-edited-content')
         await toggles.first().locator('[data-type=toggleSummary]').click()
         await page.keyboard.press('Home')

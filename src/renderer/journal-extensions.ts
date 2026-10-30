@@ -242,7 +242,8 @@ const ToggleContent = Node.create({
                     // Remove only this blank line; following blocks must stay in the toggle.
                     const start = $from.before()
                     const tr = this.editor.state.tr.delete(start, $from.after())
-                    tr.setSelection(TextSelection.near(tr.doc.resolve(start)))
+                    // Backward deletion returns to the previous block, not the following text.
+                    tr.setSelection(TextSelection.near(tr.doc.resolve(start), -1))
                     this.editor.view.dispatch(tr.scrollIntoView())
                     return true
                 }

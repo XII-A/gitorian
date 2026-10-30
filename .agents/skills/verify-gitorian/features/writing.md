@@ -117,3 +117,5 @@ Toggle editing is also owned by `writing-direction`: native closed-summary conti
 Within toggle bodies, repeated Enter retains blank paragraphs; Backspace on the final empty direct body block outdents through the same transaction as Shift+Tab. The writing-direction journey owns native input and undo for this behavior.
 
 Backspace on an empty body block with following siblings deletes only the blank block and keeps the later content inside the toggle. The native writing-direction scenario and editor boundary cases cover this distinction.
+
+Deleting internal blank toggle blocks moves the caret backward to the preceding block end. The native journey removes two consecutive blank lines and verifies the following text stays intact.

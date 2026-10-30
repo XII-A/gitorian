@@ -424,7 +424,10 @@ it.each([false, true])(
         expect(body.childCount).toBe(preceding ? 2 : 1)
         expect(body.lastChild!.textContent).toBe('Following')
         expect(body.lastChild!.firstChild!.marks[0].type.name).toBe('bold')
-        expect(writing.state.selection.$from.node(-1).type.name).toBe('toggleContent')
+        if (preceding) {
+            expect(writing.state.selection.$from.parent.textContent).toBe('Before')
+            expect(writing.state.selection.$from.parentOffset).toBe(6)
+        }
         writing.commands.undo()
         expect(writing.getJSON()).toEqual(before)
     }
