@@ -306,13 +306,23 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                                 grant_type: 'refresh_token',
                                 refresh_token: stored.refresh_token!
                             }).pipe(
-                                Effect.tapError((error) =>
-                                    error instanceof HttpError && error.status >= 500
-                                        ? native(() => store.finishProviderAccount(id, journal))
-                                        : deactivate(id, 'reconnect', {
-                                              generation: account.generation,
-                                              access: stored.access_token
-                                          })
+                                Effect.catchAll((error) =>
+                                    Effect.gen(function* () {
+                                        if (error instanceof HttpError && error.status >= 500) {
+                                            yield* native(() => store.finishProviderAccount(id, journal))
+                                            return yield* Effect.fail(error)
+                                        }
+                                        yield* deactivate(id, 'reconnect', {
+                                            generation: account.generation,
+                                            access: stored.access_token
+                                        })
+                                        return yield* Effect.fail(
+                                            new ProviderAccountError(
+                                                'Credentials could not be renewed. Reconnect this account in Settings.',
+                                                { cause: error }
+                                            )
+                                        )
+                                    })
                                 )
                             )
                             const result = yield* native(() => tokenResponse.parse(response)).pipe(
@@ -596,6 +606,7 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                     emailMatch: boolean
                     projectId?: string
                 }[] = []
+                let unresolved: Error | undefined
                 for (const account of candidates) {
                     const url =
                         remote.provider === 'github'
@@ -607,15 +618,14 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                         namespace?: { kind: string; path: string }
                     }>(account.id, url, background).pipe(
                         Effect.map((project) => ({ access: 'allowed' as const, project })),
-                        Effect.catchAll((error) =>
-                            Effect.succeed({
-                                access:
-                                    error instanceof HttpError && error.status === 404
-                                        ? ('denied' as const)
-                                        : ('unknown' as const),
+                        Effect.catchAll((error) => {
+                            const denied = error instanceof HttpError && error.status === 404
+                            if (!denied) unresolved ??= error
+                            return Effect.succeed({
+                                access: denied ? ('denied' as const) : ('unknown' as const),
                                 project: undefined
                             })
-                        )
+                        })
                     )
                     const owner =
                         access.project?.owner?.type === 'User'
@@ -642,6 +652,7 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                     : choice && !automatic
                       ? evidence.find((e) => e.id === choice && e.access === 'allowed')?.id
                       : chooseAccount(evidence)
+                if (!selected && unresolved) return yield* Effect.fail(unresolved)
                 if (choice && !automatic && !selected)
                     return yield* Effect.fail(
                         new ProviderAccountError(

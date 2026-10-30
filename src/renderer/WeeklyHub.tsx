@@ -2,10 +2,9 @@ import { summarizeRepositoryActivity } from './repository-markers'
 import { RepositoryActivity } from './RepositoryActivity'
 import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
-import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
+import { ActivitySourcesButton } from './ActivitySourcesButton'
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
-import { sourceProblems } from './background-work'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { BookOpen, Check, GitCommitHorizontal, ListChecks, RefreshCw, Settings2 } from 'lucide-react'
@@ -392,6 +391,7 @@ export function WeeklyHub({
                             </Popover>
                         )}
                         <div className="hub-utility-icons">
+                            <ActivitySourcesButton state={state} onClick={onSources} />
                             <AppUpdateButton />
                             <Tooltip content="Open journal" side="bottom">
                                 <Button
@@ -415,19 +415,7 @@ export function WeeklyHub({
                                     <RefreshCw size={16} aria-hidden="true" />
                                 </Button>
                             </Tooltip>
-                            {sourceProblems(state).length > 0 && (
-                                <Tooltip content="Activity sources" side="bottom">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        data-source-status
-                                        onClick={onSources}
-                                        aria-label="Activity sources"
-                                    >
-                                        <StackIcon size={18} weight="bold" aria-hidden="true" />
-                                    </Button>
-                                </Tooltip>
-                            )}
+
                             <Tooltip content="Open settings" side="bottom">
                                 <Button variant="ghost" size="sm" onClick={onSettings} aria-label="Open settings">
                                     <Settings2 size={17} aria-hidden="true" />

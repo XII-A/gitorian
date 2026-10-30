@@ -227,6 +227,7 @@ function JournalApp() {
                         onOpenChange={setSourcesOpen}
                         onSettings={() => {
                             setSourcesOpen(false)
+                            setSettingsSection('repositories')
                             setSettingsOpen(true)
                         }}
                     />
@@ -234,7 +235,10 @@ function JournalApp() {
                         state={reply.state}
                         run={run}
                         settingsOpen={settingsOpen}
-                        onSources={() => setSourcesOpen(true)}
+                        onSources={() => {
+                            dismiss('activity-problems')
+                            setSourcesOpen(true)
+                        }}
                     />
                 </>
             )}
@@ -249,7 +253,10 @@ function JournalApp() {
                     initialActivity={workspaceActivity}
                     initialWrite={workspaceWriting}
                     onBack={backToHub}
-                    onSources={() => setSourcesOpen(true)}
+                    onSources={() => {
+                        dismiss('activity-problems')
+                        setSourcesOpen(true)
+                    }}
                     onSettings={() => setSettingsOpen(true)}
                 />
             ) : reply && !reference ? (
@@ -258,7 +265,10 @@ function JournalApp() {
                     state={reply.state}
                     run={run}
                     error={error}
-                    onSources={() => setSourcesOpen(true)}
+                    onSources={() => {
+                        dismiss('activity-problems')
+                        setSourcesOpen(true)
+                    }}
                     onSettings={() => setSettingsOpen(true)}
                     onWrite={(date) => openWorkspace(date, true)}
                     onActivity={openActivity}

@@ -8,7 +8,8 @@ export class HttpError extends Error {
     constructor(
         readonly status: number,
         message: string,
-        readonly retryAt?: number
+        readonly retryAt?: number,
+        readonly pauseReason?: 'allowance' | 'provider'
     ) {
         super(message)
     }
@@ -138,7 +139,8 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                                 new HttpError(
                                     429,
                                     'Background acquisition yielded its wire request allowance.',
-                                    Date.now() + 1000
+                                    Date.now() + 1000,
+                                    'allowance'
                                 )
                             )
                     }
@@ -169,7 +171,8 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                             new HttpError(
                                 429,
                                 `Background ${github ? 'GitHub' : 'GitLab'} refresh paused to preserve quota for opening changes.`,
-                                budget.reset
+                                budget.reset,
+                                'allowance'
                             )
                         )
                     if ((github || gitlab) && options.background) {
@@ -189,7 +192,8 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                                 new HttpError(
                                     429,
                                     'Background acquisition paused to preserve its sustained request allowance.',
-                                    next
+                                    next,
+                                    'allowance'
                                 )
                             )
                         yield* pause(allowance, next)
@@ -203,7 +207,8 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                                 new HttpError(
                                     429,
                                     'Background acquisition yielded its wire request allowance.',
-                                    Date.now() + 1000
+                                    Date.now() + 1000,
+                                    'allowance'
                                 )
                             )
                         allowance.remaining--

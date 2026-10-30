@@ -1,0 +1,222 @@
+.dialog {
+    width: min(calc(100% - 32px), 640px);
+}
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-block-end: 20px;
+}
+.headerIdentity {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.headerIdentity > svg {
+    color: var(--text-secondary);
+}
+.header h2 {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: 500;
+    letter-spacing: var(--tracking-body);
+}
+.overview {
+    margin-block-end: 24px;
+}
+.overviewLine {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    font-size: var(--text-sm);
+    margin-block-end: 12px;
+}
+.count {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.count strong {
+    color: var(--foreground);
+    font-weight: 500;
+}
+.progress {
+    display: flex;
+    height: 4px;
+    gap: 4px;
+}
+.progress > span {
+    flex: 1;
+    min-width: 0;
+    border-radius: var(--radius-pill);
+    background: var(--border-strong);
+}
+.progress > span[data-kind='done'] {
+    background: var(--success);
+}
+.progress > span[data-kind='running'] {
+    background: var(--foreground);
+}
+.progress > span[data-kind='error'] {
+    background: var(--warning);
+}
+.queue {
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    padding: 4px 16px;
+}
+.row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 0;
+    min-width: 0;
+}
+.row + .row {
+    border-top: 1px solid var(--border);
+}
+.row > button:last-child:not(.statusTrigger) {
+    flex-shrink: 0;
+}
+.identity {
+    flex: 1;
+    min-width: 0;
+}
+.identity h3 {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    margin: 0;
+    overflow-wrap: anywhere;
+    line-height: 1.4;
+}
+.identity p {
+    margin: 4px 0 0;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+.row[data-kind='error'] .identity p {
+    color: var(--warning);
+}
+.mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    border-radius: var(--radius-pill);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    font-weight: 500;
+}
+.mark[data-kind='done'] {
+    background: var(--success);
+    color: var(--background);
+}
+.mark[data-kind='error'] {
+    border: 1px solid var(--warning);
+    color: var(--warning);
+    background: color-mix(in oklab, var(--warning) 8%, transparent);
+}
+.mark[data-kind='running'] {
+    border: 2px solid var(--border-strong);
+}
+.orbit {
+    position: absolute;
+    inset: -2px;
+    border: 2px solid transparent;
+    border-block-start-color: var(--foreground);
+    border-inline-end-color: var(--foreground);
+    border-radius: inherit;
+    transform: rotate(-35deg);
+    animation: source-orbit calc(var(--duration-considered) * 2) linear infinite;
+}
+.localSummary {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding-block: 12px;
+    border-top: 1px solid var(--border);
+}
+.localSummary > div {
+    flex: 1;
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    font-size: var(--text-sm);
+}
+.localSummary > div > span:last-child {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+}
+.statusTrigger {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    margin-inline: -10px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    padding: 0;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.reason {
+    max-width: min(260px, calc(100vw - 32px));
+    font-size: var(--text-sm);
+    line-height: 1.5;
+}
+.empty {
+    display: grid;
+    justify-items: center;
+    gap: 12px;
+    padding-block: 32px 48px;
+    text-align: center;
+}
+.empty > svg {
+    color: var(--text-secondary);
+}
+.empty h3 {
+    font-size: var(--text-lg);
+    font-weight: 500;
+    margin: 0;
+}
+.empty p {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    margin: 0 0 8px;
+}
+@media (max-width: 600px) {
+    .row[data-kind='error'] {
+        flex-wrap: wrap;
+    }
+    .row[data-kind='error'] .identity {
+        flex-basis: calc(100% - 40px);
+    }
+    .row[data-kind='error'] > button:last-child {
+        margin-inline-start: 36px;
+    }
+    .count > span {
+        display: none;
+    }
+}
+@keyframes source-orbit {
+    to {
+        transform: rotate(325deg);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .orbit {
+        animation: none;
+    }
+}

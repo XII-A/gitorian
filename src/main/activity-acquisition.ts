@@ -4,7 +4,7 @@ import { ApplicationWork } from './application-work'
 import { makeSharedRequests } from './shared-requests'
 import { Context, Deferred, Effect, Exit, Layer, Queue, type Scope } from 'effect'
 import { indexCommits, inspectRepository } from './git'
-import { Http, HttpError } from './http'
+import { Http, HttpError, TransportError } from './http'
 import { gitConfiguration, contributionConfiguration } from '../shared/activity-history'
 import { localDate } from '../shared/model'
 import type { Activity, Repository, State } from '../shared/model'
@@ -115,7 +115,13 @@ function makeAcquisition() {
                         source(key).generation++
                         source(key).controller.abort(new Error('Acquisition stopped.'))
                         const status = statusFor(key)
-                        Object.assign(status, { status: 'cancelled', error: undefined, pending: undefined })
+                        Object.assign(status, {
+                            status: 'cancelled',
+                            error: undefined,
+                            pauseReason: undefined,
+                            retryAt: undefined,
+                            pending: undefined
+                        })
                         yield* checkpoint(key, status, store.generation)
                     }
             }).pipe(Effect.orDie)
@@ -187,10 +193,15 @@ function makeAcquisition() {
                                 const token = tokens.get(key)!
                                 if (stopped(key, token, generation)) return
                                 const provider = key.startsWith('git:') ? 'git' : 'remote'
+                                let resolutionError: Error | undefined
                                 if (provider === 'remote' && !repository.accountId) {
-                                    yield* accounts
-                                        .resolve(repository.id, undefined, true)
-                                        .pipe(Effect.catchAll(() => Effect.void))
+                                    yield* accounts.resolve(repository.id, undefined, true).pipe(
+                                        Effect.catchAll((error) =>
+                                            Effect.sync(() => {
+                                                resolutionError = error
+                                            })
+                                        )
+                                    )
                                     repository =
                                         store.config.repositories.find((current) => current.id === repository.id) ??
                                         repository
@@ -210,7 +221,8 @@ function makeAcquisition() {
                                         Object.assign(status, {
                                             status: 'paused',
                                             retryAt: new Date(Date.now() + 1000).toISOString(),
-                                            error: 'Waiting for pending contribution pages on this account to finish.'
+                                            pauseReason: 'queue',
+                                            error: undefined
                                         })
                                         yield* checkpoint(key, status, generation)
                                         return
@@ -258,6 +270,7 @@ function makeAcquisition() {
                                                 Object.assign(status, {
                                                     status: 'running',
                                                     error: undefined,
+                                                    pauseReason: undefined,
                                                     retryAt: undefined
                                                 })
                                                 yield* checkpoint(key, status, generation)
@@ -413,6 +426,8 @@ function makeAcquisition() {
                                                               Object.assign(status, nextStatus)
                                                           })
                                                         : Effect.gen(function* () {
+                                                              if (resolutionError)
+                                                                  return yield* Effect.fail(resolutionError)
                                                               if (
                                                                   status.configuration !== configuration ||
                                                                   status.historyTimezone !== config.settings.timezone
@@ -693,14 +708,28 @@ function makeAcquisition() {
                                                                         Object.assign(status, persisted)
                                                                     }
                                                                 }
+                                                                const transient =
+                                                                    error instanceof TransportError ||
+                                                                    (error instanceof HttpError && error.status >= 500)
+                                                                const retryAt =
+                                                                    error instanceof HttpError
+                                                                        ? error.retryAt
+                                                                        : undefined
                                                                 status.status =
-                                                                    error instanceof HttpError && error.retryAt
-                                                                        ? 'paused'
-                                                                        : 'error'
+                                                                    retryAt || transient ? 'paused' : 'error'
                                                                 status.error = error.message
+                                                                status.pauseReason = retryAt
+                                                                    ? error instanceof HttpError
+                                                                        ? (error.pauseReason ?? 'provider')
+                                                                        : 'provider'
+                                                                    : transient
+                                                                      ? 'connection'
+                                                                      : undefined
                                                                 status.retryAt =
-                                                                    error instanceof HttpError && error.retryAt
-                                                                        ? new Date(error.retryAt).toISOString()
+                                                                    retryAt || transient
+                                                                        ? new Date(
+                                                                              retryAt ?? Date.now() + 30_000
+                                                                          ).toISOString()
                                                                         : undefined
                                                                 if (
                                                                     provider === 'git' &&

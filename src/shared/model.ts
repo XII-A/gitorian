@@ -211,6 +211,7 @@ export const stateSchema = z.object({
                 lastProgressAt: z.number().optional(),
                 error: z.string().optional(),
                 retryAt: z.string().optional(),
+                pauseReason: z.enum(['queue', 'allowance', 'provider', 'connection']).optional(),
                 since: z.string().optional(),
                 historySince: z.string().optional(),
                 historyTimezone: z.string().optional(),

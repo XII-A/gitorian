@@ -1,3 +1,5 @@
+import { hubRepository } from './hub-fixtures'
+import { nextAcquisition } from '../src/shared/acquisition'
 import { cp, mkdir } from 'node:fs/promises'
 import { journalState } from './database-fixtures'
 import { GitHubFailure } from '../src/main/github'
@@ -273,4 +275,57 @@ it('does not coalesce a timezone change into an in-flight scan using the previou
         index.mockRestore()
         await app.close()
     }
+})
+
+it('resumes due queue and unassigned connection waits without a history window and prioritizes staged pages', () => {
+    const state = {
+        repositories: [
+            hubRepository(0, { id: 'queued', remote: 'https://github.com/example/queued' }),
+            hubRepository(1, { id: 'unassigned', remote: 'https://github.com/example/unassigned' }),
+            hubRepository(2, { id: 'staged', remote: 'https://github.com/example/staged' }),
+            hubRepository(3, { id: 'removed', removed: true })
+        ],
+        acquisition: {
+            'remote:queued': {
+                status: 'paused' as const,
+                retryAt: '2026-10-30T12:00:00Z',
+                pauseReason: 'queue' as const
+            },
+            'remote:unassigned': {
+                status: 'paused' as const,
+                retryAt: '2026-10-30T12:00:00Z',
+                pauseReason: 'connection' as const
+            },
+            'remote:staged': {
+                status: 'idle' as const,
+                windowEnd: '2026-10-30T12:00:00Z',
+                pending: { key: 'page', pages: {} }
+            },
+            'remote:removed': { status: 'paused' as const, retryAt: '2026-10-30T12:00:00Z' }
+        }
+    }
+    const eligible = {
+        ...state,
+        accounts: [
+            {
+                id: 'account',
+                provider: 'github' as const,
+                host: 'github.com' as const,
+                userId: '1',
+                username: 'fixture',
+                emails: [],
+                generation: 1,
+                status: 'connected' as const
+            }
+        ]
+    }
+    const now = Date.parse('2026-10-30T12:01:00Z')
+    expect(nextAcquisition(eligible, now)?.[0]).toBe('remote:staged')
+    expect(nextAcquisition({ ...eligible, accounts: [] }, now)).toBeUndefined()
+    state.acquisition['remote:staged'].windowEnd = ''
+    expect(nextAcquisition(eligible, now)?.[0]).toBe('remote:queued')
+    state.acquisition['remote:queued'].retryAt = '2026-10-30T12:02:00Z'
+    expect(nextAcquisition(eligible, now)?.[0]).toBe('remote:unassigned')
+    state.acquisition['remote:unassigned'].retryAt = '2026-10-30T12:02:00Z'
+    expect(nextAcquisition(eligible, now)).toBeUndefined()
 })
