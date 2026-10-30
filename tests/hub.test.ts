@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { initialState } from '../src/shared/model'
 import type { Activity } from '../src/shared/model'
 import { journalWeek, offsetDay, rangeActivities } from '../src/renderer/hub-model'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 
 describe('weekly hub calendar ranges', () => {
     it('includes both endpoints in the journal timezone, even across the DST transition', () => {

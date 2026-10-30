@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from '../tests/workspace-fixture'
 import type { JournalNode } from '../src/shared/model'
 import sharp from 'sharp'
 import { createHash, randomFillSync } from 'node:crypto'

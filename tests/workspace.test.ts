@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 import { activityLink, filterWorkspaceActivity } from '../src/renderer/workspace-model'
 
 describe('weekly activity and sample references', () => {

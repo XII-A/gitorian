@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 import type { Command, JournalNode, Reply } from '../src/shared/model'
 import type { EditorSnapshot } from '../src/renderer/editor-snapshot'
 
@@ -78,7 +78,6 @@ it('does no synchronous recovery writes or backend saves during a typing burst, 
             createElement(WorkspaceDraft, {
                 state,
                 week: '2026-10-05',
-                sample: false,
                 notionConnected: true,
                 run,
                 publishTarget: null,
@@ -110,7 +109,6 @@ it('keeps unsaved writing in recovery storage when leaving before the debounce f
             createElement(WorkspaceDraft, {
                 state,
                 week: '2026-10-05',
-                sample: false,
                 notionConnected: true,
                 run,
                 publishTarget: null,
@@ -138,7 +136,6 @@ it('checkpoints continuous typing and lets an existing empty draft apply the sav
             createElement(WorkspaceDraft, {
                 state,
                 week: '2026-10-05',
-                sample: false,
                 notionConnected: true,
                 run,
                 publishTarget: null,
@@ -183,7 +180,6 @@ it.each([true, false])(
                 createElement(WorkspaceDraft, {
                     state,
                     week: '2026-10-05',
-                    sample: false,
                     notionConnected,
                     run,
                     publishTarget: null,
@@ -212,7 +208,6 @@ it('reopens published weekly writing as editable with a publish action', async (
             createElement(WorkspaceDraft, {
                 state,
                 week: '2026-10-05',
-                sample: false,
                 notionConnected: true,
                 run,
                 publishTarget: container,
@@ -264,7 +259,6 @@ it.each([false, true])(
                 createElement(WorkspaceDraft, {
                     state,
                     week: '2026-10-05',
-                    sample: false,
                     notionConnected: true,
                     run,
                     publishTarget: container,
@@ -300,7 +294,6 @@ it('advances dirty writing only to its own save acknowledgment when another writ
             createElement(WorkspaceDraft, {
                 state,
                 week: '2026-10-05',
-                sample: false,
                 notionConnected: true,
                 run,
                 publishTarget: null,
@@ -333,14 +326,13 @@ it('advances dirty writing only to its own save acknowledgment when another writ
     )
 })
 
-it.each([false, true])('omits publishing and footer connection prompts without Notion (sample: %s)', async (sample) => {
+it('omits publishing and footer connection prompts without Notion', async () => {
     const state = sampleState('2026-10-05')
     await update(() =>
         root.render(
             createElement(WorkspaceDraft, {
                 state,
                 week: '2026-10-05',
-                sample,
                 notionConnected: false,
                 run: vi.fn(() => Promise.resolve(undefined)),
                 publishTarget: container,
@@ -360,7 +352,6 @@ it('opens settings to finish publishing setup for a connected profile without a 
             createElement(WorkspaceDraft, {
                 state: sampleState('2026-10-05'),
                 week: '2026-10-05',
-                sample: false,
                 notionConnected: true,
                 run: vi.fn(() => Promise.resolve(undefined)),
                 publishTarget: container,

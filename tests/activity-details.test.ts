@@ -10,7 +10,7 @@ import { PullRequestLifecycle, PullRequestStatus } from '../src/renderer/PullReq
 import { Timeline } from '../src/renderer/components/arc/timeline/timeline'
 import timelineStyles from '../src/renderer/components/arc/timeline/timeline.module.css'
 import { activityBranches, markdownUrl, orderedFiles } from '../src/renderer/activity-details'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 
 const state = sampleState('2026-10-05')
 const activity = { ...state.activities[8], url: 'https://github.com/example/project/pull/12' }

@@ -4,7 +4,7 @@ import { extname, resolve } from 'node:path'
 import { run } from '../tests/effect-fixtures'
 import { seedJournal } from '../tests/database-fixtures'
 import { workspace } from '../tests/fixtures'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from '../tests/workspace-fixture'
 import { commandSchema, weekOf } from '../src/shared/model'
 
 // Isolated profiling fixture. It never connects to real providers or a user's store.

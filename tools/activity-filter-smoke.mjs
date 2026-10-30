@@ -1,5 +1,8 @@
+import { tsImport } from 'tsx/esm/api'
+import { seedJournal } from './seed-journal.mjs'
 import { app } from 'electron'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { checkActivityFilterReset } from './activity-filter-check.mjs'
@@ -31,7 +34,7 @@ app.on('browser-window-created', (_, window) => {
         }
         try {
             const base = window.webContents.getURL().split('?')[0]
-            await window.loadURL(base + '?workspace=true&data=sample&week=2026-10-05')
+            await window.loadURL(base + '?workspace=true&week=2026-10-05')
             for (let attempt = 0; attempt < 100; attempt++) {
                 if (await window.webContents.executeJavaScript(`!!document.querySelector('.ws-activity-filters')`))
                     break
@@ -106,11 +109,9 @@ app.on('browser-window-created', (_, window) => {
             await new Promise((done) => setTimeout(done, 500))
             writeFileSync(join(output, 'grouped-filters.png'), (await window.webContents.capturePage()).toPNG())
             // Appearance evidence only: keep timing and surface polish a manual review.
-            await window.loadURL(base + '?data=sample&week=2026-10-05')
-            await wait(`!!document.querySelector('[aria-label="Dismiss setup"]')`)
-            await js(`document.querySelector('[aria-label="Dismiss setup"]').click()`)
+            await window.loadURL(base + '?week=2026-10-05')
             await wait(`!!document.querySelector('.hub-filter-dock')`)
-            // This journal-only profile has no activity; reserve a long timeline for the scroll capture.
+            // Reserve a long timeline for the scroll capture.
             await js(`document.querySelector('.hub-timeline').style.minHeight='1200px'`)
             window.setContentSize(originalSize[0], 420)
             await new Promise((done) => setTimeout(done, 500))
@@ -220,4 +221,20 @@ setTimeout(() => {
     console.error('Activity filter smoke test timed out')
     app.exit(1)
 }, 45000).unref()
+const { sampleState } = await tsImport('../tests/workspace-fixture.ts', import.meta.url)
+const fixture = sampleState('2026-10-05')
+for (const repository of fixture.repositories) {
+    repository.path = join(directory, 'repositories', repository.name)
+    mkdirSync(repository.path, { recursive: true })
+    for (const args of [
+        ['init', '-b', 'main'],
+        ['config', 'user.name', 'Alex'],
+        ['config', 'user.email', 'alex@example.com'],
+        ['commit', '--allow-empty', '-m', 'Filter history fixture'],
+        ['branch', 'feat/offline-queue'],
+        ['branch', 'fix/rtl-toolbar']
+    ])
+        execFileSync('git', args, { cwd: repository.path, windowsHide: true, stdio: 'ignore' })
+}
+await seedJournal(directory, fixture)
 await import(pathToFileURL(resolve('out/main/index.js')).href)

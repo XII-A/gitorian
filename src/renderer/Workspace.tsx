@@ -6,7 +6,7 @@ import { Alert } from './components/arc/alert/alert'
 import { sourceProblems } from './background-work'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
-import { localDate, shiftWeek, weekOf, stateSchema } from '../shared/model'
+import { localDate, shiftWeek, weekOf } from '../shared/model'
 import { offsetDay, journalWeek, rangeActivities } from './hub-model'
 import { Button } from './components/arc/button/button'
 import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
@@ -18,7 +18,6 @@ import { WorkspaceIcon } from './components/WorkspaceIcon'
 import { WorkspaceDraft } from './WorkspaceDraft'
 import type { Citation } from './WorkspaceDraft'
 import { WorkspaceInspector } from './WorkspaceInspector'
-import { sampleState } from './workspace-sample'
 import { activityLink, dateKey, dateValue, filterWorkspaceActivity, formatDay } from './workspace-model'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
@@ -54,9 +53,9 @@ interface Props {
     onSettings: () => void
 }
 export function Workspace({
-    state: realState,
+    state,
     notionConnected,
-    run: realRun,
+    run,
     initialWeek,
     initialActivity,
     initialWrite = false,
@@ -72,9 +71,6 @@ export function Workspace({
     }, [week, initialWeek])
     const breadcrumb = useRef<HTMLDivElement>(null)
     useWindowHoverExclusion(breadcrumb)
-    const [sample, setSample] = useState(false)
-    const [example, setExample] = useState<State>()
-    const examples = useRef(new Map<string, State>())
     const [project, setProject] = useState('all')
     const [branch, setBranch] = useState('all')
     const [kind, setKind] = useState('all')
@@ -102,116 +98,20 @@ export function Workspace({
     const [detached, setDetached] = useState<string>()
     const channel = useRef<BroadcastChannel | undefined>(undefined)
     const requestId = useRef(0)
-    const getSample = useCallback((sampleWeek: string) => {
-        let value = examples.current.get(sampleWeek)
-        if (!value) {
-            value = sampleState(sampleWeek)
-            try {
-                const raw = localStorage.getItem(`gitorian:sample-state:${sampleWeek}`)
-                const cached = raw ? stateSchema.safeParse(JSON.parse(raw)) : undefined
-                if (
-                    cached?.success &&
-                    cached.data.activities.every((item) => item.id.startsWith(`sample:${sampleWeek}:`))
-                )
-                    value = cached.data
-            } catch {
-                /* Sample data can still be used without browser storage. */
-            }
-            examples.current.set(sampleWeek, value)
-        }
-        return value
-    }, [])
-    useEffect(() => {
-        if (new URLSearchParams(window.location.search).get('data') !== 'sample') return
-        setExample(getSample(initialWeek))
-        setSample(true)
-    }, [getSample, initialWeek])
-    useEffect(() => {
-        if (!sample) return
-        const value = getSample(week)
-        setExample(value)
-        setSelectedId(value.activities[0]?.id)
-    }, [sample, week, getSample])
-    const state = sample ? (example ?? sampleState(week)) : realState
-    const run = useCallback(
-        async (command: Command): Promise<Reply | undefined> => {
-            if (!sample) return realRun(command)
-            const current = examples.current.get(week)
-            if (!current) return undefined
-            const next = structuredClone(current)
-            switch (command.type) {
-                case 'draft': {
-                    const index = next.drafts.findIndex((draft) => draft.id === command.draft.id)
-                    if (index >= 0) next.drafts[index] = { ...command.draft, version: command.draft.version + 1 }
-                    break
-                }
-                case 'newDraft':
-                    if (next.drafts.some((draft) => draft.week === command.week)) break
-                    next.drafts.push({
-                        id: `sample-draft-${crypto.randomUUID()}`,
-                        week: command.week,
-                        title: '',
-                        body: structuredClone(next.settings.template),
-                        selections: [],
-                        version: 1,
-                        updatedAt: new Date().toISOString()
-                    })
-                    break
-                case 'publish': {
-                    const draft = next.drafts.find((item) => item.id === command.draftId)
-                    if (draft) {
-                        draft.publishedEntryId = `sample-entry-${draft.id}`
-                        const entry = {
-                            id: draft.publishedEntryId,
-                            title: draft.title,
-                            body: draft.body,
-                            date: draft.week,
-                            url: 'https://notion.so/example',
-                            refreshedAt: new Date().toISOString()
-                        }
-                        const index = next.entries.findIndex((item) => item.id === entry.id)
-                        if (index < 0) next.entries.push(entry)
-                        else next.entries[index] = entry
-                    }
-                    break
-                }
-                case 'open':
-                    setNotice('Sample links are examples and cannot open real activity.')
-                    break
-                default:
-                    break
-            }
-            examples.current.set(week, next)
-            try {
-                localStorage.setItem(`gitorian:sample-state:${week}`, JSON.stringify(next))
-            } catch {
-                setNotice('Sample changes are kept for this session. Local storage is unavailable.')
-            }
-            setExample(next)
-            return {
-                state: next,
-                connections: { remote: false, notion: false, protectedStorage: false },
-                ...(command.type === 'draft'
-                    ? { draftSaved: { id: command.draft.id, version: command.draft.version + 1 } }
-                    : {})
-            }
-        },
-        [realRun, sample, week]
-    )
-    const inspectionState = useRef(realState)
-    inspectionState.current = realState
+    const inspectionState = useRef(state)
+    inspectionState.current = state
     const inspect = useCallback(
         async (item: Activity, tab: 'diff' | 'details' = 'details') => {
             const id = ++requestId.current
             setSelectedId(item.id)
             setInspectionTab(tab)
             setDetailError('')
-            if (sample || hasCachedDetails(inspectionState.current, item, tab === 'details' ? 'files' : 'diff')) {
+            if (hasCachedDetails(inspectionState.current, item, tab === 'details' ? 'files' : 'diff')) {
                 setDetailBusy(false)
                 return
             }
             setDetailBusy(true)
-            const reply = await realRun({
+            const reply = await run({
                 type: 'details',
                 activityId: item.id,
                 content: tab === 'details' ? 'files' : 'diff'
@@ -221,18 +121,18 @@ export function Workspace({
                 setDetailError(reply?.detailError ?? 'Could not load these changes. Retry loading the activity.')
             setDetailBusy(false)
         },
-        [sample, realRun]
+        [run]
     )
     const initialInspected = useRef(false)
     useEffect(() => {
         if (!initialActivity || initialInspected.current) return
-        const activity = realState.activities.find((item) => item.id === initialActivity)
+        const activity = state.activities.find((item) => item.id === initialActivity)
         if (activity) {
             dayFilter.setDay(localDate(new Date(activity.date), state.settings.timezone))
             initialInspected.current = true
             void inspect(activity)
         }
-    }, [initialActivity, realState.activities, inspect, dayFilter, state.settings.timezone])
+    }, [initialActivity, state.activities, inspect, dayFilter, state.settings.timezone])
     const selected = state.activities.find((item) => item.id === selectedId)
     const activityState = useMemo(
         () => ({
@@ -306,7 +206,6 @@ export function Workspace({
         }
     }, [state, week, cite, canCite])
     const changeWeek = (value: string) => {
-        if (sample) setExample(getSample(value))
         setWeek(value)
         setSelectedId(undefined)
         setDetached(undefined)
@@ -320,7 +219,7 @@ export function Workspace({
     const popout = async () => {
         if (!selected) return
         if (navigator.userAgent.includes('Electron/')) {
-            const reply = await realRun({ type: 'popout', kind: 'activity', id: selected.id })
+            const reply = await run({ type: 'popout', kind: 'activity', id: selected.id })
             if (reply) setDetached(selected.id)
         } else {
             const url = new URL(window.location.href)
@@ -333,7 +232,7 @@ export function Workspace({
         }
     }
     const { refresh, refreshing } = useActivityRefresh(run, week, offsetDay(week, 6), state.settings.timezone)
-    const loadingWeek = useWeekHistory(state, run, week, sample)
+    const loadingWeek = useWeekHistory(state, run, week)
     const emptyActivityAction = useCallback(() => {
         dayFilter.setDay('all')
         setProject('all')
@@ -644,11 +543,10 @@ export function Workspace({
                         }}
                     >
                         <WorkspaceDraft
-                            key={`${state.restoreId ?? 'local'}:${sample ? 'sample' : 'real'}:${week}`}
+                            key={`${state.restoreId ?? 'local'}:${week}`}
                             state={state}
                             week={week}
                             initialWrite={week === writingWeek.current}
-                            sample={sample}
                             notionConnected={notionConnected}
                             run={run}
                             citation={citation}

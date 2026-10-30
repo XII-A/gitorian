@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { useActivityRefresh } from '../src/renderer/use-activity-refresh'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 import type { Command, Reply } from '../src/shared/model'
 
 const toast = vi.hoisted(() => vi.fn())

@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 import type { Command, Reply } from '../src/shared/model'
 
 const notifications = vi.hoisted(() => ({ toast: vi.fn(), dismiss: vi.fn() }))
@@ -40,7 +40,6 @@ it.each(['hub', 'workspace', 'existing'] as const)(
         const props = {
             state,
             week: '2026-10-05',
-            sample: false,
             notionConnected: true,
             run,
             publishTarget: null,

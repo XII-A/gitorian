@@ -2,7 +2,7 @@ import { transportClient, githubClient, run } from './effect-fixtures'
 import { describe, expect, it } from 'vitest'
 import { activitySchema } from '../src/shared/model'
 import { changeRequestContext } from '../src/renderer/pull-request'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 const repository = { ...sampleState('2026-10-05').repositories[0], remote: 'https://github.com/example/project' }
 describe('pull request status acquisition', () => {
     it.each([

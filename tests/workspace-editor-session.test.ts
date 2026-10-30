@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import type { Editor as TiptapEditor } from '@tiptap/react'
 import { expect, it, vi } from 'vitest'
 import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 import type { Command, Reply } from '../src/shared/model'
 
 const notifications = vi.hoisted(() => ({ toast: vi.fn(), dismiss: vi.fn(), update: vi.fn() }))
@@ -40,7 +40,6 @@ it('keeps actual editor revisions through idle saves, title edits, citations, in
     const props = {
         state,
         week: '2026-10-05',
-        sample: false,
         notionConnected: true,
         run,
         publishTarget: null,

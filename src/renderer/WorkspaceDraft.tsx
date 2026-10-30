@@ -21,7 +21,6 @@ export interface Citation {
 interface Props {
     state: State
     week: string
-    sample: boolean
     initialWrite?: boolean
     notionConnected: boolean
     run: (command: Command) => Promise<Reply | undefined>
@@ -39,7 +38,6 @@ interface WritingConflict {
 export function WorkspaceDraft({
     state,
     week,
-    sample,
     initialWrite = false,
     notionConnected,
     run,
@@ -76,7 +74,7 @@ export function WorkspaceDraft({
     const notifiedSave = useRef('')
     const drafts = state.drafts.filter((item) => item.week === week)
     const ready = !!draft && !busy && !recoveryConflict
-    const storageKey = `gitorian:recovery:${sample ? 'sample' : (state.restoreId ?? 'local')}:${week}`
+    const storageKey = `gitorian:recovery:${state.restoreId ?? 'local'}:${week}`
     const snapshot = useCallback(() => {
         if (bodySnapshot.current && latest.current) {
             latest.current = { ...latest.current, body: bodySnapshot.current.read() }
@@ -85,13 +83,13 @@ export function WorkspaceDraft({
         return latest.current
     }, [])
     const cache = useCallback(() => {
-        if (sample || (!conflict.current && (!dirty.current || !latest.current))) return
+        if (!conflict.current && (!dirty.current || !latest.current)) return
         try {
             localStorage.setItem(storageKey, JSON.stringify(conflict.current?.recovery ?? snapshot()))
         } catch {
             if (mounted.current) setSaveIssue((issue) => (issue?.kind === 'save' ? issue : { kind: 'recovery' }))
         }
-    }, [storageKey, sample, snapshot])
+    }, [storageKey, snapshot])
     const showConflict = useCallback(
         (saved: Draft, recovery: Draft) => {
             clearTimeout(timer.current)
@@ -144,14 +142,14 @@ export function WorkspaceDraft({
             if (latest.current === writing) {
                 dirty.current = false
                 try {
-                    if (!sample) localStorage.removeItem(storageKey)
+                    localStorage.removeItem(storageKey)
                 } catch {
                     /* The backend has saved the draft. */
                 }
                 if (mounted.current) {
                     setSaveIssue(undefined)
                     dismiss('workspace-save')
-                    setStatus(sample ? 'Sample saved on this device' : 'Saved on this device')
+                    setStatus('Saved on this device')
                 }
             }
             return true
@@ -160,7 +158,7 @@ export function WorkspaceDraft({
         const result = await request
         if (pending.current === request) pending.current = undefined
         return result
-    }, [run, storageKey, sample, snapshot, showConflict, state.restoreId, dismiss])
+    }, [run, storageKey, snapshot, showConflict, state.restoreId, dismiss])
     useEffect(() => {
         if (!saveIssue || recoveryConflict) {
             dismiss('workspace-save')
@@ -211,16 +209,10 @@ export function WorkspaceDraft({
             bodySnapshot.current = undefined
             setDraft(recovered)
             setWords(journalWordCount(recovered.body))
-            setStatus(
-                dirty.current
-                    ? 'Recovered your latest writing. Saving…'
-                    : sample
-                      ? 'Sample saved on this device'
-                      : 'Saved on this device'
-            )
+            setStatus(dirty.current ? 'Recovered your latest writing. Saving…' : 'Saved on this device')
             if (dirty.current) void persist()
         },
-        [persist, storageKey, sample, showConflict]
+        [persist, storageKey, showConflict]
     )
     const resolveConflict = async () => {
         const current = conflict.current
@@ -257,13 +249,13 @@ export function WorkspaceDraft({
             }
             // Keep recovery storage and both in-memory copies until the chosen write
             // is acknowledged (or the saved version is confirmed without writing).
-            if (!sample) localStorage.removeItem(storageKey)
+            localStorage.removeItem(storageKey)
             latest.current = saved
             bodySnapshot.current = undefined
             dirty.current = false
             setDraft(saved)
             setWords(journalWordCount(saved.body))
-            setStatus(sample ? 'Sample saved on this device' : 'Saved on this device')
+            setStatus('Saved on this device')
             conflict.current = undefined
             setRecoveryConflict(undefined)
         } catch {
@@ -312,10 +304,10 @@ export function WorkspaceDraft({
                 bodySnapshot.current = undefined
                 setDraft(confirmed)
                 setWords(journalWordCount(confirmed.body))
-                setStatus(sample ? 'Sample published. Nothing was sent to Notion.' : 'Published to Notion')
+                setStatus('Published to Notion')
             }
         }
-    }, [drafts, choose, sample])
+    }, [drafts, choose])
     useEffect(() => {
         onReady(ready)
         return () => onReady(false)
@@ -429,21 +421,14 @@ export function WorkspaceDraft({
         const result = await run({ type: 'publish', draftId: latest.current.id })
         const saved = result?.state.drafts.find((item) => item.id === latest.current?.id)
         const save = result?.state.saves.filter((item) => item.draftId === latest.current?.id).at(-1)
-        if (saved?.publishedEntryId && (sample || save?.status === 'confirmed')) {
+        if (saved?.publishedEntryId && save?.status === 'confirmed') {
             latest.current = saved
             setDraft(saved)
-            setStatus(
-                sample
-                    ? 'Sample published. Nothing was sent to Notion.'
-                    : updating
-                      ? 'Updated in Notion'
-                      : 'Published to Notion'
-            )
+            setStatus(updating ? 'Updated in Notion' : 'Published to Notion')
             toast({
                 id: 'workspace-publish-success',
                 type: 'success',
-                title: sample ? 'Sample published' : updating ? 'Updated in Notion' : 'Published to Notion',
-                ...(sample ? { description: 'Nothing was sent to Notion.' } : {})
+                title: updating ? 'Updated in Notion' : 'Published to Notion'
             })
         } else if (!result || !result.state.saves.some((save) => save.draftId === latest.current?.id))
             toast({
@@ -507,7 +492,7 @@ export function WorkspaceDraft({
                 : { label: 'Review settings', onClick: onSettings }
         })
     }, [publishSave, toast, dismiss, verify, onSettings])
-    const needsNotion = !sample && (!notionConnected || !state.settings.destination)
+    const needsNotion = !notionConnected || !state.settings.destination
     const entryTemplate = state.settings.template.content?.some(
         (node) => node.type !== 'paragraph' || plainText(node).trim()
     )
@@ -537,11 +522,9 @@ export function WorkspaceDraft({
                     >
                         {needsNotion
                             ? 'Set up Notion publishing'
-                            : sample
-                              ? 'Publish sample'
-                              : draft?.publishedEntryId
-                                ? 'Update in Notion'
-                                : 'Publish to Notion'}
+                            : draft?.publishedEntryId
+                              ? 'Update in Notion'
+                              : 'Publish to Notion'}
                     </Button>,
                     publishTarget
                 )}
@@ -563,7 +546,7 @@ export function WorkspaceDraft({
                             <Editor
                                 key={draft.id}
                                 restoreId={state.restoreId}
-                                allowImageImport={!sample}
+                                allowImageImport
                                 onImagesReadyChange={setImagesReady}
                                 ref={editor}
                                 value={draft.body}

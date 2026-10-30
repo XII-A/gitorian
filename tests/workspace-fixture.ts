@@ -1,6 +1,6 @@
-import { initialState } from '../shared/model'
-import type { Activity, State } from '../shared/model'
-import { offsetDay } from './hub-model'
+import { initialState } from '../src/shared/model'
+import type { Activity, State } from '../src/shared/model'
+import { offsetDay } from '../src/renderer/hub-model'
 
 const patch = `diff --git a/sync/retry.ts b/sync/retry.ts
 index 1111111..2222222 100644

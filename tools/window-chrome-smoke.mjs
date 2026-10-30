@@ -1,3 +1,5 @@
+import { tsImport } from 'tsx/esm/api'
+import { seedJournal } from './seed-journal.mjs'
 import { app, screen } from 'electron'
 import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -375,7 +377,7 @@ app.on('browser-window-created', (_, window) => {
                 for (const zoom of [1, 1.25]) {
                     window.webContents.setZoomFactor(zoom)
                     await window.loadFile(resolve('out/renderer/index.html'), {
-                        search: '?workspace&data=sample&week=2026-10-12'
+                        search: '?workspace&week=2026-10-12'
                     })
                     for (let attempt = 0; attempt < 50; attempt++) {
                         if (await evaluate(`!!document.querySelector('[aria-label="Journal breadcrumb"] button')`))
@@ -452,4 +454,6 @@ app.on('browser-window-created', (_, window) => {
         }
     })
 })
+const { sampleState } = await tsImport('../tests/workspace-fixture.ts', import.meta.url)
+await seedJournal(app.getPath('userData'), sampleState('2026-10-12'))
 await import(pathToFileURL(resolve('out/main/index.js')).href)

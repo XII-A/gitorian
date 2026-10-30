@@ -4,7 +4,7 @@ import { expect, it } from 'vitest'
 import { makeGitLab } from '../src/main/gitlab'
 import type { Repository } from '../src/shared/model'
 import { filesFromDiff } from '../src/main/diff-files'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 
 // An old untracked MR can gain the week's only contribution without its head or
 // updated_at changing. Reconciliation must find it, and must not invent approvals.

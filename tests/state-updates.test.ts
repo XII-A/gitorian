@@ -3,7 +3,7 @@ import { hasCachedDetails, unchangedStateReply } from '../src/renderer/activity-
 import { expect, it } from 'vitest'
 import { ReplyUpdates, expandReply, stateCursor } from '../src/shared/state-updates'
 import { shareSnapshot } from '../src/shared/snapshot'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 import type { Reply, State } from '../src/shared/model'
 
 function reply(state = sampleState('2026-10-12')): Reply {

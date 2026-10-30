@@ -6,7 +6,7 @@ import { ToastStack, ToastStackProvider } from '../src/renderer/components/arc/t
 import { useActivityRefresh } from '../src/renderer/use-activity-refresh'
 import { useWeekHistory } from '../src/renderer/use-week-history'
 import { AcquisitionStatus } from '../src/renderer/AcquisitionStatus'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 import type { Reply, State } from '../src/shared/model'
 import { gitConfiguration } from '../src/shared/activity-history'
 

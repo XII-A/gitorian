@@ -1,7 +1,7 @@
 import { transportClient, githubClient, run } from './effect-fixtures'
 import { expect, it } from 'vitest'
 import { activitySchema } from '../src/shared/model'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 import { summarizeChanges } from '../src/shared/change-statistics'
 it('retains rename paths from GitHub PR and commit metadata through state validation', async () => {
     const state = sampleState('2026-10-05')

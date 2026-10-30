@@ -4,7 +4,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 import { WorkspaceInspector } from '../src/renderer/WorkspaceInspector'
-import { sampleState } from '../src/renderer/workspace-sample'
+import { sampleState } from './workspace-fixture'
 
 function renderInspector(options: { error?: string; loading?: boolean; diff?: string }) {
     const state = sampleState('2026-10-05')
