@@ -113,3 +113,5 @@ Manually inspect Arabic shaping, quote/toggle placement, marker sides, long mixe
 All claimed journeys must exit zero with run.json.passed and cleanup.removed true. Keep failures and successful artifacts under ignored .ai-docs/verification; screenshots alone do not prove persistence.
 
 Toggle editing is also owned by `writing-direction`: native closed-summary continuation, open-summary body entry, protected body Backspace, Shift+Tab/Tab movement and undo, followed by process restart and SQLite evidence. Toggles start collapsed; content brightness derives from body nodes, including non-text blocks. Inspect LTR and RTL triangle rotation and reduced motion manually.
+
+Within toggle bodies, repeated Enter retains blank paragraphs; Backspace on an empty direct body block outdents through the same transaction as Shift+Tab. The writing-direction journey owns native input and undo for this behavior.

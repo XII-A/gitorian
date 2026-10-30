@@ -210,8 +210,6 @@ it('preserves the toggle from the first body paragraph', () => {
 })
 
 it.each([
-    ['Backspace', false],
-    ['Backspace', true],
     ['Ctrl-Backspace', false],
     ['Ctrl-Backspace', true],
     ['beforeinput', false],
@@ -378,4 +376,31 @@ it('creates a writable paragraph before an image-only toggle body', () => {
     expect(writing.state.selection.$from.parent.type.name).toBe('paragraph')
     writing.commands.insertContent('Caption context')
     expect(writing.state.doc.firstChild!.lastChild!.childCount).toBe(2)
+})
+
+it('keeps repeated Enter inside toggle content and outdents an empty block with Backspace', () => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary">Title</div><div data-type="toggleContent"><p>Keep child</p></div></div>'
+    )
+    writing.view.dom.querySelector<HTMLButtonElement>('button')!.click()
+    let end = 0
+    writing.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'paragraph' && node.textContent === 'Keep child') end = pos + 1 + node.content.size
+    })
+    writing.commands.setTextSelection(end)
+    const key = (key: string) =>
+        writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    key('Enter')
+    key('Enter')
+    expect(writing.state.selection.$from.node(-1).type.name).toBe('toggleContent')
+    expect(writing.state.doc.firstChild!.lastChild!.childCount).toBe(3)
+    const before = writing.getJSON()
+    key('Backspace')
+    expect(writing.state.selection.$from.depth).toBe(1)
+    expect(writing.state.selection.$from.parent.content.size).toBe(0)
+    expect(writing.state.doc.firstChild!.lastChild!.childCount).toBe(2)
+    expect(writing.state.doc.firstChild!.textContent).toBe('TitleKeep child')
+    writing.commands.undo()
+    expect(writing.getJSON()).toEqual(before)
+    expect(writing.state.selection.$from.node(-1).type.name).toBe('toggleContent')
 })

@@ -210,6 +210,20 @@ const ToggleContent = Node.create({
     renderHTML: () => ['div', { 'data-type': 'toggleContent' }, 0],
     addKeyboardShortcuts() {
         return {
+            Enter: () => {
+                const { $from, empty } = this.editor.state.selection
+                if (
+                    !this.editor.isEditable ||
+                    this.editor.view.composing ||
+                    !empty ||
+                    $from.parent.type.name !== 'paragraph' ||
+                    $from.parent.content.size ||
+                    $from.node($from.depth - 1).type.name !== 'toggleContent'
+                )
+                    return false
+                // StarterKit lifts empty blocks before splitting them; toggle bodies keep blank lines.
+                return this.editor.commands.splitBlock()
+            },
             Backspace: () => {
                 const { $from, empty } = this.editor.state.selection
                 if (
@@ -218,10 +232,11 @@ const ToggleContent = Node.create({
                     !$from.parent.isTextblock ||
                     $from.parentOffset ||
                     $from.depth < 3 ||
-                    $from.node($from.depth - 1).type.name !== 'toggleContent' ||
-                    $from.index($from.depth - 1) !== 0
+                    $from.node($from.depth - 1).type.name !== 'toggleContent'
                 )
                     return false
+                if (!$from.parent.content.size) return moveToggleBlock(this.editor, true)
+                if ($from.index($from.depth - 1) !== 0) return false
                 return backspaceFromToggleBody(this.editor, $from.depth - 2)
             }
         }

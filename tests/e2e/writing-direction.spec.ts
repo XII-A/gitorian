@@ -111,6 +111,26 @@ test('multilingual writing keeps direction, native editing and policy across a f
         await page.keyboard.press('Control+z')
         await expect(body().locator(':scope > p').filter({ hasText: 'Protected child' })).toHaveCount(1)
         await page.keyboard.press('Tab')
+        await page.keyboard.press('End')
+        await page.keyboard.press('Enter')
+        await page.keyboard.press('Enter')
+        await expect(toggles.nth(1).locator('[data-type=toggleContent] > p')).toHaveCount(3)
+        await expect
+            .poll(() =>
+                body().evaluate(
+                    (el) => (el as HTMLElement & { editor: Editor }).editor.state.selection.$from.node(-1).type.name
+                )
+            )
+            .toBe('toggleContent')
+        await page.keyboard.press('Backspace')
+        await expect(toggles.nth(1).locator('[data-type=toggleContent] > p')).toHaveCount(2)
+        await expect
+            .poll(() =>
+                body().evaluate((el) => (el as HTMLElement & { editor: Editor }).editor.state.selection.$from.depth)
+            )
+            .toBe(1)
+        await page.keyboard.press('Control+z')
+        await expect(toggles.nth(1).locator('[data-type=toggleContent] > p')).toHaveCount(3)
         await desktop.shot('toggle-edited-content')
         await toggles.first().locator('[data-type=toggleSummary]').click()
         await page.keyboard.press('Home')
