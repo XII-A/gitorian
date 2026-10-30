@@ -569,7 +569,7 @@ export function WorkspaceDraft({
                 </div>
             </ScrollArea>
             <footer className="ws-writing-footer">
-                <span>{draft ? `${words} words` : '0 words'}</span>
+                <span>{`${new Intl.NumberFormat().format(draft ? words : 0)} ${draft && words === 1 ? 'word' : 'words'}`}</span>
                 <span role="status">
                     {status && !recoveryConflict && <WorkspaceIcon name="check" width="14" height="14" />}
                     {!recoveryConflict && status}

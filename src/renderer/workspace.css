@@ -203,7 +203,6 @@
     width: 100%;
     height: auto;
     min-height: 1.2em;
-    max-height: 4em;
     field-sizing: content;
     padding: 0;
     border: 0;
@@ -213,7 +212,7 @@
     font: inherit;
     line-height: 1.15;
     letter-spacing: inherit;
-    overflow-y: auto;
+    overflow-y: hidden;
 }
 .ws-title textarea::placeholder {
     color: var(--text-secondary);
