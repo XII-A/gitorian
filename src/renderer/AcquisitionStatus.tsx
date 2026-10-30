@@ -10,50 +10,52 @@ import { Tooltip } from './components/arc/tooltip/tooltip'
 import { Popover, PopoverTrigger, PopoverContent } from './components/arc/popover/popover'
 import styles from './AcquisitionStatus.module.css'
 
-function sourceView(status: SourceStatus) {
+interface SourceAction {
+    type: 'settings' | 'refresh' | 'stop'
+    label: string
+}
+type SourceView =
+    | { kind: 'error' | 'stopped' | 'running' | 'done'; label: string; action?: SourceAction }
+    | { kind: 'waiting'; label: string; detail: string; action: SourceAction }
+
+function sourceView(status: SourceStatus): SourceView {
     if (status.status === 'error') {
         const error = status.error ?? ''
         if (/choose or reconnect|account for this repository|no connected account|account not assigned/i.test(error))
             return {
                 kind: 'error',
                 label: 'No account selected',
-                detail: 'Choose a connected account for this repository.',
-                action: 'Choose account'
+                action: { type: 'settings', label: 'Choose account' }
             }
         if (/401|unauthorized|credentials|authentication|expired.*token|invalid.*token/i.test(error))
             return {
                 kind: 'error',
                 label: 'Authentication failed',
-                detail: 'Reconnect your account to collect remote activity.',
-                action: 'Reconnect'
+                action: { type: 'settings', label: 'Reconnect' }
             }
         if (/403|forbidden|permission|access denied/i.test(error))
             return {
                 kind: 'error',
                 label: 'Access denied',
-                detail: 'Check that your account has access to this repository in Settings.',
-                action: 'Check access'
+                action: { type: 'settings', label: 'Check access' }
             }
         if (/404|not found|no longer available|does not exist/i.test(error))
             return {
                 kind: 'error',
                 label: 'Repository unavailable',
-                detail: 'Check the repository location and account access in Settings.',
-                action: 'Open settings'
+                action: { type: 'settings', label: 'Open settings' }
             }
         return {
             kind: 'error',
             label: 'Refresh interrupted',
-            detail: 'Could not collect activity. Try this source again.',
-            action: 'Retry'
+            action: { type: 'refresh', label: 'Retry' }
         }
     }
     if (status.status === 'cancelled')
         return {
             kind: 'stopped',
             label: 'Stopped',
-            detail: 'Resume to collect the remaining activity.',
-            action: 'Resume'
+            action: { type: 'refresh', label: 'Resume' }
         }
     if (status.status === 'paused') {
         const reason = pauseReason(status)
@@ -68,17 +70,16 @@ function sourceView(status: SourceStatus) {
                       : reason === 'allowance'
                         ? 'Taking a short break between requests. Resumes automatically.'
                         : 'The provider is limiting requests. Resumes automatically when available.',
-            action: 'Stop refresh'
+            action: { type: 'stop', label: 'Stop refresh' }
         }
     }
     if (status.status === 'running' || status.windowEnd)
         return {
             kind: 'running',
             label: 'Collecting activity',
-            detail: 'Collecting activity in the background.',
-            action: 'Stop refresh'
+            action: { type: 'stop', label: 'Stop refresh' }
         }
-    return { kind: 'done', label: 'Refreshed', detail: 'Latest refresh complete.', action: '' }
+    return { kind: 'done', label: 'Refreshed' }
 }
 function entriesFor(state: State) {
     return activitySources(state).map(([key, status]) => {
@@ -106,7 +107,8 @@ type Entry = ReturnType<typeof entriesFor>[number]
 const rowOrder = ['error', 'running', 'waiting', 'stopped', 'done']
 const progressOrder = ['done', 'running', 'waiting', 'stopped', 'error']
 function StatusMark({ entry }: { entry: Entry }) {
-    const kind = entry.view.kind
+    const view = entry.view
+    const kind = view.kind
     const mark = (
         <span className={styles.mark} data-kind={kind} role="img" aria-label={entry.view.label}>
             {kind === 'done' ? (
@@ -122,7 +124,7 @@ function StatusMark({ entry }: { entry: Entry }) {
             )}
         </span>
     )
-    if (kind === 'waiting')
+    if (view.kind === 'waiting')
         return (
             <Popover>
                 <PopoverTrigger
@@ -131,7 +133,7 @@ function StatusMark({ entry }: { entry: Entry }) {
                 >
                     {mark}
                 </PopoverTrigger>
-                <PopoverContent className={styles.reason}>{entry.view.detail}</PopoverContent>
+                <PopoverContent className={styles.reason}>{view.detail}</PopoverContent>
             </Popover>
         )
     return <Tooltip content={entry.view.label}>{mark}</Tooltip>
@@ -156,25 +158,31 @@ export function AcquisitionStatus({
     const local = entries.filter((entry) => entry.source === 'git')
     const localComplete = local.length > 0 && local.every((entry) => entry.view.kind === 'done')
     const act = (entry: Entry) => {
-        if (entry.view.kind === 'error' && entry.view.action !== 'Retry') {
-            onSettings()
-            return
+        const action = entry.view.action
+        if (!action) return
+        switch (action.type) {
+            case 'settings':
+                onSettings()
+                return
+            case 'stop':
+                if (entry.source === 'notion') return
+                return run({
+                    type: 'stopWork',
+                    source: entry.source === 'git' ? 'git' : 'remote',
+                    repositoryId: entry.repositoryId
+                })
+            case 'refresh':
+                return run({
+                    type: 'refresh',
+                    source: entry.source === 'git' ? 'git' : entry.source === 'notion' ? 'notion' : 'remote',
+                    repositoryId: entry.repositoryId
+                })
         }
-        if (entry.view.action === 'Stop refresh' && entry.source !== 'notion')
-            return run({
-                type: 'stopWork',
-                source: entry.source === 'git' ? 'git' : 'remote',
-                repositoryId: entry.repositoryId
-            })
-        return run({
-            type: 'refresh',
-            source: entry.source === 'git' ? 'git' : entry.source === 'notion' ? 'notion' : 'remote',
-            repositoryId: entry.repositoryId
-        })
     }
-    const action = (entry: Entry) => {
-        if (!entry.view.action || (entry.source === 'notion' && entry.view.action === 'Stop refresh')) return null
-        if (entry.view.kind === 'running' || entry.view.kind === 'waiting')
+    const renderAction = (entry: Entry) => {
+        const action = entry.view.action
+        if (!action || (entry.source === 'notion' && action.type === 'stop')) return null
+        if (action.type === 'stop')
             return (
                 <Tooltip content="Stop refresh">
                     <Button
@@ -197,11 +205,11 @@ export function AcquisitionStatus({
             >
                 {entry.view.kind === 'stopped' ? (
                     <Play size={12} />
-                ) : entry.view.action !== 'Retry' ? null : (
+                ) : action.type !== 'refresh' ? null : (
                     <RefreshCw size={13} />
                 )}
-                {entry.view.action}
-                {entry.view.kind === 'error' && entry.view.action !== 'Retry' && <ArrowUpRight size={13} />}
+                {action.label}
+                {action.type === 'settings' && <ArrowUpRight size={13} />}
             </Button>
         )
     }
@@ -304,7 +312,7 @@ export function AcquisitionStatus({
                                                         : entry.provider}
                                                 </p>
                                             </div>
-                                            {action(entry)}
+                                            {renderAction(entry)}
                                         </article>
                                     ))}
                                 {localComplete && (

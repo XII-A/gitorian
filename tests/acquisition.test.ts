@@ -1,3 +1,5 @@
+import { nextAcquisition } from '../src/shared/acquisition'
+import { sourceProblems } from '../src/renderer/background-work'
 import { remoteConfiguration } from '../src/shared/provider-accounts'
 import type { ActivityScan } from '../src/main/contribution-reader'
 import type { Activity } from '../src/shared/model'
@@ -876,3 +878,42 @@ it('retains account access-check cooldowns instead of requesting reconnection an
         await app.close()
     }
 })
+
+it.each(['network', 'unavailable'] as const)(
+    'classifies token renewal %s failure according to whether the account can still retry',
+    async (failure) => {
+        const app = await journal({
+            access_token: 'expired',
+            refresh_token: 'one-use-refresh',
+            expires: Date.now() - 1000
+        })
+        app.remote.github = true
+        const account = app.store.config.accounts[0]
+        await app.store.saveRepository({ ...repository, accountId: account.id, accountGeneration: account.generation })
+        const fetch = vi.spyOn(app.remote, 'fetch').mockImplementation(() => {
+            if (failure === 'network') return Promise.reject(new Error('Connection lost during token renewal'))
+            return Promise.resolve(new Response('{}', { status: 503 }))
+        })
+        try {
+            await run(app.service.refresh({ source: 'remote', repositoryId: repository.id }))
+            const state = { ...(await journalState(app.store)), accounts: app.store.config.accounts }
+            const status = state.acquisition!['remote:repo']
+            if (failure === 'network') {
+                expect(app.store.config.accounts[0].status).toBe('reconnect')
+                expect(status.status).toBe('error')
+                expect(status.error).toMatch(/credentials.*reconnect/i)
+                expect(status.retryAt).toBeUndefined()
+                expect(sourceProblems(state).map(([key]) => key)).toEqual(['remote:repo'])
+                expect(nextAcquisition(state, Date.now() + 60_000)).toBeUndefined()
+            } else {
+                expect(app.store.config.accounts[0].status).toBe('connected')
+                expect(status).toMatchObject({ status: 'paused', pauseReason: 'connection' })
+                expect(sourceProblems(state)).toEqual([])
+                expect(nextAcquisition(state, Date.parse(status.retryAt!) + 1000)?.[0]).toBe('remote:repo')
+            }
+        } finally {
+            fetch.mockRestore()
+            await app.close()
+        }
+    }
+)

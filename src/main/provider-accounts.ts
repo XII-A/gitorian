@@ -306,13 +306,23 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                                 grant_type: 'refresh_token',
                                 refresh_token: stored.refresh_token!
                             }).pipe(
-                                Effect.tapError((error) =>
-                                    error instanceof HttpError && error.status >= 500
-                                        ? native(() => store.finishProviderAccount(id, journal))
-                                        : deactivate(id, 'reconnect', {
-                                              generation: account.generation,
-                                              access: stored.access_token
-                                          })
+                                Effect.catchAll((error) =>
+                                    Effect.gen(function* () {
+                                        if (error instanceof HttpError && error.status >= 500) {
+                                            yield* native(() => store.finishProviderAccount(id, journal))
+                                            return yield* Effect.fail(error)
+                                        }
+                                        yield* deactivate(id, 'reconnect', {
+                                            generation: account.generation,
+                                            access: stored.access_token
+                                        })
+                                        return yield* Effect.fail(
+                                            new ProviderAccountError(
+                                                'Credentials could not be renewed. Reconnect this account in Settings.',
+                                                { cause: error }
+                                            )
+                                        )
+                                    })
                                 )
                             )
                             const result = yield* native(() => tokenResponse.parse(response)).pipe(

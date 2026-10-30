@@ -25,7 +25,16 @@ for (const surface of ['hub', 'workspace'] as const) {
         const dismiss = page.getByRole('button', { name: 'Dismiss setup', exact: true })
         if (await dismiss.isVisible()) await dismiss.click()
         await expect(page.getByText('1 source needs attention', { exact: true })).toBeVisible()
-        await page.getByRole('button', { name: 'Activity sources', exact: true }).click()
+        const utilities = page.locator(surface === 'hub' ? '.hub-utility-icons' : '.ws-utilities')
+        const sourceButton = page.getByRole('button', { name: 'Activity sources', exact: true })
+        await expect(utilities.locator('button').first()).toHaveAccessibleName('Activity sources')
+        await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click()
+        await desktop.shot('00-source-error-header')
+        await utilities.screenshot({ path: info.outputPath('source-error-actions.png') })
+        await page
+            .locator(surface === 'hub' ? '.hub-topbar' : '.ws-topbar')
+            .screenshot({ path: info.outputPath('source-error-topbar.png') })
+        await sourceButton.click()
         const dialog = page.getByRole('dialog', { name: 'Activity sources', exact: true })
         await expect(page.getByRole('button', { name: 'Sample preview', exact: true })).toHaveCount(0)
         await expect(page.getByRole('button', { name: 'Preview activity sources', exact: true })).toHaveCount(0)
@@ -132,6 +141,21 @@ for (const surface of ['hub', 'workspace'] as const) {
         await portfolio.getByRole('button', { name: 'Choose account' }).click()
         await expect(dialog).toHaveCount(0)
         await expect(page.getByRole('dialog', { name: 'Workspace settings', exact: true })).toBeVisible()
+        await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
+        // Fixture recovery: remove the only error while other sources remain paused/stopped.
+        await page.evaluate(async () =>
+            window.journal.invoke({ type: 'stopWork', source: 'remote', repositoryId: 'repo-0' })
+        )
+        await app.evaluate(({ BrowserWindow }) => {
+            const window = BrowserWindow.getAllWindows()[0]
+            window.webContents.setZoomFactor(1)
+            window.setContentSize(1200, 960)
+        })
+        await page.reload()
+        await expect(sourceButton).toHaveCount(0)
+        await expect(page.getByText('1 source needs attention', { exact: true })).toHaveCount(0)
+        await desktop.shot('07-background-waits-header')
+        await utilities.screenshot({ path: info.outputPath('source-background-actions.png') })
         await desktop.close()
         const database = new DatabaseSync(join(desktop.profile, 'journal.sqlite'), { readOnly: true })
         try {

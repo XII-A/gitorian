@@ -44,13 +44,15 @@ afterAll(async () => {
 })
 export const patch =
     'diff --git a/a.ts b/a.ts\nindex 1111111..2222222 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n'
-export async function journal() {
+export async function journal(
+    credential: { access_token: string; refresh_token?: string; expires?: number } = { access_token: 'test-token' }
+) {
     const directory = await mkdtemp(join(tmpdir(), 'gitorian-test-'))
     const store = await JournalDatabase.open(join(directory, 'tracking.sqlite'))
     const remote = transport()
     const accountId = randomUUID()
     const secrets = new Map<string, string>([
-        ['provider-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', JSON.stringify({ access_token: 'test-token' })]
+        ['provider-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', JSON.stringify(credential)]
     ])
     await store.prepareProviderAccount({
         id: accountId,

@@ -1,9 +1,8 @@
 import { WorkspaceContextMenu } from './WorkspaceContextMenu'
 import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
-import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
+import { ActivitySourcesButton } from './ActivitySourcesButton'
 import { Alert } from './components/arc/alert/alert'
-import { actionableSources } from './background-work'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { localDate, shiftWeek, weekOf } from '../shared/model'
@@ -314,19 +313,9 @@ export function Workspace({
                         />
                     </div>
                     <div className="ws-utilities">
+                        <ActivitySourcesButton state={state} onClick={onSources} />
                         <AppUpdateButton />
-                        {actionableSources(state).length > 0 && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                data-source-status
-                                onClick={onSources}
-                                aria-label="Activity sources"
-                                title="Activity sources"
-                            >
-                                <StackIcon size={18} weight="bold" aria-hidden="true" />
-                            </Button>
-                        )}
+
                         <Button
                             variant="ghost"
                             size="sm"
