@@ -76,7 +76,7 @@
     --activity-node-border: var(--border);
     position: relative;
     display: grid;
-    grid-template-columns: var(--activity-node-size) minmax(0, 1fr) fit-content(7rem) 30px;
+    grid-template-columns: var(--activity-node-size) minmax(0, 1fr) 30px;
     align-items: flex-start;
     gap: var(--space-3);
     width: 100%;
@@ -152,27 +152,6 @@
 .activity-row-meta svg {
     flex: none;
 }
-.activity-row-trailing {
-    display: flex;
-    flex: none;
-    min-width: 0;
-    max-width: 7rem;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--space-1);
-    padding-top: var(--space-1);
-}
-.activity-row:not([data-kind='merged']) .activity-row-status {
-    --badge-background: transparent;
-}
-.activity-row-status {
-    --badge-hover-border: var(--badge-border, var(--border));
-    --badge-hover-background: var(--badge-background, var(--surface));
-    transition: none;
-}
-.activity-row[data-kind='opened'] .activity-row-status {
-    --badge-foreground: var(--foreground);
-}
 .activity-row-reference {
     max-width: 100%;
     overflow: hidden;
@@ -197,14 +176,6 @@
         grid-template-columns: var(--activity-node-size) minmax(0, 1fr) 30px;
         gap: var(--space-2);
     }
-    .activity-row-trailing {
-        grid-column: 2;
-        grid-row: 2;
-        flex-direction: row;
-        align-items: center;
-        gap: var(--space-2);
-        padding-top: 0;
-    }
     .activity-row-chevron {
         grid-column: 3;
         grid-row: 1;
@@ -216,13 +187,6 @@
     background: var(--surface-muted);
     /* An inset hairline defines adjacent surfaces without moving row geometry. */
     box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--border-strong) 70%, transparent);
-}
-.activity-row[aria-pressed='true'] .activity-row-status {
-    --badge-background: color-mix(in oklab, var(--foreground) 12%, var(--surface-muted));
-    --badge-border: var(--border-strong);
-    --badge-foreground: var(--foreground);
-    --badge-hover-background: var(--badge-background);
-    --badge-hover-border: var(--badge-border);
 }
 .activity-row[aria-pressed='true'] :is(.activity-row-node, .activity-row-chevron) {
     background: var(--foreground);
@@ -245,4 +209,33 @@
         --activity-line-color: var(--border-subtle);
         --activity-node-border: var(--border);
     }
+}
+
+.activity-row-kind {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.activity-repository-marker {
+    display: inline-block;
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: var(--repository-color);
+}
+.activity-repository-marker[data-shape='round'] {
+    border-radius: 50%;
+}
+.activity-repository-marker[data-shape='framed'] {
+    box-shadow:
+        inset 0 0 0 2px var(--repository-color),
+        inset 0 0 0 3px var(--surface);
+}
+.activity-virtual-list {
+    position: relative;
 }

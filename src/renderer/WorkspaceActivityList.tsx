@@ -81,6 +81,7 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
                         </header>
                         <ActivityDayRows
                             day={day}
+                            virtualize={activities.length > 500}
                             items={items}
                             focused={dayFilter.day !== 'all'}
                             expanded={dayFilter.expanded.has(day)}

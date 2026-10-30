@@ -1,0 +1,41 @@
+.repository-activity {
+    width: min(100%, 260px);
+    margin-inline-start: auto;
+    background: transparent;
+}
+.repository-activity header {
+    display: flex;
+    align-items: center;
+}
+.repository-activity header h2 {
+    margin: 0;
+}
+.repository-chart {
+    margin-top: var(--space-4);
+}
+.repository-chart > figure {
+    margin: 0;
+}
+.repository-empty {
+    margin-top: var(--space-6);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+}
+.hub-thread-layout {
+    padding-bottom: var(--space-12);
+}
+@media (min-width: 781px) {
+    .repository-activity {
+        position: sticky;
+        /* Align the natural-height title with the center of the sticky filter strip. */
+        top: min(
+            calc(var(--space-3) + (var(--control-height-sm) + var(--space-2) - var(--text-base) * 1.4) / 2),
+            calc(100dvh - var(--repository-height, 0px) - var(--space-3))
+        );
+    }
+}
+@media (max-width: 780px) {
+    .repository-activity {
+        margin-inline-start: 0;
+    }
+}
