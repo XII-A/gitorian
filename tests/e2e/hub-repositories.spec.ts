@@ -85,6 +85,7 @@ test.describe('workspace aggregate activity', () => {
         await page.locator('.hub-activity').first().click()
         await page.getByRole('button', { name: 'Open in workspace', exact: true }).click()
         await page.getByRole('button', { name: 'Start this week’s entry', exact: true }).click()
+        await expect(page.locator('.tiptap[contenteditable="true"]')).toBeFocused()
         const dayFilter = page.getByRole('combobox', { name: 'Activity day', exact: true })
         // Focus reveals the control in the horizontal strip before activating it.
         await dayFilter.focus()
