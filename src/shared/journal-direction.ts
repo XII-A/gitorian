@@ -1,8 +1,6 @@
 import type { JournalNode } from './model'
 
 export type WritingDirection = 'auto' | 'ltr' | 'rtl'
-export const writingDirections = ['auto', 'ltr', 'rtl'] as const
-export const directionLabels = { auto: 'Automatic', ltr: 'Left to right', rtl: 'Right to left' }
 export function writingDirection(value: unknown): WritingDirection | undefined {
     return value === 'auto' || value === 'ltr' || value === 'rtl' ? value : undefined
 }

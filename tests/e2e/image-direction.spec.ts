@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test, expect } from './support/desktop'
 
-test('caption direction targets the image and preserves native caption focus and paragraph policy', async ({
+test('automatic multilingual captions preserve native focus and paragraph policy without direction controls', async ({
     desktop
 }) => {
     const { page, scratch } = desktop
@@ -24,17 +24,13 @@ test('caption direction targets the image and preserves native caption focus and
     const image = page.locator('.journal-image').first()
     await expect(image.locator('img')).toBeVisible()
     await image.hover()
-    await image.getByRole('button', { name: /^Caption direction:/ }).click()
-    await page.getByText('Right to left', { exact: true }).click()
+    await expect(image.getByRole('button', { name: /Caption direction/ })).toHaveCount(0)
+    await image.getByRole('button', { name: 'Edit caption', exact: true }).click()
     const caption = image.getByRole('textbox', { name: 'Image caption', exact: true })
     await expect(caption).toBeFocused()
     await page.keyboard.insertText('وصف عربي\nTurkish caption')
-    await expect(caption).toHaveAttribute('dir', 'rtl')
-    await expect(body.locator('p').first()).toHaveAttribute('dir', 'auto')
-    await image.getByRole('button', { name: /^Caption direction:/ }).click()
-    await page.getByText('Automatic', { exact: true }).click()
-    await expect(caption).toBeFocused()
     await expect(caption).toHaveAttribute('dir', 'auto')
+    await expect(body.locator('p').first()).toHaveAttribute('dir', 'auto')
     await expect(caption).toHaveValue('وصف عربي\nTurkish caption')
     await caption.press('Escape')
     await expect(image.getByRole('button', { name: /^Enlarge image:/ })).toBeFocused()

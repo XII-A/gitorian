@@ -526,10 +526,6 @@
     background-repeat: no-repeat;
 }
 
-.journal-direction-menu {
-    min-width: 220px;
-    direction: ltr;
-}
 .journal-editor .tiptap {
     text-align: start;
 }

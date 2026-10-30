@@ -1,6 +1,4 @@
-import { DirectionChoice } from './DirectionChoice'
 import { writingDirection } from '../shared/journal-direction'
-import { setWritingDirection } from './journal-direction'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NodeViewWrapper, useEditorState } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
@@ -134,24 +132,6 @@ export function JournalImageView({ node, editor, updateAttributes, deleteNode, s
                     )}
                 </button>
                 <div className="journal-image-tools" data-compact={compact || undefined}>
-                    {editable && (
-                        <DirectionChoice
-                            label="Caption direction"
-                            iconOnly
-                            value={writingDirection(node.attrs.direction) ?? null}
-                            inherit
-                            change={(direction) => {
-                                const position = getPos()
-                                if (typeof position === 'number')
-                                    setWritingDirection(editor, { scope: 'caption', position }, direction)
-                            }}
-                            restoreFocus={() => {
-                                setCaptionOpen(true)
-                                caption.current?.focus()
-                            }}
-                        />
-                    )}
-
                     {compact ? (
                         <DropdownMenu
                             label="Image actions"
