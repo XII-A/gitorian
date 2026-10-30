@@ -291,3 +291,98 @@ it('reports pause persistence failure through typed recovery and closes the unre
     expect(response.body?.locked).toBe(false)
     expect(fetcher).toHaveBeenCalledTimes(1)
 })
+
+it('retains the account-wide background allowance across rotation and transport restart', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1800000000000)
+    const pauses: Record<string, number> = {}
+    const store = {
+        pauses: () => pauses,
+        changed: (key: string, until: number) => {
+            pauses[key] = until
+        }
+    }
+    const fetcher = vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}')))
+    try {
+        const first = await transportClient(fetcher, store)
+        const results = await Promise.allSettled(
+            Array.from({ length: 30 }, (_, i) =>
+                run(
+                    first.request(`https://api.github.com/burst/${i}`, 'old-token', {}, 'json', {
+                        background: true,
+                        accountId: 'account'
+                    })
+                )
+            )
+        )
+        expect(fetcher).toHaveBeenCalledTimes(25)
+        expect(results.filter((result) => result.status === 'rejected')).toHaveLength(5)
+        const reopened = await transportClient(fetcher, store)
+        await expect(
+            run(
+                reopened.request('https://api.github.com/rotated', 'new-token', {}, 'json', {
+                    background: true,
+                    accountId: 'account'
+                })
+            )
+        ).rejects.toMatchObject({ status: 429 })
+        expect(fetcher).toHaveBeenCalledTimes(25)
+        await run(
+            reopened.request('https://api.github.com/foreground', 'new-token', {}, 'json', { accountId: 'account' })
+        )
+        expect(fetcher).toHaveBeenCalledTimes(26)
+        clock.mockReturnValue(1800000001000)
+        await run(
+            reopened.request('https://api.github.com/refilled', 'new-token', {}, 'json', {
+                background: true,
+                accountId: 'account'
+            })
+        )
+        expect(fetcher).toHaveBeenCalledTimes(27)
+    } finally {
+        clock.mockRestore()
+    }
+})
+
+it('counts background retry attempts inside one scoped acquisition turn', async () => {
+    const fetcher = vi.fn<typeof fetch>((url) =>
+        Promise.resolve(
+            new Response('{}', {
+                status: (url instanceof Request ? url.url : String(url)).endsWith('/retry') ? 503 : 200
+            })
+        )
+    )
+    const http = await transportClient(fetcher)
+    const outcomes = await run(
+        http.withBackgroundTurn(
+            Effect.gen(function* () {
+                yield* Effect.either(
+                    http.request('https://api.github.com/retry', 'fixture', {}, 'json', {
+                        background: true,
+                        accountId: 'retry'
+                    })
+                )
+                return yield* Effect.forEach(
+                    Array.from({ length: 30 }, (_, i) => i),
+                    (i) =>
+                        Effect.either(
+                            http.request(`https://api.github.com/item/${i}`, 'fixture', {}, 'json', {
+                                background: i % 2 === 0,
+                                accountId: `account-${i}`
+                            })
+                        ),
+                    { concurrency: 4 }
+                )
+            })
+        )
+    )
+    expect(fetcher).toHaveBeenCalledTimes(25)
+    expect(outcomes.filter((result) => result._tag === 'Right')).toHaveLength(22)
+    expect(outcomes.filter((result) => result._tag === 'Left')).toHaveLength(8)
+    await run(
+        http.request('https://api.github.com/outside-turn', 'fixture', {}, 'json', {
+            background: true,
+            accountId: 'outside'
+        })
+    )
+    expect(fetcher).toHaveBeenCalledTimes(26)
+})

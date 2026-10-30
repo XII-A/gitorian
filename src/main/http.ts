@@ -1,7 +1,7 @@
 import { DurabilityError } from './durability-error'
 import { makeSharedRequests } from './shared-requests'
 import { createHash } from 'node:crypto'
-import { Context, Effect, Layer, Schedule } from 'effect'
+import { Context, Effect, FiberRef, Layer, Schedule } from 'effect'
 
 export class HttpError extends Error {
     readonly _tag = 'HttpError'
@@ -21,6 +21,7 @@ export class TransportError extends Error {
 }
 
 interface ReadOptions {
+    accountId?: string
     background?: boolean
     maxBytes?: number
 }
@@ -36,6 +37,7 @@ interface CachedResponse {
 
 export type HttpFailure = HttpError | TransportError | DurabilityError
 export interface Http {
+    readonly withBackgroundTurn: <A, E, R>(operation: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
     readonly request: <T>(
         url: string,
         token: string,
@@ -54,6 +56,7 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
             const sharedRequests = yield* makeSharedRequests<string | symbol, unknown, HttpFailure>(
                 () => new TransportError(new Error('HTTP transport is closed'))
             )
+            const turn = yield* FiberRef.make<{ remaining: number } | undefined>(undefined)
             const lanes = new Map<string, ReturnType<typeof priorityLane>>()
             const cache = new Map<string, CachedResponse>()
             let cacheBytes = 0
@@ -128,6 +131,18 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                 const cached = read ? cache.get(key) : undefined
                 if (cached) headers.set('If-None-Match', cached.etag)
                 const attempt = Effect.gen(function* () {
+                    const allowance = yield* FiberRef.get(turn)
+                    if (allowance) {
+                        if (allowance.remaining <= 0)
+                            return yield* Effect.fail(
+                                new HttpError(
+                                    429,
+                                    'Background acquisition yielded its wire request allowance.',
+                                    Date.now() + 1000
+                                )
+                            )
+                    }
+
                     const until = yield* Effect.try({
                         try: () => pauses()[scope] ?? 0,
                         catch: (error) => new DurabilityError(error)
@@ -140,7 +155,9 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                                 until
                             )
                         )
-                    const budget = budgets.get(scope)
+                    const resource = github && new URL(url).pathname.startsWith('/search/') ? 'search' : 'core'
+                    const budgetKey = `${scope}:${resource}`
+                    const budget = budgets.get(budgetKey)
                     if (
                         (github || gitlab) &&
                         options.background &&
@@ -156,10 +173,41 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                             )
                         )
                     if ((github || gitlab) && options.background) {
+                        const now = Date.now()
+                        const reserve = github ? 500 : 10
+                        const interval =
+                            budget && budget.reset > now && Number.isFinite(budget.remaining)
+                                ? Math.max(
+                                      1000,
+                                      Math.ceil((budget.reset - now) / Math.max(1, budget.remaining - reserve))
+                                  )
+                                : 1000
+                        const allowance = `allowance:${scope}:${resource}`
+                        const next = Math.max(now - 25 * interval, pauses()[allowance] ?? 0) + interval
+                        if (next > now)
+                            return yield* Effect.fail(
+                                new HttpError(
+                                    429,
+                                    'Background acquisition paused to preserve its sustained request allowance.',
+                                    next
+                                )
+                            )
+                        yield* pause(allowance, next)
                         const delay = Math.max(0, 150 - (Date.now() - (lastRequest.get(scope) ?? 0)))
                         if (delay) yield* Effect.sleep(delay)
                     }
                     if (init.signal?.aborted) return yield* Effect.fail(new TransportError(init.signal.reason))
+                    if (allowance) {
+                        if (allowance.remaining <= 0)
+                            return yield* Effect.fail(
+                                new HttpError(
+                                    429,
+                                    'Background acquisition yielded its wire request allowance.',
+                                    Date.now() + 1000
+                                )
+                            )
+                        allowance.remaining--
+                    }
                     lastRequest.set(scope, Date.now())
                     const timeout = AbortSignal.timeout(30000)
                     const response = yield* Effect.acquireRelease(
@@ -189,7 +237,7 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                     const remaining = response.headers.get(gitlab ? 'ratelimit-remaining' : 'x-ratelimit-remaining')
                     const reset =
                         Number(response.headers.get(gitlab ? 'ratelimit-reset' : 'x-ratelimit-reset') ?? 0) * 1000
-                    if (remaining !== null) budgets.set(scope, { remaining: Number(remaining), reset })
+                    if (remaining !== null) budgets.set(budgetKey, { remaining: Number(remaining), reset })
                     if (remaining === '0' && reset) yield* pause(scope, reset)
                     if (response.status === 304 && cached) return cached.value as T
                     const body = yield* readBody(response, options.maxBytes ?? 8_000_000)
@@ -290,13 +338,23 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                         format,
                         options.maxBytes ?? 8_000_000
                     ])
-                    let lane = lanes.get(credential)
+                    const laneKey = options.accountId ? `${host}:account:${options.accountId}` : credential
+                    let lane = lanes.get(laneKey)
                     if (!lane) {
                         lane = priorityLane()
-                        lanes.set(credential, lane)
+                        lanes.set(laneKey, lane)
                     }
                     const operation = withAbort(
-                        perform<T>(credential, key, url, headers, init, format, options, lane),
+                        perform<T>(
+                            options.accountId ? `${host}:account:${options.accountId}` : credential,
+                            key,
+                            url,
+                            headers,
+                            init,
+                            format,
+                            options,
+                            lane
+                        ),
                         init.signal ?? undefined
                     )
                     // Foreground reads have independent eligibility; signaled reads and
@@ -307,7 +365,9 @@ export const HttpLive = (fetcher: typeof fetch = fetch, pauseStore?: PauseStore)
                         Effect.map((value) => value as T)
                     )
                 })
-            return { request }
+            const withBackgroundTurn: Http['withBackgroundTurn'] = (operation) =>
+                Effect.locally(operation, turn, { remaining: 25 })
+            return { request, withBackgroundTurn }
         })
     )
 

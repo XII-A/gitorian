@@ -27,8 +27,8 @@ const releaseIO = () => {
 }
 app.on('gitorian-e2e-release-io', releaseIO)
 app.on('before-quit', releaseIO)
-const readDirectory = fsPromises.readdir
-fsPromises.readdir = async (...args) => {
+const readDirectory = fsPromises.opendir
+fsPromises.opendir = async (...args) => {
     if (hold?.kind === 'discovery') await hold.pending
     return await readDirectory(...args)
 }

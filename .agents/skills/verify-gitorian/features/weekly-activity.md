@@ -4,7 +4,7 @@ Review the selected week's work, load older history, and recover failed sources 
 
 ## Acquisition ownership
 
-`ActivityAcquisition` owns Effect coalescing, source serialization and FIFO batch admission. Preserve the existing acquisition and week-history behavior tests: five projects must each receive a first batch before a large project continues; an explicit retry queues behind active acquisition and duplicate retries share work. Run `pnpm verify github-import` and `pnpm verify repository-import` for desktop source failure/retry, import-triggered refresh and durable state. User pause remains a persisted checkpoint decision; it does not discard completed batches or imply that an already running external request was aborted.
+`ActivityAcquisition` owns Effect coalescing, source serialization and FIFO batch admission. Preserve the existing acquisition and week-history behavior tests: five projects must each receive a first batch before a large project continues; an explicit retry queues behind active acquisition and duplicate retries share work. Run `pnpm verify github-import` and `pnpm verify repository-import` for desktop source failure/retry, import-triggered refresh and durable state. User pause remains a persisted checkpoint decision; it does not discard completed batches. Native Git stop aborts queued/running owned work; shared HTTP readers retain their independent cancellation ownership.
 
 ## Sub-features
 
@@ -71,3 +71,9 @@ The Hub case also crosses the production polling interval with rejected state re
 
 Run `pnpm test:e2e startup-recovery` after `pnpm build`. The journal-only Electron journey rejects initial state loading after the isolated-profile doctor, then reloads the Hub and workspace entry points. Require a persistent borderless recovery state, compact Retry action, hidden optional diagnostics, visible retry progress, repeated failure feedback, and successful keyboard retry to the intended screen. Background polling waits until a usable snapshot exists; startup requests cannot overlap. Verify narrow layout and reduced motion. Expanded diagnostics must fit within the disclosure without clipping; Copy details must write the full displayed error to the native clipboard. IPC rejection/delay is simulated; renderer, preload and local journal remain real. Retain numbered PNGs, trace, actions and run.json with passed and cleanup success. Startup failure is an explicit exception to foreground command toasts because no usable journal is available.
 
+
+## Continuation and quota outcomes
+
+`tests/git.test.ts` compares a continued merge-DAG scan with an independent native Git walk while refs move. `tests/acquisition.test.ts` reloads staged large-PR pages from a separate SQLite connection and requires no replay of completed pages. `tests/http.test.ts` verifies retry-inclusive scoped turns and account allowance across token rotation/restart, foreground eligibility and refill. The acquisition owner also proves source stop aborts the last owned HTTP request and retains its cancelled checkpoint. Pending provider overflow remains visible as incomplete evidence, while other contributions can advance. Preserve the existing week-history fairness, timezone/configuration and stop/resume outcomes when changing these paths.
+
+Review regressions: acquisition must retry rolled-back body/membership pages and recover acknowledged-lost commits from the durable cursor; removed repositories must not consume account staging slots. Date-range expansion advances a 2,000-row metadata cursor atomically with projected evidence. GitLab reconciliation advances past restored incomplete markers. These outcomes belong to the existing acquisition, refresh-history and GitLab tests.

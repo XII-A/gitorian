@@ -3,11 +3,23 @@ export class WorkQueue {
     private active = 0
     private pending: { priority: number; start: () => void }[] = []
     constructor(private readonly limit: number) {}
-    run<T>(work: () => Promise<T>, priority = 0): Promise<T> {
+    run<T>(work: () => Promise<T>, priority = 0, signal?: AbortSignal): Promise<T> {
         return new Promise<T>((resolve, reject) => {
-            this.pending.push({
+            if (signal?.aborted) {
+                reject(signal.reason instanceof Error ? signal.reason : new Error('Work cancelled'))
+                return
+            }
+            const cancelled = () => {
+                const index = this.pending.indexOf(item)
+                if (index >= 0) {
+                    this.pending.splice(index, 1)
+                    reject(signal?.reason instanceof Error ? signal.reason : new Error('Work cancelled'))
+                }
+            }
+            const item = {
                 priority,
                 start: () => {
+                    signal?.removeEventListener('abort', cancelled)
                     this.active++
                     void work()
                         .then(resolve, reject)
@@ -16,7 +28,9 @@ export class WorkQueue {
                             this.drain()
                         })
                 }
-            })
+            }
+            signal?.addEventListener('abort', cancelled, { once: true })
+            this.pending.push(item)
             this.pending.sort((a, b) => b.priority - a.priority)
             this.drain()
         })
