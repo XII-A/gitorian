@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Effect } from 'effect'
 import { expect, it } from 'vitest'
 import { makeGitLab } from '../src/main/gitlab'
@@ -121,4 +122,49 @@ it('accepts commit comparisons only when the exact target and complete diff are 
     await expect(Effect.runPromise(client.commitDetails(repo, sha))).rejects.toThrow(/complete/i)
     target = sha
     expect((await Effect.runPromise(client.commitDetails(repo, sha))).diff).toContain('+new')
+})
+
+it('advances reconciliation past already-incomplete merge requests', async () => {
+    const repo = {
+        ...sampleState('2026-10-26').repositories[0],
+        remote: 'https://gitlab.com/team/repo.git',
+        emails: ['me@example.test']
+    }
+    const mrs = Array.from({ length: 20 }, (_, i) => ({
+        iid: i + 1,
+        author: { id: 99 },
+        updated_at: '2026-10-06T00:00:00Z'
+    }))
+    const incomplete = Object.fromEntries(
+        mrs
+            .slice(0, 5)
+            .map((mr) => [
+                `${mr.iid}:${createHash('sha256').update(JSON.stringify(mr)).digest('hex')}`,
+                'Unavailable evidence'
+            ])
+    )
+    const calls: string[] = []
+    const client = makeGitLab(
+        <A>(path: string) =>
+            Effect.sync(() => {
+                calls.push(path)
+                const value: unknown = path.includes('/merge_requests?') && path.includes('per_page=20') ? mrs : []
+                return value as A
+            }),
+        '42'
+    )
+    let position: number | undefined = 0
+    const scan = () => ({
+        offset: position,
+        incomplete,
+        checkpoint: (_page: number, _complete: boolean, offset?: number) =>
+            Effect.sync(() => {
+                position = offset
+            })
+    })
+    await Effect.runPromise(client.activities(repo, 'me', [], scan()))
+    expect(position).toBe(5)
+    await Effect.runPromise(client.activities(repo, 'me', [], scan()))
+    expect(position).toBe(10)
+    expect(calls.some((path) => path.includes('/merge_requests/6/commits'))).toBe(true)
 })

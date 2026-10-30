@@ -2,6 +2,10 @@ import type { Effect } from 'effect'
 import type { Activity, Repository } from '../shared/model'
 
 export interface ActivityScan {
+    incomplete?: Record<string, string>
+    recordIncomplete?: (key: string, reason: string) => Effect.Effect<void, Error>
+    pending?: { key: string; pages: Record<string, unknown> }
+    savePending?: (pending: { key: string; pages: Record<string, unknown> } | undefined) => Effect.Effect<void, Error>
     timezone?: string
     since?: string
     page?: number

@@ -38,3 +38,9 @@ The native picker is automated; filesystem discovery, Git inspection, IPC, rende
 ## Provider accounts and automatic activity
 
 Run `pnpm test:e2e provider-accounts` after a build, or use the retained `pnpm verify github-import` alias. The provider journey owns account matching, ambiguous public access, multiple identities, GitLab contribution acquisition, original-provider details, citations and account persistence. Read [connections](connections.md) for entry points, fixture boundaries and required evidence. Repository discovery/import mechanics stay with `repository-import.spec.ts`; provider protocol and scheduling behavior stay with their module-interface scenarios. Do not duplicate these journeys in the retired GitHub-only harness.
+
+## Acquisition performance and stop
+
+After import/acquisition changes, run the owning desktop journey above plus `tests/acquisition.test.ts`, `tests/git.test.ts`, `tests/http.test.ts` and `tests/week-history.test.ts`. Stop prevents new native Git admission and aborts owned Git processes; successfully committed work remains. Discovery returns explicit partial results after its directory/result/time budget and requests a narrower folder. Provider activity is tested through isolated transport adapters, not live account quota.
+
+For performance measurements, opt in with `$env:GITORIAN_IMPORT_STRESS='1'; pnpm test tests/import-stress.test.ts` in PowerShell, then remove that environment variable. This uses real disposable Git/SQLite and synthetic provider responses. Each run saves evidence under `.ai-docs/verification/import-stress/runs/`. Compare registration, extraction, persistence and unchanged refresh separately; assert all 10,000 activities retain all 50 branch memberships before accepting timings. The provider numbers are per-turn ceilings, not total cold-discovery request savings.

@@ -208,18 +208,32 @@ export const stateSchema = z.object({
             z.object({
                 status: z.enum(['idle', 'running', 'paused', 'error', 'cancelled']),
                 lastSuccess: z.string().optional(),
+                lastProgressAt: z.number().optional(),
                 error: z.string().optional(),
                 retryAt: z.string().optional(),
                 since: z.string().optional(),
                 historySince: z.string().optional(),
                 historyTimezone: z.string().optional(),
+                historyProjection: z
+                    .object({ since: z.string(), timezone: z.string(), after: z.string().optional() })
+                    .optional(),
                 windowEnd: z.string().optional(),
                 page: z.number().optional(),
                 versions: z.record(z.string(), z.string()).optional(),
+                incomplete: z.record(z.string(), z.string()).optional(),
+                pending: z.object({ key: z.string(), pages: z.record(z.string(), z.unknown()) }).optional(),
                 refs: z.record(z.string(), z.string()).optional(),
                 configuration: z.string().optional(),
                 offset: z.number().optional(),
-                excludedTips: z.array(z.string()).optional()
+                excludedTips: z.array(z.string()).optional(),
+                gitCursor: z
+                    .object({
+                        phase: z.enum(['body', 'membership']),
+                        offset: z.number(),
+                        group: z.number(),
+                        alias: z.number()
+                    })
+                    .optional()
             })
         )
         .optional(),
@@ -469,6 +483,7 @@ export interface Reply {
     entryPage?: EntryPage
     draftSaved?: { id: string; version: number }
     repositoryScan?: {
+        incomplete?: string
         id: string
         folder: string
         repositories: { path: string; name: string; relativePath: string; status: 'new' | 'tracked' | 'stopped' }[]

@@ -1,5 +1,8 @@
+import { remoteConfiguration } from '../src/shared/provider-accounts'
+import type { ActivityScan } from '../src/main/contribution-reader'
+import type { Activity } from '../src/shared/model'
 import { journalState } from './database-fixtures'
-import { GitHubFailure } from '../src/main/github'
+import { GitHubFailure, makeGitHub } from '../src/main/github'
 import { Effect } from 'effect'
 import { run, journalClient, githubClient, transportClient } from './effect-fixtures'
 import { expect, it, vi } from 'vitest'
@@ -405,7 +408,7 @@ it('retains successful PR batches when a later PR fails and skips them on retry'
     expect(firstReads).toBe(1)
     expect(captured).toContain('repo:pr:2')
 })
-it('bounds enrichment to twenty changed PRs per pass and resumes the same page', async () => {
+it('bounds contribution reads and resumes from durable pending pages', async () => {
     let calls = 0
     const pulls = Array.from({ length: 100 }, (_, index) => ({
         number: index + 1,
@@ -431,12 +434,26 @@ it('bounds enrichment to twenty changed PRs per pass and resumes the same page',
         () => 'test'
     )
     const versions: Record<string, string> = {}
-    const first = await run(github.activities(repository, 'me', [], { versions }))
-    expect(first.filter((item) => item.kind === 'change-request')).toHaveLength(20)
-    expect(calls).toBe(41)
-    const second = await run(github.activities(repository, 'me', [], { versions }))
-    expect(second.find((item) => item.kind === 'change-request')?.id).toBe('repo:pr:21')
-    expect(calls).toBe(82)
+    const batches: Activity[] = []
+    let pending: ActivityScan['pending']
+    const scan = () => ({
+        versions,
+        pending,
+        savePending: (value: typeof pending) =>
+            Effect.sync(() => {
+                pending = value
+            }),
+        batch: (items: Activity[]) =>
+            Effect.sync(() => {
+                batches.push(...items)
+            })
+    })
+    await expect(run(github.activities(repository, 'me', [], scan()))).rejects.toMatchObject({ status: 429 })
+    expect(calls).toBe(25)
+    expect(batches.filter((item) => item.kind === 'change-request')).toHaveLength(12)
+    await expect(run(github.activities(repository, 'me', [], scan()))).rejects.toMatchObject({ status: 429 })
+    expect(calls).toBe(50)
+    expect(new Set(batches.filter((item) => item.kind === 'change-request').map((item) => item.id)).size).toBe(24)
 })
 it('a user pause survives scheduled refresh and explicit retry resumes it', async () => {
     const app = await workspace()
@@ -490,8 +507,12 @@ it('indexes only new commit bodies after ref changes and updates known branch me
         const incremental = await gitModule.indexCommits(app.repository, first.refs, since)
         expect(incremental.items.map((item) => item.title)).toEqual(['Incremental work'])
         await app.git('branch', 'new-branch')
-        const branch = await gitModule.indexCommits(app.repository, incremental.refs, since, 0, [], incremental.items)
-        expect(branch.items[0].branches).toContain('new-branch')
+        const branch = await gitModule.indexCommits(app.repository, incremental.refs, since, 0, [])
+        expect(
+            branch.memberships?.some(
+                (group) => group.branches.includes('new-branch') && group.shas.includes(incremental.items[0].sha!)
+            )
+        ).toBe(true)
     } finally {
         await app.close()
     }
@@ -519,6 +540,300 @@ it('queues and coalesces an explicit source retry behind active acquisition', as
     } finally {
         release()
         indexing.mockRestore()
+        await app.close()
+    }
+})
+
+it('resumes large PR review history from independently reloaded durable pages without replay', async () => {
+    const app = await workspace()
+    let calls = 0
+    const client = makeGitHub(<A>(url: string) =>
+        Effect.sync(() => {
+            calls++
+            const page = Number(new URL(url).searchParams.get('page') ?? 1)
+            const value: unknown = url.includes('/pulls?')
+                ? [
+                      {
+                          number: 1,
+                          title: 'Large work',
+                          body: '',
+                          html_url: 'https://github.com/example/project/pull/1',
+                          created_at: '2026-10-06T00:00:00Z',
+                          updated_at: '2026-10-06T00:00:00Z',
+                          user: { login: 'me' },
+                          base: { ref: 'main', sha: 'b'.repeat(40) },
+                          head: { ref: 'feature', sha: 'a'.repeat(40) }
+                      }
+                  ]
+                : url.includes('/reviews?') && page <= 26
+                  ? Array.from({ length: 100 }, (_, i) => ({
+                        id: page * 100 + i,
+                        user: { login: 'other' },
+                        submitted_at: '2026-10-06T00:00:00Z',
+                        state: 'COMMENTED',
+                        body: 'Review',
+                        html_url: ''
+                    }))
+                  : []
+            return value as A
+        })
+    )
+    app.repository.trackingStart = '2020-01-01'
+    const key = `remote:${app.repository.id}`
+    let pending: ActivityScan['pending']
+    const versions: Record<string, string> = {}
+    const scan = (): ActivityScan => ({
+        versions,
+        pending,
+        savePending: (value) =>
+            Effect.tryPromise({
+                try: async () => {
+                    pending = value
+                    await app.store.saveCheckpoint(key, { status: 'running', pending, versions })
+                },
+                catch: (error) => (error instanceof Error ? error : new Error(String(error)))
+            })
+    })
+    try {
+        await expect(run(client.activities(app.repository, 'me', [], scan()))).rejects.toMatchObject({ status: 429 })
+        expect(calls).toBe(25)
+        const reopened = await JournalDatabase.open(join(app.directory, 'tracking.sqlite'))
+        try {
+            pending = (await reopened.acquisitionCheckpoint(key))?.pending
+        } finally {
+            await reopened.close()
+        }
+        expect(pending).toBeDefined()
+        const events = await run(client.activities(app.repository, 'me', [], scan()))
+        expect(events.map((event) => event.kind).sort()).toEqual(['change-request', 'opened'])
+        expect(calls).toBe(30)
+        expect(pending).toBeUndefined()
+    } finally {
+        await app.close()
+    }
+})
+
+it.each(['stop', 'remove'] as const)('reclaims staged contribution slots after %s on a repository', async (change) => {
+    const app = await workspace()
+    app.remote.github = true
+    const reader = vi.spyOn(app.github, 'activities')
+    try {
+        for (const id of ['pending-a', 'pending-b']) {
+            const repository = { ...app.repository, id, path: join(app.directory, id) }
+            await app.store.saveRepository(repository)
+            await app.store.assignProviderAccount(
+                id,
+                remoteConfiguration(app.store.config.repositories.find((item) => item.id === id)!),
+                { accountId: app.repository.accountId, accountGeneration: 1, assignment: 'automatic' }
+            )
+            await app.store.saveCheckpoint(`remote:${id}`, {
+                status: 'paused',
+                pending: { key: '1:version', pages: {} }
+            })
+        }
+        await run(app.service.refresh({ source: 'remote', repositoryId: app.repository.id }))
+        expect(reader).not.toHaveBeenCalled()
+        expect((await app.store.acquisitionCheckpoint(`remote:${app.repository.id}`))?.status).toBe('paused')
+        if (change === 'stop') {
+            await run(app.service.stopWork('remote', 'pending-a'))
+            expect((await app.store.acquisitionCheckpoint('remote:pending-a'))?.pending).toBeUndefined()
+        } else
+            await app.store.saveRepository({
+                ...app.store.config.repositories.find((item) => item.id === 'pending-a')!,
+                removed: true
+            })
+        const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 2000)
+        try {
+            await run(app.service.refresh({ source: 'remote', repositoryId: app.repository.id }))
+            expect(reader).toHaveBeenCalledTimes(1)
+        } finally {
+            clock.mockRestore()
+        }
+    } finally {
+        reader.mockRestore()
+        await app.close()
+    }
+})
+
+it('stops the last owned provider read and retains the cancelled checkpoint', async () => {
+    const app = await workspace()
+    app.remote.github = true
+    let signal: AbortSignal | undefined
+    let pending: Promise<void> | undefined
+    app.remote.fetch = (_input, init = {}) =>
+        new Promise<Response>((_resolve, reject) => {
+            signal = init.signal ?? undefined
+            signal?.addEventListener('abort', () => reject(new Error('Provider read cancelled')), { once: true })
+        })
+    try {
+        pending = run(app.service.refresh({ source: 'remote', repositoryId: app.repository.id }))
+        await vi.waitFor(() => expect(signal).toBeDefined())
+        await run(app.service.stopWork('remote', app.repository.id))
+        await vi.waitFor(() => expect(signal?.aborted).toBe(true))
+        await pending
+        expect((await app.store.acquisitionCheckpoint(`remote:${app.repository.id}`))?.status).toBe('cancelled')
+    } finally {
+        await pending?.catch(() => undefined)
+        await app.close()
+    }
+})
+
+it('retains incomplete evidence at the GitHub commit cap and advances other PRs', async () => {
+    const incomplete: Record<string, string> = {}
+    const versions: Record<string, string> = {}
+    let calls = 0
+    const client = makeGitHub(<A>(url: string) =>
+        Effect.sync(() => {
+            calls++
+            const page = Number(new URL(url).searchParams.get('page') ?? 1)
+            const summary = (number: number) => ({
+                number,
+                title: 'Work',
+                body: '',
+                html_url: '',
+                created_at: '2026-10-06T00:00:00Z',
+                updated_at: '2026-10-06T00:00:00Z',
+                user: { login: 'me' },
+                base: { ref: 'main', sha: 'b'.repeat(40) },
+                head: { ref: 'feature', sha: 'a'.repeat(40) }
+            })
+            const value: unknown = url.includes('/pulls?')
+                ? [summary(1), summary(2)]
+                : url.endsWith('/pulls/1')
+                  ? { ...summary(1), commits: 251 }
+                  : url.includes('/pulls/1/commits?')
+                    ? Array.from({ length: page < 3 ? 100 : 50 }, () => ({
+                          commit: { author: { email: 'other@example.test', date: '2026-10-06T00:00:00Z' } }
+                      }))
+                    : []
+            return value as A
+        })
+    )
+    const scan = {
+        incomplete,
+        versions,
+        recordIncomplete: (key: string, reason: string) =>
+            Effect.sync(() => {
+                incomplete[key] = reason
+            })
+    }
+    const events = await run(client.activities(repository, 'me', [], scan))
+    expect(events.filter((event) => event.kind === 'change-request').map((event) => event.id)).toEqual(['repo:pr:2'])
+    expect(Object.values(incomplete)[0]).toContain('250 commits')
+    const before = calls
+    expect(await run(client.activities(repository, 'me', [], scan))).toEqual([])
+    expect(calls - before).toBe(1)
+})
+
+it.each([
+    ['rollback', 'body'],
+    ['lost acknowledgment', 'body'],
+    ['rollback', 'membership'],
+    ['lost acknowledgment', 'membership']
+] as const)('keeps the durable Git cursor after %s on a later %s page', async (failure, phase) => {
+    const app = await journal()
+    const repo: Repository = { ...repository, id: 'git-rollback', remote: '', remotes: [] }
+    const commit = (number: number): Activity => ({
+        id: `${repo.id}:commit:${number}`,
+        repositoryId: repo.id,
+        kind: 'commit',
+        sha: String(number).padStart(40, '0'),
+        title: `Page ${number}`,
+        author: 'me@example.com',
+        date: '2026-10-06T00:00:00Z',
+        description: '',
+        branches: ['main'],
+        deletedBranches: [],
+        files: [],
+        disposition: 'inbox',
+        explicit: false
+    })
+    const index = vi
+        .spyOn(gitModule, 'indexCommits')
+        .mockImplementation((_repo, _refs, _since, _offset, _tips, _zone, _signal, cursor) => {
+            if (phase === 'membership') {
+                const next = !cursor
+                    ? { phase: 'membership' as const, offset: 0, group: 0, alias: 0 }
+                    : cursor.offset === 0
+                      ? { ...cursor, offset: 1000 }
+                      : undefined
+                return Promise.resolve({
+                    refs: { main: 'f'.repeat(40), side: 'f'.repeat(40) },
+                    items: !cursor ? [{ ...commit(1), branches: [] }] : [],
+                    history: !cursor ? [{ ...commit(1), branches: [] }] : [],
+                    memberships: cursor
+                        ? [{ branches: [cursor.offset === 0 ? 'main' : 'side'], shas: [commit(1).sha!] }]
+                        : [],
+                    cursor: next,
+                    nextOffset: next ? -1 : undefined
+                })
+            }
+            const page = (cursor?.offset ?? 0) / 2000 + 1
+            const next = page < 3 ? { phase: 'body' as const, offset: page * 2000, group: 0, alias: 0 } : undefined
+            return Promise.resolve({
+                refs: { main: 'f'.repeat(40) },
+                items: [commit(page)],
+                history: [commit(page)],
+                cursor: next,
+                nextOffset: next?.offset
+            })
+        })
+    const apply = app.store.applyAcquisitionBatch.bind(app.store)
+    let corrupt = true
+    const save = vi.spyOn(app.store, 'applyAcquisitionBatch').mockImplementation(async (batch, generation) => {
+        if (
+            corrupt &&
+            (phase === 'body'
+                ? batch.historyDelta?.items[0]?.title === 'Page 2'
+                : batch.historyDelta?.memberships?.[0]?.branches[0] === 'main')
+        ) {
+            corrupt = false
+            if (failure === 'lost acknowledgment') {
+                await apply(batch, generation)
+                throw new Error('Commit acknowledgment lost')
+            }
+            return apply(
+                {
+                    ...batch,
+                    activities: [...(batch.activities ?? []), { ...commit(2), id: 'invalid', repositoryId: 'missing' }]
+                },
+                generation
+            )
+        }
+        return apply(batch, generation)
+    })
+    try {
+        await app.store.saveRepository(repo)
+        await run(app.service.refresh({ source: 'git', since: '2026-10-05' }))
+        if (phase === 'body') {
+            expect((await app.store.history(repo.id))?.items.map((item) => item.title).sort()).toEqual(
+                failure === 'rollback' ? ['Page 1'] : ['Page 1', 'Page 2']
+            )
+            expect((await app.store.acquisitionCheckpoint(`git:${repo.id}`))?.gitCursor?.offset).toBe(
+                failure === 'rollback' ? 2000 : 4000
+            )
+        } else {
+            expect((await app.store.history(repo.id))?.items[0].branches).toEqual(
+                failure === 'rollback' ? [] : ['main']
+            )
+            expect((await app.store.acquisitionCheckpoint(`git:${repo.id}`))?.gitCursor?.offset).toBe(
+                failure === 'rollback' ? 0 : 1000
+            )
+        }
+        await run(app.service.refresh({ source: 'git', since: '2026-10-05', resume: true }))
+        if (phase === 'body') {
+            expect((await app.store.history(repo.id))?.items.map((item) => item.title).sort()).toEqual([
+                'Page 1',
+                'Page 2',
+                'Page 3'
+            ])
+            expect(index.mock.calls.map((args) => args[7]?.offset ?? 0)).toEqual(
+                failure === 'rollback' ? [0, 2000, 2000, 4000] : [0, 2000, 4000]
+            )
+        } else expect((await app.store.history(repo.id))?.items[0].branches).toEqual(['main', 'side'])
+    } finally {
+        save.mockRestore()
+        index.mockRestore()
         await app.close()
     }
 })

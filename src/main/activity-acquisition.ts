@@ -4,7 +4,7 @@ import { ApplicationWork } from './application-work'
 import { makeSharedRequests } from './shared-requests'
 import { Context, Deferred, Effect, Exit, Layer, Queue, type Scope } from 'effect'
 import { indexCommits, inspectRepository } from './git'
-import { HttpError } from './http'
+import { Http, HttpError } from './http'
 import { gitConfiguration, contributionConfiguration } from '../shared/activity-history'
 import { localDate } from '../shared/model'
 import type { Activity, Repository, State } from '../shared/model'
@@ -46,6 +46,7 @@ function makeAcquisition() {
         const store = yield* JournalStore
         const github = yield* RemoteContributions
         const accounts = yield* ProviderAccounts
+        const http = yield* Http
         const notion = yield* Notion
         const records = yield* ActivityRecords
         const publishing = yield* JournalPublishing
@@ -59,18 +60,38 @@ function makeAcquisition() {
             () => new JournalError('Acquisition is closed')
         )
         const lanes = { git: yield* batchSlots(), remote: yield* batchSlots() }
-        const sources = new Map<string, { generation: number; pending: number; lane: Effect.Semaphore }>()
+        const sources = new Map<
+            string,
+            { generation: number; pending: number; lane: Effect.Semaphore; controller: AbortController }
+        >()
         const statuses = new Map<string, NonNullable<State['acquisition']>[string]>()
         const suspensions = new Set<symbol>()
         let stateGeneration = store.generation
         const source = (key: string) => {
             let value = sources.get(key)
             if (!value) {
-                value = { generation: 0, pending: 0, lane: Effect.unsafeMakeSemaphore(1) }
+                value = {
+                    generation: 0,
+                    pending: 0,
+                    lane: Effect.unsafeMakeSemaphore(1),
+                    controller: new AbortController()
+                }
                 sources.set(key, value)
             }
             return value
         }
+        const untilStopped = (key: string, operation: Effect.Effect<void, Error>) =>
+            Effect.suspend(() => {
+                const signal = source(key).controller.signal
+                if (signal.aborted) return Effect.void
+                const cancelled = Effect.async<undefined>((resume) => {
+                    const cancel = () => resume(Effect.succeed(undefined))
+                    signal.addEventListener('abort', cancel, { once: true })
+                    if (signal.aborted) cancel()
+                    return Effect.sync(() => signal.removeEventListener('abort', cancel))
+                })
+                return Effect.raceFirst(operation, cancelled)
+            })
         const statusFor = (key: string) => {
             let value = statuses.get(key)
             if (!value) {
@@ -92,8 +113,9 @@ function makeAcquisition() {
                 for (const key of keys)
                     if (key.startsWith(provider + ':') && (!repositoryId || key === provider + ':' + repositoryId)) {
                         source(key).generation++
+                        source(key).controller.abort(new Error('Acquisition stopped.'))
                         const status = statusFor(key)
-                        Object.assign(status, { status: 'cancelled', error: undefined })
+                        Object.assign(status, { status: 'cancelled', error: undefined, pending: undefined })
                         yield* checkpoint(key, status, store.generation)
                     }
             }).pipe(Effect.orDie)
@@ -101,7 +123,10 @@ function makeAcquisition() {
             Effect.sync(() => {
                 const owner = Symbol()
                 suspensions.add(owner)
-                for (const value of sources.values()) value.generation++
+                for (const value of sources.values()) {
+                    value.generation++
+                    value.controller.abort(new Error('Acquisition suspended.'))
+                }
                 return owner
             }),
             (owner) =>
@@ -122,8 +147,8 @@ function makeAcquisition() {
                     sources.clear()
                     stateGeneration = generation
                 }
-                for (const repository of store.config.repositories.filter((r) => !r.removed && !r.accountId))
-                    yield* accounts.resolve(repository.id).pipe(Effect.catchAll(() => Effect.void))
+                for (const value of sources.values())
+                    if (value.controller.signal.aborted) value.controller = new AbortController()
                 const config = store.config
                 const repositories = config.repositories.filter(
                     (r) => !r.removed && (!options.repositoryId || r.id === options.repositoryId)
@@ -133,7 +158,6 @@ function makeAcquisition() {
                     ...(!options.source || options.source === 'git' ? [`git:${r.id}`] : []),
                     ...((!options.source || options.source === 'remote') &&
                     connections().remote &&
-                    r.accountId &&
                     providerRemote(r.remote)
                         ? [`remote:${r.id}`]
                         : [])
@@ -163,9 +187,35 @@ function makeAcquisition() {
                                 const token = tokens.get(key)!
                                 if (stopped(key, token, generation)) return
                                 const provider = key.startsWith('git:') ? 'git' : 'remote'
+                                if (provider === 'remote' && !repository.accountId) {
+                                    yield* accounts
+                                        .resolve(repository.id, undefined, true)
+                                        .pipe(Effect.catchAll(() => Effect.void))
+                                    repository =
+                                        store.config.repositories.find((current) => current.id === repository.id) ??
+                                        repository
+                                }
                                 const status = statusFor(key)
+                                if (options.resume) status.incomplete = undefined
                                 if (status.status === 'cancelled' && !options.resume) return
                                 if (status.retryAt && Date.parse(status.retryAt) > Date.now()) return
+                                if (provider === 'remote' && !status.pending && repository.accountId) {
+                                    const owners = store.config.repositories.filter(
+                                        (item) => !item.removed && item.accountId === repository.accountId
+                                    )
+                                    const staged = owners.filter(
+                                        (item) => store.config.acquisition[`remote:${item.id}`]?.pending
+                                    ).length
+                                    if (staged >= 2) {
+                                        Object.assign(status, {
+                                            status: 'paused',
+                                            retryAt: new Date(Date.now() + 1000).toISOString(),
+                                            error: 'Waiting for pending contribution pages on this account to finish.'
+                                        })
+                                        yield* checkpoint(key, status, generation)
+                                        return
+                                    }
+                                }
                                 if (options.since && options.since < repository.trackingStart) {
                                     repository = { ...repository, trackingStart: options.since }
                                     yield* local(() =>
@@ -180,33 +230,6 @@ function makeAcquisition() {
                                     repositoryId: repository.id,
                                     provider: provider,
                                     configuration
-                                }
-                                if (provider === 'git' && options.missingOnly && options.since) {
-                                    const history = yield* local(() => store.history(repository.id))
-                                    if (history?.configuration === configuration && !history.nextOffset) {
-                                        Object.assign(status, {
-                                            historySince: repository.trackingStart,
-                                            historyTimezone: config.settings.timezone,
-                                            configuration,
-                                            status: 'idle'
-                                        })
-                                        yield* local(() =>
-                                            store.applyAcquisitionBatch(
-                                                {
-                                                    source: sourceIdentity,
-                                                    repository,
-                                                    activities: history.items.filter(
-                                                        (a) =>
-                                                            localDate(new Date(a.date), config.settings.timezone) >=
-                                                            options.since!
-                                                    ),
-                                                    checkpoint: { key, value: status }
-                                                },
-                                                generation
-                                            )
-                                        )
-                                        return
-                                    }
                                 }
                                 if (
                                     options.missingOnly &&
@@ -224,8 +247,8 @@ function makeAcquisition() {
                                     },
                                     catch: (error) => (error instanceof Error ? error : new JournalError(String(error)))
                                 })
-                                do {
-                                    if (stopped(key, token, generation)) break
+                                {
+                                    if (stopped(key, token, generation)) return
                                     yield* Effect.acquireUseRelease(
                                         Queue.take(lanes[provider]),
                                         () =>
@@ -238,11 +261,12 @@ function makeAcquisition() {
                                                     retryAt: undefined
                                                 })
                                                 yield* checkpoint(key, status, generation)
+                                                let checkpointSafe = true
                                                 const batch =
                                                     provider === 'git'
                                                         ? Effect.gen(function* () {
                                                               const saved = yield* local(() =>
-                                                                  store.history(repository.id)
+                                                                  store.history(repository.id, false)
                                                               )
                                                               const history =
                                                                   saved?.configuration === configuration
@@ -253,21 +277,33 @@ function makeAcquisition() {
                                                                   status.historyTimezone !== config.settings.timezone
                                                               )
                                                                   status.historySince = undefined
-                                                              if (!repository.remotes)
+                                                              const cachedHistory =
+                                                                  options.missingOnly &&
+                                                                  history &&
+                                                                  !history.nextOffset &&
+                                                                  !status.gitCursor
+                                                              if (!cachedHistory && !repository.remotes)
                                                                   repository.remotes = (yield* local(() =>
-                                                                      inspectRepository(repository.path)
+                                                                      inspectRepository(
+                                                                          repository.path,
+                                                                          source(key).controller.signal
+                                                                      )
                                                                   )).remotes
-                                                              const indexed = yield* local(() =>
-                                                                  indexCommits(
-                                                                      repository,
-                                                                      history?.refs ?? {},
-                                                                      repository.trackingStart,
-                                                                      history?.nextOffset,
-                                                                      history?.excludedTips,
-                                                                      history?.items ?? [],
-                                                                      config.settings.timezone
-                                                                  )
-                                                              )
+                                                              const indexed: Awaited<ReturnType<typeof indexCommits>> =
+                                                                  cachedHistory
+                                                                      ? { refs: history.refs, items: [] }
+                                                                      : yield* local(() =>
+                                                                            indexCommits(
+                                                                                repository,
+                                                                                history?.refs ?? {},
+                                                                                repository.trackingStart,
+                                                                                history?.nextOffset,
+                                                                                history?.excludedTips,
+                                                                                config.settings.timezone,
+                                                                                source(key).controller.signal,
+                                                                                history ? status.gitCursor : undefined
+                                                                            )
+                                                                        )
                                                               yield* check
                                                               const names = Object.keys(indexed.refs)
                                                               const belongs = (a: Activity) =>
@@ -280,20 +316,70 @@ function makeAcquisition() {
                                                                   branches: names,
                                                                   available: true
                                                               }
-                                                              Object.assign(status, {
+                                                              const requestedProjection =
+                                                                  history &&
+                                                                  (status.historyProjection ||
+                                                                      status.since !== repository.trackingStart ||
+                                                                      status.historyTimezone !==
+                                                                          config.settings.timezone ||
+                                                                      !status.historySince)
+                                                                      ? {
+                                                                            since: repository.trackingStart,
+                                                                            timezone: config.settings.timezone,
+                                                                            after:
+                                                                                status.historyProjection?.since ===
+                                                                                    repository.trackingStart &&
+                                                                                status.historyProjection.timezone ===
+                                                                                    config.settings.timezone
+                                                                                    ? status.historyProjection.after
+                                                                                    : undefined
+                                                                        }
+                                                                      : undefined
+                                                              const projectionRows = requestedProjection
+                                                                  ? yield* local(() =>
+                                                                        store.historyProjectionPage(
+                                                                            repository.id,
+                                                                            requestedProjection.after
+                                                                        )
+                                                                    )
+                                                                  : []
+                                                              const historyProjection =
+                                                                  requestedProjection && projectionRows.length === 2000
+                                                                      ? {
+                                                                            ...requestedProjection,
+                                                                            after: projectionRows.at(-1)!.id
+                                                                        }
+                                                                      : undefined
+                                                              const projectHistoryIds = projectionRows
+                                                                  .filter(
+                                                                      (row) =>
+                                                                          !row.journaled &&
+                                                                          localDate(
+                                                                              new Date(row.instant),
+                                                                              config.settings.timezone
+                                                                          ) >= repository.trackingStart
+                                                                  )
+                                                                  .map((row) => row.id)
+                                                              const pending =
+                                                                  indexed.nextOffset !== undefined ||
+                                                                  !!historyProjection
+                                                              const nextStatus = {
+                                                                  ...status,
+                                                                  gitCursor: indexed.cursor,
+                                                                  historyProjection,
                                                                   refs: indexed.refs,
                                                                   offset: indexed.nextOffset,
                                                                   excludedTips: indexed.excludedTips,
-                                                                  windowEnd: indexed.nextOffset
+                                                                  windowEnd: pending
                                                                       ? (status.windowEnd ?? new Date().toISOString())
                                                                       : undefined,
                                                                   configuration,
                                                                   since: repository.trackingStart,
                                                                   historyTimezone: config.settings.timezone,
-                                                                  ...(!indexed.nextOffset
+                                                                  ...(!pending
                                                                       ? { historySince: repository.trackingStart }
                                                                       : {})
-                                                              })
+                                                              }
                                                               const activities = indexed.items
                                                                   .filter(belongs)
                                                                   .map((a) => ({
@@ -308,12 +394,14 @@ function makeAcquisition() {
                                                                           source: sourceIdentity,
                                                                           repository,
                                                                           activities,
-                                                                          checkpoint: { key, value: status },
-                                                                          history: {
+                                                                          projectHistoryIds,
+                                                                          checkpoint: { key, value: nextStatus },
+                                                                          historyDelta: {
                                                                               configuration,
                                                                               refs: indexed.refs,
                                                                               nextOffset: indexed.nextOffset,
                                                                               excludedTips: indexed.excludedTips,
+                                                                              memberships: indexed.memberships,
                                                                               items: (
                                                                                   indexed.history ?? indexed.items
                                                                               ).filter(belongs)
@@ -322,6 +410,7 @@ function makeAcquisition() {
                                                                       generation
                                                                   )
                                                               )
+                                                              Object.assign(status, nextStatus)
                                                           })
                                                         : Effect.gen(function* () {
                                                               if (
@@ -330,6 +419,8 @@ function makeAcquisition() {
                                                               ) {
                                                                   Object.assign(status, {
                                                                       since: repository.trackingStart,
+                                                                      pending: undefined,
+                                                                      incomplete: undefined,
                                                                       page: 1,
                                                                       offset: 0,
                                                                       windowEnd: undefined,
@@ -349,6 +440,8 @@ function makeAcquisition() {
                                                               )
                                                                   Object.assign(status, {
                                                                       since: repository.trackingStart,
+                                                                      pending: undefined,
+                                                                      incomplete: undefined,
                                                                       page: 1,
                                                                       offset: 0,
                                                                       windowEnd: undefined
@@ -386,6 +479,43 @@ function makeAcquisition() {
                                                                       page: status.page,
                                                                       offset: status.offset,
                                                                       versions: status.versions,
+                                                                      pending: status.pending,
+                                                                      incomplete: status.incomplete,
+                                                                      recordIncomplete: (identity, reason) =>
+                                                                          Effect.gen(function* () {
+                                                                              yield* check
+                                                                              const prior = status.incomplete ?? {}
+                                                                              const number = identity.split(':')[0]
+                                                                              const entries = Object.entries(
+                                                                                  prior
+                                                                              ).filter(
+                                                                                  ([key]) =>
+                                                                                      !key.startsWith(number + ':')
+                                                                              )
+                                                                              if (entries.length >= 128)
+                                                                                  return yield* Effect.fail(
+                                                                                      new JournalError(
+                                                                                          'Too many incomplete contributions; narrow the tracked range or inspect the source.'
+                                                                                      )
+                                                                                  )
+                                                                              status.incomplete = Object.fromEntries(
+                                                                                  reason
+                                                                                      ? [...entries, [identity, reason]]
+                                                                                      : entries
+                                                                              )
+                                                                              yield* checkpoint(key, status, generation)
+                                                                          }),
+                                                                      savePending: (pending) =>
+                                                                          Effect.gen(function* () {
+                                                                              yield* check
+                                                                              status.pending = pending
+                                                                              if (
+                                                                                  pending &&
+                                                                                  Object.keys(pending.pages).length
+                                                                              )
+                                                                                  status.lastProgressAt = Date.now()
+                                                                              yield* checkpoint(key, status, generation)
+                                                                          }),
                                                                       background: true,
                                                                       batch: (activities) =>
                                                                           Effect.gen(function* () {
@@ -503,7 +633,11 @@ function makeAcquisition() {
                                                                               yield* check
                                                                               status.page = page
                                                                               status.offset = offset
-                                                                              if (complete) {
+                                                                              if (
+                                                                                  complete &&
+                                                                                  !Object.keys(status.incomplete ?? {})
+                                                                                      .length
+                                                                              ) {
                                                                                   status.historySince =
                                                                                       repository.trackingStart
                                                                                   status.since = new Date(
@@ -531,13 +665,34 @@ function makeAcquisition() {
                                                         onSuccess: () =>
                                                             Effect.sync(() => {
                                                                 if (stopped(key, token, generation)) return
-                                                                status.status = 'idle'
+                                                                status.status = Object.keys(status.incomplete ?? {})
+                                                                    .length
+                                                                    ? 'error'
+                                                                    : 'idle'
+                                                                if (status.status === 'error')
+                                                                    status.error =
+                                                                        'Some contribution evidence exceeds acquisition limits. Open the provider for complete details.'
                                                                 if (!status.windowEnd)
                                                                     status.lastSuccess = new Date().toISOString()
                                                             }),
                                                         onFailure: (error) =>
                                                             Effect.gen(function* () {
                                                                 if (stopped(key, token, generation)) return
+                                                                if (provider === 'git') {
+                                                                    const persisted = yield* local(() =>
+                                                                        store.acquisitionCheckpoint(key)
+                                                                    ).pipe(
+                                                                        Effect.catchAll(() => {
+                                                                            checkpointSafe = false
+                                                                            return Effect.succeed(undefined)
+                                                                        })
+                                                                    )
+                                                                    if (persisted) {
+                                                                        for (const field of Object.keys(status))
+                                                                            Reflect.deleteProperty(status, field)
+                                                                        Object.assign(status, persisted)
+                                                                    }
+                                                                }
                                                                 status.status =
                                                                     error instanceof HttpError && error.retryAt
                                                                         ? 'paused'
@@ -547,7 +702,19 @@ function makeAcquisition() {
                                                                     error instanceof HttpError && error.retryAt
                                                                         ? new Date(error.retryAt).toISOString()
                                                                         : undefined
-                                                                if (provider === 'git')
+                                                                if (
+                                                                    provider === 'git' &&
+                                                                    /bad object|bad revision|unknown revision|not a valid object/i.test(
+                                                                        error.message
+                                                                    )
+                                                                )
+                                                                    status.gitCursor = undefined
+                                                                if (
+                                                                    provider === 'git' &&
+                                                                    /not a git repository|ENOENT|cannot change to/i.test(
+                                                                        error.message
+                                                                    )
+                                                                )
                                                                     yield* local(() =>
                                                                         store.repositoryUnavailable(
                                                                             repository.id,
@@ -559,7 +726,7 @@ function makeAcquisition() {
                                                     }),
                                                     Effect.ensuring(
                                                         Effect.gen(function* () {
-                                                            if (store.generation === generation)
+                                                            if (checkpointSafe && store.generation === generation)
                                                                 yield* checkpoint(key, status, generation).pipe(
                                                                     Effect.orDie
                                                                 )
@@ -569,17 +736,40 @@ function makeAcquisition() {
                                             }),
                                         () => Queue.offer(lanes[provider], undefined)
                                     )
-                                } while (
-                                    options.since &&
-                                    status.windowEnd &&
-                                    status.status === 'idle' &&
-                                    !stopped(key, token, generation)
-                                )
-                            })
+                                }
+                            }).pipe(http.withBackgroundTurn, (operation) => untilStopped(key, operation))
                         )
-                    const jobs = repositories.flatMap((repository) =>
-                        keys.filter((key) => key.endsWith(':' + repository.id)).map((key) => acquire(key, repository))
-                    )
+                    const rounds = (provider: 'git' | 'remote') =>
+                        Effect.gen(function* () {
+                            let first = true
+                            for (;;) {
+                                if (store.config.settings.timezone !== config.settings.timezone) return
+                                const entries = repositories.flatMap((repository) =>
+                                    keys
+                                        .filter(
+                                            (key) =>
+                                                key === `${provider}:${repository.id}` &&
+                                                (first ||
+                                                    (statusFor(key).windowEnd && statusFor(key).status === 'idle'))
+                                        )
+                                        .map((key) => ({ key, repository }))
+                                )
+                                if (provider === 'remote')
+                                    entries.sort(
+                                        (a, b) =>
+                                            (statusFor(a.key).lastProgressAt ?? 0) -
+                                            (statusFor(b.key).lastProgressAt ?? 0)
+                                    )
+                                if (!entries.length) return
+                                yield* Effect.forEach(entries, ({ key, repository }) => acquire(key, repository), {
+                                    concurrency: 2,
+                                    discard: true
+                                })
+                                if (!options.since) return
+                                first = false
+                            }
+                        })
+                    const jobs = [rounds('git'), rounds('remote')]
                     if (
                         !options.missingOnly &&
                         !options.repositoryId &&
@@ -606,7 +796,7 @@ function makeAcquisition() {
                                 )
                             )
                         )
-                    yield* Effect.all(jobs, { concurrency: 'unbounded', discard: true })
+                    yield* Effect.all(jobs, { concurrency: 4, discard: true })
                     const errors = Object.entries(store.config.acquisition)
                         .filter(([, status]) => status.status !== 'cancelled' && status.error)
                         .map(([key, status]) => `${key}: ${status.error}`)

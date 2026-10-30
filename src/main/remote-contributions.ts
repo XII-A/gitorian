@@ -16,7 +16,8 @@ export const RemoteContributionsLive = Layer.effect(
         const store = yield* JournalStore
         const use = <A>(
             repository: Repository,
-            operation: (client: RemoteContributions) => Effect.Effect<A, Error>
+            operation: (client: RemoteContributions) => Effect.Effect<A, Error>,
+            background = false
         ): Effect.Effect<A, Error> =>
             Effect.scoped(
                 Effect.gen(function* () {
@@ -31,7 +32,10 @@ export const RemoteContributionsLive = Layer.effect(
                             context.account.id,
                             context.account.provider === 'github'
                                 ? `https://api.github.com/repositories/${repository.providerProjectId}`
-                                : `https://gitlab.com/api/v4/projects/${repository.providerProjectId}`
+                                : `https://gitlab.com/api/v4/projects/${repository.providerProjectId}`,
+                            background,
+                            {},
+                            'json'
                         )
                         const path = project.full_name ?? project.path_with_namespace
                         if (path)
@@ -52,7 +56,9 @@ export const RemoteContributionsLive = Layer.effect(
                                       accounts.request<T>(
                                           context.account.id,
                                           `https://gitlab.com/api/v4/${path}`,
-                                          background
+                                          background,
+                                          {},
+                                          'json'
                                       ),
                                   context.account.userId
                               )
@@ -76,7 +82,7 @@ export const RemoteContributionsLive = Layer.effect(
         const activities: RemoteContributions['activities'] = (repository, _login, tracked, scan: ActivityScan = {}) =>
             Effect.gen(function* () {
                 if (repository.accountId && !repository.providerProjectId) {
-                    yield* accounts.resolve(repository.id)
+                    yield* accounts.resolve(repository.id, undefined, true)
                     repository = store.config.repositories.find((r) => r.id === repository.id) ?? repository
                 }
                 const context = accounts.context(repository)
@@ -154,11 +160,14 @@ export const RemoteContributionsLive = Layer.effect(
                             a.remoteSource.configuration === remoteConfiguration(repository)
                     )
                     .map((a) => (a.remoteSource?.number ? `${repository.id}:pr:${a.remoteSource.number}` : a.id))
-                const result = yield* use(repository, (client) =>
-                    client.activities(repository, context.account.username, trackedIds, {
-                        ...scan,
-                        batch: scan.batch ? (batch) => scan.batch!(normalize(batch)) : undefined
-                    })
+                const result = yield* use(
+                    repository,
+                    (client) =>
+                        client.activities(repository, context.account.username, trackedIds, {
+                            ...scan,
+                            batch: scan.batch ? (batch) => scan.batch!(normalize(batch)) : undefined
+                        }),
+                    true
                 )
                 return normalize(result)
             })

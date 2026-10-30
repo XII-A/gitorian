@@ -30,7 +30,8 @@ export interface AcquisitionBatch {
     repository?: State['repositories'][number]
     activities?: Activity[]
     checkpoint?: { key: string; value: NonNullable<State['acquisition']>[string] }
-    history?: GitHistory
+    projectHistoryIds?: string[]
+    historyDelta?: GitHistory
 }
 export class DatabaseError extends Error {
     constructor(

@@ -44,6 +44,7 @@ function makeJournal() {
         const connections = (yield* ConnectionState).snapshot
         const local = <A>(operation: () => Promise<A>) =>
             Effect.tryPromise({ try: operation, catch: (error) => toJournalFailure(error) })
+        let importController = new AbortController()
         let importing = false
         let repositoryScan:
             | {
@@ -86,8 +87,10 @@ function makeJournal() {
         )
         const stopWork = (source: 'git' | 'remote' | 'repositories', repositoryId?: string) =>
             Effect.gen(function* () {
-                if (source === 'repositories') importStopped = true
-                else yield* acquisition.stop(source, repositoryId)
+                if (source === 'repositories') {
+                    importStopped = true
+                    importController.abort(new Error('Repository import stopped.'))
+                } else yield* acquisition.stop(source, repositoryId)
             })
         const reply = (extra: Partial<Reply> = {}, view?: JournalView) =>
             local(async (): Promise<Reply> => ({
@@ -95,10 +98,10 @@ function makeJournal() {
                 connections: connections(),
                 ...extra
             }))
-        const addRepository = (path: string): Effect.Effect<void, Error> =>
+        const addRepository = (path: string, signal?: AbortSignal): Effect.Effect<void, Error> =>
             Effect.gen(function* () {
                 const inspected = yield* Effect.tryPromise({
-                    try: () => inspectRepository(path),
+                    try: () => inspectRepository(path, signal),
                     catch: (error) => (error instanceof Error ? error : new JournalError(String(error)))
                 })
                 if (
@@ -128,23 +131,31 @@ function makeJournal() {
             onProgress?: (progress: RepositoryImportProgress) => void
         ): Effect.Effect<Reply, Error> =>
             Effect.gen(function* () {
+                importController = new AbortController()
                 onProgress?.({ stage: 'discovering', scanned: 0, found: 0 })
                 const discovered = yield* Effect.tryPromise({
                     try: () =>
-                        discoverRepositories(folder, (counts) => onProgress?.({ stage: 'discovering', ...counts })),
+                        discoverRepositories(
+                            folder,
+                            (counts) => onProgress?.({ stage: 'discovering', ...counts }),
+                            importController.signal
+                        ),
                     catch: (error) => (error instanceof Error ? error : new JournalError(String(error)))
                 })
                 const id = randomUUID()
                 repositoryScan = { id, ...discovered }
+                const trackedPaths = new Map(
+                    store.config.repositories.map((repository) => [repositoryPathKey(repository.path), repository])
+                )
                 return yield* reply({
+                    message: discovered.incomplete,
                     repositoryScan: {
                         id,
                         folder,
                         unreadable: discovered.unreadable,
+                        incomplete: discovered.incomplete,
                         repositories: discovered.paths.map((path) => {
-                            const tracked = store.config.repositories.find(
-                                (item) => repositoryPathKey(item.path) === repositoryPathKey(path)
-                            )
+                            const tracked = trackedPaths.get(repositoryPathKey(path))
                             return {
                                 path,
                                 name: basename(path),
@@ -175,11 +186,9 @@ function makeJournal() {
                     return yield* Effect.fail(
                         new JournalError('This folder scan has expired. Choose the folder again.')
                     )
+                const scanned = new Set(scan.paths.map(repositoryPathKey))
                 const requested = new Set(paths.map(repositoryPathKey))
-                if (
-                    !requested.size ||
-                    [...requested].some((path) => !scan.paths.some((item) => repositoryPathKey(item) === path))
-                )
+                if (!requested.size || [...requested].some((path) => !scanned.has(path)))
                     return yield* Effect.fail(new JournalError('Select repositories from the scanned folder.'))
                 const discovered = {
                     paths: scan.paths.filter((path) => requested.has(repositoryPathKey(path))),
@@ -187,6 +196,7 @@ function makeJournal() {
                 }
                 repositoryScan = undefined
                 importing = true
+                importController = new AbortController()
                 importStopped = false
                 const importId = randomUUID()
                 yield* local(() =>
@@ -227,7 +237,7 @@ function makeJournal() {
                                     if (tracked) {
                                         if (tracked.removed || !tracked.available) {
                                             const inspected = yield* Effect.tryPromise({
-                                                try: () => inspectRepository(path),
+                                                try: () => inspectRepository(path, importController.signal),
                                                 catch: (error) =>
                                                     error instanceof Error ? error : new JournalError(String(error))
                                             })
@@ -242,7 +252,7 @@ function makeJournal() {
                                             restored++
                                         } else existing++
                                     } else {
-                                        yield* addRepository(path)
+                                        yield* addRepository(path, importController.signal)
                                         added++
                                     }
                                 }).pipe(

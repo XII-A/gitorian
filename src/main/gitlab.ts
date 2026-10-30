@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { contributionPages, ContributionIncomplete } from './contribution-pages'
 import { Effect } from 'effect'
 import type { Activity, Repository } from '../shared/model'
 import { providerRemote, remoteConfiguration } from '../shared/provider-accounts'
@@ -143,15 +145,30 @@ export function makeGitLab(
             const root = project(repository)
             if (!root) return []
             const result: Activity[] = []
+            const pages = contributionPages(scan)
+            const read = <A>(path: string, staged = false) =>
+                pages.read(path, () => request<A>(path, scan.background), staged)
+            const details = <A>(path: string) =>
+                Effect.gen(function* () {
+                    const records: A[] = []
+                    for (let p = 1; p <= 30; p++) {
+                        const items = yield* read<A[]>(`${path}?per_page=100&page=${p}`, true)
+                        records.push(...items)
+                        if (items.length < 100) return records
+                    }
+                    return yield* Effect.fail(
+                        new ContributionIncomplete(
+                            'Contribution detail records exceed the provider completeness limit.'
+                        )
+                    )
+                })
             // Reconcile all states, including old MRs whose notes do not advance updated_at.
             const page = scan.page ?? 1
-            const mrs = yield* request<MergeRequest[]>(
-                `${root}/merge_requests?state=all&scope=all&order_by=created_at&sort=asc&per_page=20&page=${page}`,
-                scan.background
+            const mrs = yield* read<MergeRequest[]>(
+                `${root}/merge_requests?state=all&scope=all&order_by=created_at&sort=asc&per_page=20&page=${page}`
             )
-            const recent = yield* request<MergeRequest[]>(
-                `${root}/merge_requests?state=all&scope=all&order_by=updated_at&sort=desc&per_page=5&page=1`,
-                scan.background
+            const recent = yield* read<MergeRequest[]>(
+                `${root}/merge_requests?state=all&scope=all&order_by=updated_at&sort=desc&per_page=5&page=1`
             )
             let position = scan.offset ?? 0
             const sweep = mrs.slice(position, position + 5)
@@ -159,11 +176,33 @@ export function makeGitLab(
                 ...recent.filter((m) => !sweep.some((s) => s.iid === m.iid)).map((mr) => ({ mr, sweep: false })),
                 ...sweep.map((mr) => ({ mr, sweep: true }))
             ]
-            for (const item of work) {
+            const resumeAt = scan.pending
+                ? work.findIndex((item) => scan.pending!.key.startsWith(`${item.mr.iid}:`))
+                : -1
+            for (const item of work.slice(Math.max(0, resumeAt))) {
                 let mr = item.mr
+                if (
+                    !(yield* pages.select(`${mr.iid}:${createHash('sha256').update(JSON.stringify(mr)).digest('hex')}`))
+                ) {
+                    if (item.sweep) {
+                        position++
+                        yield* scan.checkpoint?.(page, false, position) ?? Effect.void
+                    }
+                    continue
+                }
                 const base = `${root}/merge_requests/${mr.iid}`
-                const commits = yield* list<Commit>(`${base}/commits`, scan.background)
-                const notes = yield* list<Note>(`${base}/notes`, scan.background)
+                const detail = yield* pages.guard(
+                    Effect.gen(function* () {
+                        const commits = yield* details<Commit>(`${base}/commits`)
+                        const notes = yield* details<Note>(`${base}/notes`)
+                        return { commits, notes }
+                    })
+                )
+                if (!detail) {
+                    if (item.sweep) position++
+                    continue
+                }
+                const { commits, notes } = detail
                 const own = commits.filter((c) =>
                     repository.emails.some((e) => e.toLowerCase() === c.author_email.toLowerCase())
                 )
@@ -175,9 +214,10 @@ export function makeGitLab(
                         position++
                         yield* scan.checkpoint?.(page, false, position) ?? Effect.void
                     }
+                    yield* pages.complete
                     continue
                 }
-                mr = yield* request<MergeRequest>(base, scan.background)
+                mr = yield* read<MergeRequest>(base, true)
                 if (!mr.diff_refs?.base_sha || !mr.diff_refs.head_sha)
                     return yield* Effect.fail(
                         new GitLabFailure('Merge request revision is not available yet. Refresh again shortly.')
@@ -286,6 +326,7 @@ export function makeGitLab(
                     })
                 if (scan.batch) yield* scan.batch(batch)
                 else result.push(...batch)
+                yield* pages.complete
                 if (item.sweep) {
                     position++
                     yield* scan.checkpoint?.(page, false, position) ?? Effect.void

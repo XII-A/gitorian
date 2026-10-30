@@ -1,3 +1,5 @@
+import { gitConfiguration } from '../src/shared/activity-history'
+import type { Activity } from '../src/shared/model'
 import { journalState } from './database-fixtures'
 import { run } from './effect-fixtures'
 import { expect, it, vi } from 'vitest'
@@ -25,7 +27,7 @@ it('manual refresh extends history using durable Git bodies and unchanged PR ver
         expect((await journalState(app.store)).activities.some((item) => item.kind === 'commit')).toBe(true)
         expect((await journalState(app.store)).activities.some((item) => item.kind === 'change-request')).toBe(true)
         expect(index.mock.calls.at(-1)?.[1]).toEqual(refs)
-        expect(index.mock.calls.at(-1)?.[5]).toHaveLength(1)
+        // Retained bodies are reprojected in SQLite, never transferred back through the Git interface.
         expect(reply.state.acquisition?.[`git:${app.repository.id}`].since).toBe('2020-01-01')
         const reopened = await JournalDatabase.open(join(app.directory, 'tracking.sqlite'))
         try {
@@ -88,6 +90,78 @@ it('extends only targeted active repositories and never moves an earlier history
                 .sort((a, b) => (a.id === repository.id ? -1 : b.id === repository.id ? 1 : a.id.localeCompare(b.id)))
                 .map((repo) => repo.trackingStart)
         ).toEqual(['2026-10-05', '2026-10-08', '2026-10-12'])
+    } finally {
+        index.mockRestore()
+        await app.close()
+    }
+})
+
+it('reprojects cached history in durable bounded pages when the date range expands', async () => {
+    const app = await journal()
+    const repo: Repository = {
+        id: 'projection',
+        name: 'Projection',
+        path: '',
+        remote: '',
+        base: 'main',
+        trackingStart: '2099-01-01',
+        emails: ['me@example.com'],
+        branches: ['main'],
+        branchBases: {},
+        remotes: [],
+        removed: false,
+        available: true
+    }
+    const refs = { main: 'a'.repeat(40) }
+    const index = vi.spyOn(gitModule, 'indexCommits').mockResolvedValue({ refs, items: [] })
+    try {
+        await app.store.saveRepository(repo)
+        const configuration = gitConfiguration(repo, {
+            settings: app.store.config.settings,
+            restoreId: app.store.generation
+        })
+        const items = Array.from({ length: 4001 }, (_, i): Activity => ({
+            id: `commit-${String(i).padStart(5, '0')}`,
+            repositoryId: repo.id,
+            kind: 'commit',
+            title: `Commit ${i}`,
+            sha: String(i).padStart(40, '0'),
+            author: 'me@example.com',
+            date: '2026-10-06T00:00:00Z',
+            description: '',
+            files: [],
+            branches: ['main'],
+            deletedBranches: [],
+            disposition: 'inbox',
+            explicit: false
+        }))
+        await app.store.applyAcquisitionBatch({ repository: repo, historyDelta: { configuration, refs, items } })
+        const key = `git:${repo.id}`
+        await app.store.saveCheckpoint(key, {
+            status: 'idle',
+            since: '2099-01-01',
+            historySince: '2099-01-01',
+            historyTimezone: app.store.config.settings.timezone,
+            configuration
+        })
+        await app.store.saveRepository({ ...repo, trackingStart: '2020-01-01' })
+        await run(app.service.refresh({ source: 'git' }))
+        expect((await journalState(app.store)).activities).toHaveLength(2000)
+        const reopened = await JournalDatabase.open(join(app.directory, 'tracking.sqlite'))
+        try {
+            const progress = await reopened.acquisitionCheckpoint(key)
+            expect(progress?.historyProjection?.after).toBe('commit-01999')
+            expect(progress?.historySince).toBe('2099-01-01')
+            expect(progress?.windowEnd).toBeDefined()
+        } finally {
+            await reopened.close()
+        }
+        await run(app.service.refresh({ source: 'git' }))
+        expect((await journalState(app.store)).activities).toHaveLength(4000)
+        await run(app.service.refresh({ source: 'git' }))
+        expect((await journalState(app.store)).activities).toHaveLength(4001)
+        expect((await app.store.acquisitionCheckpoint(key))?.historyProjection).toBeUndefined()
+        expect((await app.store.acquisitionCheckpoint(key))?.historySince).toBe('2020-01-01')
     } finally {
         index.mockRestore()
         await app.close()

@@ -22,6 +22,8 @@ it('pins a selected PR revision, retains coverage after equivalent rewrites, and
             app.repository.trackingStart = '2026-10-05'
             await app.store.saveRepository(app.repository)
         }
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         expect((await app.store.activity(pr.id))!.base).toBe('main')
@@ -39,6 +41,8 @@ it('pins a selected PR revision, retains coverage after equivalent rewrites, and
         const selectedRevision = (await app.store.draft(draft.id))!.selections[0].revision
         app.remote.patch = patch.replace('+new', '+later')
         app.remote.head = 'e'.repeat(40)
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         expect((await app.store.activity(pr.id))!.revision).not.toBe(selectedRevision)
         await run(app.service.handle({ type: 'publish', draftId: draft.id }))
@@ -49,13 +53,19 @@ it('pins a selected PR revision, retains coverage after equivalent rewrites, and
         ).toHaveLength(1)
         app.remote.patch = patch.replace('1111111..2222222', '9999999..aaaaaaa').replace('@@ -1 +1 @@', '@@ -9 +9 @@')
         app.remote.head = 'f'.repeat(40)
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         expect((await app.store.activity(pr.id))!.revision).toBe(selectedRevision)
         expect(coveredEntries(await journalState(app.store), (await app.store.activity(pr.id))!)).toHaveLength(1)
         app.remote.patch = patch.replace('+new', '+ new')
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         expect(coveredEntries(await journalState(app.store), (await app.store.activity(pr.id))!)).toEqual([])
         app.remote.patch = 'Binary files a/image.png and b/image.png differ'
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         expect((await app.store.activity(pr.id))!.fingerprint).toBeUndefined()
         expect(coveredEntries(await journalState(app.store), (await app.store.activity(pr.id))!)).toEqual([])
@@ -72,6 +82,8 @@ it('does not infer whole-PR coverage from commits and suppresses a known integra
             app.repository.emails.push('second@example.com')
             await app.store.saveRepository(app.repository)
         }
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         const commit = (await journalState(app.store)).activities.find((item) => item.sha === 'd'.repeat(40))!
@@ -151,6 +163,8 @@ it('loads and caches remote authored commit diffs when the object is absent loca
             app.repository.emails.push('second@example.com')
             await app.store.saveRepository(app.repository)
         }
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         const commit = (await journalState(app.store)).activities.find((item) => item.sha === 'd'.repeat(40))!
         const reply = await run(app.service.handle({ type: 'details', activityId: commit.id }))
@@ -174,15 +188,21 @@ it('does not import newly discovered old PR work as fresh but detects later net 
             await app.store.saveRepository(app.repository)
         }
         const week = weekOf(new Date(), (await journalState(app.store)).settings)
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         expect(inbox(await journalState(app.store), week).some((item) => item.id === pr.id)).toBe(false)
         expect((await journalState(app.store)).diffs[pr.id]).toBeUndefined()
         app.remote.head = 'e'.repeat(40)
         app.remote.patch = patch.replace('1111111..2222222', '3333333..4444444')
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         expect(inbox(await journalState(app.store), week).some((item) => item.id === pr.id)).toBe(false)
         app.remote.patch = patch.replace('+new', '+new work')
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         expect(inbox(await journalState(app.store), week).filter((item) => item.id === pr.id)).toHaveLength(1)
     } finally {
@@ -225,12 +245,18 @@ it('conservatively surfaces changed references for old PRs whose patches cannot 
             await app.store.saveRepository(app.repository)
         }
         const week = weekOf(new Date(), (await journalState(app.store)).settings)
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         expect(inbox(await journalState(app.store), week).some((item) => item.id === pr.id)).toBe(false)
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         expect(inbox(await journalState(app.store), week).some((item) => item.id === pr.id)).toBe(false)
         app.remote.head = 'f'.repeat(40)
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         expect(inbox(await journalState(app.store), week).some((item) => item.id === pr.id)).toBe(true)
         expect(coveredEntries(await journalState(app.store), (await app.store.activity(pr.id))!)).toEqual([])
@@ -242,12 +268,16 @@ it('identifies an old cached patch after a failed refresh rather than presenting
     const app = await workspace()
     try {
         app.remote.github = true
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         await run(app.service.handle({ type: 'details', activityId: pr.id }))
         const cachedRevision = (await app.store.activity(pr.id))!.diffRevision
         app.remote.head = 'f'.repeat(40)
         app.remote.failDiff = true
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         expect((await app.store.activity(pr.id))!.revision).toBeUndefined()
         expect((await app.store.activity(pr.id))!.diffRevision).toBe(cachedRevision)
@@ -262,6 +292,8 @@ it('compares the final integration patch separately from the covered pre-merge P
     const app = await workspace()
     try {
         app.remote.github = true
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
@@ -276,6 +308,8 @@ it('compares the final integration patch separately from the covered pre-merge P
         await run(app.service.handle({ type: 'publish', draftId: (await journalState(app.store)).drafts[0].id }))
         app.remote.merged = true
         app.remote.finalPatch = patch.replace('+new', '+resolved during integration')
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         expect(coveredEntries(await journalState(app.store), (await app.store.activity(pr.id))!)).toEqual([])
         expect((await app.store.activity(pr.id))!.head).toBe('c'.repeat(40))
@@ -289,6 +323,8 @@ it('retains the whole PR patch and uncertain coverage for an unproven linear mer
     const app = await workspace()
     try {
         app.remote.github = true
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         const pr = (await journalState(app.store)).activities.find((item) => item.kind === 'change-request')!
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
@@ -304,6 +340,8 @@ it('retains the whole PR patch and uncertain coverage for an unproven linear mer
         app.remote.merged = true
         app.remote.mergeParents = ['b'.repeat(40)]
         app.remote.finalPatch = patch.replace('+new', '+last rebased commit only')
+        // These are separate refreshes, not an instantaneous quota burst.
+        vi.setSystemTime(new Date(Date.now() + 30000))
         await run(app.service.handle({ type: 'refresh' }))
         await run(app.service.handle({ type: 'details', activityId: pr.id }))
         expect((await journalState(app.store)).diffs[pr.id]).toBe(patch)

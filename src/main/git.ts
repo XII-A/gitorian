@@ -1,24 +1,32 @@
 import { providerRemote } from '../shared/provider-accounts'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import { realpath } from 'node:fs/promises'
-import type { Activity, Repository } from '../shared/model'
+import type { Activity, Repository, State } from '../shared/model'
 import { localDate } from '../shared/model'
 import { WorkQueue } from './work-queue'
 
 const execute = promisify(execFile)
 const MAX_DIFF = 2_000_000
 const processes = new WorkQueue(3)
+export type GitCursor = NonNullable<NonNullable<State['acquisition']>[string]['gitCursor']>
 export interface GitHistory {
     configuration: string
     refs: Record<string, string>
     items: Activity[]
+    memberships?: { branches: string[]; shas: string[] }[]
     nextOffset?: number
     excludedTips?: string[]
 }
-export async function git(path: string, args: string[], background = false, maxBuffer = 16_000_000): Promise<string> {
+export async function git(
+    path: string,
+    args: string[],
+    background = false,
+    maxBuffer = 16_000_000,
+    signal?: AbortSignal
+): Promise<string> {
     const result = await processes.run(
         () =>
             execute('git', ['--no-optional-locks', '-c', 'core.quotepath=false', ...args], {
@@ -26,14 +34,83 @@ export async function git(path: string, args: string[], background = false, maxB
                 encoding: 'utf8',
                 maxBuffer,
                 timeout: 30000,
+                signal,
                 windowsHide: true,
                 env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat' }
             }),
-        background ? 0 : 1
+        background ? 0 : 1,
+        signal
     )
     return result.stdout
 }
-export async function inspectRepository(path: string): Promise<{
+/** Stream bounded message previews; a pathological body never fills execFile's stdout buffer. */
+async function historyLog(
+    path: string,
+    args: string[],
+    background: boolean,
+    signal?: AbortSignal,
+    input?: string
+): Promise<string[]> {
+    return processes.run(
+        () =>
+            new Promise<string[]>((resolve, reject) => {
+                const child = spawn('git', ['--no-optional-locks', '-c', 'core.quotepath=false', ...args], {
+                    cwd: path,
+                    windowsHide: true,
+                    signal,
+                    timeout: 30000,
+                    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat' },
+                    stdio: ['pipe', 'pipe', 'pipe']
+                })
+                child.stdin.on('error', () => {
+                    /* Process failure is reported on close/error. */
+                })
+                child.stdin.end(input)
+                const rows: string[] = []
+                let row = '',
+                    fields: string[] = [],
+                    oversized = false,
+                    stderr = ''
+                child.stdout.setEncoding('utf8')
+                child.stderr.setEncoding('utf8')
+                child.stderr.on('data', (chunk: string) => {
+                    stderr = (stderr + chunk).slice(-4096)
+                })
+                child.stdout.on('data', (chunk: string) => {
+                    let start = 0
+                    for (;;) {
+                        const end = chunk.indexOf('\0', start)
+                        const part = chunk.slice(start, end < 0 ? undefined : end)
+                        if (row.length + part.length > 8192) oversized = true
+                        row = (row + part).slice(0, 8192)
+                        if (end < 0) break
+                        fields.push(
+                            oversized && fields.length === 4
+                                ? 'Commit message exceeds the acquisition preview limit. Open the commit in Git to read the complete message.'
+                                : row
+                        )
+                        row = ''
+                        oversized = false
+                        if (fields.length === 5) {
+                            rows.push(fields.join('\0'))
+                            fields = []
+                        }
+                        start = end + 1
+                    }
+                })
+                child.on('error', reject)
+                child.on('close', (code) =>
+                    code === 0 ? resolve(rows) : reject(new Error(stderr || `Git history failed (${code})`))
+                )
+            }),
+        background ? 0 : 1,
+        signal
+    )
+}
+export async function inspectRepository(
+    path: string,
+    signal?: AbortSignal
+): Promise<{
     path: string
     name: string
     remotes: string[]
@@ -42,13 +119,14 @@ export async function inspectRepository(path: string): Promise<{
     email: string
     branches: string[]
 }> {
-    const root = await realpath((await git(path, ['rev-parse', '--show-toplevel'])).trim())
+    const root = await realpath((await git(path, ['rev-parse', '--show-toplevel'], false, 16_000_000, signal)).trim())
     const [remoteOutput, branchOutput, origin, email] = await Promise.all([
-        git(root, ['remote', '-v'], true),
-        git(root, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes'], true),
-        git(root, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], true).catch(() => ''),
-        git(root, ['config', 'user.email'], true).catch(() => '')
+        git(root, ['remote', '-v'], true, 16_000_000, signal),
+        git(root, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes'], true, 16_000_000, signal),
+        git(root, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], true, 16_000_000, signal).catch(() => ''),
+        git(root, ['config', 'user.email'], true, 16_000_000, signal).catch(() => '')
     ])
+    signal?.throwIfAborted()
     const fetchRemotes = remoteOutput
         .split('\n')
         .filter((line) => line.endsWith('(fetch)'))
@@ -108,29 +186,39 @@ export async function commits(
     background = false,
     offset = 0,
     limit = 20000,
-    excludedTips: string[] = []
+    excludedTips: string[] = [],
+    signal?: AbortSignal,
+    tips?: string[]
 ): Promise<Activity[]> {
     if (branch) safeRef(branch)
     safeRef(base)
     const range = branch ? (view === 'introduced' ? `${base}..${branch}` : branch) : '--all'
-    const output = await git(
+    const rows = await historyLog(
         repository.path,
         [
             'log',
-            range,
+            ...(tips ? ['--stdin'] : [range]),
             `--max-count=${limit}`,
             `--skip=${offset}`,
             ...(excludedTips.length ? ['--not', ...excludedTips] : []),
-            '--format=%H%x00%aI%x00%ae%x00%s%x00%B%x1e',
+            '--format=%H%x00%aI%x00%ae%x00%<(200,trunc)%s%x00%B%x00',
             '--'
         ],
-        background
+        background,
+        signal,
+        tips?.map((tip) => tip + '\n').join('')
     )
-    return output
-        .split('\x1e')
+    return rows
         .filter((row) => row.trim())
         .map<Activity>((row) => {
             const [sha, date, author, title, description] = row.trimStart().split('\0')
+            if (
+                !/^[a-f0-9]{40,64}$/.test(sha) ||
+                !Number.isFinite(Date.parse(date)) ||
+                title === undefined ||
+                description === undefined
+            )
+                throw new Error('Git returned malformed commit metadata.')
             return {
                 id: `${repository.id}:commit:${sha}`,
                 repositoryId: repository.id,
@@ -141,7 +229,7 @@ export async function commits(
                     : undefined,
                 date,
                 author,
-                title,
+                title: title.trimEnd(),
                 description,
                 branches: branch ? [branch] : [],
                 files: [],
@@ -229,73 +317,115 @@ export async function indexCommits(
     since: string,
     offset = 0,
     excludedTips: string[] = [],
-    known: Activity[] = [],
-    timezone = 'UTC'
+    timezone = 'UTC',
+    signal?: AbortSignal,
+    cursor?: GitCursor
 ): Promise<{
     refs: Record<string, string>
     items: Activity[]
     history?: Activity[]
+    memberships?: { branches: string[]; shas: string[] }[]
     nextOffset?: number
     excludedTips?: string[]
+    cursor?: GitCursor
 }> {
-    const output = await git(
-        repository.path,
-        ['for-each-ref', '--format=%(refname:short)%00%(objectname)', 'refs/heads', 'refs/remotes'],
-        true
-    )
-    const refs: Record<string, string> = Object.fromEntries(
-        output
+    // A continuation walks immutable tip objects, never a moving --all traversal.
+    const output = cursor
+        ? ''
+        : await git(
+              repository.path,
+              ['for-each-ref', '--format=%(refname:short)%00%(objectname)', 'refs/heads', 'refs/remotes'],
+              true,
+              16_000_000,
+              signal
+          )
+    const refs: Record<string, string> = cursor
+        ? previous
+        : Object.fromEntries(
+              output
+                  .trim()
+                  .split('\n')
+                  .filter((row) => row && !row.split('\0')[0].endsWith('/HEAD'))
+                  .map((row) => row.split('\0'))
+          )
+    if (!Object.keys(refs).length) return { refs, items: [] }
+    if (!cursor && !offset && JSON.stringify(refs) === JSON.stringify(previous)) return { refs, items: [] }
+    const groups = new Map<string, string[]>()
+    for (const [branch, tip] of Object.entries(refs)) groups.set(tip, [...(groups.get(tip) ?? []), branch])
+    let state: GitCursor = cursor ? { ...cursor } : { phase: 'body', offset: 0, group: 0, alias: 0 }
+    if (!cursor && offset) excludedTips = []
+    let captured: Activity[] = []
+    if (state.phase === 'body') {
+        // Legacy partial snapshots restart safely; new cursors preserve the frozen source snapshot.
+        if (!cursor && JSON.stringify(refs) !== JSON.stringify(previous)) {
+            excludedTips = offset ? [] : [...new Set(Object.values(previous))]
+            state.offset = 0
+        }
+        try {
+            captured = await commits(
+                repository,
+                '',
+                'history',
+                repository.base,
+                '',
+                true,
+                state.offset,
+                2000,
+                excludedTips,
+                signal,
+                [...groups.keys()]
+            )
+        } catch (error) {
+            if (
+                !excludedTips.length ||
+                !(error instanceof Error) ||
+                !/bad object|bad revision|unknown revision/i.test(error.message)
+            )
+                throw error
+            excludedTips = []
+            state.offset = 0
+            captured = await commits(repository, '', 'history', repository.base, '', true, 0, 2000, [], signal, [
+                ...groups.keys()
+            ])
+        }
+        state =
+            captured.length === 2000
+                ? { ...state, offset: state.offset + 2000 }
+                : { phase: 'membership', offset: 0, group: 0, alias: 0 }
+    }
+    const memberships: { branches: string[]; shas: string[] }[] = []
+    let membershipWork = 0
+    while (state.phase === 'membership' && state.group < groups.size && membershipWork < 1000) {
+        const [tip, aliases] = [...groups][state.group]
+        const shas = (
+            await git(
+                repository.path,
+                ['rev-list', '--max-count=1000', `--skip=${state.offset}`, tip, '--'],
+                true,
+                1_000_000,
+                signal
+            )
+        )
             .trim()
             .split('\n')
-            .filter((row) => row && !row.split('\0')[0].endsWith('/HEAD'))
-            .map((row) => row.split('\0'))
-    )
-    if (!Object.keys(refs).length) return { refs, items: [] }
-    const same = JSON.stringify(refs) === JSON.stringify(previous)
-    if (same && !offset)
-        return {
-            refs,
-            items: known.filter((activity) => localDate(new Date(activity.date), timezone) >= since),
-            history: known
-        }
-    if (!same) {
-        excludedTips = offset ? excludedTips : [...new Set(Object.values(previous))]
-        offset = 0
+            .filter(Boolean)
+        membershipWork += Math.max(1, shas.length) * Math.min(25, aliases.length - state.alias)
+        const names = aliases.slice(state.alias, state.alias + 25)
+        memberships.push({ branches: names, shas })
+        const matches = new Set(shas)
+        for (const item of captured) if (matches.has(item.sha!)) item.branches.push(...names)
+        if (state.alias + 25 < aliases.length) state = { ...state, alias: state.alias + 25 }
+        else if (shas.length === 1000) state = { ...state, alias: 0, offset: state.offset + 1000 }
+        else state = { ...state, alias: 0, offset: 0, group: state.group + 1 }
     }
-    let captured: Activity[]
-    try {
-        captured = await commits(repository, '', 'history', repository.base, '', true, offset, 2000, excludedTips)
-    } catch (error) {
-        if (
-            !excludedTips.length ||
-            !(error instanceof Error) ||
-            !/bad object|bad revision|unknown revision/i.test(error.message)
-        )
-            throw error
-        excludedTips = []
-        offset = 0
-        captured = await commits(repository, '', 'history', repository.base, '', true, offset, 2000)
-    }
-    const items = [
-        ...new Map(
-            [...known, ...captured].map((activity) => [activity.id, { ...activity, branches: [...activity.branches] }])
-        ).values()
-    ]
-    for (const [branch, tip] of Object.entries(refs)) {
-        if (!offset && excludedTips.length && previous[branch] === tip) continue
-        const membership = new Set(
-            (await git(repository.path, ['rev-list', `--max-count=${offset + 2000}`, tip, '--'], true))
-                .trim()
-                .split('\n')
-        )
-        for (const item of items)
-            if (membership.has(item.sha!) && !item.branches.includes(branch)) item.branches.push(branch)
-    }
+    const next = state.phase === 'body' || state.group < groups.size ? state : undefined
     return {
         refs,
-        items: items.filter((activity) => localDate(new Date(activity.date), timezone) >= since),
-        history: items,
-        nextOffset: captured.length === 2000 ? offset + 2000 : undefined,
+        items: captured.filter((activity) => localDate(new Date(activity.date), timezone) >= since),
+        history: captured,
+        memberships,
+        cursor: next,
+        nextOffset: next ? (next.phase === 'body' ? next.offset : -1) : undefined,
         excludedTips
     }
 }

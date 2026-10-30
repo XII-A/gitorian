@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { createHash, randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, gte, inArray, lt, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lt, or, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/node-sqlite'
 import { migrate } from 'drizzle-orm/node-sqlite/migrator'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
@@ -772,6 +772,15 @@ export class JournalEngine {
                       (!incoming.sourceVersion || incoming.sourceVersion === previous.sourceVersion)
               }
             : incoming
+        if (previous && JSON.stringify(a) === JSON.stringify(previous)) {
+            if (journaled)
+                this.db
+                    .update(t.activities)
+                    .set({ journaled: true })
+                    .where(and(eq(t.activities.id, a.id), eq(t.activities.journaled, false)))
+                    .run()
+            return
+        }
         const retained = this.db
             .select({ journaled: t.activities.journaled })
             .from(t.activities)
@@ -821,10 +830,15 @@ export class JournalEngine {
         }
         this.db.insert(t.activities).values(record).onConflictDoUpdate({ target: t.activities.id, set: record }).run()
         this.db.delete(t.activityBranches).where(eq(t.activityBranches.activityId, a.id)).run()
-        for (const name of new Set(a.branches))
+        const branchRows = [...new Set(a.branches)].map((name) => ({
+            activityId: a.id,
+            name,
+            deleted: a.deletedBranches.includes(name)
+        }))
+        for (let i = 0; i < branchRows.length; i += 300)
             this.db
                 .insert(t.activityBranches)
-                .values({ activityId: a.id, name, deleted: a.deletedBranches.includes(name) })
+                .values(branchRows.slice(i, i + 300))
                 .run()
         this.db.delete(t.activityDates).where(eq(t.activityDates.activityId, a.id)).run()
         const facts: { kind: 'activity' | 'commit' | 'opened' | 'closed' | 'merged'; instant: number }[] = [
@@ -865,8 +879,9 @@ export class JournalEngine {
     }
     applyAcquisitionBatch(batch: AcquisitionBatch, generation: string) {
         this.write(() => {
+            const config = this.config()
+            let branchesChanged = false
             if (batch.source) {
-                const config = this.config()
                 const repository = config.repositories.find((r) => r.id === batch.source!.repositoryId)
                 const configuration =
                     repository &&
@@ -881,19 +896,25 @@ export class JournalEngine {
                     )
             }
             if (batch.repository) {
-                const current = this.repositories().find((r) => r.id === batch.repository!.id)
+                const current = config.repositories.find((r) => r.id === batch.repository!.id)
                 if (!current || current.removed)
                     throw new DatabaseError('conflict', 'This repository is no longer tracked.')
-                this.putRepository({
-                    ...current,
-                    branches: batch.repository.branches,
-                    remotes: batch.repository.remotes,
-                    available: batch.repository.available
-                })
+                branchesChanged = JSON.stringify(current.branches) !== JSON.stringify(batch.repository.branches)
+                if (
+                    branchesChanged ||
+                    current.available !== batch.repository.available ||
+                    JSON.stringify(current.remotes) !== JSON.stringify(batch.repository.remotes)
+                )
+                    this.putRepository({
+                        ...current,
+                        branches: batch.repository.branches,
+                        remotes: batch.repository.remotes,
+                        available: batch.repository.available
+                    })
             }
             for (const activity of batch.activities ?? []) {
                 if (activity.remoteSource) {
-                    const account = this.config().accounts.find((a) => a.id === activity.remoteSource!.accountId)
+                    const account = config.accounts.find((a) => a.id === activity.remoteSource!.accountId)
                     if (
                         !account ||
                         account.generation !== activity.remoteSource.sessionGeneration ||
@@ -906,10 +927,16 @@ export class JournalEngine {
                     true
                 )
             }
-            if (batch.history && batch.repository) {
-                const h = batch.history,
+            if (batch.historyDelta && batch.repository) {
+                const h = batch.historyDelta,
                     repositoryId = batch.repository.id
-                for (const item of h.items) this.putActivity(item, true, false)
+                const visible = new Set((batch.activities ?? []).map((item) => item.id))
+                for (const item of h.items) if (!visible.has(item.id)) this.putActivity(item, true, false)
+                const stored = this.db
+                    .select()
+                    .from(t.gitHistory)
+                    .where(eq(t.gitHistory.repositoryId, repositoryId))
+                    .get()
                 const record = {
                     repositoryId,
                     configuration: h.configuration,
@@ -922,37 +949,100 @@ export class JournalEngine {
                     .values(record)
                     .onConflictDoUpdate({ target: t.gitHistory.repositoryId, set: record })
                     .run()
-                this.db.delete(t.gitHistoryItems).where(eq(t.gitHistoryItems.repositoryId, repositoryId)).run()
-                for (const item of h.items)
-                    this.db.insert(t.gitHistoryItems).values({ repositoryId, activityId: item.id }).run()
-            }
-            if (batch.repository) {
-                const ids = this.db
-                    .select({ id: t.activities.id })
-                    .from(t.activities)
-                    .where(eq(t.activities.repositoryId, batch.repository.id))
-                    .all()
-                    .map((a) => a.id)
-                if (ids.length)
+                // History membership is append-only within a configuration; evidence survives reprojection.
+                if (stored && stored.configuration !== h.configuration)
+                    this.db.delete(t.gitHistoryItems).where(eq(t.gitHistoryItems.repositoryId, repositoryId)).run()
+                const added = h.items.map((item) => ({ repositoryId, activityId: item.id }))
+                for (let i = 0; i < added.length; i += 400)
                     this.db
-                        .update(t.activityBranches)
-                        .set({
-                            deleted: batch.repository.branches.length
-                                ? sql`${t.activityBranches.name} NOT IN (${sql.join(
-                                      batch.repository.branches.map((name) => sql`${name}`),
-                                      sql`,`
-                                  )})`
-                                : true
-                        })
-                        .where(inArray(t.activityBranches.activityId, ids))
+                        .insert(t.gitHistoryItems)
+                        .values(added.slice(i, i + 400))
+                        .onConflictDoNothing()
+                        .run()
+                for (const group of h.memberships ?? [])
+                    for (let i = 0; i < group.shas.length; i += 200) {
+                        const ids = this.db
+                            .select({ id: t.activities.id })
+                            .from(t.activities)
+                            .where(
+                                and(
+                                    eq(t.activities.repositoryId, repositoryId),
+                                    inArray(t.activities.sha, group.shas.slice(i, i + 200))
+                                )
+                            )
+                            .all()
+                        const rows = ids.flatMap((item) =>
+                            group.branches.map((name) => ({ activityId: item.id, name, deleted: false }))
+                        )
+                        for (let j = 0; j < rows.length; j += 300)
+                            this.db
+                                .insert(t.activityBranches)
+                                .values(rows.slice(j, j + 300))
+                                .onConflictDoNothing()
+                                .run()
+                    }
+            }
+            if (batch.repository && branchesChanged) {
+                this.db
+                    .update(t.activityBranches)
+                    .set({
+                        deleted: batch.repository.branches.length
+                            ? sql`${t.activityBranches.name} NOT IN (${sql.join(
+                                  batch.repository.branches.map((name) => sql`${name}`),
+                                  sql`,`
+                              )})`
+                            : true
+                    })
+                    .where(
+                        sql`${t.activityBranches.activityId} IN (SELECT id FROM activities WHERE repositoryId = ${batch.repository.id})`
+                    )
+                    .run()
+            }
+            if (batch.projectHistoryIds?.length && batch.repository) {
+                if (batch.projectHistoryIds.length > 2000)
+                    throw new DatabaseError('invalid', 'History projection page exceeds its work limit.')
+                for (let i = 0; i < batch.projectHistoryIds.length; i += 400)
+                    this.db
+                        .update(t.activities)
+                        .set({ journaled: true, localQualified: true })
+                        .where(
+                            and(
+                                eq(t.activities.repositoryId, batch.repository.id),
+                                inArray(t.activities.id, batch.projectHistoryIds.slice(i, i + 400)),
+                                sql`${t.activities.id} IN (SELECT activityId FROM git_history_items WHERE repositoryId = ${batch.repository.id})`
+                            )
+                        )
                         .run()
             }
             if (batch.checkpoint) this.putCheckpoint(batch.checkpoint.key, batch.checkpoint.value)
         }, generation)
     }
-    history(repositoryId: string): GitHistory | undefined {
+    historyProjectionPage(repositoryId: string, after?: string) {
+        return this.db
+            .select({ id: t.activities.id, instant: t.activities.occurredAt, journaled: t.activities.journaled })
+            .from(t.gitHistoryItems)
+            .innerJoin(t.activities, eq(t.activities.id, t.gitHistoryItems.activityId))
+            .where(
+                and(
+                    eq(t.gitHistoryItems.repositoryId, repositoryId),
+                    after ? gt(t.gitHistoryItems.activityId, after) : undefined
+                )
+            )
+            .orderBy(asc(t.gitHistoryItems.activityId))
+            .limit(2000)
+            .all()
+    }
+    history(repositoryId: string, includeItems = true): GitHistory | undefined {
         const h = this.db.select().from(t.gitHistory).where(eq(t.gitHistory.repositoryId, repositoryId)).get()
         if (!h) return undefined
+        if (!includeItems)
+            return {
+                configuration: h.configuration,
+                refs: h.refs,
+                nextOffset: optional(h.nextOffset),
+                excludedTips: optional(h.excludedTips),
+                items: []
+            }
         const items = this.db
             .select({ activity: t.activities })
             .from(t.gitHistoryItems)
