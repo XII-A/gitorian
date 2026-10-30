@@ -105,7 +105,7 @@ it.each(['existing', 'new'])(
         const transport = vi
             .fn<typeof fetch>()
             .mockResolvedValueOnce(new Response('{}', { status: 429, headers: { 'Retry-After': '1' } }))
-            .mockImplementation(() => Promise.resolve(Response.json({ id: 'parent' })))
+            .mockImplementation(() => Promise.resolve(Response.json({ id: 'parent', results: [], has_more: false })))
         const http = await transportClient(transport)
         await expect(
             run(http.request('https://api.notion.com/v1/blocks/parent/children', 'token'))
@@ -131,7 +131,8 @@ it.each(['existing', 'new'])(
         ).resolves.toMatchObject({ id: 'parent' })
         expect(transport.mock.calls.map(([, init]) => init?.method ?? 'GET')).toEqual([
             'GET',
-            kind === 'existing' ? 'GET' : 'POST'
+            kind === 'existing' ? 'GET' : 'POST',
+            ...(kind === 'new' ? ['GET'] : [])
         ])
     }
 )
@@ -139,14 +140,19 @@ it('checkpoints private journal creation before writing, then reuses the confirm
     const events: string[] = []
     const transport = vi.fn<typeof fetch>((url, init) => {
         events.push(`${init?.method ?? 'GET'} ${url instanceof Request ? url.url : url.toString()}`)
-        return Promise.resolve(new Response(JSON.stringify({ id: 'private-journal' })))
+        return Promise.resolve(new Response(JSON.stringify({ id: 'private-journal', results: [], has_more: false })))
     })
     const notion = notionClient(await transportClient(transport), () => 'oauth-token')
     const destination = await run(
         notion.prepareJournal({ id: 'setup-one', started: false }, (id) => events.push(id ?? 'creating'))
     )
     expect(destination).toEqual({ kind: 'page', id: 'private-journal', titleProperty: 'Name', dateProperty: '' })
-    expect(events).toEqual(['creating', 'POST https://api.notion.com/v1/pages', 'private-journal'])
+    expect(events).toEqual([
+        'creating',
+        'POST https://api.notion.com/v1/pages',
+        'private-journal',
+        'GET https://api.notion.com/v1/blocks/private-journal/children?page_size=100'
+    ])
     const init = transport.mock.calls[0][1]!
     expect(new Headers(init.headers).get('Notion-Version')).toBe('2026-03-11')
     expect(JSON.parse(init.body as string).parent).toEqual({ type: 'workspace', workspace: true })
@@ -157,7 +163,7 @@ it('checkpoints private journal creation before writing, then reuses the confirm
             })
         )
     ).toEqual(destination)
-    expect(transport).toHaveBeenCalledTimes(1)
+    expect(transport).toHaveBeenCalledTimes(3)
 })
 it('recovers an uncertain journal creation only by its setup marker and never blindly creates again', async () => {
     const transport = vi.fn<typeof fetch>((url) =>
@@ -177,6 +183,7 @@ it('recovers an uncertain journal creation only by its setup marker and never bl
                         : {
                               results: [
                                   {
+                                      id: 'marker',
                                       type: 'paragraph',
                                       paragraph: { rich_text: [{ plain_text: 'gitorian setup: setup-one' }] }
                                   }
@@ -282,4 +289,53 @@ it('rejects an empty destination before making a request', async () => {
     const destination: Destination = { kind: 'page', id: '  ', titleProperty: 'Name', dateProperty: '' }
     await expect(run(notion.verifyDestination(destination))).rejects.toThrow('Enter a destination ID')
     expect(transport).not.toHaveBeenCalled()
+})
+
+it('removes only its own setup marker after the durable checkpoint and resumes failed cleanup without creating again', async () => {
+    let saved: string | undefined
+    let fail = true
+    const deleted: string[] = []
+    const transport = vi.fn<typeof fetch>((url, init) => {
+        const path = new URL(url instanceof Request ? url.url : url.toString()).pathname
+        if (init?.method === 'POST') return Promise.resolve(Response.json({ id: 'journal' }))
+        if (init?.method === 'DELETE') {
+            expect(saved).toBe('journal')
+            if (fail) return Promise.resolve(Response.json({}, { status: 403 }))
+            deleted.push(path)
+            return Promise.resolve(Response.json({}))
+        }
+        return Promise.resolve(
+            Response.json({
+                results: [
+                    {
+                        id: 'mine',
+                        type: 'paragraph',
+                        paragraph: { rich_text: [{ plain_text: 'gitorian setup: mine' }] }
+                    },
+                    {
+                        id: 'other',
+                        type: 'paragraph',
+                        paragraph: { rich_text: [{ plain_text: 'gitorian setup: other' }] }
+                    },
+                    { id: 'content', type: 'paragraph', paragraph: { rich_text: [{ plain_text: 'My journal' }] } }
+                ],
+                has_more: false
+            })
+        )
+    })
+    const notion = notionClient(await transportClient(transport), () => 'token')
+    await expect(
+        run(
+            notion.prepareJournal({ id: 'mine', started: false }, (id) => {
+                saved = id
+            })
+        )
+    ).rejects.toThrow()
+    expect(saved).toBe('journal')
+    fail = false
+    await expect(
+        run(notion.prepareJournal({ id: 'mine', started: true, pageId: saved }, vi.fn()))
+    ).resolves.toMatchObject({ id: 'journal' })
+    expect(deleted).toEqual(['/v1/blocks/mine'])
+    expect(transport.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
 })
