@@ -111,3 +111,13 @@ Build the final source, run `pnpm verify doctor`, then run `pnpm test:e2e writin
 Manually inspect Arabic shaping, quote/toggle placement, marker sides, long mixed paragraphs, title alignment and caption controls at narrow widths. Writing is automatic with no document/block direction controls above the editor. Imported and saved direction policies must still round-trip. Automatic means first strong character. Notion's interface currently cannot preserve forced direction remotely, so do not claim a remote override round trip. Interface translation, language-specific search and spellcheck are outside this feature.
 
 All claimed journeys must exit zero with run.json.passed and cleanup.removed true. Keep failures and successful artifacts under ignored .ai-docs/verification; screenshots alone do not prove persistence.
+
+Toggle editing is also owned by `writing-direction`: native closed-summary continuation, open-summary body entry, protected body Backspace, Shift+Tab/Tab movement and undo, followed by process restart and SQLite evidence. Toggles start collapsed; content brightness derives from body nodes, including non-text blocks. Inspect LTR and RTL triangle rotation and reduced motion manually.
+
+Within toggle bodies, repeated Enter retains blank paragraphs; Backspace on the final empty direct body block outdents through the same transaction as Shift+Tab. The writing-direction journey owns native input and undo for this behavior.
+
+Backspace on an empty body block with following siblings deletes only the blank block and keeps the later content inside the toggle. The native writing-direction scenario and editor boundary cases cover this distinction.
+
+Deleting internal blank toggle blocks moves the caret backward to the preceding block end. The native journey removes two consecutive blank lines and verifies the following text stays intact.
+
+For a toggle containing only its single empty placeholder, Backspace returns to the summary end without changing the document; a trailing empty block after other content still outdents. Covered with empty/nonempty titles and native RTL editing.
