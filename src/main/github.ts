@@ -1,3 +1,4 @@
+import { contributionPages, ContributionIncomplete } from './contribution-pages'
 import { DurabilityError } from './durability-error'
 import type { Activity, Repository } from '../shared/model'
 import { localDate } from '../shared/model'
@@ -116,15 +117,37 @@ export function makeGitHub(providerRequest: GitHubRequest) {
             const remote = githubRemote(repository.remote)
             if (!remote) return []
             const activities: Activity[] = []
+            const pages = contributionPages(scan)
+            const read = <A>(path: string, staged = false) =>
+                pages.read(path, () => request<A>(path, scan.background), staged)
+            const details = <A>(path: string) =>
+                Effect.gen(function* () {
+                    const result: A[] = []
+                    for (let p = 1; p <= 30; p++) {
+                        const items = yield* read<A[]>(`${path}?per_page=100&page=${p}`, true)
+                        result.push(...items)
+                        if (items.length < 100) return result
+                    }
+                    return yield* Effect.fail(
+                        new ContributionIncomplete(
+                            'Contribution detail records exceed the provider completeness limit.'
+                        )
+                    )
+                })
             const since = scan.since ?? repository.trackingStart
             const firstPage = Math.max(1, (scan.page ?? 1) - 1)
             let complete = false
             let hydrated = 0
             for (let page = firstPage; page < firstPage + 2; page++) {
-                const pulls = yield* request<Pull[]>(
-                    `repos/${remote}/pulls?state=all&sort=updated&direction=desc&per_page=100&page=${page}`,
-                    scan.background
+                const pulls = yield* read<Pull[]>(
+                    `repos/${remote}/pulls?state=all&sort=updated&direction=desc&per_page=100&page=${page}`
                 )
+                if (scan.pending)
+                    pulls.sort(
+                        (a, b) =>
+                            Number(scan.pending!.key.startsWith(`${b.number}:`)) -
+                            Number(scan.pending!.key.startsWith(`${a.number}:`))
+                    )
                 for (const summary of pulls) {
                     if (localDate(new Date(summary.updated_at ?? summary.created_at), scan.timezone ?? 'UTC') < since) {
                         complete = true
@@ -148,10 +171,27 @@ export function makeGitHub(providerRequest: GitHubRequest) {
                         return activities
                     }
                     hydrated++
+                    if (!(yield* pages.select(`${summary.number}:${version}`))) continue
                     const path = `repos/${remote}/pulls/${summary.number}`
                     const pr = summary
-                    const commits = yield* list<Commit>(`${path}/commits`, scan.background)
-                    const reviews = yield* list<Review>(`${path}/reviews`, scan.background)
+                    const detail = yield* pages.guard(
+                        Effect.gen(function* () {
+                            const commits = yield* details<Commit>(`${path}/commits`)
+                            if (commits.length >= 250) {
+                                const total = yield* read<Pull & { commits?: number }>(path, true)
+                                if (commits.length > 250 || total.commits !== commits.length)
+                                    return yield* Effect.fail(
+                                        new ContributionIncomplete(
+                                            'GitHub limits this pull-request commit endpoint to 250 commits. Complete contribution evidence is unavailable; open the source in GitHub.'
+                                        )
+                                    )
+                            }
+                            const reviews = yield* details<Review>(`${path}/reviews`)
+                            return { commits, reviews }
+                        })
+                    )
+                    if (!detail) continue
+                    const { commits, reviews } = detail
                     const id = `${repository.id}:pr:${pr.number}`
                     const mine = commits.filter((commit) =>
                         repository.emails.some(
@@ -164,6 +204,7 @@ export function makeGitHub(providerRequest: GitHubRequest) {
                     if (pr.user.login !== login && !mine.length && !myReviews.length && !trackedPrIds.includes(id)) {
                         if (scan.versions) scan.versions[String(summary.number)] = version
                         yield* scan.checkpoint?.(page, false) ?? Effect.void
+                        yield* pages.complete
                         continue
                     }
                     const batch: Activity[] = []
@@ -276,6 +317,7 @@ export function makeGitHub(providerRequest: GitHubRequest) {
                     else activities.push(...eligible)
                     if (scan.versions) scan.versions[String(summary.number)] = version
                     yield* scan.checkpoint?.(page, false) ?? Effect.void
+                    yield* pages.complete
                 }
                 if (pulls.length < 100) complete = true
                 yield* scan.checkpoint?.(complete ? 1 : page + 1, complete) ?? Effect.void

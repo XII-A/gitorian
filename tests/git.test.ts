@@ -277,23 +277,61 @@ it('indexes a real full Git page and resumes without losing or duplicating the r
             branchBases: {},
             branches: ['main']
         }
-        const first = await indexCommits(repository, {}, '2026-01-01')
-        expect(first.history).toHaveLength(2000)
-        expect(first.nextOffset).toBe(2000)
-        const last = await indexCommits(
-            repository,
-            first.refs,
-            '2026-01-01',
-            first.nextOffset,
-            first.excludedTips,
-            first.history
-        )
-        expect(last.nextOffset).toBeUndefined()
-        expect(last.items).toHaveLength(2001)
-        expect(new Set(last.items.map((item) => item.sha)).size).toBe(2001)
-        expect(last.items.map((item) => item.title)).toContain('Work 1')
-        expect(last.items.map((item) => item.title)).toContain('Work 2001')
-        expect(last.items.every((item) => item.branches.includes('main'))).toBe(true)
+        const native = (...args: string[]) =>
+            execFileSync('git', args, {
+                cwd: directory,
+                windowsHide: true,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    GIT_AUTHOR_NAME: 'Author',
+                    GIT_AUTHOR_EMAIL: 'author@example.invalid',
+                    GIT_COMMITTER_NAME: 'Author',
+                    GIT_COMMITTER_EMAIL: 'author@example.invalid',
+                    GIT_AUTHOR_DATE: '2026-01-02T00:00:00Z',
+                    GIT_COMMITTER_DATE: '2026-10-06T00:00:00Z'
+                }
+            }).trim()
+        const tree = native('rev-parse', 'main^{tree}')
+        const side = native('commit-tree', tree, '-p', 'main~1500', '-m', 'Skewed side')
+        native('update-ref', 'refs/heads/side', side)
+        const merge = native('commit-tree', tree, '-p', 'main', '-p', side, '-m', 'Merge')
+        native('update-ref', 'refs/heads/main', merge)
+        const expected = native('rev-list', '--all').split('\n').sort()
+        const legacy = await indexCommits(repository, { main: merge, side }, '2026-01-01', 2000)
+        expect(legacy.history).toHaveLength(2000)
+        expect(legacy.nextOffset).toBe(2000)
+        let page = await indexCommits(repository, {}, '2026-01-01')
+        expect(page.history).toHaveLength(2000)
+        const snapshot = page.refs
+        const seen = [...page.history!]
+        const memberships = [...(page.memberships ?? [])]
+        const moved = native('commit-tree', tree, '-p', 'main', '-m', 'After snapshot')
+        native('update-ref', 'refs/heads/main', moved)
+        while (page.cursor) {
+            page = await indexCommits(
+                repository,
+                page.refs,
+                '2026-01-01',
+                page.nextOffset,
+                page.excludedTips,
+                'UTC',
+                undefined,
+                page.cursor
+            )
+            seen.push(...(page.history ?? []))
+            memberships.push(...(page.memberships ?? []))
+        }
+        expect(seen.map((item) => item.sha).sort()).toEqual(expected)
+        expect(new Set(seen.map((item) => item.sha)).size).toBe(expected.length)
+        for (const [branch, tip] of Object.entries(snapshot)) {
+            const actual = new Set(
+                memberships.filter((group) => group.branches.includes(branch)).flatMap((group) => group.shas)
+            )
+            expect([...actual].sort()).toEqual(native('rev-list', tip).split('\n').sort())
+        }
+        const next = await indexCommits(repository, snapshot, '2026-01-01')
+        expect(next.history?.map((item) => item.sha)).toEqual([moved])
     } finally {
         await rm(directory, { recursive: true, force: true })
     }

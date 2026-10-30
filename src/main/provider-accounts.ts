@@ -359,6 +359,7 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                 return yield* http
                     .request<A>(url, access, { ...init, redirect: 'error' }, format, {
                         background,
+                        accountId: id,
                         maxBytes: format === 'text' ? 2_000_000 : undefined
                     })
                     .pipe(
@@ -375,6 +376,7 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                                       return yield* http
                                           .request<A>(url, renewed, { ...init, redirect: 'error' }, format, {
                                               background,
+                                              accountId: id,
                                               maxBytes: format === 'text' ? 2_000_000 : undefined
                                           })
                                           .pipe(
@@ -570,7 +572,7 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                     )
                 })
             )
-        const resolve = (repositoryId: string, choice?: string) =>
+        const resolve = (repositoryId: string, choice?: string, background = false) =>
             Effect.gen(function* () {
                 const journal = store.generation
                 const automatic = choice === 'automatic'
@@ -603,7 +605,7 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                         id?: number
                         owner?: { login: string; type: string }
                         namespace?: { kind: string; path: string }
-                    }>(account.id, url).pipe(
+                    }>(account.id, url, background).pipe(
                         Effect.map((project) => ({ access: 'allowed' as const, project })),
                         Effect.catchAll((error) =>
                             Effect.succeed({

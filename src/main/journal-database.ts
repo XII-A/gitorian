@@ -55,8 +55,11 @@ export class JournalDatabase {
     activities(repositoryId?: string, kind?: Activity['kind']) {
         return this.request('listActivities', repositoryId, kind)
     }
-    history(repositoryId: string) {
-        return this.request('history', repositoryId)
+    historyProjectionPage(repositoryId: string, after?: string) {
+        return this.request('historyProjectionPage', repositoryId, after)
+    }
+    history(repositoryId: string, includeItems = true) {
+        return this.request('history', repositoryId, includeItems)
     }
     revisions(activityId: string) {
         return this.request('activityRevisions', activityId)
