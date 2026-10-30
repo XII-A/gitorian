@@ -9,8 +9,13 @@ import type { JournalNode } from '../src/shared/model'
 import { toNotion } from '../src/shared/notion-format'
 const reflection: JournalNode = {
     type: 'doc',
+    attrs: { direction: 'rtl' },
     content: [
-        { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'What I learned' }] },
+        {
+            type: 'heading',
+            attrs: { level: 2, direction: 'auto' },
+            content: [{ type: 'text', text: 'What I learned' }]
+        },
         {
             type: 'taskList',
             content: [
@@ -31,6 +36,9 @@ describe('local journal workflow through application commands', () => {
         try {
             await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             const draft = (await journalState(app.store)).drafts[0]
+            await editDraft(app.store, 0, (draft) => {
+                draft.body = reflection
+            })
             app.remote.loseCreateResponse = true
             await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow(
                 'Connection lost'
@@ -52,6 +60,7 @@ describe('local journal workflow through application commands', () => {
             await run(app.service.handle({ type: 'reconcile', saveId: save.id }))
             expect((await app.store.publication(save.id))!.status).toBe('confirmed')
             expect(app.remote.pages).toHaveLength(1)
+            expect((await journalState(app.store)).entries[0].body).toEqual(reflection)
         } finally {
             await app.close()
         }

@@ -784,8 +784,9 @@ function makeAcquisition() {
                                         saves.filter((s) => s.status === 'confirmed').map((s) => s.entryId)
                                     )) {
                                         if (!id || store.generation !== generation || suspensions.size) continue
+                                        const previous = yield* local(() => store.entry(`notion:${id}`))
                                         const entry = yield* notion.refreshEntry(id)
-                                        yield* local(() => store.refreshEntry(entry, generation))
+                                        yield* local(() => store.refreshEntry(entry, generation, previous))
                                     }
                                     for (const save of saves.filter((s) => s.status === 'unknown'))
                                         yield* publishing.reconcile(save.id)

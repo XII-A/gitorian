@@ -207,7 +207,7 @@
 }
 .journal-editor .tiptap[contenteditable='true'] > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
     content: 'Type / for formatting';
-    float: left;
+    float: inline-start;
     height: 0;
     color: var(--text-secondary);
     pointer-events: none;
@@ -348,7 +348,7 @@
     --ordered-marker: var(--nested-ordered-marker, decimal);
     --ordered-marker-next: var(--nested-ordered-marker-next, lower-alpha);
     --ordered-marker-last: var(--nested-ordered-marker-last, lower-roman);
-    padding-left: var(--space-6);
+    padding-inline-start: var(--space-6);
 }
 .journal-editor .tiptap :is(ul, ol):not([data-type='taskList']) > li {
     --nested-bullet-marker: var(--bullet-marker-next);
@@ -365,13 +365,13 @@
     list-style-type: var(--ordered-marker);
 }
 .journal-editor .tiptap blockquote {
-    border-left: 2px solid var(--border-strong);
-    padding-left: var(--space-4);
+    border-inline-start: 2px solid var(--border-strong);
+    padding-inline-start: var(--space-4);
     color: var(--text-secondary);
 }
 .journal-editor .tiptap [data-type='taskList'] {
     list-style: none;
-    padding-left: 0;
+    padding-inline-start: 0;
 }
 .journal-editor .tiptap [data-type='taskItem'] {
     display: flex;
@@ -383,13 +383,13 @@
 }
 .journal-editor [data-type='toggle'] {
     position: relative;
-    padding-left: calc(1lh + var(--space-1));
+    padding-inline-start: calc(1lh + var(--space-1));
     margin-block: var(--space-2);
 }
 .journal-editor [data-type='toggle'] > button {
     position: absolute;
     top: 0;
-    left: 0;
+    inset-inline-start: 0;
     width: 1lh;
     height: 1lh;
     display: grid;
@@ -402,11 +402,14 @@
     cursor: pointer;
     font: inherit;
 }
+.journal-editor [data-type='toggle'][data-has-content='true'] > button {
+    color: var(--foreground);
+}
 .journal-editor [data-type='toggle'] > button > svg {
     display: block;
     transform: rotate(0deg);
     transform-origin: center;
-    transition: transform var(--duration-fast) var(--ease-standard);
+    transition: transform var(--toggle-duration) var(--toggle-ease);
 }
 .journal-editor [data-type='toggle'][data-open='true'] > button > svg {
     transform: rotate(90deg);
@@ -422,7 +425,7 @@
 }
 @media (pointer: coarse) {
     .journal-editor [data-type='toggle'] {
-        padding-left: var(--space-12);
+        padding-inline-start: var(--space-12);
     }
     .journal-editor [data-type='toggle'] > button {
         width: 44px;
@@ -521,4 +524,39 @@
     flex: none;
     background-image: url('./assets/emoji-atlas.webp');
     background-repeat: no-repeat;
+}
+
+.journal-editor .tiptap {
+    text-align: start;
+}
+.journal-editor .tiptap :is(ul, ol):not([data-type='taskList']) {
+    padding-inline: var(--space-6);
+}
+.journal-editor .tiptap li:has(> p:first-child:dir(rtl)),
+.journal-editor .tiptap [data-type='taskItem']:has(> div > p:first-child:dir(rtl)),
+.journal-editor .tiptap [data-type='toggle']:has(> div > [data-type='toggleSummary']:dir(rtl)) {
+    direction: rtl;
+}
+.journal-editor .tiptap li:has(> p:first-child:dir(ltr)),
+.journal-editor .tiptap [data-type='taskItem']:has(> div > p:first-child:dir(ltr)),
+.journal-editor .tiptap [data-type='toggle']:has(> div > [data-type='toggleSummary']:dir(ltr)) {
+    direction: ltr;
+}
+.journal-editor .tiptap .journal-image-caption[dir='auto'] {
+    unicode-bidi: plaintext;
+}
+.journal-image-tools,
+.journal-code-tools {
+    direction: ltr;
+}
+
+.journal-editor
+    .tiptap
+    [data-type='toggle'][data-open='false']:has(> div > [data-type='toggleSummary']:dir(rtl))
+    > button
+    > svg {
+    transform: rotate(180deg);
+}
+.journal-editor .tiptap [data-type='toggle'][data-open='true'] > button > svg {
+    transform: rotate(90deg);
 }

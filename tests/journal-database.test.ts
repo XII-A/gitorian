@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { JournalDatabase } from '../src/main/journal-database'
 import { emptyDocument, initialState } from '../src/shared/model'
+import { fromNotion, toNotion } from '../src/shared/notion-format'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -14,6 +15,41 @@ async function open() {
     roots.push(root)
     return { root, database: await JournalDatabase.open(join(root, 'journal.sqlite')) }
 }
+
+it('retains local writing policy on unchanged refresh, accepts remote edits, and rejects stale refresh', async () => {
+    const { database } = await open()
+    const body = {
+        type: 'doc',
+        attrs: { direction: 'rtl' },
+        content: [
+            { type: 'paragraph', attrs: { direction: 'ltr' }, content: [{ type: 'text', text: 'Türkçe والعربية' }] }
+        ]
+    }
+    const entry = {
+        id: 'direction-entry',
+        title: 'كتابة',
+        body,
+        date: '2026-10-26',
+        url: 'https://notion.so/test',
+        refreshedAt: '2026-10-26T00:00:00Z'
+    }
+    try {
+        await database.refreshEntry(entry)
+        const remote = fromNotion(toNotion(body))
+        await database.refreshEntry({ ...entry, body: remote }, database.generation, entry)
+        expect((await database.entry('notion:direction-entry'))?.body).toEqual(body)
+        const changed = {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Remote edit' }] }]
+        }
+        await database.refreshEntry({ ...entry, body: changed }, database.generation, entry)
+        expect((await database.entry('notion:direction-entry'))?.body).toEqual(changed)
+        await expect(database.refreshEntry(entry, database.generation, entry)).rejects.toThrow(/changed/i)
+        expect((await database.entry('notion:direction-entry'))?.body).toEqual(changed)
+    } finally {
+        await database.close()
+    }
+})
 
 it('commits a draft, rejects a stale window, and reopens the acknowledged version', async () => {
     const { database, root } = await open()
@@ -32,6 +68,30 @@ it('commits a draft, rejects a stale window, and reopens the acknowledged versio
         expect((await reopened.draftForWeek('2026-10-26'))?.title).toBe('Durable writing')
     } finally {
         await reopened.close()
+    }
+})
+
+it('clones template direction and restores draft and template policies from a backup', async () => {
+    const { database } = await open()
+    try {
+        const template = {
+            type: 'doc',
+            attrs: { direction: 'rtl' },
+            content: [
+                { type: 'paragraph', attrs: { direction: 'auto' }, content: [{ type: 'text', text: 'Template' }] }
+            ]
+        }
+        await database.saveSettings({ ...initialState().settings, template })
+        const draft = await database.createDraft('2026-10-26')
+        expect(draft.body).toEqual(template)
+        const body = { ...draft.body, content: [{ ...draft.body.content![0], attrs: { direction: 'ltr' } }] }
+        await database.saveDraft({ ...draft, body }, draft.version)
+        const backup = await database.export()
+        await database.restore(backup)
+        expect((await database.draftForWeek(draft.week))?.body).toEqual(body)
+        expect((await database.createDraft('2026-10-19')).body).toEqual(template)
+    } finally {
+        await database.close()
     }
 })
 

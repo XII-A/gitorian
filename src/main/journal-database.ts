@@ -195,8 +195,8 @@ export class JournalDatabase {
     repositoryUnavailable(id: string, configuration: string, generation = this.generation) {
         return this.request('repositoryUnavailable', id, configuration, generation)
     }
-    refreshEntry(entry: Entry, generation = this.generation) {
-        return this.request('refreshEntry', entry, generation)
+    refreshEntry(entry: Entry, generation = this.generation, expected?: Pick<Entry, 'body' | 'title'>) {
+        return this.request('refreshEntry', entry, generation, expected)
     }
     image(id: string) {
         return imageIdPattern.test(id) ? this.request('image', id) : Promise.resolve(undefined)

@@ -194,7 +194,7 @@ export function EntryHistory({
                                                                     })}
                                                                 </span>
                                                                 <span className="history-row-title">
-                                                                    {entry.title || 'Untitled entry'}
+                                                                    <bdi>{entry.title || 'Untitled entry'}</bdi>
                                                                 </span>
                                                                 <span className="history-excerpt">
                                                                     {entry.excerpt || 'An entry without body text.'}
@@ -337,7 +337,7 @@ export function EntryHistory({
                                 {detailError && <p role="alert">{detailError}</p>}
                                 {!detailLoading && !detailError && selected && (
                                     <article className="history-article">
-                                        <h2>{selected.title || 'Untitled entry'}</h2>
+                                        <h2 dir="auto">{selected.title || 'Untitled entry'}</h2>
                                         <Editor value={selected.body} readOnly />
                                     </article>
                                 )}

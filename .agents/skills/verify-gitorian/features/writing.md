@@ -96,3 +96,28 @@ Flags are not offered: the catalog excludes the Flags category before building s
 ## Local history and optional publishing
 
 `pnpm test:e2e entry-history` owns mixed local/remote cursor pagination, gated search waiting feedback, body search, reader close clearing selection while returning keyboard focus, compact Arc header action keyboard navigation, standalone local-only Edit navigation, gated entry-body skeletons, shared warm reads without workspace payloads, generation-fenced document reads, retained remote reading, exact stored-week editing after calendar preference changes, autosave/reload, disconnected publishing absence, and independent SQLite persistence. Local writing replaces linked Notion snapshots in history; image-only and title-only documents count, while empty generated date placeholders do not. Database tests own linked-empty deduplication, locale search, mixed pagination and image history references. Notion remains optional in Settings. Connected profiles missing a destination get an actionable setup control; uncertain publication verification remains in its existing recovery toast after disconnect. Integration transport scenarios remain simulations, never live publishing.
+
+
+## Multilingual direction
+
+Build the final source, run `pnpm verify doctor`, then run `pnpm test:e2e writing-direction workspace-clipboard image-direction` sequentially through the runner. Use the existing disposable journal-only profiles; simulated native picker responses do not authorize live publishing.
+
+- `writing-direction.spec.ts` owns native Arabic/Turkish entry, independent automatic paragraphs, absence of document/block direction buttons, checklist marker geometry and full process restart. Require the restarted UI and independent SQLite body policy to agree. Retain mixed-writing and restart screenshots plus persisted-writing.json.
+- `workspace-clipboard.spec.ts` owns complete-block inherited policy transfer and destination policy for inline paste, alongside the existing native rich clipboard/context-menu scenario. Require source Automatic to stay a policy rather than a frozen inferred direction. The same journey covers partial rich-paste edges, multiline plain/Markdown destination overrides, and simulated external plain-text drop with a caret in a differently directed paragraph. The drop must use its insertion context.
+- `image-direction.spec.ts` owns an actual validated image imported through preload with a simulated native picker selection, automatic multiline Unicode captions without direction controls, focus return, read-only history caption parity and no mutation of the previously selected paragraph.
+- `tests/journal-direction.test.ts` owns the shared command interface: override reset/undo, read-only rejection, untouched-neighbor rendering, split/conversion policy, toggle unwrap and combining-mark-aware word deletion. `tests/formatter-menu.test.ts` owns template insertion without changing the destination document default.
+- `tests/journal-database.test.ts` owns unchanged remote projection preserving exact local policy, genuine remote body replacement and stale-refresh rejection. Existing journal publishing scenarios exercise lost-response confirmation and durable local direction. Run `pnpm verify publishing` for simulated HTTP publishing feedback and independent storage evidence.
+
+Manually inspect Arabic shaping, quote/toggle placement, marker sides, long mixed paragraphs, title alignment and captions at narrow widths. Writing is automatic with no document, block or caption direction controls. Imported and saved direction policies must still round-trip. Automatic means first strong character. Notion's interface currently cannot preserve forced direction remotely, so do not claim a remote override round trip. Interface translation, language-specific search and spellcheck are outside this feature.
+
+All claimed journeys must exit zero with run.json.passed and cleanup.removed true. Keep failures and successful artifacts under ignored .ai-docs/verification; screenshots alone do not prove persistence.
+
+Toggle editing is also owned by `writing-direction`: native closed-summary continuation, open-summary body entry, protected body Backspace, Shift+Tab/Tab movement and undo, followed by process restart and SQLite evidence. Toggles start collapsed; content brightness derives from body nodes, including non-text blocks. Inspect LTR and RTL triangle rotation and reduced motion manually.
+
+Within toggle bodies, repeated Enter retains blank paragraphs; Backspace on the final empty direct body block outdents through the same transaction as Shift+Tab. The writing-direction journey owns native input and undo for this behavior.
+
+Backspace on an empty body block with following siblings deletes only the blank block and keeps the later content inside the toggle. The native writing-direction scenario and editor boundary cases cover this distinction.
+
+Deleting internal blank toggle blocks moves the caret backward to the preceding block end. The native journey removes two consecutive blank lines and verifies the following text stays intact.
+
+For a toggle containing only its single empty placeholder, Backspace returns to the summary end without changing the document; a trailing empty block after other content still outdents. Covered with empty/nonempty titles and native RTL editing.

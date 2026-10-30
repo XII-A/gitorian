@@ -146,7 +146,7 @@ export const JournalPublishingLive = Layer.scoped(
                     const actual = yield* convert(body)
                     const expected = yield* convert(save.body)
                     if (JSON.stringify(actual) === JSON.stringify(expected))
-                        return { ...(yield* readEntry(page)), body }
+                        return { ...(yield* readEntry(page)), body: save.body }
                     if (JSON.stringify(actual) !== JSON.stringify(expected.slice(0, actual.length)))
                         return yield* Effect.fail(
                             new NotionFailure(
