@@ -96,5 +96,44 @@ it('does not repeat source warnings on polling or count user-paused sources', as
     await render()
     await render()
     expect(notifications.toast).toHaveBeenCalledTimes(1)
-    expect(notifications.toast.mock.calls[0]?.[0]).toMatchObject({ title: '1 source failed to refresh' })
+    expect(notifications.toast.mock.calls[0]?.[0]).toMatchObject({ title: '1 source needs attention' })
+})
+
+it('keeps queue and allowance waits quiet and remembers an unresolved error across retries', async () => {
+    const state = sampleState('2026-10-05')
+    const repo = state.repositories[0]
+    const key = `remote:${repo.id}`
+    const render = async () => {
+        await act(async () => {
+            await Promise.resolve()
+            root.render(
+                createElement(BackgroundNotifications, {
+                    state: structuredClone(state),
+                    settingsOpen: false,
+                    run: vi.fn(),
+                    onSources: vi.fn()
+                })
+            )
+        })
+    }
+    for (const error of [
+        'Waiting for pending contribution pages on this account to finish.',
+        'Background acquisition yielded its wire request allowance.'
+    ]) {
+        state.acquisition = { [key]: { status: 'paused', retryAt: '2026-10-30T15:36:23.108Z', error } }
+        await render()
+    }
+    expect(notifications.toast).not.toHaveBeenCalled()
+    state.acquisition = { [key]: { status: 'error', error: 'HTTP 401' } }
+    await render()
+    state.acquisition[key] = { status: 'running' }
+    await render()
+    state.acquisition[key] = { status: 'error', error: 'HTTP 401' }
+    await render()
+    expect(notifications.toast).toHaveBeenCalledTimes(1)
+    state.acquisition[key] = { status: 'idle', lastSuccess: '2026-10-30T15:40:00Z' }
+    await render()
+    state.acquisition[key] = { status: 'error', error: 'HTTP 401' }
+    await render()
+    expect(notifications.toast).toHaveBeenCalledTimes(2)
 })

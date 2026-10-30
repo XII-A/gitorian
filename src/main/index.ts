@@ -1,3 +1,4 @@
+import { nextAcquisition } from '../shared/acquisition'
 import { NotionDiscoveryCache } from './notion-discovery-cache'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, protocol } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
@@ -851,18 +852,7 @@ void app.whenReady().then(async () => {
         const minutes = store.config.settings.refreshMinutes
         const elapsed =
             Date.now() - new Date(store.config.lastRefreshAttempt ?? store.config.lastRefreshed ?? 0).getTime()
-        const pending = Object.entries(store.config.acquisition ?? {}).find(
-            ([key, status]) =>
-                store.config.repositories.some(
-                    (repository) => key.endsWith(`:${repository.id}`) && !repository.removed
-                ) &&
-                (!key.startsWith('remote:') ||
-                    store.config.repositories.some((r) => key === `remote:${r.id}` && !!r.accountId)) &&
-                (key.startsWith('remote:') || key.startsWith('git:')) &&
-                status.windowEnd &&
-                (status.status === 'idle' ||
-                    (status.status === 'paused' && !!status.retryAt && Date.parse(status.retryAt) <= Date.now()))
-        )
+        const pending = nextAcquisition(store.config, Date.now())
         if (pending) {
             const [source, repositoryId] = pending[0].split(':')
             yield* service.startRefresh({ repositoryId, source: source === 'git' ? 'git' : 'remote' })

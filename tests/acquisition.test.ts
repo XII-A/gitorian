@@ -633,7 +633,10 @@ it.each(['stop', 'remove'] as const)('reclaims staged contribution slots after %
         }
         await run(app.service.refresh({ source: 'remote', repositoryId: app.repository.id }))
         expect(reader).not.toHaveBeenCalled()
-        expect((await app.store.acquisitionCheckpoint(`remote:${app.repository.id}`))?.status).toBe('paused')
+        expect(await app.store.acquisitionCheckpoint(`remote:${app.repository.id}`)).toMatchObject({
+            status: 'paused',
+            pauseReason: 'queue'
+        })
         if (change === 'stop') {
             await run(app.service.stopWork('remote', 'pending-a'))
             expect((await app.store.acquisitionCheckpoint('remote:pending-a'))?.pending).toBeUndefined()
@@ -834,6 +837,42 @@ it.each([
     } finally {
         save.mockRestore()
         index.mockRestore()
+        await app.close()
+    }
+})
+
+it('retains account access-check cooldowns instead of requesting reconnection and retries assignment', async () => {
+    const app = await journal()
+    app.remote.github = true
+    await app.store.saveRepository(repository)
+    const original = app.remote.fetch
+    let limited = true
+    const fetch = vi.spyOn(app.remote, 'fetch').mockImplementation((url, init) => {
+        if ((url instanceof Request ? url.url : url.toString()) === 'https://api.github.com/repos/example/project')
+            return Promise.resolve(
+                limited
+                    ? new Response('{}', { status: 429, headers: { 'Retry-After': '1' } })
+                    : new Response(JSON.stringify({ id: 42, owner: { login: 'me', type: 'User' } }))
+            )
+        return original(url, init)
+    })
+    try {
+        await run(app.service.refresh({ source: 'remote', repositoryId: repository.id }))
+        const paused = await app.store.acquisitionCheckpoint('remote:repo')
+        expect(paused).toMatchObject({ status: 'paused', pauseReason: 'provider' })
+        expect(paused?.error).toContain('rate limit')
+        expect(app.store.config.repositories[0].accountId).toBeUndefined()
+        limited = false
+        const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse(paused!.retryAt!) + 2000)
+        try {
+            await run(app.service.refresh({ source: 'remote', repositoryId: repository.id }))
+            expect(app.store.config.repositories[0].accountId).toBeDefined()
+            expect((await app.store.acquisitionCheckpoint('remote:repo'))?.status).toBe('idle')
+        } finally {
+            clock.mockRestore()
+        }
+    } finally {
+        fetch.mockRestore()
         await app.close()
     }
 })

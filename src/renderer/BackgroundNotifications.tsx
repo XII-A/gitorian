@@ -1,7 +1,7 @@
 import { ImportResults } from './ImportResults'
 import { useEffect, useRef, useState } from 'react'
 import type { Command, Reply, State } from '../shared/model'
-import { sourceProblems } from './background-work'
+import { activitySources, sourceProblems } from './background-work'
 import { useToastStack } from './components/arc/toast-stack/toast-stack'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -20,31 +20,46 @@ export function BackgroundNotifications({
     const { toast, update, dismiss } = useToastStack()
     const callbacks = useRef({ run, onSources })
     callbacks.current = { run, onSources }
-    const problemKey = useRef('')
+    const seenProblems = useRef(new Map<string, string>())
+    const problemProfile = useRef(state.restoreId)
     const importToast = useRef('')
     const lastImport = useRef('')
     const importInSettings = useRef('')
     const [resultsOpen, setResultsOpen] = useState(false)
-    const problems = sourceProblems(state)
-    const signature = problems
-        .map(([key, status]) => `${key}:${status.error}`)
-        .sort()
-        .join('|')
-    const count = problems.length
     useEffect(() => {
-        if (signature === problemKey.current) return
-        problemKey.current = signature
-        if (!count) {
+        const problems = sourceProblems(state)
+        if (problemProfile.current !== state.restoreId) {
+            seenProblems.current.clear()
+            problemProfile.current = state.restoreId
+        }
+        const sources = activitySources(state)
+        for (const key of seenProblems.current.keys()) {
+            const status = sources.find(([source]) => source === key)?.[1]
+            if (
+                !status ||
+                status.status === 'cancelled' ||
+                (status.status === 'idle' && !status.windowEnd && !status.error)
+            )
+                seenProblems.current.delete(key)
+        }
+        let fresh = false
+        for (const [key, status] of problems) {
+            if (!seenProblems.current.has(key) || seenProblems.current.get(key) !== (status.error ?? '')) fresh = true
+            seenProblems.current.set(key, status.error ?? '')
+        }
+        if (!problems.length) {
             dismiss('activity-problems')
             return
         }
-        toast({
-            id: 'activity-problems',
-            type: 'warning',
-            title: `${count} ${count === 1 ? 'source' : 'sources'} failed to refresh`,
+        const options = {
+            type: 'warning' as const,
+            title: `${problems.length} ${problems.length === 1 ? 'source needs' : 'sources need'} attention`,
+            duration: Infinity,
             action: { label: 'Review', onClick: () => callbacks.current.onSources() }
-        })
-    }, [signature, count, toast, dismiss])
+        }
+        if (fresh) toast({ id: 'activity-problems', ...options })
+        else update('activity-problems', options)
+    }, [state, toast, update, dismiss])
     const job = state.repositoryImport
     useEffect(() => {
         if (!job) return
