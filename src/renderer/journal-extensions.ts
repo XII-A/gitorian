@@ -1,3 +1,4 @@
+import { motionTokens } from './components/arc/motion-tokens'
 import { JournalDirection, JournalBlockquote } from './journal-direction'
 import { Extension, InputRule, Node, textInputRule, mergeAttributes } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
@@ -35,11 +36,8 @@ function deleteToggleWordBackward(editor: Editor): boolean {
 
 function backspaceFromToggleBody(editor: Editor, depth: number): boolean {
     const { $from } = editor.state.selection
-    if (!$from.parent.content.size) {
-        const summary = $from.node(depth).firstChild!
-        return editor.commands.setTextSelection($from.before(depth) + 2 + summary.content.size)
-    }
-    return unwrapToggle(editor, depth)
+    const summary = $from.node(depth).firstChild!
+    return editor.commands.setTextSelection($from.before(depth) + 2 + summary.content.size)
 }
 
 function unwrapToggle(editor: Editor, depth: number) {
@@ -94,27 +92,23 @@ const Toggle = Node.create({
         ]
     },
     addNodeView() {
-        return ({ editor, getPos }) => {
+        return ({ editor, getPos, node }) => {
             const dom = document.createElement('div')
             dom.dataset.type = 'toggle'
-            dom.dataset.open = 'true'
+            dom.dataset.open = 'false'
             const button = document.createElement('button')
             button.type = 'button'
             button.contentEditable = 'false'
             button.setAttribute('aria-label', 'Toggle content')
-            button.setAttribute('aria-expanded', 'true')
+            button.setAttribute('aria-expanded', 'false')
             const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
             icon.setAttribute('viewBox', '0 0 16 16')
             icon.setAttribute('width', '16')
             icon.setAttribute('height', '16')
             icon.setAttribute('aria-hidden', 'true')
             const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-            path.setAttribute('d', 'm6 4 4 4-4 4')
-            path.setAttribute('fill', 'none')
-            path.setAttribute('stroke', 'currentColor')
-            path.setAttribute('stroke-width', '1.5')
-            path.setAttribute('stroke-linecap', 'round')
-            path.setAttribute('stroke-linejoin', 'round')
+            path.setAttribute('d', 'M5 3 12 8 5 13Z')
+            path.setAttribute('fill', 'currentColor')
             icon.append(path)
             button.append(icon)
             const contentDOM = document.createElement('div')
@@ -131,10 +125,24 @@ const Toggle = Node.create({
                         editor.commands.setTextSelection(position + 2)
                 }
             })
+            const updateContent = (current: typeof node) => {
+                const body = current.lastChild!
+                const empty =
+                    body.childCount === 1 && body.firstChild?.type.name === 'paragraph' && !body.firstChild.content.size
+                dom.dataset.hasContent = String(!empty)
+            }
+            updateContent(node)
+            dom.style.setProperty('--toggle-duration', `${motionTokens.duration.fast}s`)
+            dom.style.setProperty('--toggle-ease', `cubic-bezier(${motionTokens.ease.standard.join(',')})`)
             dom.append(button, contentDOM)
             return {
                 dom,
                 contentDOM,
+                update: (current) => {
+                    if (current.type !== node.type) return false
+                    updateContent(current)
+                    return true
+                },
                 stopEvent: (event) => event.target instanceof window.Node && button.contains(event.target),
                 ignoreMutation: (mutation) =>
                     mutation.type === 'attributes' && (mutation.target === dom || mutation.target === button)
@@ -163,12 +171,33 @@ const ToggleSummary = Node.create({
                 return unwrapToggle(this.editor, $from.depth - 1)
             },
             Enter: () => {
-                const { $from } = this.editor.state.selection
-                if ($from.parent.type.name !== 'toggleSummary') return false
-                const dom = this.editor.view.nodeDOM($from.before($from.depth - 1))
-                if (dom instanceof HTMLElement && dom.dataset.open === 'false')
-                    dom.querySelector<HTMLButtonElement>(':scope > button')?.click()
-                return this.editor.commands.setTextSelection($from.after() + 2)
+                const { $from, $to } = this.editor.state.selection
+                if (!this.editor.isEditable || $from.parent.type.name !== 'toggleSummary' || !$from.sameParent($to))
+                    return false
+                const depth = $from.depth - 1
+                const position = $from.before(depth)
+                const dom = this.editor.view.nodeDOM(position)
+                if (dom instanceof HTMLElement && dom.dataset.open === 'false') {
+                    const toggle = $from.node(depth)
+                    const summary = $from.parent
+                    const next = toggle.type.create(null, [
+                        summary.type.create(summary.attrs, summary.content.cut($to.parentOffset)),
+                        this.editor.schema.nodes.toggleContent.create(null, this.editor.schema.nodes.paragraph.create())
+                    ])
+                    const tr = this.editor.state.tr.delete($from.pos, $from.end())
+                    const after = tr.mapping.map($from.after(depth))
+                    tr.insert(after, next)
+                    tr.setSelection(TextSelection.create(tr.doc, after + 2))
+                    this.editor.view.dispatch(tr.scrollIntoView())
+                    return true
+                }
+                const bodyStart = $from.after() + 1
+                const tr = this.editor.state.tr
+                if (!$from.node(depth).lastChild!.firstChild!.isTextblock)
+                    tr.insert(bodyStart, this.editor.schema.nodes.paragraph.create())
+                tr.setSelection(TextSelection.create(tr.doc, bodyStart + 1))
+                this.editor.view.dispatch(tr.scrollIntoView())
+                return true
             }
         }
     }
@@ -186,7 +215,7 @@ const ToggleContent = Node.create({
                 if (
                     !this.editor.isEditable ||
                     !empty ||
-                    $from.parent.type.name !== 'paragraph' ||
+                    !$from.parent.isTextblock ||
                     $from.parentOffset ||
                     $from.depth < 3 ||
                     $from.node($from.depth - 1).type.name !== 'toggleContent' ||

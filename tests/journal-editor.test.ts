@@ -4,6 +4,7 @@ import { Editor, EditorContent, generateJSON } from '@tiptap/react'
 import { render, cleanup } from '@testing-library/react'
 import { createElement } from 'react'
 import { journalExtensions } from '../src/renderer/journal-extensions'
+import type { JournalNode } from '../src/shared/model'
 import { plainText } from '../src/shared/notion-format'
 import { markdownToHtml } from '../src/renderer/components/arc/rich-text-editor/rich-text-editor'
 
@@ -112,7 +113,7 @@ it('leaves pasted and loaded double hyphens literal', () => {
 it('keeps Enter as a separate paragraph and Shift+Enter as a hard break after reload', () => {
     const writing = open()
     writing.commands.setTextSelection(14)
-    writing.commands.keyboardShortcut('Enter')
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     writing.commands.insertContent('Second thought')
     writing.commands.keyboardShortcut('Shift-Enter')
     writing.commands.insertContent('Next line')
@@ -143,10 +144,10 @@ it('supports heading four, toggles, nested content, and inline code across seria
     expect(generateJSON(writing.getHTML(), journalExtensions())).toEqual(saved)
     const toggle = writing.view.dom.querySelector('[data-type="toggle"]')!
     const button = toggle.querySelector('button')!
-    button.click()
     expect(button.getAttribute('aria-expanded')).toBe('false')
     expect(writing.getJSON()).toEqual(saved)
-    // Entering a collapsed summary opens its body before moving the caret.
+    // Entering an expanded summary moves into the body.
+    button.click()
     writing.state.doc.descendants((node, position) => {
         if (node.type.name === 'toggleSummary') writing.commands.setTextSelection(position + 1)
     })
@@ -193,7 +194,7 @@ it.each(['Backspace', 'Delete'])('removes a newly inserted empty toggle with %s 
     expect(writing.getJSON().content?.[0].type).toBe('toggle')
 })
 
-it('unwraps from the first body paragraph while preserving the summary and body', () => {
+it('preserves the toggle from the first body paragraph', () => {
     const writing = open(
         '<div data-type="toggle"><div data-type="toggleSummary">Notes</div><div data-type="toggleContent"><p>Keep this text</p></div></div>'
     )
@@ -203,7 +204,7 @@ it('unwraps from the first body paragraph while preserving the summary and body'
     })
     writing.commands.setTextSelection(position)
     writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }))
-    expect(writing.getJSON().content?.some((node) => node.type === 'toggle')).toBe(false)
+    expect(writing.getJSON().content?.some((node) => node.type === 'toggle')).toBe(true)
     expect(writing.getText()).toContain('Notes')
     expect(writing.getText()).toContain('Keep this text')
 })
@@ -224,6 +225,7 @@ it.each([
     writing.state.doc.descendants((node, offset) => {
         if (node.type.name === 'toggleSummary') titleEnd = offset + 1 + node.content.size
     })
+    writing.view.dom.querySelector<HTMLButtonElement>('[data-type=toggle] > button')!.click()
     writing.commands.setTextSelection(titleEnd)
     writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     expect(writing.state.selection.$from.parent.type.name).toBe('paragraph')
@@ -292,4 +294,86 @@ it.each(['beforeinput', 'ctrl'])('deletes words inside the toggle before safely 
     expect(writing.getText()).toContain('Keep the body')
     writing.commands.undo()
     expect(writing.state.doc.firstChild?.textContent).toBe('Keep the previous line')
+})
+
+it.each([0, 2, 4])('continues a closed marked summary at offset %s without moving its body', (offset) => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary"><strong>ABCD</strong></div><div data-type="toggleContent"><p>Keep child</p></div></div>'
+    )
+    writing.commands.setTextSelection(2 + offset)
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    const blocks = (writing.getJSON() as JournalNode).content!
+    expect(blocks.slice(0, 2).map((node) => node.type)).toEqual(['toggle', 'toggle'])
+    expect(blocks[0].content?.[0].content?.[0]?.text ?? '').toBe('ABCD'.slice(0, offset))
+    expect(blocks[1].content?.[0].content?.[0]?.text ?? '').toBe('ABCD'.slice(offset))
+    if (offset < 4) expect(blocks[1].content?.[0].content?.[0]?.marks).toEqual([{ type: 'bold' }])
+    expect(plainText(blocks[0])).toContain('Keep child')
+    expect(writing.state.selection.$from.parent.type.name).toBe('toggleSummary')
+    expect(writing.state.selection.$from.parentOffset).toBe(0)
+})
+
+it('moves a following paragraph into a closed toggle with Tab and restores it with undo', () => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary">Title</div><div data-type="toggleContent"><p></p></div></div><p><strong>Move me</strong></p>'
+    )
+    const before = writing.getJSON()
+    let position = 0
+    writing.state.doc.descendants((node, pos) => {
+        if (node.textContent === 'Move me' && node.type.name === 'paragraph') position = pos + 3
+    })
+    writing.commands.setTextSelection(position)
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(writing.state.selection.$from.parent.textContent).toBe('Move me')
+    expect(writing.state.selection.$from.parentOffset).toBe(2)
+    expect(writing.state.selection.$from.node(-1).type.name).toBe('toggleContent')
+    expect(writing.view.dom.querySelector('button')?.getAttribute('aria-expanded')).toBe('true')
+    writing.commands.undo()
+    expect(writing.getJSON()).toEqual(before)
+})
+
+it('continues an empty closed toggle and derives content state after editing', () => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary"></div><div data-type="toggleContent"><p></p></div></div>'
+    )
+    writing.commands.setTextSelection(2)
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(writing.state.doc.child(1).type.name).toBe('toggle')
+    expect(writing.state.selection.$from.parentOffset).toBe(0)
+    const toggles = writing.view.dom.querySelectorAll<HTMLElement>('[data-type=toggle]')
+    expect(toggles[1].dataset.hasContent).toBe('false')
+    toggles[1].querySelector('button')!.click()
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    writing.commands.insertContent('Body')
+    expect(toggles[1].dataset.hasContent).toBe('true')
+})
+
+it.each([0, 2, 4])('enters an open summary body at offset %s without losing marked text', (offset) => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary"><strong>ABCD</strong></div><div data-type="toggleContent"><p>Child</p></div></div>'
+    )
+    const before = writing.getJSON()
+    writing.view.dom.querySelector<HTMLButtonElement>('button')!.click()
+    writing.commands.setTextSelection(2 + offset)
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(writing.getJSON().content?.[0]).toEqual(before.content?.[0])
+    expect(writing.state.selection.$from.parent.textContent).toBe('Child')
+    expect(writing.state.selection.$from.parentOffset).toBe(0)
+})
+
+it('creates a writable paragraph before an image-only toggle body', () => {
+    const writing = open(
+        '<div data-type="toggle"><div data-type="toggleSummary">Image</div><div data-type="toggleContent"><p></p></div></div>'
+    )
+    const image = writing.schema.nodes.journalImage ?? writing.schema.nodes.image
+    let bodyStart = 0
+    writing.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'toggleContent') bodyStart = pos + 1
+    })
+    writing.view.dispatch(writing.state.tr.replaceWith(bodyStart, bodyStart + 2, image.create({ src: 'test.png' })))
+    writing.view.dom.querySelector<HTMLButtonElement>('button')!.click()
+    writing.commands.setTextSelection(2)
+    writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(writing.state.selection.$from.parent.type.name).toBe('paragraph')
+    writing.commands.insertContent('Caption context')
+    expect(writing.state.doc.firstChild!.lastChild!.childCount).toBe(2)
 })
