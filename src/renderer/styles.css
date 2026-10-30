@@ -460,32 +460,6 @@ legend {
         scroll-behavior: auto !important;
     }
 }
-/* Source recovery stays in its dialog. */
-.acquisition-sources {
-    display: grid;
-    gap: 16px;
-    font-size: var(--text-sm);
-}
-.acquisition-sources > div {
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border);
-    overflow-wrap: anywhere;
-    font-variant-numeric: tabular-nums;
-}
-.acquisition-sources > div:last-child {
-    border-bottom: 0;
-}
-.acquisition-sources p {
-    margin: 8px 0;
-    color: var(--text-secondary);
-}
-.acquisition-sources strong {
-    font-weight: 500;
-}
-.source-actions {
-    display: flex;
-    gap: 8px;
-}
 #root:has(> .writing-workspace) {
     display: flex;
     flex-direction: column;

@@ -1,6 +1,18 @@
 import { providerRemote } from './provider-accounts'
 import type { State } from './model'
 
+export type SourceStatus = NonNullable<State['acquisition']>[string]
+
+// Older checkpoints stored scheduling explanations in error. Keep restored profiles readable.
+export function pauseReason(status: SourceStatus) {
+    if (status.status !== 'paused') return undefined
+    if (status.pauseReason) return status.pauseReason
+    if (/pending contribution pages/i.test(status.error ?? '')) return 'queue'
+    if (/wire request allowance|sustained request allowance|preserve quota/i.test(status.error ?? ''))
+        return 'allowance'
+    return 'provider'
+}
+
 export function nextAcquisition(state: Pick<State, 'repositories' | 'acquisition' | 'accounts'>, now: number) {
     return (
         Object.entries(state.acquisition ?? {})

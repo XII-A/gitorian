@@ -5,7 +5,7 @@ import { AppUpdateButton } from './AppUpdates'
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
 import { readableError } from './background-work'
-import { sourceProblems } from './background-work'
+import { actionableSources } from './background-work'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { BookOpen, Check, GitCommitHorizontal, ListChecks, RefreshCw, Settings2 } from 'lucide-react'
@@ -415,7 +415,7 @@ export function WeeklyHub({
                                     <RefreshCw size={16} aria-hidden="true" />
                                 </Button>
                             </Tooltip>
-                            {sourceProblems(state).length > 0 && (
+                            {actionableSources(state).length > 0 && (
                                 <Tooltip content="Activity sources" side="bottom">
                                     <Button
                                         variant="ghost"

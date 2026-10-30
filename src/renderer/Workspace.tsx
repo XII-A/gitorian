@@ -3,7 +3,7 @@ import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
 import { StackIcon } from '@phosphor-icons/react/dist/csr/Stack'
 import { Alert } from './components/arc/alert/alert'
-import { sourceProblems } from './background-work'
+import { actionableSources } from './background-work'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Activity, Command, Reply, State } from '../shared/model'
 import { localDate, shiftWeek, weekOf } from '../shared/model'
@@ -315,7 +315,7 @@ export function Workspace({
                     </div>
                     <div className="ws-utilities">
                         <AppUpdateButton />
-                        {sourceProblems(state).length > 0 && (
+                        {actionableSources(state).length > 0 && (
                             <Button
                                 variant="ghost"
                                 size="sm"

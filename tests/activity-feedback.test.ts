@@ -111,7 +111,7 @@ it('loads missing weeks silently, keeps cached weeks immediate and does not relo
     }
 })
 
-it('shows only source failures and closes the dialog when they clear', async () => {
+it('shows source progress and keeps the queue open after failures clear', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
     const host = document.createElement('div')
     document.body.append(host)
@@ -136,14 +136,13 @@ it('shows only source failures and closes the dialog when they clear', async () 
         await render()
         const dialog = document.querySelector('[role="dialog"]')!
         expect(dialog.textContent).toContain('GitHub')
-        expect(dialog.textContent).not.toContain('Local Git')
-        expect(dialog.textContent).not.toContain('Pause')
-        expect(dialog.textContent).not.toContain('Refreshing')
+        expect(dialog.textContent).toContain('Local Git')
+        expect(dialog.querySelector('[role="img"][aria-label="Collecting activity"]')).not.toBeNull()
+        expect(dialog.textContent).toContain('Resume')
+        expect(dialog.querySelector('[role="progressbar"]')?.getAttribute('aria-valuemax')).toBe('3')
         expect(dialog.textContent).not.toContain('Paused by you')
         expect(dialog.textContent).not.toContain('Removed repository')
-        const settings = [...dialog.querySelectorAll('button')].find(
-            (button) => button.textContent === 'Open settings'
-        )!
+        const settings = [...dialog.querySelectorAll('button')].find((button) => button.textContent === 'Reconnect')!
         await act(async () => {
             await Promise.resolve()
             settings.click()
@@ -151,7 +150,8 @@ it('shows only source failures and closes the dialog when they clear', async () 
         expect(onSettings).toHaveBeenCalledTimes(1)
         state.acquisition[`remote:${repository.id}`] = { status: 'idle' }
         await render()
-        expect(onOpenChange).toHaveBeenCalledWith(false)
+        expect(dialog.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('1')
+        expect(onOpenChange).not.toHaveBeenCalled()
     } finally {
         await act(async () => {
             await Promise.resolve()
