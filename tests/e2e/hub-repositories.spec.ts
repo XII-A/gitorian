@@ -76,3 +76,55 @@ test('hub repositories: bounded summary, linked highlighting and virtual keyboar
         await shot('04-small-filtered-day')
     })
 })
+
+test.describe('workspace aggregate activity', () => {
+    test.use({ desktopEntry: 'tests/e2e/support/workspace-large-list-main.mjs' })
+
+    test('moderate days keep a busy week bounded with keyboard selection and small filters', async ({ desktop }) => {
+        const { page, app, shot } = desktop
+        await page.locator('.hub-activity').first().click()
+        await page.getByRole('button', { name: 'Open in workspace', exact: true }).click()
+        await page.getByRole('button', { name: 'Start this week’s entry', exact: true }).click()
+        await page.getByRole('combobox', { name: 'Activity day', exact: true }).click()
+        await page.getByRole('option', { name: 'All days', exact: true }).click()
+        const groups = page.locator('.ws-day-group')
+        const rows = page.locator('.ws-activity-row')
+        await expect(groups).toHaveCount(4)
+        for (let index = 0; index < 4; index++) {
+            await groups
+                .nth(index)
+                .getByRole('button', { name: /Show 145 more activities/ })
+                .click()
+        }
+        await expect.poll(() => rows.count()).toBeLessThan(100)
+        await groups.first().evaluate((node) => {
+            node.closest<HTMLElement>('[role="region"]')!.scrollTop = 0
+        })
+        await groups.first().locator('[data-index="0"] .ws-activity-row').focus()
+        for (let index = 1; index <= 30; index++) {
+            await page.keyboard.press('Tab')
+            await expect(groups.first().locator(`[data-index="${index}"] .ws-activity-row`)).toBeFocused()
+        }
+        const selected = groups.first().locator('[data-index="30"] .ws-activity-row')
+        const title = await selected.locator('.activity-row-title').textContent()
+        await page.keyboard.press('Enter')
+        await expect(selected).toHaveAttribute('aria-pressed', 'true')
+        await expect(page.locator('.ws-inspector-title')).toHaveText(title!)
+        await expect(selected).toHaveAttribute('draggable', 'true')
+        await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1100, 900))
+        await expect(selected).toBeFocused()
+        await shot('05-workspace-aggregate-selection')
+        await page.getByRole('combobox', { name: 'Projects', exact: true }).click()
+        await page.getByRole('option', { name: 'platform-service-001', exact: true }).click()
+        await expect(rows).toHaveCount(4)
+        await expect(page.getByRole('button', { name: /Show fewer activities|Show \d+ more activities/ })).toHaveCount(
+            0
+        )
+        await rows.first().focus()
+        await page.keyboard.press('Tab')
+        await expect(rows.nth(1)).toBeFocused()
+        await page.keyboard.press('Enter')
+        await expect(rows.nth(1)).toHaveAttribute('aria-pressed', 'true')
+        await shot('06-workspace-small-filter')
+    })
+})
