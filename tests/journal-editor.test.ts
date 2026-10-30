@@ -1,10 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it } from 'vitest'
-import { Editor, EditorContent } from '@tiptap/react'
+import { Editor, EditorContent, generateJSON } from '@tiptap/react'
 import { render, cleanup } from '@testing-library/react'
 import { createElement } from 'react'
 import { journalExtensions } from '../src/renderer/journal-extensions'
-import { journalFromHTML, journalHTML } from '../src/renderer/workspace-model'
 import { plainText } from '../src/shared/notion-format'
 import { markdownToHtml } from '../src/renderer/components/arc/rich-text-editor/rich-text-editor'
 
@@ -13,7 +12,7 @@ it('retains fenced language and raw whitespace through HTML and editor serializa
     const saved = writing.getJSON()
     expect(saved.content?.[0].attrs?.language).toBe('custom-language')
     expect(plainText(saved)).toBe('  <raw>\n\tend')
-    expect(journalFromHTML(journalHTML(saved))).toEqual(saved)
+    expect(generateJSON(writing.getHTML(), journalExtensions())).toEqual(saved)
     expect(writing.getHTML()).not.toContain('Copy code')
 })
 
@@ -130,7 +129,7 @@ it('retains blank blocks and hard breaks without cleaning them out of saved writ
     writing.commands.setContent(saved)
     expect(writing.getJSON()).toEqual(saved)
     expect(saved.content).toHaveLength(3)
-    expect(journalFromHTML(journalHTML(saved)).content).toHaveLength(3)
+    expect(generateJSON(writing.getHTML(), journalExtensions()).content).toHaveLength(3)
 })
 
 it('supports heading four, toggles, nested content, and inline code across serialization', () => {
@@ -141,7 +140,7 @@ it('supports heading four, toggles, nested content, and inline code across seria
     expect(saved.content?.[0].attrs?.level).toBe(4)
     expect(saved.content?.[1].type).toBe('toggle')
     expect(plainText(saved)).toContain('run()')
-    expect(journalFromHTML(journalHTML(saved))).toEqual(saved)
+    expect(generateJSON(writing.getHTML(), journalExtensions())).toEqual(saved)
     const toggle = writing.view.dom.querySelector('[data-type="toggle"]')!
     const button = toggle.querySelector('button')!
     button.click()

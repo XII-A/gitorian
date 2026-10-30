@@ -25,7 +25,7 @@ import type {
     State
 } from '../../shared/model'
 import { localDate } from '../../shared/model'
-import { plainText } from '../../shared/notion-format'
+import { plainText, toNotion } from '../../shared/notion-format'
 import { gitConfiguration, contributionConfiguration } from '../../shared/activity-history'
 import { imageIds } from '../../shared/images'
 import type { JournalImage } from '../../shared/images'
@@ -1476,8 +1476,21 @@ export class JournalEngine {
             last = items.at(-1)
         return { items, next: rows.length > 50 && last ? { date: last.date, id: last.id } : undefined }
     }
-    refreshEntry(entry: Entry, generation: string) {
-        this.write(() => this.putEntry(entry), generation)
+    refreshEntry(entry: Entry, generation: string, expected?: Pick<Entry, 'body' | 'title'>) {
+        this.write(() => {
+            const current = this.db.select().from(t.entries).where(eq(t.entries.id, entry.id)).get()
+            if (
+                expected &&
+                current &&
+                (JSON.stringify(current.body) !== JSON.stringify(expected.body) || current.title !== expected.title)
+            )
+                throw new DatabaseError('conflict', 'Published writing changed during refresh. Refresh again.')
+            const body =
+                current && JSON.stringify(toNotion(current.body)) === JSON.stringify(toNotion(entry.body))
+                    ? current.body
+                    : entry.body
+            this.putEntry({ ...entry, body })
+        }, generation)
     }
     confirmPublication(id: string, entry: Entry, generation: string) {
         this.write(() => {

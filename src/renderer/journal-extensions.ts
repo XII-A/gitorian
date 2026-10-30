@@ -1,4 +1,5 @@
-import { Extension, InputRule, Node, textInputRule } from '@tiptap/react'
+import { JournalDirection, JournalBlockquote } from './journal-direction'
+import { Extension, InputRule, Node, textInputRule, mergeAttributes } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import type { JournalNode } from '../shared/model'
 import StarterKit from '@tiptap/starter-kit'
@@ -27,7 +28,7 @@ function deleteToggleWordBackward(editor: Editor): boolean {
     }
     const prefix = $from.parent.textBetween(0, $from.parentOffset, '\n', '\uFFFC')
     const trimmed = prefix.trimEnd()
-    const word = /[\p{L}\p{N}_]+$|[^\p{L}\p{N}_\s]+$/u.exec(trimmed)
+    const word = /[\p{L}\p{M}\p{N}_]+$|[^\p{L}\p{M}\p{N}_\s]+$/u.exec(trimmed)
     const start = word?.index ?? 0
     return editor.commands.deleteRange({ from: from - (prefix.length - start), to: from })
 }
@@ -47,7 +48,13 @@ function unwrapToggle(editor: Editor, depth: number) {
     const position = $from.before(depth)
     const summary = toggle.firstChild!
     const contents = toggle.lastChild!
-    const blocks: JournalNode[] = [{ type: 'paragraph', content: (summary.toJSON() as JournalNode).content }]
+    const blocks: JournalNode[] = [
+        {
+            type: 'paragraph',
+            attrs: { direction: summary.attrs.direction },
+            content: (summary.toJSON() as JournalNode).content
+        }
+    ]
     const emptyBody =
         contents.childCount === 1 && contents.firstChild?.type.name === 'paragraph' && !contents.firstChild.content.size
     if (!emptyBody) contents.forEach((node) => blocks.push(node.toJSON() as JournalNode))
@@ -140,7 +147,7 @@ const ToggleSummary = Node.create({
     content: 'inline*',
     defining: true,
     parseHTML: () => [{ tag: 'div[data-type="toggleSummary"]' }],
-    renderHTML: () => ['div', { 'data-type': 'toggleSummary' }, 0],
+    renderHTML: ({ HTMLAttributes }) => ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'toggleSummary' }), 0],
     addKeyboardShortcuts() {
         return {
             Backspace: () => {
@@ -255,11 +262,18 @@ const BlockSelectAll = Extension.create({
 })
 
 export const journalExtensions = () => [
+    JournalDirection,
+    JournalBlockquote,
     BlockSelectAll,
     JournalImageNode,
     ImageImportPositions,
     JournalCodeBlock,
-    StarterKit.configure({ codeBlock: false, heading: { levels: [1, 2, 3, 4] }, link: { openOnClick: false } }),
+    StarterKit.configure({
+        blockquote: false,
+        codeBlock: false,
+        heading: { levels: [1, 2, 3, 4] },
+        link: { openOnClick: false }
+    }),
     TaskList,
     // TaskItem's live node view uses HTMLAttributes, not renderHTML's data-type.
     // Keep its editable content beside the checkbox in both rendered forms.

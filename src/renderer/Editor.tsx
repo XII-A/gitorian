@@ -1,3 +1,5 @@
+import { insertPlainWriting, loadWriting } from './journal-direction'
+import { portableWriting } from '../shared/journal-direction'
 import { EmojiPicker } from './EmojiPicker'
 import { findEmoji, readEmojiHistory, recordEmoji, type EmojiCategory, type EmojiUse } from './emoji-catalog'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -258,13 +260,7 @@ export const Editor = memo(function Editor({
                 }
             })
         } else if (block === 'template') {
-            if (template)
-                editor
-                    .chain()
-                    .focus()
-                    .deleteRange(current)
-                    .insertContent(structuredClone(template.content ?? []))
-                    .run()
+            if (template) editor.chain().focus().deleteRange(current).insertContent(portableWriting(template)).run()
         } else applyBlockFormat(editor, block, current, blockQuery(current.query).convert)
         menuRef.current = undefined
         setMenu(undefined)
@@ -321,7 +317,7 @@ export const Editor = memo(function Editor({
                 )
                     return false
                 if (!editorRef.current || readOnly) return false
-                editorRef.current.commands.insertContent(markdownToHtml(text))
+                insertPlainWriting(editorRef.current, markdownToHtml(text))
                 return true
             },
             handleClick: (_view, _position, event) => {
@@ -457,7 +453,7 @@ export const Editor = memo(function Editor({
     }, [editor])
     useEffect(() => {
         if (editor && value !== emitted.current && JSON.stringify(value) !== JSON.stringify(editor.getJSON()))
-            editor.commands.setContent(value, { emitUpdate: false })
+            loadWriting(editor, value)
         emitted.current = value
     }, [value, editor])
     useEffect(() => {

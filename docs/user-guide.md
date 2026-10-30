@@ -52,3 +52,13 @@ You can change the destination to an existing parent page or database data sourc
 - Notion conversion supports a subset of its content model; complex blocks may not round-trip exactly. Publishing can modify remote page content. Review uncertain publish results in Notion before retrying.
 - Backups are manual. There is no built-in synchronization of the local database across devices, and publishing keeps a remote snapshot of your locally autosaved writing.
 - Tagged releases are built into drafts for installation verification before manual publication. In-app updates are available for packaged Windows installs starting with 0.1.5; the first installation and other platforms use manual downloads.
+
+## Writing in Arabic, Turkish and other languages
+
+You can mix Arabic, Turkish and English in one entry. Automatic direction follows the first strong character in each block. Numbers and emoji at the start do not choose a direction. Titles also choose direction automatically.
+
+Writing direction is automatic, with no document or block direction buttons above the writing area. Code blocks remain left-to-right.
+
+Lists, checklists, quotes and toggles follow their writing direction. Image controls include **Caption direction**, which changes the caption independently. Direction settings are saved with your writing and templates and survive backups. Inserting a template preserves its source policy without changing surrounding writing. Rich clipboard blocks carry direction; inline text uses the destination paragraph, and plain text/Markdown uses the destination policy.
+
+Arabic and Turkish text can publish to Notion. Notion chooses remote direction automatically because its integration interface does not expose manual direction settings. Local overrides remain available when the remote content is unchanged; editing the body in Notion replaces the local published copy on refresh, without reconstructing unsupported overrides. The app interface and formatting command names remain English. Language-specific search matching and spellcheck dictionaries are separate from writing direction.

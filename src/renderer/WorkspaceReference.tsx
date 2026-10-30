@@ -105,7 +105,7 @@ export function WorkspaceReference({
                 <ScrollArea className="ws-reference-entry-scroll" label="Published journal entry" fade={20}>
                     <section className="ws-reference-entry">
                         <header>
-                            <h1>{entry.title}</h1>
+                            <h1 dir="auto">{entry.title}</h1>
                             <Button variant="secondary" size="sm" onClick={dock}>
                                 Back to workspace
                             </Button>

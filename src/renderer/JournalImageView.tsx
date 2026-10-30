@@ -1,3 +1,6 @@
+import { DirectionChoice } from './DirectionChoice'
+import { writingDirection } from '../shared/journal-direction'
+import { setWritingDirection } from './journal-direction'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NodeViewWrapper, useEditorState } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
@@ -10,6 +13,11 @@ import { useToastStack } from './components/arc/toast-stack/toast-stack'
 import { ImageLightbox, type LightboxImage } from './ImageLightbox'
 
 export function JournalImageView({ node, editor, updateAttributes, deleteNode, selected, getPos }: NodeViewProps) {
+    const documentDirection = useEditorState({
+        editor,
+        selector: ({ editor: current }) => writingDirection(current.state.doc.attrs.direction) ?? 'auto'
+    })
+    const captionDirection = writingDirection(node.attrs.direction) ?? documentDirection
     const editable = useEditorState({ editor, selector: ({ editor: current }) => current.isEditable })
     const [failed, setFailed] = useState(false)
     const [width, setWidth] = useState<number>()
@@ -126,6 +134,24 @@ export function JournalImageView({ node, editor, updateAttributes, deleteNode, s
                     )}
                 </button>
                 <div className="journal-image-tools" data-compact={compact || undefined}>
+                    {editable && (
+                        <DirectionChoice
+                            label="Caption direction"
+                            iconOnly
+                            value={writingDirection(node.attrs.direction) ?? null}
+                            inherit
+                            change={(direction) => {
+                                const position = getPos()
+                                if (typeof position === 'number')
+                                    setWritingDirection(editor, { scope: 'caption', position }, direction)
+                            }}
+                            restoreFocus={() => {
+                                setCaptionOpen(true)
+                                caption.current?.focus()
+                            }}
+                        />
+                    )}
+
                     {compact ? (
                         <DropdownMenu
                             label="Image actions"
@@ -150,6 +176,7 @@ export function JournalImageView({ node, editor, updateAttributes, deleteNode, s
                     <textarea
                         ref={caption}
                         className="journal-image-caption"
+                        dir={captionDirection}
                         aria-label="Image caption"
                         placeholder="Add a caption"
                         rows={1}
@@ -183,7 +210,11 @@ export function JournalImageView({ node, editor, updateAttributes, deleteNode, s
                         }}
                     />
                 ) : (
-                    !!alt && <p className="journal-image-caption">{alt}</p>
+                    !!alt && (
+                        <p className="journal-image-caption" dir={captionDirection}>
+                            {alt}
+                        </p>
+                    )
                 )}
             </div>
             {lightbox && (

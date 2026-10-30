@@ -536,6 +536,7 @@ export function WorkspaceDraft({
                                 <textarea
                                     ref={titleInput}
                                     aria-label="Entry title"
+                                    dir="auto"
                                     value={draft.title}
                                     placeholder="Entry title"
                                     readOnly={busy || !!recoveryConflict}
