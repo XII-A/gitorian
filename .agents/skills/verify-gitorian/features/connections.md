@@ -22,6 +22,8 @@ Run `pnpm verify notion` for the existing journal-only Notion journey. It owns h
 
 Provider HTTP/browser behavior is simulated; the hosted handler, loopback, renderer, IPC, vault and store are real. Preserve recorded request shapes and resulting local settings, page-tree screenshots, actions, exit status and cleanup. Review motion, narrow layout, avatar/destination handoff and keyboard focus manually under the coding standards. External publishing and live browser authorization require separately authorized destinations.
 
+`tests/notion.test.ts` owns setup-marker cleanup: remove only the exact current setup marker after the page-ID recovery checkpoint; failed cleanup must resume against that saved page without creating a duplicate. The transport is simulated; no live Notion page is modified.
+
 `notion-edit-morph.json` retains timing/frame measurements for manual review. Frame sampling and geometric velocity thresholds are diagnostic appearance data, not automated release gates; cancellation, focus, retry and durable destination outcomes remain automated.
 
 `pnpm verify connections` runs the provider desktop owner followed by the Notion owner sequentially. Do not run overlapping desktop/build commands against the shared checkout.

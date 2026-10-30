@@ -93,6 +93,36 @@ export function makeNotion(
     images?: Pick<JournalDatabase, 'image' | 'importImage'>,
     imageDownload = downloadImage
 ) {
+    const removeSetupMarker = (pageId: string, setupId: string) =>
+        Effect.gen(function* () {
+            let cursor: string | null = null
+            do {
+                const children: List<{
+                    id: string
+                    type: string
+                    paragraph?: { rich_text: { plain_text?: string; text?: { content: string } }[] }
+                }> = yield* setupRequest<
+                    List<{
+                        id: string
+                        type: string
+                        paragraph?: { rich_text: { plain_text?: string; text?: { content: string } }[] }
+                    }>
+                >(
+                    `blocks/${encodeURIComponent(pageId)}/children?page_size=100${cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : ''}`
+                )
+                for (const block of children.results) {
+                    if (
+                        block.type === 'paragraph' &&
+                        block.paragraph?.rich_text
+                            .map((text) => text.plain_text ?? text.text?.content ?? '')
+                            .join('') === `gitorian setup: ${setupId}`
+                    ) {
+                        yield* setupRequest(`blocks/${encodeURIComponent(block.id)}`, { method: 'DELETE' })
+                    }
+                }
+                cursor = children.has_more ? children.next_cursor : null
+            } while (cursor)
+        })
     const prepareJournal = (
         setup: JournalSetup,
         checkpoint: (pageId?: string) => void,
@@ -106,7 +136,10 @@ export function makeNotion(
                 dateProperty: ''
             })
             if (existing?.id) {
-                if (existing.id === setup.pageId) return existing
+                if (existing.id === setup.pageId) {
+                    yield* removeSetupMarker(setup.pageId, setup.id)
+                    return existing
+                }
                 yield* verifyDestination(existing)
                 yield* Effect.try({
                     try: () => checkpoint(existing.id),
@@ -115,7 +148,10 @@ export function makeNotion(
                 return existing
             }
             const title = setup.title ?? 'Weekly Journal'
-            if (setup.pageId) return { ...destination(setup.pageId), ...(setup.title ? { title } : {}) }
+            if (setup.pageId) {
+                yield* removeSetupMarker(setup.pageId, setup.id)
+                return { ...destination(setup.pageId), ...(setup.title ? { title } : {}) }
+            }
             const marker = `gitorian setup: ${setup.id}`
             if (setup.started) {
                 const matches: string[] = []
@@ -169,6 +205,7 @@ export function makeNotion(
                     try: () => checkpoint(matches[0]),
                     catch: (error) => (error instanceof Error ? error : new NotionFailure(String(error)))
                 })
+                yield* removeSetupMarker(matches[0], setup.id)
                 return { ...destination(matches[0]), ...(setup.title ? { title } : {}) }
             }
             yield* Effect.try({
@@ -201,6 +238,7 @@ export function makeNotion(
                 try: () => checkpoint(page.id),
                 catch: (error) => (error instanceof Error ? error : new NotionFailure(String(error)))
             })
+            yield* removeSetupMarker(page.id, setup.id)
             return {
                 ...destination(page.id),
                 ...(setup.title ? { title, icon: '' } : {}),
