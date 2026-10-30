@@ -210,6 +210,8 @@ it('preserves the toggle from the first body paragraph', () => {
 })
 
 it.each([
+    ['Backspace', false],
+    ['Backspace', true],
     ['Ctrl-Backspace', false],
     ['Ctrl-Backspace', true],
     ['beforeinput', false],

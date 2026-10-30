@@ -237,6 +237,8 @@ const ToggleContent = Node.create({
                     return false
                 if (!$from.parent.content.size) {
                     const bodyDepth = $from.depth - 1
+                    if ($from.node(bodyDepth).childCount === 1)
+                        return backspaceFromToggleBody(this.editor, $from.depth - 2)
                     if ($from.index(bodyDepth) === $from.node(bodyDepth).childCount - 1)
                         return moveToggleBlock(this.editor, true)
                     // Remove only this blank line; following blocks must stay in the toggle.

@@ -119,3 +119,5 @@ Within toggle bodies, repeated Enter retains blank paragraphs; Backspace on the 
 Backspace on an empty body block with following siblings deletes only the blank block and keeps the later content inside the toggle. The native writing-direction scenario and editor boundary cases cover this distinction.
 
 Deleting internal blank toggle blocks moves the caret backward to the preceding block end. The native journey removes two consecutive blank lines and verifies the following text stays intact.
+
+For a toggle containing only its single empty placeholder, Backspace returns to the summary end without changing the document; a trailing empty block after other content still outdents. Covered with empty/nonempty titles and native RTL editing.

@@ -178,6 +178,17 @@ test('multilingual writing keeps direction, native editing and policy across a f
         await page.keyboard.insertText('\u0639\u0646\u0648\u0627\u0646 \u0639\u0631\u0628\u064a')
         await expect(toggles.first()).toHaveCSS('direction', 'rtl')
         await toggles.first().getByRole('button').click()
+        await page.keyboard.press('Enter')
+        await page.keyboard.press('Backspace')
+        await expect
+            .poll(() =>
+                body().evaluate((el) => {
+                    const { $from } = (el as HTMLElement & { editor: Editor }).editor.state.selection
+                    return { type: $from.parent.type.name, offset: $from.parentOffset, size: $from.parent.content.size }
+                })
+            )
+            .toMatchObject({ type: 'toggleSummary', offset: 10, size: 10 })
+        await expect(toggles.first().locator('[data-type=toggleContent] > p')).toHaveCount(1)
         await desktop.shot('toggle-rtl-open')
         await page.emulateMedia({ reducedMotion: 'reduce' })
         await toggles.first().getByRole('button').click()
