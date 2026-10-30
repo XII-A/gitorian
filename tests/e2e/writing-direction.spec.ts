@@ -107,6 +107,7 @@ test('multilingual writing keeps direction, native editing and policy across a f
         await expect(body().locator(':scope > p').filter({ hasText: 'Protected child' })).toHaveCount(1)
         await page.keyboard.press('Tab')
         await expect(toggles.nth(1)).toContainText('Protected child')
+        await expect(toggles.nth(1).locator('[data-type=toggleContent] > p')).toHaveCount(1)
         await page.keyboard.press('Control+z')
         await expect(body().locator(':scope > p').filter({ hasText: 'Protected child' })).toHaveCount(1)
         await page.keyboard.press('Tab')

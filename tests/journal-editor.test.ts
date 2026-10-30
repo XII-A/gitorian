@@ -325,6 +325,8 @@ it('moves a following paragraph into a closed toggle with Tab and restores it wi
     writing.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
     expect(writing.state.selection.$from.parent.textContent).toBe('Move me')
     expect(writing.state.selection.$from.parentOffset).toBe(2)
+    expect(writing.state.doc.firstChild!.lastChild!.childCount).toBe(1)
+    expect(writing.state.doc.firstChild!.lastChild!.firstChild!.textContent).toBe('Move me')
     expect(writing.state.selection.$from.node(-1).type.name).toBe('toggleContent')
     expect(writing.view.dom.querySelector('button')?.getAttribute('aria-expanded')).toBe('true')
     writing.commands.undo()
