@@ -404,3 +404,28 @@ it('keeps repeated Enter inside toggle content and outdents an empty block with 
     expect(writing.getJSON()).toEqual(before)
     expect(writing.state.selection.$from.node(-1).type.name).toBe('toggleContent')
 })
+
+it.each([false, true])(
+    'deletes an empty toggle block before following content (has preceding content: %s)',
+    (preceding) => {
+        const writing = open(
+            `<div data-type="toggle"><div data-type="toggleSummary">Title</div><div data-type="toggleContent">${preceding ? '<p>Before</p>' : ''}<p></p><p><strong>Following</strong></p></div></div>`
+        )
+        let blank = 0
+        writing.state.doc.descendants((node, pos) => {
+            if (node.type.name === 'paragraph' && !node.content.size && !blank) blank = pos + 1
+        })
+        writing.commands.setTextSelection(blank)
+        const before = writing.getJSON()
+        writing.view.dom.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true })
+        )
+        const body = writing.state.doc.firstChild!.lastChild!
+        expect(body.childCount).toBe(preceding ? 2 : 1)
+        expect(body.lastChild!.textContent).toBe('Following')
+        expect(body.lastChild!.firstChild!.marks[0].type.name).toBe('bold')
+        expect(writing.state.selection.$from.node(-1).type.name).toBe('toggleContent')
+        writing.commands.undo()
+        expect(writing.getJSON()).toEqual(before)
+    }
+)

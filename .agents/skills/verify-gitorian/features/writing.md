@@ -114,4 +114,6 @@ All claimed journeys must exit zero with run.json.passed and cleanup.removed tru
 
 Toggle editing is also owned by `writing-direction`: native closed-summary continuation, open-summary body entry, protected body Backspace, Shift+Tab/Tab movement and undo, followed by process restart and SQLite evidence. Toggles start collapsed; content brightness derives from body nodes, including non-text blocks. Inspect LTR and RTL triangle rotation and reduced motion manually.
 
-Within toggle bodies, repeated Enter retains blank paragraphs; Backspace on an empty direct body block outdents through the same transaction as Shift+Tab. The writing-direction journey owns native input and undo for this behavior.
+Within toggle bodies, repeated Enter retains blank paragraphs; Backspace on the final empty direct body block outdents through the same transaction as Shift+Tab. The writing-direction journey owns native input and undo for this behavior.
+
+Backspace on an empty body block with following siblings deletes only the blank block and keeps the later content inside the toggle. The native writing-direction scenario and editor boundary cases cover this distinction.

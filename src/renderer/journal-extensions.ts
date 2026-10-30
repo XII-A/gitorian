@@ -235,7 +235,17 @@ const ToggleContent = Node.create({
                     $from.node($from.depth - 1).type.name !== 'toggleContent'
                 )
                     return false
-                if (!$from.parent.content.size) return moveToggleBlock(this.editor, true)
+                if (!$from.parent.content.size) {
+                    const bodyDepth = $from.depth - 1
+                    if ($from.index(bodyDepth) === $from.node(bodyDepth).childCount - 1)
+                        return moveToggleBlock(this.editor, true)
+                    // Remove only this blank line; following blocks must stay in the toggle.
+                    const start = $from.before()
+                    const tr = this.editor.state.tr.delete(start, $from.after())
+                    tr.setSelection(TextSelection.near(tr.doc.resolve(start)))
+                    this.editor.view.dispatch(tr.scrollIntoView())
+                    return true
+                }
                 if ($from.index($from.depth - 1) !== 0) return false
                 return backspaceFromToggleBody(this.editor, $from.depth - 2)
             }
