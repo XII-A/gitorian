@@ -42,3 +42,5 @@ Hidden Electron windows can pause animation; the existing diagnostic measures th
 Light-theme captures use an explicit renderer theme fixture because the app stays dark when OS appearance changes. The repository-import journey owns the production startup and OS-change assertions.
 
 The acquisition diagnostic dismisses setup before opening real hub activity, opens workspace Details, then uses native mouse input on the Diff tab. It independently checks that metadata-only hub loading created no patch rows in `journal.sqlite`. Patch IDs are content hashes, so count all patches rather than a historical ID prefix.
+
+- **Provider emoji:** run `pnpm test:e2e provider-emoji` after a build. A disposable synthetic PR imported through the existing seed boundary checks shortcode titles and Markdown in the hub, workspace and detached reference, while preserving code. The owning DOM test checks unknown aliases, native Unicode and link destinations. This proves shared local rendering for provider metadata, not live acquisition. Retain `pr-emoji-support.png` and the runner evidence.

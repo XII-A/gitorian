@@ -1,3 +1,4 @@
+import { renderEmoji } from './provider-emoji'
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
 import { readableError } from './background-work'
@@ -94,8 +95,12 @@ export function WorkspaceInspector({
                 <header className="ws-inspector-header">
                     <div className="ws-inspector-heading">
                         <div className="ws-inspector-summary">
-                            <h2 id={titleId} className="ws-inspector-title" title={activity.title}>
-                                {activity.title}
+                            <h2
+                                id={titleId}
+                                className="ws-inspector-title"
+                                title={activity.kind === 'commit' ? activity.title : renderEmoji(activity.title)}
+                            >
+                                {activity.kind === 'commit' ? activity.title : renderEmoji(activity.title)}
                             </h2>
                             {(activity.sha || isPullRequest(activity) || activity.kind === 'review') && (
                                 <div className="ws-inspector-identity">

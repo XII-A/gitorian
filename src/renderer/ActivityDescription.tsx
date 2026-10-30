@@ -1,3 +1,4 @@
+import { remarkEmoji } from './provider-emoji'
 import { Fragment } from 'react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -71,7 +72,7 @@ export function ActivityDescription({ activity, repository }: { activity: Activi
         <div className="hub-detail-markdown">
             <Markdown
                 key={activity.id}
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm, remarkEmoji]}
                 skipHtml
                 urlTransform={(url, key) => {
                     const resolved = markdownUrl(url, activity, repository)

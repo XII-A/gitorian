@@ -1,3 +1,4 @@
+import { renderEmoji } from './provider-emoji'
 import type { ButtonHTMLAttributes, CSSProperties } from 'react'
 import { ChevronRight, Folder, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest } from 'lucide-react'
 import type { Activity } from '../shared/model'
@@ -60,7 +61,10 @@ export function ActivityRow({
             </span>
             <span className="activity-row-content">
                 <span className="activity-row-kind">{kindLabel}: </span>
-                <span className="activity-row-title">{activity.title.trim() || 'Untitled activity'}</span>
+                <span className="activity-row-title">
+                    {(activity.kind === 'commit' ? activity.title : renderEmoji(activity.title)).trim() ||
+                        'Untitled activity'}
+                </span>
                 <span className="activity-row-meta">
                     <span title={repositoryName}>
                         {repositoryMarker ? (
