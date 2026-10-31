@@ -1,3 +1,4 @@
+import { installSpellingMenu } from './spelling-menu'
 import { nextAcquisition } from '../shared/acquisition'
 import { NotionDiscoveryCache } from './notion-discovery-cache'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, protocol } from 'electron'
@@ -48,6 +49,7 @@ protocol.registerSchemesAsPrivileged([
     { scheme: 'journal-image', privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ])
 const directory = fileURLToPath(new URL('.', import.meta.url))
+let attachSpellingMenu: ReturnType<typeof installSpellingMenu> | undefined
 let mainWindow: BrowserWindow
 let store: JournalDatabase
 let service: JournalService
@@ -96,6 +98,7 @@ function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
             nodeIntegration: false
         }
     })
+    attachSpellingMenu?.(window)
     if (process.platform === 'win32') {
         window.removeMenu()
         watchWindowTitleBar(window)
@@ -141,6 +144,7 @@ async function folder(): Promise<string | undefined> {
     return result.canceled ? undefined : result.filePaths[0]
 }
 void app.whenReady().then(async () => {
+    attachSpellingMenu = installSpellingMenu()
     ipcMain.handle('journal:clipboard', (event, input: unknown) => {
         const action = z.enum(['cut', 'copy', 'paste']).parse(input)
         const window = BrowserWindow.fromWebContents(event.sender)

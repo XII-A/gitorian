@@ -504,7 +504,20 @@ export interface Reply {
     message?: string
     detailError?: string
 }
+export interface SpellingContext {
+    id: number
+    x: number
+    y: number
+    word: string
+    suggestions: string[]
+    editable: boolean
+    enabled: boolean
+}
 export interface DesktopBridge {
+    spelling?: {
+        onContext: (listener: (context: SpellingContext) => void) => () => void
+        act: (id: number, action: 'replace' | 'learn' | 'toggle', word?: string) => Promise<void>
+    }
     readEntry: (id: string, restoreId?: string) => Promise<HistoryEntry | undefined>
     clipboard?: (action: 'cut' | 'copy' | 'paste') => Promise<void>
     writeClipboardText: (text: string) => Promise<void>
