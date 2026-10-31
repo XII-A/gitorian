@@ -201,7 +201,11 @@ export function WeeklyHub({
         return { commits, prs, days: [...days] }
     }, [items, state.settings.timezone])
     const repositoryCount = repositorySummary.entries.length
-    const projectItems = project === 'all' ? items : items.filter((item) => item.repositoryId === project)
+    const projectItems = items.filter(
+        (item) =>
+            (project === 'all' || item.repositoryId === project) &&
+            (dayFilter.day === 'all' || localDate(new Date(item.date), state.settings.timezone) === dayFilter.day)
+    )
     const visible = projectItems.filter(
         (item) => tab === 'all' || (tab === 'commit' ? item.kind === 'commit' : item.kind !== 'commit')
     )

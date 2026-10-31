@@ -407,6 +407,9 @@ export function Workspace({
                                             allItems.filter(
                                                 (item) =>
                                                     (project === 'all' || item.repositoryId === project) &&
+                                                    (dayFilter.day === 'all' ||
+                                                        localDate(new Date(item.date), state.settings.timezone) ===
+                                                            dayFilter.day) &&
                                                     !item.previousSource &&
                                                     (value === 'all' ||
                                                         (value === 'commit'
