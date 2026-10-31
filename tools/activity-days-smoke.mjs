@@ -62,6 +62,7 @@ app.on('browser-window-created', (_, window) => {
         const shot = async (name) => writeFileSync(join(output, name), (await window.webContents.capturePage()).toPNG())
         /** @param {number | 'all'} offset */
         const chooseDay = async (offset) => {
+            await wait(`!!document.querySelector('.activity-day-filter button[role="combobox"]')`)
             const listId = await js(
                 `document.querySelector('.activity-day-filter [role="combobox"]').getAttribute('aria-controls')`
             )
