@@ -246,7 +246,7 @@
     border-radius: var(--radius-key);
     padding: var(--space-1);
     background: var(--surface-muted);
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-size: var(--text-sm);
 }
 .journal-editor .tiptap pre {

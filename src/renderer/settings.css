@@ -1,3 +1,7 @@
+.repository-path {
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
+}
 .settings {
     width: min(850px, 95vw);
     height: min(720px, 90dvh);
@@ -376,7 +380,7 @@
 }
 .github-signin-code {
     user-select: text;
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-mono);
     font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;

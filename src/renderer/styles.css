@@ -3,7 +3,7 @@
 }
 body {
     margin: 0;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-family: var(--font-body);
     font-size: 14px;
     color: var(--foreground);
     background: var(--background);
@@ -13,6 +13,10 @@ input,
 select,
 textarea {
     font: inherit;
+}
+code,
+pre {
+    font-family: var(--font-mono);
 }
 /* Only editor-owned task inputs need native form styling. */
 .tiptap input[type='checkbox'] {
@@ -205,9 +209,8 @@ p {
     overflow-wrap: anywhere;
 }
 .path {
-    font:
-        11px ui-monospace,
-        monospace;
+    font: 11px var(--font-mono);
+    font-variant-ligatures: none;
     overflow-wrap: anywhere;
 }
 .coverage {
@@ -220,9 +223,8 @@ p {
     margin-bottom: 10px;
 }
 .comparison {
-    font:
-        12px ui-monospace,
-        monospace;
+    font: 12px var(--font-mono);
+    font-variant-ligatures: none;
     padding: 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius-control);
@@ -268,14 +270,12 @@ p {
     padding: 14px;
     border-radius: var(--radius-control);
     overflow: auto;
-    font:
-        12px/1.6 ui-monospace,
-        monospace;
+    font: 12px/1.6 var(--font-mono);
+    font-variant-ligatures: none;
 }
 .tiptap code {
-    font:
-        12px ui-monospace,
-        monospace;
+    font: 12px var(--font-mono);
+    font-variant-ligatures: none;
 }
 .tiptap a {
     color: var(--accent);
@@ -323,15 +323,15 @@ p {
     margin-bottom: 0;
 }
 .diff {
+    --diff-font-family: var(--font-mono);
     --diff-background-color: var(--surface);
     --diff-text-color: var(--foreground);
     --diff-gutter-insert-background-color: color-mix(in oklab, var(--success) 20%, var(--surface));
     --diff-code-insert-background-color: color-mix(in oklab, var(--success) 12%, var(--surface));
     --diff-gutter-delete-background-color: color-mix(in oklab, var(--danger) 20%, var(--surface));
     --diff-code-delete-background-color: color-mix(in oklab, var(--danger) 12%, var(--surface));
-    font:
-        11px/1.6 ui-monospace,
-        monospace;
+    font: 11px/1.6 var(--font-mono);
+    font-variant-ligatures: none;
 }
 .error-bar,
 .save-warning {
@@ -529,4 +529,9 @@ legend {
     max-height: 12rem;
     overflow: auto;
     text-align: left;
+}
+
+/* Technical text preserves literal characters and aligned columns. */
+:where(code, pre, .path, .comparison, .diff, .activity-row-reference, .hub-detail-file-directory, .github-signin-code) {
+    font-variant-ligatures: none;
 }

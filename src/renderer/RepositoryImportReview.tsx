@@ -130,6 +130,7 @@ export function RepositoryImportReview({
                                                     <Checkbox
                                                         label={item.name}
                                                         description={item.relativePath}
+                                                        descriptionClassName="repository-path"
                                                         checked={selected.has(item.path)}
                                                         disabled={busy || item.status === 'tracked'}
                                                         onCheckedChange={(checked) =>
