@@ -311,7 +311,7 @@ app.on('browser-window-created', (_, window) => {
                 `window.__measuring=true; let last=performance.now(); const frame=now=>{if(!window.__measuring)return;window.__frameGaps.push(now-last);last=now;requestAnimationFrame(frame)};requestAnimationFrame(frame)`
             )
             for (let i = 0; i < 90; i++) {
-                window.webContents.insertText(`word${i} `)
+                await window.webContents.insertText(`word${i} `)
                 // Hidden verification windows need a compositor request to paint;
                 // without it Chromium intentionally throttles RAF to one second.
                 await window.webContents.capturePage()
@@ -408,7 +408,7 @@ app.on('browser-window-created', (_, window) => {
             await shot('06-image-import-paused')
             await escape()
             await js(`window.__editor.focus()`)
-            window.webContents.insertText(' Unsaved writing must survive.')
+            await window.webContents.insertText(' Unsaved writing must survive.')
             failSave = true
             await click('[aria-label="Update ready"]')
             await button('Update now')
@@ -486,7 +486,7 @@ app.on('browser-window-created', (_, window) => {
             await js(
                 `const e=document.querySelector('[aria-label="Journal body"]');e.focus();const r=document.createRange();r.selectNodeContents(e);r.collapse(false);const s=getSelection();s.removeAllRanges();s.addRange(r)`
             )
-            window.webContents.insertText(' Final keystroke before updating.')
+            await window.webContents.insertText(' Final keystroke before updating.')
             await click('[aria-label="Update ready"]')
             await button('Update now')
             await hidden('The ready button disappears once installation starts')

@@ -170,9 +170,9 @@ const sharedRuleOverrides = {
     ],
     'typescript/consistent-type-imports': ['warn', { fixStyle: 'separate-type-imports', prefer: 'type-imports' }],
     'typescript/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
-    'typescript/no-explicit-any': 'warn',
-    'typescript/await-thenable': 'off',
-    'typescript/no-floating-promises': 'off',
+    'typescript/no-explicit-any': 'error',
+    'typescript/await-thenable': 'error',
+    'typescript/no-floating-promises': 'error',
     'typescript/no-misused-promises': ['error', { checksVoidReturn: { arguments: false, attributes: false } }],
     'typescript/no-non-null-assertion': 'off',
     'typescript/no-unnecessary-condition': 'off',
@@ -214,7 +214,7 @@ const reactRecommendedRules = {
 } satisfies DummyRuleMap
 
 const reactHooksRecommendedRules = {
-    'react/exhaustive-deps': 'warn',
+    'react/exhaustive-deps': 'error',
     'react/rules-of-hooks': 'error'
 } satisfies DummyRuleMap
 

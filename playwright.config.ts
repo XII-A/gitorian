@@ -13,7 +13,7 @@ export default defineConfig({
     expect: { timeout: 10_000 },
     workers: 1,
     retries: 0,
-    forbidOnly: !!process.env.CI,
+    forbidOnly: true,
     reporter: [
         ['list'],
         ['./tests/e2e/support/evidence-reporter.ts'],

@@ -374,7 +374,7 @@ app.on('browser-window-created', (_, window) => {
                 await click('.changed-file-picker [role="combobox"]')
                 await wait(`!!document.querySelector('input[aria-label="Search changed file"]')`)
                 await js(`document.querySelector('input[aria-label="Search changed file"]').focus()`)
-                window.webContents.insertText(path)
+                await window.webContents.insertText(path)
                 await pause(300)
                 await click(`[role="treeitem"][title="${path}"]`)
                 await wait(`document.querySelector('.ws-file-heading code')?.textContent===${JSON.stringify(path)}`)

@@ -392,7 +392,7 @@ export function ConfirmMorph({
                 go('pending')
                 setAnnouncement(kind === 'confirm' ? pendingLabel : undoingLabel)
                 try {
-                    await result
+                    await Promise.resolve(result)
                 } catch {
                     if (token !== run.current) return
                     go('error')
@@ -458,7 +458,7 @@ export function ConfirmMorph({
                 return
             }
             const token = ++flight.current
-            animate(width, w, RESIZE).then(() => {
+            void animate(width, w, RESIZE).then(() => {
                 if (token === flight.current) {
                     width.jump(w)
                     settled()
@@ -486,7 +486,7 @@ export function ConfirmMorph({
         drain.jump(1)
         const control = animate(drain, 0, { duration: timeout / 1000, ease: 'linear' })
         clock.current = control
-        control.then(() => {
+        void control.then(() => {
             if (clock.current === control) {
                 clock.current = null
                 expire.current()
@@ -519,7 +519,7 @@ export function ConfirmMorph({
         if (!counting) return
         remaining.jump(1)
         const control = animate(remaining, 0, { duration: countdown, ease: 'linear' })
-        control.then(() => {
+        void control.then(() => {
             void performRef.current('confirm')
         })
         return () => control.stop()
@@ -533,7 +533,7 @@ export function ConfirmMorph({
         if (holding.current) return
         const control = animate(hold, 1, { duration: (holdDuration / 1000) * (1 - hold.get()), ease: 'linear' })
         holding.current = control
-        control.then(() => {
+        void control.then(() => {
             if (holding.current !== control) return
             holding.current = null
             void perform('confirm')

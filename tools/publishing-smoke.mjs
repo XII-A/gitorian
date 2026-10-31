@@ -110,7 +110,7 @@ app.on('browser-window-created', (_, window) => {
             assert.equal(requests.filter((r) => r.method === 'POST' && r.path === '/v1/pages').length, 1)
             record({ action: 'Edit the published draft and update the same page' })
             await js(`document.querySelector('[aria-label="Journal body"]').focus()`)
-            window.webContents.insertText(' Followed up on the release feedback.')
+            await window.webContents.insertText(' Followed up on the release feedback.')
             await js(`document.querySelector('.ws-publish button').click()`)
             await wait(`document.querySelector('.journal-notifications')?.textContent.includes('Updated in Notion')`)
             await shot('updated-in-notion')
@@ -121,7 +121,7 @@ app.on('browser-window-created', (_, window) => {
             fail = true
             record({ action: 'Simulate lost access; show recovery instead of success' })
             await js(`document.querySelector('[aria-label="Journal body"]').focus()`)
-            window.webContents.insertText(' Another update.')
+            await window.webContents.insertText(' Another update.')
             await js(`document.querySelector('.ws-publish button').click()`)
             await wait(
                 `document.querySelector('.journal-notifications')?.textContent.includes('Could not publish to Notion')`

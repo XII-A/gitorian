@@ -68,7 +68,7 @@ app.on('browser-window-created', (_, window) => {
             await wait(
                 `document.activeElement?.tagName==='INPUT' && document.activeElement.getAttribute('role')==='combobox'`
             )
-            window.webContents.insertText('developer')
+            await window.webContents.insertText('developer')
             await wait(`document.activeElement.value==='developer'`)
             key('Return')
             await wait(`document.querySelector('.project-filter [role="combobox"]')?.title==='developer-docs'`)

@@ -282,7 +282,6 @@ function TimelineRow({
                 animate={shown ? { scale: 1, opacity: 1 } : undefined}
                 transition={pop}
             >
-                {/* eslint-disable-next-line @next/next/no-img-element -- registry components stay framework agnostic */}
                 {row.avatar ? <img src={row.avatar} alt="" width={28} height={28} decoding="async" /> : row.icon}
             </motion.span>
             {!last && (

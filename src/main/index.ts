@@ -309,7 +309,7 @@ void app.whenReady().then(async () => {
         const trusted = BrowserWindow.fromWebContents(event.sender)
         if (!trusted || event.senderFrame !== event.sender.mainFrame || typeof text !== 'string')
             throw new Error('Invalid clipboard request')
-        clipboard.writeText(text)
+        return clipboard.writeText(text)
     })
     ipcMain.handle('journal:app-update-state', (event) => {
         updateOwner(event)

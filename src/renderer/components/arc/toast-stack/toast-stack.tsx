@@ -446,14 +446,16 @@ function ToastItem({
         }
         const done = () => safeToRemove?.()
         if (reduce) {
-            animate(opacity, 0, reducedFade).then(done)
+            void animate(opacity, 0, reducedFade).then(done)
             return
         }
         if (!swiped.current) {
             animate(y, y.get() + 10, motionTokens.spring.smooth)
             animate(scale, scale.get() * 0.96, motionTokens.spring.smooth)
         }
-        animate(opacity, 0, { duration: swiped.current ? 0.22 : motionTokens.duration.exit, ease: standard }).then(done)
+        void animate(opacity, 0, { duration: swiped.current ? 0.22 : motionTokens.duration.exit, ease: standard }).then(
+            done
+        )
     }, [isPresent, onHandOff, opacity, reduce, safeToRemove, scale, y])
 
     function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {

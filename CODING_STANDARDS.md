@@ -10,6 +10,20 @@ Read the conventions for each affected area:
 
 Define observable outcomes before implementation. For complex features, cover realistic failure, recovery, and persistence scenarios where relevant. When isolated tests are necessary, list failure modes and independent expected outcomes, then write tests before implementation.
 
+## Implementation and enforcement
+
+Keep each behavior with its existing owning module. Callers and tests should use the same interface; put external variation in adapters at existing seams. A new module should hide meaningful complexity, not just forward calls or expose internals for a test. Preserve typed failures, cancellation, recovery and persistence contracts when simplifying code.
+
+Await or return Promises when completion or failure matters. Use `void` only when the operation owns rejection handling or its completion cannot reject; it does not handle errors by itself. Keep Effect execution with its owning runtime. React Effects synchronize external systems with explicit dependencies and cleanup; derive render state and handle user actions directly.
+
+Use comments for invariants, non-obvious tradeoffs, external workarounds and safety justifications. Express routine behavior through names and types. Remove obsolete comments and commented-out code; retain license notices and tool directives.
+
+`pnpm check` is the shared local/CI gate: Effect-aware typechecking, type-aware lint, formatting and tests. Lint warnings and unused suppression directives fail it. Run `pnpm lint:fix` and `pnpm format` for mechanical fixes, inspect the diff, then rerun the gate. Autofix or agent-assisted repair is not verification.
+
+Fix a diagnostic's cause before considering a suppression. A necessary exception must name the rule on the smallest applicable line and explain the invariant or external constraint. Do not weaken a rule, add broad ignores, cast through `any`/`unknown`, or remove behavioral assertions merely to obtain a passing check. Change policy explicitly when its assumptions no longer hold.
+
+When changing enforcement, demonstrate that representative invalid code fails and its corrected form passes through the actual configured command; include a discarded Effect when changing compiler or lint tooling. Keep disposable probes and evidence under ignored `.ai-docs/verification/`, removing any temporary source probes before final verification.
+
 ## Feature verification
 
 Automate consequential behavior: activity descriptions and PR metadata, writing/editing, failure/recovery, persistence, repository acquisition and external-provider contracts. Give each outcome one owning scenario at the module interface. Use real Electron journeys when native input, clipboard, preload or persistence is essential; use Vitest for domain/storage and inexpensive DOM behavior.

@@ -830,7 +830,7 @@ app.on('browser-window-created', (_, window) => {
                 await js(
                     `(()=>{const input=${notionScope}.querySelector('[role="combobox"]:not([inert] *)');window.__sameNotionPicker??=input;input.focus();input.click();input.select()})()`
                 )
-                if (text) window.webContents.insertText(text)
+                if (text) await window.webContents.insertText(text)
                 else {
                     window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' })
                     window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' })
