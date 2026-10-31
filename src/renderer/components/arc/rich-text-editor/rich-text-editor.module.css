@@ -82,7 +82,7 @@
     padding: 0.12em 0.38em;
     border-radius: var(--radius-key);
     background: var(--surface-muted);
-    font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 0.86em;
 }
 
@@ -129,7 +129,7 @@
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-control);
     background: var(--surface-muted);
-    font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: var(--text-sm);
     line-height: 1.6;
     tab-size: 2;
@@ -359,7 +359,7 @@
 .slashHint {
     flex: none;
     color: var(--text-muted);
-    font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: var(--text-xs);
 }
 

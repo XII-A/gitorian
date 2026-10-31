@@ -421,6 +421,9 @@ export function Settings({
                                                     key={repository.id}
                                                     title={repository.name}
                                                     description={repository.path || 'Folder not located'}
+                                                    descriptionClassName={
+                                                        repository.path ? 'repository-path' : undefined
+                                                    }
                                                 >
                                                     {() => repositoryFields(repository)}
                                                 </ExpandableCard>

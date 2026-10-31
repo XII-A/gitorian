@@ -1,16 +1,12 @@
 :root {
-    --font-geist: 'Geist Variable', 'Segoe UI';
-    --font-body: var(--font-display);
     --focus-outline: color-mix(in oklab, var(--accent) 65%, transparent);
     --focus-outline-offset: 2px;
 }
 .writing-workspace,
 .ws-reference {
     --workspace-footer-height: 64px;
-    --font-body: var(--font-display);
     --diff-background-color: var(--surface);
     --diff-text-color: var(--foreground);
-    --diff-font-family: 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
     --diff-selection-background-color: var(--accent-subtle);
     --diff-gutter-insert-background-color: color-mix(in oklab, var(--success) 9%, var(--surface));
     --diff-gutter-delete-background-color: color-mix(in oklab, var(--danger) 8%, var(--surface));

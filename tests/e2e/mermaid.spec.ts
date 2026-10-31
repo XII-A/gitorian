@@ -73,6 +73,25 @@ test('mermaid: shared details, source, recovery, themes and inert diagrams', asy
         await page.keyboard.press('ArrowLeft')
         await loaded()
     })
+    await test.step('an image decode failure retains exact source and recovers when reopened', async () => {
+        await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+        await page.evaluate(() => {
+            const decode = HTMLImageElement.prototype.decode
+            HTMLImageElement.prototype.decode = function () {
+                HTMLImageElement.prototype.decode = decode
+                return Promise.reject(new Error('Simulated image decode failure'))
+            }
+        })
+        await open('Mermaid publishing workflow')
+        await expect(blocks.first().getByRole('status').filter({ hasText: 'Could not render' })).toBeVisible()
+        await blocks.first().getByRole('button', { name: 'Source', exact: true }).click()
+        await expect(blocks.first().getByRole('region', { name: 'Mermaid source' })).toHaveText(flow + '\n')
+        await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+        await open('Mermaid publishing workflow')
+        await loaded()
+    })
     await test.step('theme and accent updates regenerate SVG and actual size stays in its scroll viewport', async () => {
         const dark = await image.getAttribute('src')
         const dimensions = await image.evaluate((node: HTMLImageElement) => [node.naturalWidth, node.naturalHeight])

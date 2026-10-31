@@ -1,5 +1,9 @@
 # Writing
 
+## Typography review
+
+Manually review bundled Geist Sans upright/italic prose and Geist Mono code/paths/identifiers at 12-16px, narrow widths and 200% zoom. Preserve multilingual shaping, fallback and emoji. Existing code-block and writing-direction journeys own code interaction and durable multilingual editing; appearance is not a CSS-token or screenshot assertion gate.
+
 ## Header atmosphere
 
 Review hub/workspace skies manually for local-time colors, breadcrumb contrast, restrained motion, reduced motion and usable static fallback. Shader draw counts, entry opacity frames and route stress loops are not automated release gates. Writing, input, recovery and persistence remain covered by the journeys below.
