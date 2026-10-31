@@ -87,6 +87,34 @@ app.on('browser-window-created', (_, window) => {
                 searchAndReset: true,
                 menuFitsAfterResize
             }
+            // A close can still be moving when the next keyboard action arrives. Keep
+            // the new menu usable, and never restore old focus after Tab has moved on.
+            key('Down')
+            await wait(`document.activeElement?.tagName==='INPUT'`)
+            key('Escape')
+            await wait(
+                `document.activeElement?.tagName==='BUTTON' && document.activeElement.getAttribute('aria-expanded')==='false'`
+            )
+            key('Down')
+            await wait(
+                `document.activeElement?.tagName==='INPUT' && document.activeElement.getAttribute('aria-expanded')==='true'`
+            )
+            await new Promise((done) => setTimeout(done, 1000))
+            const reopenedMenuUsable = await js(
+                `document.activeElement?.tagName==='INPUT' && document.activeElement.getAttribute('aria-expanded')==='true'`
+            )
+            if (!reopenedMenuUsable) throw new Error('A previous close interrupted the reopened project menu')
+            key('Escape')
+            await wait(
+                `document.activeElement?.tagName==='BUTTON' && document.activeElement.getAttribute('aria-expanded')==='false'`
+            )
+            key('Tab')
+            await wait(`document.activeElement===document.querySelector('.ws-history-chip')`)
+            await new Promise((done) => setTimeout(done, 1000))
+            const tabFocusRetained = await js(`document.activeElement===document.querySelector('.ws-history-chip')`)
+            if (!tabFocusRetained) throw new Error('Closing the project menu stole focus back after Tab')
+            result.keyboard.reopenedMenuUsable = reopenedMenuUsable
+            result.keyboard.tabFocusRetained = tabFocusRetained
             result.passed &&= visibleFocus && selectionRestoresFocus && menuFitsAfterResize
             const hoverPoint = await js(
                 `(()=>{const r=document.querySelector('.activity-filter-viewport').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`
