@@ -9,6 +9,10 @@ on:
                 description: Published stable release tag to deploy again
                 required: true
                 type: string
+            landing_ref:
+                description: Optional full main-branch commit SHA for the landing page
+                required: false
+                type: string
 
 permissions:
     contents: read
@@ -25,6 +29,7 @@ jobs:
         environment: notion-oauth-production
         env:
             RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+            LANDING_REF: ${{ inputs.landing_ref }}
             NOTION_OAUTH_ORIGIN: ${{ vars.NOTION_OAUTH_ORIGIN }}
         steps:
             - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -58,6 +63,14 @@ jobs:
                   pnpm format:check
                   pnpm test tests/notion-oauth.test.ts
             - run: pnpm --filter @gitorian/notion-oauth build
+            - name: Select an approved landing page revision
+              if: github.event_name == 'workflow_dispatch' && inputs.landing_ref != ''
+              run: |
+                  set -euo pipefail
+                  [[ "$LANDING_REF" =~ ^[0-9a-f]{40}$ ]] || { echo 'landing_ref must be a full commit SHA'; exit 1; }
+                  git cat-file -e "$LANDING_REF^{commit}"
+                  git merge-base --is-ancestor "$LANDING_REF" origin/main
+                  git restore --source="$LANDING_REF" -- services/notion-oauth/public
             - name: Deploy the released OAuth module
               env:
                   NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
@@ -66,6 +79,6 @@ jobs:
                   set -euo pipefail
                   test -f "$GITHUB_WORKSPACE/services/notion-oauth/public/index.html"
                   test -f "$GITHUB_WORKSPACE/services/notion-oauth/dist/functions/oauth.mjs"
-                  pnpm --package=netlify-cli@27.14.1 dlx netlify deploy --prod --no-build --dir "$GITHUB_WORKSPACE/services/notion-oauth/public" --functions "$GITHUB_WORKSPACE/services/notion-oauth/dist/functions" --message "Gitorian $RELEASE_TAG"
+                  pnpm --package=netlify-cli@27.14.1 dlx netlify deploy --prod --no-build --dir "$GITHUB_WORKSPACE/services/notion-oauth/public" --functions "$GITHUB_WORKSPACE/services/notion-oauth/dist/functions" --message "Gitorian $RELEASE_TAG (landing ${LANDING_REF:-release})"
             - name: Check deployed OAuth module
               run: curl --fail --retry 3 --retry-delay 2 "$NOTION_OAUTH_ORIGIN/health"

@@ -1,5 +1,161 @@
 <!doctype html>
-<html lang="en">
-    <meta charset="utf-8" /><title>Gitorian Notion connection</title>
-    <p>Connect Notion from the Gitorian desktop application.</p>
+<html lang="en" data-theme="dark">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#141414" />
+        <title>Gitorian — Keep a little of your week.</title>
+        <meta
+            name="description"
+            content="A personal journal for developers. Revisit your Git activity, write in your own words, and keep a little of your week. Saved on your device."
+        />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="Gitorian — Keep a little of your week." />
+        <meta
+            property="og:description"
+            content="Your work is more than what you shipped. A personal journal for developers, saved on your device."
+        />
+        <meta property="og:url" content="https://gitorian.netlify.app/" />
+        <link rel="canonical" href="https://gitorian.netlify.app/" />
+        <link rel="icon" href="assets/icon.png" type="image/png" />
+        <link rel="preload" href="assets/geist-latin.woff2" as="font" type="font/woff2" crossorigin />
+        <link rel="stylesheet" href="landing.css" />
+        <script src="assets/gsap-3.13.0.min.js" defer></script>
+        <script src="landing.js" defer></script>
+    </head>
+    <body>
+        <a class="skip-link" href="#content">Skip to content</a>
+        <div class="page">
+            <header class="site-header shell">
+                <a class="brand" href="./" aria-label="Gitorian home">
+                    <img src="assets/icon.png" width="34" height="34" alt="" />
+                    <span>Gitorian</span>
+                </a>
+                <a class="utility-link" href="https://github.com/XII-A/gitorian/releases">Release notes</a>
+            </header>
+            <main id="content" class="shell" tabindex="-1">
+                <section class="hero" aria-labelledby="hero-title">
+                    <div class="hero-body">
+                        <div class="hero-copy">
+                            <h1 id="hero-title">
+                                <span>Keep a little</span>
+                                <span class="title-accent">of your week.</span>
+                            </h1>
+                            <div class="hero-details">
+                                <p class="intro">
+                                    The things you built. The things you learned.<span
+                                        >The little moments in between.</span
+                                    >
+                                </p>
+                                <p class="description">
+                                    Bring your Git activity into a quiet space to write. A few words, in your own time.
+                                </p>
+                                <div class="actions">
+                                    <a
+                                        class="button button-primary"
+                                        href="https://github.com/XII-A/gitorian/releases/latest"
+                                    >
+                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <path
+                                                d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4"
+                                                stroke="currentColor"
+                                                stroke-width="1.6"
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                            />
+                                        </svg>
+                                        Download for Windows
+                                    </a>
+                                    <a class="button button-secondary" href="https://github.com/XII-A/gitorian">
+                                        View on GitHub
+                                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <path
+                                                d="M7 17 17 7M7 7h10v10"
+                                                stroke="currentColor"
+                                                stroke-width="1.6"
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                            />
+                                        </svg>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        <figure class="journal-figure">
+                            <div class="journal-frame">
+                                <img
+                                    class="journal-image"
+                                    src="assets/workspace.webp"
+                                    width="3358"
+                                    height="1920"
+                                    alt="Gitorian’s workspace with Git activity on the left, a personal journal in the middle, and a pull request description with a comparison table and red and green change card on the right."
+                                    fetchpriority="high"
+                                />
+                            </div>
+                        </figure>
+                    </div>
+                </section>
+                <section class="feature-notes" aria-label="A journal for your week">
+                    <ul class="highlights">
+                        <li class="highlight">
+                            <h2>
+                                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                                    <path
+                                        d="M6 3v12M18 9a9 9 0 0 1-9 9"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                    />
+                                    <circle cx="6" cy="18" r="3" stroke="currentColor" stroke-width="1.6" />
+                                    <circle cx="18" cy="6" r="3" stroke="currentColor" stroke-width="1.6" />
+                                </svg>
+                                <span>Revisit your work</span>
+                            </h2>
+                            <p>Commits and pull requests, together.</p>
+                        </li>
+                        <li class="highlight">
+                            <h2>
+                                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                                    <path
+                                        d="m15 4 5 5M4 20l5-1L20 8a2 2 0 0 0 0-3l-1-1a2 2 0 0 0-3 0L5 15l-1 5Zm1-5 4 4"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                </svg>
+                                <span>Write in your own words</span>
+                            </h2>
+                            <p>The parts a commit message can’t hold.</p>
+                        </li>
+                        <li class="highlight">
+                            <h2>
+                                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                                    <path
+                                        d="M12 6v6l4 2M4.4 7a9 9 0 1 1-1 8M3 3v5h5"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                </svg>
+                                <span>Come back to it</span>
+                            </h2>
+                            <p>Search past entries. See how far you’ve come.</p>
+                        </li>
+                    </ul>
+                </section>
+            </main>
+            <footer class="site-footer shell">
+                <a class="footer-brand" href="./" aria-label="Gitorian home">
+                    <img src="assets/icon.png" width="24" height="24" alt="" />
+                    <span>Gitorian</span>
+                </a>
+                <nav class="project-links" aria-label="Project links">
+                    <a class="utility-link" href="https://github.com/XII-A/gitorian">Source code</a>
+                    <a class="utility-link" href="https://github.com/XII-A/gitorian/issues">Report an issue</a>
+                </nav>
+            </footer>
+        </div>
+    </body>
 </html>

@@ -18,6 +18,7 @@
         "/out",
         "/release",
         "/pnpm-lock.yaml",
-        "/.agents"
+        "/.agents",
+        "/services/notion-oauth/public/assets/gsap-3.13.0.min.js"
     ]
 }
