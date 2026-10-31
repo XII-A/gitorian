@@ -177,6 +177,11 @@
     width: 1px;
     pointer-events: none;
 }
+/* Preserve the selection while the context menu owns the editing controls. */
+[data-context-menu-open] .journal-format-bar {
+    display: none;
+}
+
 .journal-format-bar {
     position: absolute;
     z-index: 20;
