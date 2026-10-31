@@ -116,6 +116,16 @@ app.on('browser-window-created', (_, window) => {
                 const group = surface === 'hub' ? '.hub-day' : '.ws-day-group'
                 const rows = surface === 'hub' ? '.hub-activity' : '.ws-activity-row'
                 const toolbar = surface === 'hub' ? '.hub-filters' : '.ws-activity-filters'
+                const assertCounts = async (expected) => {
+                    const selector = surface === 'hub' ? '.hub-filter-chip' : '.ws-filter-chip:not(.ws-history-chip)'
+                    // Animated counters expose their settled value through an accessible text span.
+                    await pause(800)
+                    const counts = await js(
+                        `Array.from(document.querySelectorAll('${selector}')).map(n=>Number((n.querySelector('[data-variant="inline"] > span:not([aria-hidden])') ?? n).textContent.match(/\\d+/)?.[0]))`
+                    )
+                    assert.deepEqual(counts, expected, `${surface}: chip counts follow the selected day`)
+                    record(`${surface}: day-filter chip counts`, counts)
+                }
                 await js(`document.querySelector('${toolbar}').style.width='320px'`)
                 await wait(
                     `(()=>{const strip=document.querySelector('${toolbar}');return strip?.getBoundingClientRect().width<=321&&!!strip.querySelector('[aria-label="Scroll activity filters right"]')})()`
@@ -303,12 +313,14 @@ app.on('browser-window-created', (_, window) => {
                     'Collapse must have intermediate heights and reverse to full height'
                 )
                 await chooseDay(6)
+                await assertCounts([7, 7, 0])
                 assert.equal(await js(`document.querySelectorAll('${group}').length`), 1)
                 assert.equal(await js(`document.querySelectorAll('${rows}').length`), 7)
                 assert.equal(await js(`document.querySelectorAll('.activity-day-toggle').length`), 0)
                 if (surface === 'hub')
                     assert.equal(await js(`document.querySelector('.hub-stats').textContent`), beforeSummary)
                 await chooseDay('all')
+                await assertCounts([132, 132, 0])
                 assert.equal(
                     await js(
                         `document.querySelector('${group}:has([aria-label*="Show fewer"]) .activity-day-toggle').getAttribute('aria-expanded')`
@@ -350,6 +362,7 @@ app.on('browser-window-created', (_, window) => {
                     )
                 }
                 assert.ok(await js(`document.body.textContent.includes('No matching activity for Thursday')`))
+                await assertCounts([0, 0, 0])
                 await js(
                     `Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Show all days').click()`
                 )
