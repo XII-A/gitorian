@@ -1,3 +1,4 @@
+import type { WritingRequest } from '../shared/writing'
 import { DatabaseWorker } from './database/worker-client'
 import type { JournalEngine } from './database/engine'
 import { DatabaseError, type AcquisitionBatch, type Configuration, type JournalView } from './database/types'
@@ -72,6 +73,12 @@ export class JournalDatabase {
     }
     draftForWeek(week: string) {
         return this.request('draftForWeek', week)
+    }
+    openWriting(draftId: string, field: 'body' | 'title', generation: string) {
+        return this.request('openWriting', draftId, field, generation)
+    }
+    submitWriting(request: WritingRequest) {
+        return this.request('submitWriting', request)
     }
     publication(id: string) {
         return this.request('publication', id)

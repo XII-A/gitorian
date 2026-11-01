@@ -1,0 +1,2720 @@
+{
+    "version": "7",
+    "dialect": "sqlite",
+    "id": "180a3ee3-03ec-44dd-bb69-5da1b11c59e6",
+    "prevIds": ["9e24e2ee-d2c2-4c24-9504-cedfd0e73080"],
+    "ddl": [
+        {
+            "name": "acquisition_checkpoints",
+            "entityType": "tables"
+        },
+        {
+            "name": "acquisition_versions",
+            "entityType": "tables"
+        },
+        {
+            "name": "activities",
+            "entityType": "tables"
+        },
+        {
+            "name": "activity_branches",
+            "entityType": "tables"
+        },
+        {
+            "name": "activity_dates",
+            "entityType": "tables"
+        },
+        {
+            "name": "activity_files",
+            "entityType": "tables"
+        },
+        {
+            "name": "entry_coverage",
+            "entityType": "tables"
+        },
+        {
+            "name": "provider_credential_cleanup",
+            "entityType": "tables"
+        },
+        {
+            "name": "draft_selections",
+            "entityType": "tables"
+        },
+        {
+            "name": "drafts",
+            "entityType": "tables"
+        },
+        {
+            "name": "entries",
+            "entityType": "tables"
+        },
+        {
+            "name": "git_history",
+            "entityType": "tables"
+        },
+        {
+            "name": "git_history_items",
+            "entityType": "tables"
+        },
+        {
+            "name": "document_images",
+            "entityType": "tables"
+        },
+        {
+            "name": "images",
+            "entityType": "tables"
+        },
+        {
+            "name": "journal",
+            "entityType": "tables"
+        },
+        {
+            "name": "patches",
+            "entityType": "tables"
+        },
+        {
+            "name": "provider_accounts",
+            "entityType": "tables"
+        },
+        {
+            "name": "provider_preparations",
+            "entityType": "tables"
+        },
+        {
+            "name": "publication_selections",
+            "entityType": "tables"
+        },
+        {
+            "name": "publication_attempts",
+            "entityType": "tables"
+        },
+        {
+            "name": "repositories",
+            "entityType": "tables"
+        },
+        {
+            "name": "repository_branches",
+            "entityType": "tables"
+        },
+        {
+            "name": "repository_emails",
+            "entityType": "tables"
+        },
+        {
+            "name": "activity_revisions",
+            "entityType": "tables"
+        },
+        {
+            "name": "transport_pauses",
+            "entityType": "tables"
+        },
+        {
+            "name": "writing_documents",
+            "entityType": "tables"
+        },
+        {
+            "name": "writing_steps",
+            "entityType": "tables"
+        },
+        {
+            "table": "acquisition_checkpoints",
+            "name": "key",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "acquisition_checkpoints",
+            "name": "status",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "acquisition_checkpoints",
+            "name": "retryAt",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "acquisition_checkpoints",
+            "name": "provider",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "acquisition_checkpoints",
+            "name": "repositoryId",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "acquisition_checkpoints",
+            "name": "cursor",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "acquisition_versions",
+            "name": "key",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "acquisition_versions",
+            "name": "sourceId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "acquisition_versions",
+            "name": "version",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "id",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "repositoryId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "kind",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "title",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "occurredAt",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "author",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "sha",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "prId",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "url",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "description",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "revision",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "diffRevision",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "patchId",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "base",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "head",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "fingerprint",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "integrationSha",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "sourceVersion",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "revisionSource",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "localQualified",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": "false",
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "remoteIdentity",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "remoteSource",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "filesLoaded",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "disposition",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "deferUntil",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "reason",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "explicit",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "journaled",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "prStatus",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "openedAt",
+            "type": "integer",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "closedAt",
+            "type": "integer",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "mergedAt",
+            "type": "integer",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_branches",
+            "name": "activityId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_branches",
+            "name": "name",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_branches",
+            "name": "deleted",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_dates",
+            "name": "activityId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_dates",
+            "name": "instant",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_dates",
+            "name": "kind",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_files",
+            "name": "activityId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_files",
+            "name": "name",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_files",
+            "name": "position",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_files",
+            "name": "status",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_files",
+            "name": "previousName",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_files",
+            "name": "additions",
+            "type": "integer",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_files",
+            "name": "deletions",
+            "type": "integer",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_files",
+            "name": "binary",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entry_coverage",
+            "name": "id",
+            "type": "integer",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entry_coverage",
+            "name": "activityId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entry_coverage",
+            "name": "revision",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entry_coverage",
+            "name": "entryId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "provider_credential_cleanup",
+            "name": "key",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "draft_selections",
+            "name": "draftId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "draft_selections",
+            "name": "activityId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "draft_selections",
+            "name": "revision",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "draft_selections",
+            "name": "position",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "drafts",
+            "name": "id",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "drafts",
+            "name": "week",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "drafts",
+            "name": "title",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "drafts",
+            "name": "body",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "drafts",
+            "name": "updatedAt",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "drafts",
+            "name": "publishedEntryId",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "drafts",
+            "name": "version",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entries",
+            "name": "id",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entries",
+            "name": "title",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entries",
+            "name": "date",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entries",
+            "name": "url",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entries",
+            "name": "body",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entries",
+            "name": "refreshedAt",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entries",
+            "name": "excerpt",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "entries",
+            "name": "searchText",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "git_history",
+            "name": "repositoryId",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "git_history",
+            "name": "configuration",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "git_history",
+            "name": "refs",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "git_history",
+            "name": "nextOffset",
+            "type": "integer",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "git_history",
+            "name": "excludedTips",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "git_history_items",
+            "name": "repositoryId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "git_history_items",
+            "name": "activityId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "document_images",
+            "name": "owner",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "document_images",
+            "name": "imageId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "images",
+            "name": "id",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "images",
+            "name": "mime",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "images",
+            "name": "width",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "images",
+            "name": "height",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "images",
+            "name": "bytes",
+            "type": "blob",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "journal",
+            "name": "id",
+            "type": "integer",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "journal",
+            "name": "generation",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "journal",
+            "name": "sequence",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "journal",
+            "name": "providerUpgrade",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": "false",
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "journal",
+            "name": "settings",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "journal",
+            "name": "lastRefreshed",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "journal",
+            "name": "lastRefreshAttempt",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "journal",
+            "name": "refreshError",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "journal",
+            "name": "repositoryImport",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "patches",
+            "name": "id",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "patches",
+            "name": "content",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "patches",
+            "name": "accessedAt",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "provider_accounts",
+            "name": "id",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "provider_accounts",
+            "name": "identity",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "provider_accounts",
+            "name": "metadata",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "provider_preparations",
+            "name": "id",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "provider_preparations",
+            "name": "metadata",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_selections",
+            "name": "publicationId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_selections",
+            "name": "activityId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_selections",
+            "name": "revision",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_selections",
+            "name": "position",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "id",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "draftId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "status",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "marker",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "title",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "body",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "destination",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "createdAt",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "week",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "entryId",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "replacedBlockIds",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "updateExisting",
+            "type": "integer",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "error",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "imageUploads",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "id",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "name",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "path",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "remote",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "accountId",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "providerProjectId",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "accountGeneration",
+            "type": "integer",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "assignment",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "base",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "trackingStart",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "available",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "removed",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "branchBases",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repositories",
+            "name": "remotes",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repository_branches",
+            "name": "repositoryId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repository_branches",
+            "name": "name",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repository_emails",
+            "name": "repositoryId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "repository_emails",
+            "name": "email",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_revisions",
+            "name": "id",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_revisions",
+            "name": "activityId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_revisions",
+            "name": "base",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_revisions",
+            "name": "head",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_revisions",
+            "name": "fingerprint",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activity_revisions",
+            "name": "patchId",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "transport_pauses",
+            "name": "scope",
+            "type": "text",
+            "notNull": false,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "transport_pauses",
+            "name": "until",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "writing_documents",
+            "name": "draftId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "writing_documents",
+            "name": "field",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "writing_documents",
+            "name": "document",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "writing_documents",
+            "name": "version",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": "0",
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "writing_steps",
+            "name": "draftId",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "writing_steps",
+            "name": "field",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "writing_steps",
+            "name": "version",
+            "type": "integer",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "writing_steps",
+            "name": "client",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "writing_steps",
+            "name": "step",
+            "type": "text",
+            "notNull": true,
+            "autoincrement": false,
+            "default": null,
+            "generated": null,
+            "entityType": "columns"
+        },
+        {
+            "table": "activities",
+            "name": "activity_repository_date",
+            "columns": [
+                {
+                    "value": "repositoryId",
+                    "isExpression": false
+                },
+                {
+                    "value": "occurredAt",
+                    "isExpression": false
+                },
+                {
+                    "value": "id",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "activities",
+            "name": "activity_date",
+            "columns": [
+                {
+                    "value": "occurredAt",
+                    "isExpression": false
+                },
+                {
+                    "value": "id",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "activities",
+            "name": "activity_remote_identity",
+            "columns": [
+                {
+                    "value": "repositoryId",
+                    "isExpression": false
+                },
+                {
+                    "value": "remoteIdentity",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": true,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "activities",
+            "name": "activity_pr",
+            "columns": [
+                {
+                    "value": "repositoryId",
+                    "isExpression": false
+                },
+                {
+                    "value": "prId",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "activities",
+            "name": "activity_inbox",
+            "columns": [
+                {
+                    "value": "disposition",
+                    "isExpression": false
+                },
+                {
+                    "value": "deferUntil",
+                    "isExpression": false
+                },
+                {
+                    "value": "occurredAt",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "activity_branches",
+            "name": "branch_activity",
+            "columns": [
+                {
+                    "value": "name",
+                    "isExpression": false
+                },
+                {
+                    "value": "activityId",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "activity_dates",
+            "name": "event_date",
+            "columns": [
+                {
+                    "value": "instant",
+                    "isExpression": false
+                },
+                {
+                    "value": "activityId",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "entry_coverage",
+            "name": "covered_revision",
+            "columns": [
+                {
+                    "value": "revision",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "entry_coverage",
+            "name": "coverage_commit",
+            "columns": [
+                {
+                    "value": "activityId",
+                    "isExpression": false
+                },
+                {
+                    "value": "entryId",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": true,
+            "where": "\"entry_coverage\".\"revision\" IS NULL",
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "entry_coverage",
+            "name": "coverage_revision",
+            "columns": [
+                {
+                    "value": "activityId",
+                    "isExpression": false
+                },
+                {
+                    "value": "revision",
+                    "isExpression": false
+                },
+                {
+                    "value": "entryId",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": true,
+            "where": "\"entry_coverage\".\"revision\" IS NOT NULL",
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "draft_selections",
+            "name": "selected_revision",
+            "columns": [
+                {
+                    "value": "revision",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "entries",
+            "name": "entry_date",
+            "columns": [
+                {
+                    "value": "date",
+                    "isExpression": false
+                },
+                {
+                    "value": "id",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "document_images",
+            "name": "image_owners",
+            "columns": [
+                {
+                    "value": "imageId",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "patches",
+            "name": "patch_access",
+            "columns": [
+                {
+                    "value": "accessedAt",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "publication_selections",
+            "name": "publication_revision",
+            "columns": [
+                {
+                    "value": "revision",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "one_unresolved_publication",
+            "columns": [
+                {
+                    "value": "draftId",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": true,
+            "where": "\"publication_attempts\".\"status\" IN ('pending','unknown')",
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "repositories",
+            "name": "repository_path",
+            "columns": [
+                {
+                    "value": "path",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": true,
+            "where": "\"repositories\".\"path\"<>''",
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "activity_revisions",
+            "name": "revision_owner",
+            "columns": [
+                {
+                    "value": "activityId",
+                    "isExpression": false
+                },
+                {
+                    "value": "id",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": true,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "activity_revisions",
+            "name": "revision_fingerprint",
+            "columns": [
+                {
+                    "value": "activityId",
+                    "isExpression": false
+                },
+                {
+                    "value": "fingerprint",
+                    "isExpression": false
+                }
+            ],
+            "isUnique": false,
+            "where": null,
+            "origin": "manual",
+            "entityType": "indexes"
+        },
+        {
+            "table": "acquisition_checkpoints",
+            "name": "fk_acquisition_checkpoints_repositoryId_repositories_id_fk",
+            "columns": ["repositoryId"],
+            "tableTo": "repositories",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "acquisition_versions",
+            "name": "fk_acquisition_versions_key_acquisition_checkpoints_key_fk",
+            "columns": ["key"],
+            "tableTo": "acquisition_checkpoints",
+            "columnsTo": ["key"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "activities",
+            "name": "fk_activities_repositoryId_repositories_id_fk",
+            "columns": ["repositoryId"],
+            "tableTo": "repositories",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "activities",
+            "name": "fk_activities_patchId_patches_id_fk",
+            "columns": ["patchId"],
+            "tableTo": "patches",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "activities",
+            "name": "activity_current_revision",
+            "columns": ["id", "revision"],
+            "tableTo": "activity_revisions",
+            "columnsTo": ["activityId", "id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": true,
+            "entityType": "fks"
+        },
+        {
+            "table": "activities",
+            "name": "activity_cached_revision",
+            "columns": ["id", "diffRevision"],
+            "tableTo": "activity_revisions",
+            "columnsTo": ["activityId", "id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": true,
+            "entityType": "fks"
+        },
+        {
+            "table": "activity_branches",
+            "name": "fk_activity_branches_activityId_activities_id_fk",
+            "columns": ["activityId"],
+            "tableTo": "activities",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "activity_dates",
+            "name": "fk_activity_dates_activityId_activities_id_fk",
+            "columns": ["activityId"],
+            "tableTo": "activities",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "activity_files",
+            "name": "fk_activity_files_activityId_activities_id_fk",
+            "columns": ["activityId"],
+            "tableTo": "activities",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "entry_coverage",
+            "name": "fk_entry_coverage_activityId_activities_id_fk",
+            "columns": ["activityId"],
+            "tableTo": "activities",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "entry_coverage",
+            "name": "fk_entry_coverage_entryId_entries_id_fk",
+            "columns": ["entryId"],
+            "tableTo": "entries",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "entry_coverage",
+            "name": "fk_entry_coverage_activityId_revision_activity_revisions_activityId_id_fk",
+            "columns": ["activityId", "revision"],
+            "tableTo": "activity_revisions",
+            "columnsTo": ["activityId", "id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "draft_selections",
+            "name": "fk_draft_selections_draftId_drafts_id_fk",
+            "columns": ["draftId"],
+            "tableTo": "drafts",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "draft_selections",
+            "name": "fk_draft_selections_activityId_activities_id_fk",
+            "columns": ["activityId"],
+            "tableTo": "activities",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "draft_selections",
+            "name": "fk_draft_selections_activityId_revision_activity_revisions_activityId_id_fk",
+            "columns": ["activityId", "revision"],
+            "tableTo": "activity_revisions",
+            "columnsTo": ["activityId", "id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "drafts",
+            "name": "fk_drafts_publishedEntryId_entries_id_fk",
+            "columns": ["publishedEntryId"],
+            "tableTo": "entries",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "git_history",
+            "name": "fk_git_history_repositoryId_repositories_id_fk",
+            "columns": ["repositoryId"],
+            "tableTo": "repositories",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "git_history_items",
+            "name": "fk_git_history_items_repositoryId_git_history_repositoryId_fk",
+            "columns": ["repositoryId"],
+            "tableTo": "git_history",
+            "columnsTo": ["repositoryId"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "git_history_items",
+            "name": "fk_git_history_items_activityId_activities_id_fk",
+            "columns": ["activityId"],
+            "tableTo": "activities",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "document_images",
+            "name": "fk_document_images_imageId_images_id_fk",
+            "columns": ["imageId"],
+            "tableTo": "images",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "publication_selections",
+            "name": "fk_publication_selections_publicationId_publication_attempts_id_fk",
+            "columns": ["publicationId"],
+            "tableTo": "publication_attempts",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "publication_selections",
+            "name": "fk_publication_selections_activityId_activities_id_fk",
+            "columns": ["activityId"],
+            "tableTo": "activities",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "publication_selections",
+            "name": "fk_publication_selections_activityId_revision_activity_revisions_activityId_id_fk",
+            "columns": ["activityId", "revision"],
+            "tableTo": "activity_revisions",
+            "columnsTo": ["activityId", "id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "fk_publication_attempts_draftId_drafts_id_fk",
+            "columns": ["draftId"],
+            "tableTo": "drafts",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "repository_branches",
+            "name": "fk_repository_branches_repositoryId_repositories_id_fk",
+            "columns": ["repositoryId"],
+            "tableTo": "repositories",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "repository_emails",
+            "name": "fk_repository_emails_repositoryId_repositories_id_fk",
+            "columns": ["repositoryId"],
+            "tableTo": "repositories",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "activity_revisions",
+            "name": "fk_activity_revisions_activityId_activities_id_fk",
+            "columns": ["activityId"],
+            "tableTo": "activities",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "activity_revisions",
+            "name": "fk_activity_revisions_patchId_patches_id_fk",
+            "columns": ["patchId"],
+            "tableTo": "patches",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "writing_documents",
+            "name": "fk_writing_documents_draftId_drafts_id_fk",
+            "columns": ["draftId"],
+            "tableTo": "drafts",
+            "columnsTo": ["id"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "writing_steps",
+            "name": "fk_writing_steps_draftId_field_writing_documents_draftId_field_fk",
+            "columns": ["draftId", "field"],
+            "tableTo": "writing_documents",
+            "columnsTo": ["draftId", "field"],
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "nameExplicit": false,
+            "entityType": "fks"
+        },
+        {
+            "table": "acquisition_versions",
+            "name": "acquisition_versions_pk",
+            "columns": ["key", "sourceId"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "activity_branches",
+            "name": "activity_branches_pk",
+            "columns": ["activityId", "name"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "activity_dates",
+            "name": "activity_dates_pk",
+            "columns": ["activityId", "kind", "instant"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "activity_files",
+            "name": "activity_files_pk",
+            "columns": ["activityId", "name"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "draft_selections",
+            "name": "draft_selections_pk",
+            "columns": ["draftId", "activityId"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "git_history_items",
+            "name": "git_history_items_pk",
+            "columns": ["repositoryId", "activityId"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "document_images",
+            "name": "document_images_pk",
+            "columns": ["owner", "imageId"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "publication_selections",
+            "name": "publication_selections_pk",
+            "columns": ["publicationId", "activityId"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "repository_branches",
+            "name": "repository_branches_pk",
+            "columns": ["repositoryId", "name"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "repository_emails",
+            "name": "repository_emails_pk",
+            "columns": ["repositoryId", "email"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "writing_documents",
+            "name": "writing_documents_pk",
+            "columns": ["draftId", "field"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "writing_steps",
+            "name": "writing_steps_pk",
+            "columns": ["draftId", "field", "version"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "acquisition_checkpoints",
+            "name": "acquisition_checkpoints_pk",
+            "columns": ["key"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "activities",
+            "name": "activities_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "entry_coverage",
+            "name": "entry_coverage_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "provider_credential_cleanup",
+            "name": "provider_credential_cleanup_pk",
+            "columns": ["key"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "drafts",
+            "name": "drafts_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "entries",
+            "name": "entries_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "git_history",
+            "name": "git_history_pk",
+            "columns": ["repositoryId"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "images",
+            "name": "images_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "journal",
+            "name": "journal_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "patches",
+            "name": "patches_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "provider_accounts",
+            "name": "provider_accounts_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "provider_preparations",
+            "name": "provider_preparations_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "publication_attempts_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "repositories",
+            "name": "repositories_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "activity_revisions",
+            "name": "activity_revisions_pk",
+            "columns": ["id"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "transport_pauses",
+            "name": "transport_pauses_pk",
+            "columns": ["scope"],
+            "nameExplicit": false,
+            "entityType": "pks"
+        },
+        {
+            "table": "drafts",
+            "name": "drafts_week_unique",
+            "columns": ["week"],
+            "nameExplicit": false,
+            "entityType": "uniques"
+        },
+        {
+            "table": "provider_accounts",
+            "name": "provider_accounts_identity_unique",
+            "columns": ["identity"],
+            "nameExplicit": false,
+            "entityType": "uniques"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "publication_attempts_marker_unique",
+            "columns": ["marker"],
+            "nameExplicit": false,
+            "entityType": "uniques"
+        },
+        {
+            "table": "acquisition_checkpoints",
+            "name": "acquisition_status",
+            "value": "\"status\" IN ('idle','running','paused','error','cancelled')",
+            "entityType": "checks"
+        },
+        {
+            "table": "acquisition_checkpoints",
+            "name": "acquisition_cursor",
+            "value": "json_valid(\"cursor\")",
+            "entityType": "checks"
+        },
+        {
+            "table": "acquisition_checkpoints",
+            "name": "acquisition_source",
+            "value": "(\"provider\"='notion' AND \"repositoryId\" IS NULL) OR (\"provider\" IN ('git','remote') AND \"repositoryId\" IS NOT NULL)",
+            "entityType": "checks"
+        },
+        {
+            "table": "activities",
+            "name": "activity_kind",
+            "value": "\"kind\" IN ('commit','change-request','review','opened','merged')",
+            "entityType": "checks"
+        },
+        {
+            "table": "activities",
+            "name": "activity_disposition",
+            "value": "\"disposition\" IN ('inbox','deferred','dismissed')",
+            "entityType": "checks"
+        },
+        {
+            "table": "activities",
+            "name": "activity_flags",
+            "value": "\"explicit\" IN (0,1) AND \"filesLoaded\" IN (0,1) AND \"journaled\" IN (0,1)",
+            "entityType": "checks"
+        },
+        {
+            "table": "activity_files",
+            "name": "file_counts",
+            "value": "(\"additions\" IS NULL OR \"additions\">=0) AND (\"deletions\" IS NULL OR \"deletions\">=0)",
+            "entityType": "checks"
+        },
+        {
+            "table": "drafts",
+            "name": "draft_body",
+            "value": "json_valid(\"body\")",
+            "entityType": "checks"
+        },
+        {
+            "table": "drafts",
+            "name": "draft_version",
+            "value": "\"version\">0",
+            "entityType": "checks"
+        },
+        {
+            "table": "entries",
+            "name": "entry_body",
+            "value": "json_valid(\"body\")",
+            "entityType": "checks"
+        },
+        {
+            "table": "images",
+            "name": "image_dimensions",
+            "value": "\"width\">0 AND \"height\">0",
+            "entityType": "checks"
+        },
+        {
+            "table": "journal",
+            "name": "journal_singleton",
+            "value": "\"id\"=1",
+            "entityType": "checks"
+        },
+        {
+            "table": "journal",
+            "name": "settings_json",
+            "value": "json_valid(\"settings\")",
+            "entityType": "checks"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "publication_status",
+            "value": "\"status\" IN ('pending','unknown','failed','confirmed')",
+            "entityType": "checks"
+        },
+        {
+            "table": "publication_attempts",
+            "name": "publication_documents",
+            "value": "json_valid(\"body\") AND json_valid(\"destination\")",
+            "entityType": "checks"
+        },
+        {
+            "table": "repositories",
+            "name": "repository_flags",
+            "value": "\"available\" IN (0,1) AND \"removed\" IN (0,1)",
+            "entityType": "checks"
+        }
+    ],
+    "renames": []
+}

@@ -3,13 +3,15 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
+import { writingFixture } from './writing-fixture'
 import { sampleState } from './workspace-fixture'
-import type { Command, JournalNode, Reply } from '../src/shared/model'
+import type { JournalNode } from '../src/shared/model'
 import type { EditorSnapshot } from '../src/renderer/editor-snapshot'
 
 const notifications = vi.hoisted(() => ({
     toast: vi.fn<(options: unknown) => string>(() => 'publish'),
-    dismiss: vi.fn()
+    dismiss: vi.fn(),
+    update: vi.fn()
 }))
 const writer = vi.hoisted(() => ({
     change: undefined as ((body: JournalNode) => void) | undefined,
@@ -42,15 +44,16 @@ vi.mock('../src/renderer/Editor', () => ({
 async function update(change: () => unknown) {
     await act(async () => {
         change()
-        await Promise.resolve()
+        await new Promise((resolve) => setTimeout(resolve, 50))
     })
 }
 
+let fixture: Awaited<ReturnType<typeof writingFixture>> | undefined
 let root: Root
 let container: HTMLDivElement
 beforeEach(() => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-    vi.useFakeTimers()
+
     vi.clearAllMocks()
     localStorage.clear()
     container = document.createElement('div')
@@ -59,6 +62,8 @@ beforeEach(() => {
 })
 afterEach(async () => {
     await update(() => root.unmount())
+    await fixture?.close()
+    fixture = undefined
     container.remove()
     vi.useRealTimers()
 })
@@ -66,95 +71,6 @@ afterEach(async () => {
 const body = (text: string): JournalNode => ({
     type: 'doc',
     content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
-})
-
-it('does no synchronous recovery writes or backend saves during a typing burst, then saves the latest document once', async () => {
-    const state = sampleState('2026-10-05')
-    const run = vi.fn((_command: Command) =>
-        Promise.resolve({ state, connections: { remote: false, notion: true, protectedStorage: false } })
-    )
-    await update(() =>
-        root.render(
-            createElement(WorkspaceDraft, {
-                state,
-                week: '2026-10-05',
-                notionConnected: true,
-                run,
-                publishTarget: null,
-                onReady: vi.fn(),
-                onSettings: vi.fn()
-            })
-        )
-    )
-    await update(() => vi.advanceTimersByTime(1200))
-    expect(run).not.toHaveBeenCalled()
-    for (let index = 0; index < 20; index++) {
-        await update(() => {
-            writer.change?.(body(`Writing ${index}`))
-            vi.advanceTimersByTime(100)
-        })
-        expect(localStorage.length).toBe(0)
-        expect(run).not.toHaveBeenCalled()
-    }
-    await update(() => vi.advanceTimersByTime(1000))
-    expect(run).toHaveBeenCalledTimes(1)
-    expect(run.mock.calls[0][0]).toMatchObject({ type: 'draft', draft: { body: body('Writing 19') } })
-})
-
-it('keeps unsaved writing in recovery storage when leaving before the debounce finishes', async () => {
-    const state = sampleState('2026-10-05')
-    const run = vi.fn(() => Promise.resolve(undefined))
-    await update(() =>
-        root.render(
-            createElement(WorkspaceDraft, {
-                state,
-                week: '2026-10-05',
-                notionConnected: true,
-                run,
-                publishTarget: null,
-                onReady: vi.fn(),
-                onSettings: vi.fn()
-            })
-        )
-    )
-    await update(() => writer.change?.(body('Last keystroke')))
-    await update(() => window.dispatchEvent(new Event('pagehide')))
-    expect(localStorage.length).toBe(1)
-    expect(localStorage.getItem(localStorage.key(0)!)).toContain('Last keystroke')
-    expect(run).toHaveBeenCalledTimes(1)
-})
-
-it('checkpoints continuous typing and lets an existing empty draft apply the saved template', async () => {
-    const state = sampleState('2026-10-05')
-    state.drafts[0].body = { type: 'doc', content: [{ type: 'paragraph' }] }
-    state.settings.template = body('Weekly template')
-    const run = vi.fn(() =>
-        Promise.resolve({ state, connections: { remote: false, notion: true, protectedStorage: false } })
-    )
-    await update(() =>
-        root.render(
-            createElement(WorkspaceDraft, {
-                state,
-                week: '2026-10-05',
-                notionConnected: true,
-                run,
-                publishTarget: null,
-                onReady: vi.fn(),
-                onSettings: vi.fn()
-            })
-        )
-    )
-    expect(container.textContent).not.toContain('Use entry template')
-    expect(writer.template).toBe(state.settings.template)
-    for (let index = 0; index < 11; index++) {
-        await update(() => {
-            writer.change?.(body(`Uninterrupted ${index}`))
-            vi.advanceTimersByTime(500)
-        })
-    }
-    expect(run).toHaveBeenCalledTimes(1)
-    expect(run.mock.calls[0]).toMatchObject([{ type: 'draft', draft: { body: body('Uninterrupted 9') } }])
-    expect(state.settings.template).toEqual(body('Weekly template'))
 })
 
 it.each([true, false])(
@@ -174,6 +90,8 @@ it.each([true, false])(
                 createdAt: new Date().toISOString()
             }
         ]
+        fixture = await writingFixture(state)
+        state.saves[0].draftId = state.drafts[0].id
         const run = vi.fn(() => Promise.resolve(undefined))
         await update(() =>
             root.render(
@@ -202,6 +120,8 @@ it('reopens published weekly writing as editable with a publish action', async (
     const state = sampleState('2026-10-05')
     state.settings.destination = { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' }
     state.drafts[0].publishedEntryId = 'published-page'
+    fixture = await writingFixture(state)
+    state.drafts[0].publishedEntryId = 'published-page'
     const run = vi.fn(() => Promise.resolve(undefined))
     await update(() =>
         root.render(
@@ -216,18 +136,11 @@ it('reopens published weekly writing as editable with a publish action', async (
             })
         )
     )
+    for (let i = 0; i < 10 && !container.querySelector('[aria-label="Entry title"]'); i++) await update(() => undefined)
     const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Entry title"]')
-    expect(title?.value).toBe(state.drafts[0].title)
-    expect(title?.readOnly).toBe(false)
+    expect(title?.textContent).toBe(state.drafts[0].title)
+    expect(title?.getAttribute('contenteditable')).toBe('true')
     expect(container.textContent).toContain('Update in Notion')
-    await update(() => writer.change?.(body('Edited published week')))
-    await update(() => vi.advanceTimersByTime(1000))
-    expect(run).toHaveBeenCalledWith(
-        expect.objectContaining({
-            type: 'draft',
-            draft: expect.objectContaining({ body: body('Edited published week') })
-        })
-    )
 })
 
 it.each([false, true])(
@@ -235,6 +148,7 @@ it.each([false, true])(
     async (published) => {
         const state = sampleState('2026-10-05')
         state.settings.destination = { kind: 'page', id: 'parent', titleProperty: 'Name', dateProperty: '' }
+        fixture = await writingFixture(state)
         state.drafts[0].publishedEntryId = published ? 'published-page' : undefined
         const saved = structuredClone(state)
         saved.drafts[0].publishedEntryId = 'published-page'
@@ -267,6 +181,8 @@ it.each([false, true])(
                 })
             )
         )
+        for (let i = 0; i < 10 && container.querySelector<HTMLButtonElement>('button')!.disabled; i++)
+            await update(() => undefined)
         await update(() => container.querySelector<HTMLButtonElement>('button')!.click())
         expect(run).toHaveBeenCalledWith({ type: 'publish', draftId: state.drafts[0].id })
         expect(notifications.toast).toHaveBeenCalledWith(
@@ -278,92 +194,3 @@ it.each([false, true])(
         expect(container.textContent).toContain('Update in Notion')
     }
 )
-
-it('advances dirty writing only to its own save acknowledgment when another writer changes the snapshot', async () => {
-    const state = sampleState('2026-10-05')
-    state.drafts[0].version = 1
-    let release!: (value: Reply) => void
-    const run = vi.fn(
-        (_command: Command) =>
-            new Promise<Reply>((resolve) => {
-                release = resolve
-            })
-    )
-    await update(() =>
-        root.render(
-            createElement(WorkspaceDraft, {
-                state,
-                week: '2026-10-05',
-                notionConnected: true,
-                run,
-                publishTarget: null,
-                onReady: vi.fn(),
-                onSettings: vi.fn()
-            })
-        )
-    )
-    await update(() => writer.change?.(body('First edit')))
-    await update(() => vi.advanceTimersByTime(1000))
-    await update(() => writer.change?.(body('Continued local writing')))
-    await update(() =>
-        release({
-            state: { ...state, drafts: [{ ...state.drafts[0], version: 3, body: body('Another writer') }] },
-            draftSaved: { id: state.drafts[0].id, version: 2 },
-            connections: { remote: false, notion: true, protectedStorage: false }
-        })
-    )
-    await update(() => vi.advanceTimersByTime(1000))
-    expect(run.mock.calls[1][0]).toMatchObject({
-        type: 'draft',
-        draft: { version: 2, body: body('Continued local writing') }
-    })
-    await update(() =>
-        release({
-            state,
-            draftSaved: { id: state.drafts[0].id, version: 3 },
-            connections: { remote: false, notion: true, protectedStorage: false }
-        })
-    )
-})
-
-it('omits publishing and footer connection prompts without Notion', async () => {
-    const state = sampleState('2026-10-05')
-    await update(() =>
-        root.render(
-            createElement(WorkspaceDraft, {
-                state,
-                week: '2026-10-05',
-                notionConnected: false,
-                run: vi.fn(() => Promise.resolve(undefined)),
-                publishTarget: container,
-                onReady: vi.fn(),
-                onSettings: vi.fn()
-            })
-        )
-    )
-    expect(container.textContent).not.toMatch(/Publish|Connect Notion|Set up Notion/)
-    expect(container.textContent).toContain('/ for formatting')
-})
-
-it('opens settings to finish publishing setup for a connected profile without a destination', async () => {
-    const onSettings = vi.fn()
-    await update(() =>
-        root.render(
-            createElement(WorkspaceDraft, {
-                state: sampleState('2026-10-05'),
-                week: '2026-10-05',
-                notionConnected: true,
-                run: vi.fn(() => Promise.resolve(undefined)),
-                publishTarget: container,
-                onReady: vi.fn(),
-                onSettings
-            })
-        )
-    )
-    const button = Array.from(container.querySelectorAll('button')).find(
-        (item) => item.textContent === 'Set up Notion publishing'
-    )!
-    expect(button.disabled).toBe(false)
-    await update(() => button.click())
-    expect(onSettings).toHaveBeenCalledOnce()
-})

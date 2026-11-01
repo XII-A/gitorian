@@ -4,6 +4,13 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 test.use({ desktopEntry: 'tests/e2e/support/workspace-errors-main.mjs' })
+test.afterEach(async ({ desktop }) => {
+    if (desktop.page.isClosed()) return
+    await desktop.app.evaluate(({ app }) => {
+        app.emit('workspace-error-fixture', '')
+    })
+})
+
 test('failed autosave offers one retry toast and preserves writing', async ({ desktop }, info) => {
     const { page, app } = desktop
     const title = 'Writing that could not be saved'
@@ -22,12 +29,21 @@ test('failed autosave offers one retry toast and preserves writing', async ({ de
     await input.fill(title + '.')
     await expect
         .poll(() =>
-            page.evaluate(() => Object.values(localStorage).some((v) => v.includes('Writing that could not be saved.')))
+            page.evaluate(() =>
+                Object.entries(localStorage)
+                    .filter(([key]) => key.startsWith('gitorian:writing:'))
+                    .some(([, value]) => {
+                        const record = JSON.parse(value) as { steps?: unknown[] }
+                        return !!record.steps?.length
+                    })
+            )
         )
         .toBe(true)
     await expect(error).toHaveCount(1)
     await page.getByRole('button', { name: 'Retry saving', exact: true }).click()
     await expect(error).toBeVisible()
+    await expect(input).toBeEditable()
+    await expect(page.getByRole('button', { name: 'Retry saving', exact: true })).toBeVisible()
     await app.evaluate(({ app }) => {
         app.emit('workspace-error-fixture', '')
     })
@@ -37,7 +53,7 @@ test('failed autosave offers one retry toast and preserves writing', async ({ de
     await desktop.shot('02-retry-saved')
     await page.reload()
     await page.getByRole('button', { name: 'Open journal', exact: true }).click()
-    await expect(input).toHaveValue(title + '.')
+    await expect(input).toHaveText(title + '.')
     await desktop.shot('03-reloaded-writing')
     await desktop.close()
     const db = new DatabaseSync(join(desktop.profile, 'journal.sqlite'), { readOnly: true })
