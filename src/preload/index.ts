@@ -1,8 +1,39 @@
+import type { WritingState } from '../shared/writing'
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { SpellingContext, DesktopBridge, RepositoryImportProgress, NotionDiscoveryEvent } from '../shared/model'
 import type { AppUpdateState } from '../shared/app-updates'
 
 const bridge: DesktopBridge = {
+    writing: {
+        claim: (client) => ipcRenderer.invoke('journal:writing-claim', client),
+        release: (client) => ipcRenderer.invoke('journal:writing-release', client),
+        open: (draftId, generation, field) =>
+            ipcRenderer.invoke('journal:writing-open', { draftId, generation, field }),
+        submit: (request) => ipcRenderer.invoke('journal:writing-submit', request),
+        onChange: (listener) => {
+            const receive = (_event: Electron.IpcRendererEvent, state: WritingState) => listener(state)
+            ipcRenderer.on('journal:writing-change', receive)
+            return () => ipcRenderer.removeListener('journal:writing-change', receive)
+        },
+        onPrepare: (listener) => {
+            const receive = (_event: Electron.IpcRendererEvent, id: string) => {
+                void listener(id).then(
+                    () => ipcRenderer.send('journal:writing-prepared', { id }),
+                    (error: unknown) =>
+                        ipcRenderer.send('journal:writing-prepared', {
+                            id,
+                            error: error instanceof Error ? error.message : 'Could not save writing'
+                        })
+                )
+            }
+            ipcRenderer.on('journal:writing-prepare', receive)
+            return () => ipcRenderer.removeListener('journal:writing-prepare', receive)
+        },
+        onResume: (listener) => {
+            ipcRenderer.on('journal:writing-resume', listener)
+            return () => ipcRenderer.removeListener('journal:writing-resume', listener)
+        }
+    },
     spelling: {
         onContext: (listener) => {
             const receive = (_event: Electron.IpcRendererEvent, context: SpellingContext) => listener(context)

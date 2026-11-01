@@ -17,7 +17,8 @@ ipcMain.handle = (channel, listener) =>
         const command = channel === 'journal:updates' ? payload.command : payload
         const wait = command?.type === 'state' ? stateDelay : delay
         if (wait) await new Promise((done) => setTimeout(done, wait))
-        if (command?.type === fail) throw new Error('Fixture: repository is unavailable')
+        if (command?.type === fail || (fail === 'draft' && channel === 'journal:writing-submit'))
+            throw new Error('Fixture: repository is unavailable')
         return listener(event, payload)
     })
 await import(pathToFileURL(resolve('out/main/index.js')).href)

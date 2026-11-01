@@ -1,3 +1,4 @@
+import { WritingWindows } from './writing-windows'
 import { installSpellingMenu } from './spelling-menu'
 import { nextAcquisition } from '../shared/acquisition'
 import { NotionDiscoveryCache } from './notion-discovery-cache'
@@ -50,7 +51,21 @@ protocol.registerSchemesAsPrivileged([
 ])
 const directory = fileURLToPath(new URL('.', import.meta.url))
 let attachSpellingMenu: ReturnType<typeof installSpellingMenu> | undefined
-let mainWindow: BrowserWindow
+let writingWindows: WritingWindows | undefined
+let resumeForUpdate: (() => void) | undefined
+const primaryInstance = app.requestSingleInstanceLock()
+if (!primaryInstance) app.quit()
+let pendingLaunches = 0
+app.on('second-instance', () => {
+    if (!writingWindows) {
+        pendingLaunches++
+        return
+    }
+    if (closing || updating || restoring) return
+    const window = windowFor()
+    window.show()
+    window.focus()
+})
 let store: JournalDatabase
 let service: JournalService
 let restoring = false
@@ -98,6 +113,7 @@ function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
             nodeIntegration: false
         }
     })
+    if (!reference) writingWindows?.add(window)
     attachSpellingMenu?.(window)
     if (process.platform === 'win32') {
         window.removeMenu()
@@ -139,11 +155,12 @@ async function openExternal(value: string): Promise<void> {
         throw new Error('Only web links can be opened')
     await shell.openExternal(url.toString())
 }
-async function folder(): Promise<string | undefined> {
-    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
+async function folder(window: BrowserWindow): Promise<string | undefined> {
+    const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] })
     return result.canceled ? undefined : result.filePaths[0]
 }
 void app.whenReady().then(async () => {
+    if (!primaryInstance) return
     attachSpellingMenu = installSpellingMenu()
     ipcMain.handle('journal:clipboard', (event, input: unknown) => {
         const action = z.enum(['cut', 'copy', 'paste']).parse(input)
@@ -284,29 +301,38 @@ void app.whenReady().then(async () => {
         () => connection.profileKey(),
         () => execute(notion.profile())
     )
-    mainWindow = windowFor()
+    writingWindows = new WritingWindows(store, runNative)
+    windowFor()
+    while (pendingLaunches-- > 0) windowFor()
     const updater = new WindowsUpdater()
     const appUpdates = new AppUpdates(
         process.platform === 'win32' && (app.isPackaged || updater.forceDevUpdateConfig) ? updater : undefined,
         async () => {
             if (closing || restoring) throw new Error('Journal is busy')
+            const resumeWriting = await writingWindows!.prepare()
             updating = true
             const resume = holdJournal()
+            const release = () => {
+                updating = false
+                resumeWriting()
+                resume()
+                resumeForUpdate = undefined
+            }
             try {
                 await execute(work.drain)
             } catch (error) {
-                updating = false
-                resume()
+                release()
                 throw error
             }
-            return () => {
-                updating = false
-                resume()
-            }
+            resumeForUpdate = release
+            return release
         }
     )
     const updateOwner = (event: IpcMainInvokeEvent) => {
-        if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame)
+        if (
+            !writingWindows!.all().some((window) => window.webContents === event.sender) ||
+            event.senderFrame !== event.sender.mainFrame
+        )
             throw new Error('Use the main journal window to update Gitorian')
     }
     ipcMain.handle('journal:clipboard-text', (event, text: unknown) => {
@@ -325,7 +351,7 @@ void app.whenReady().then(async () => {
         return appUpdates.snapshot()
     })
     appUpdates.subscribe((state) => {
-        if (!mainWindow.isDestroyed()) mainWindow.webContents.send('journal:app-update-state', state)
+        for (const window of writingWindows!.all()) window.webContents.send('journal:app-update-state', state)
     })
     appUpdates.start()
     const commandHandler = (event: IpcMainInvokeEvent, input: unknown) =>
@@ -375,7 +401,7 @@ void app.whenReady().then(async () => {
                     return handled
                 }
                 case 'addRepository': {
-                    const path = yield* native(() => folder())
+                    const path = yield* native(() => folder(trusted))
                     if (path) yield* service.addRepository(path)
                     break
                 }
@@ -398,7 +424,7 @@ void app.whenReady().then(async () => {
                         return yield* service.reply({ message: 'A repository import is already running.' })
                     if (command.type === 'addRepositories') {
                         progress({ stage: 'selecting' })
-                        const path = yield* native(() => folder())
+                        const path = yield* native(() => folder(trusted))
                         if (!path) return yield* service.reply()
                         return yield* service.scanRepositories(path, progress)
                     }
@@ -436,7 +462,7 @@ void app.whenReady().then(async () => {
                     return yield* service.reply({ message: 'Import started. You can close Settings and keep writing.' })
                 }
                 case 'relocate': {
-                    const path = yield* native(() => folder())
+                    const path = yield* native(() => folder(trusted))
                     if (path) {
                         const inspected = yield* native(() => inspectRepository(path))
                         const repository = store.config.repositories.find((item) => item.id === command.id)
@@ -673,7 +699,7 @@ void app.whenReady().then(async () => {
                     break
                 case 'export': {
                     const result = yield* native(() =>
-                        dialog.showSaveDialog(mainWindow, {
+                        dialog.showSaveDialog(trusted, {
                             defaultPath: 'gitorian-backup.json',
                             filters: [{ name: 'Tracking backup', extensions: ['json'] }]
                         })
@@ -690,14 +716,14 @@ void app.whenReady().then(async () => {
                         const handled = yield* Effect.gen(function* () {
                             yield* work.drain
                             const result = yield* native(() =>
-                                dialog.showOpenDialog(mainWindow, {
+                                dialog.showOpenDialog(trusted, {
                                     properties: ['openFile'],
                                     filters: [{ name: 'Tracking backup', extensions: ['json'] }]
                                 })
                             )
                             if (!result.canceled) {
                                 const confirmation = yield* native(() =>
-                                    dialog.showMessageBox(mainWindow, {
+                                    dialog.showMessageBox(trusted, {
                                         type: 'warning',
                                         buttons: ['Cancel', 'Replace local tracking'],
                                         defaultId: 0,
@@ -710,14 +736,26 @@ void app.whenReady().then(async () => {
                                     if ((yield* native(() => stat(result.filePaths[0]))).size > imageLimits.backup)
                                         return yield* Effect.fail(new Error('The backup exceeds the 512 MiB limit.'))
                                     const backup = yield* native(() => readFile(result.filePaths[0], 'utf8'))
-                                    yield* native(() => store.restore(backup))
-                                    yield* providerAccounts.cleanup()
-                                    notionPickerGeneration++
-                                    stopNotionPages?.()
-                                    notionDiscovery.clear()
-                                    availableNotionPages = []
-                                    yield* connection.disconnect()
-                                    return yield* service.reply({ message: 'Backup imported.' })
+                                    const resumeWriting = yield* native(() => writingWindows!.prepare())
+                                    let replaced = false
+                                    return yield* Effect.gen(function* () {
+                                        yield* native(() => store.restore(backup))
+                                        replaced = true
+                                        yield* providerAccounts.cleanup()
+                                        notionPickerGeneration++
+                                        stopNotionPages?.()
+                                        notionDiscovery.clear()
+                                        availableNotionPages = []
+                                        yield* connection.disconnect()
+                                        return yield* service.reply({ message: 'Backup imported.' })
+                                    }).pipe(
+                                        Effect.ensuring(
+                                            Effect.sync(() => {
+                                                if (replaced) writingWindows!.reset()
+                                                else resumeWriting()
+                                            })
+                                        )
+                                    )
                                 }
                             }
                         }).pipe(
@@ -862,13 +900,13 @@ void app.whenReady().then(async () => {
             yield* service.startRefresh({ repositoryId, source: source === 'git' ? 'git' : 'remote' })
             return
         }
-        if (minutes > 0 && !mainWindow.isDestroyed() && mainWindow.isVisible() && elapsed >= minutes * 60000)
+        if (minutes > 0 && writingWindows!.all().some((window) => window.isVisible()) && elapsed >= minutes * 60000)
             yield* service.startRefresh()
     })
     void execute(work.repeat(5000, refreshIfActive))
     if (store.config.settings.refreshMinutes > 0) void execute(service.startRefresh())
     app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) mainWindow = windowFor()
+        if (BrowserWindow.getAllWindows().length === 0) windowFor()
     })
 })
 app.on('window-all-closed', () => {
@@ -884,11 +922,20 @@ app.on('before-quit', (event) => {
     closing = true
     const resume = holdJournal()
     void (async () => {
-        if (notionConnection) await execute(notionConnection.cancel())
-        // Stop producers before sealing the writer queue. Already accepted operations
-        // may still checkpoint while their network requests finish.
-        await execute(work.shutdown(native(() => store.close())))
-        await runtime.dispose()
+        // Explicit installation already checkpointed every frozen writer. Reuse
+        // that barrier rather than rejecting quit as a competing preparation.
+        const resumeWriting = resumeForUpdate ?? (await writingWindows?.prepare())
+        try {
+            if (notionConnection) await execute(notionConnection.cancel())
+            // Stop producers before sealing the writer queue. Already accepted operations
+            // may still checkpoint while their network requests finish.
+            await execute(work.shutdown(native(() => store.close())))
+            await runtime.dispose()
+            writingWindows?.allowExit()
+        } catch (error) {
+            resumeWriting?.()
+            throw error
+        }
     })()
         .then(() => {
             closed = true

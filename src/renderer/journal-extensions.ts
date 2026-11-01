@@ -1,6 +1,7 @@
+import { ToggleNode, ToggleSummaryNode, ToggleContentNode, writingStarter } from '../shared/writing-schema'
 import { motionTokens } from './components/arc/motion-tokens'
 import { JournalDirection, JournalBlockquote } from './journal-direction'
-import { Extension, InputRule, Node, textInputRule, mergeAttributes } from '@tiptap/react'
+import { Extension, InputRule, textInputRule, mergeAttributes } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import type { JournalNode } from '../shared/model'
 import StarterKit from '@tiptap/starter-kit'
@@ -63,11 +64,7 @@ function unwrapToggle(editor: Editor, depth: number) {
         .run()
 }
 
-const Toggle = Node.create({
-    name: 'toggle',
-    group: 'block',
-    content: 'toggleSummary toggleContent',
-    defining: true,
+const Toggle = ToggleNode.extend({
     parseHTML: () => [{ tag: 'div[data-type="toggle"]' }],
     renderHTML: () => ['div', { 'data-type': 'toggle' }, 0],
     addKeyboardShortcuts() {
@@ -150,10 +147,7 @@ const Toggle = Node.create({
         }
     }
 })
-const ToggleSummary = Node.create({
-    name: 'toggleSummary',
-    content: 'inline*',
-    defining: true,
+const ToggleSummary = ToggleSummaryNode.extend({
     parseHTML: () => [{ tag: 'div[data-type="toggleSummary"]' }],
     renderHTML: ({ HTMLAttributes }) => ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'toggleSummary' }), 0],
     addKeyboardShortcuts() {
@@ -202,10 +196,7 @@ const ToggleSummary = Node.create({
         }
     }
 })
-const ToggleContent = Node.create({
-    name: 'toggleContent',
-    content: 'block+',
-    defining: true,
+const ToggleContent = ToggleContentNode.extend({
     parseHTML: () => [{ tag: 'div[data-type="toggleContent"]' }],
     renderHTML: () => ['div', { 'data-type': 'toggleContent' }, 0],
     addKeyboardShortcuts() {
@@ -328,8 +319,7 @@ export const journalExtensions = () => [
     StarterKit.configure({
         blockquote: false,
         codeBlock: false,
-        heading: { levels: [1, 2, 3, 4] },
-        link: { openOnClick: false }
+        ...writingStarter
     }),
     TaskList,
     // TaskItem's live node view uses HTMLAttributes, not renderHTML's data-type.
