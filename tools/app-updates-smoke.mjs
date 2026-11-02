@@ -125,7 +125,11 @@ const launchInstaller = async (_file, args) => {
 const handle = ipcMain.handle.bind(ipcMain)
 ipcMain.handle = (channel, listener) =>
     handle(channel, async (event, ...args) => {
-        if (channel === 'journal:updates' && args[0].command.type === 'draft' && failSave)
+        if (
+            ((channel === 'journal:updates' && args[0].command.type === 'draft') ||
+                channel === 'journal:writing-submit') &&
+            failSave
+        )
             throw new Error('Simulated local save failure')
         if (channel === 'journal:image-import' && holdImage)
             await new Promise((done) => {
@@ -282,10 +286,12 @@ app.on('browser-window-created', (_, window) => {
             })
             await wait(`!!document.querySelector('[aria-label="Open journal"]')`)
             await click('[aria-label="Open journal"]')
-            await wait(`!!document.querySelector('[aria-label="Journal body"]')`)
+            await wait(
+                `document.querySelector('[aria-label="Journal body"]')?.getAttribute('contenteditable')==='true'`
+            )
             assert(
                 await js(
-                    `(()=>{const text=document.querySelector('[aria-label="Journal body"]').innerText;return text.includes('Journal note 1:') && text.includes('This week I shipped a quieter writing experience.')})()`
+                    `(()=>{const editor=document.querySelector('[aria-label="Journal body"]');if(editor?.getAttribute('contenteditable')!=='true')return false;const text=editor.innerText;return text.includes('Journal note 1:') && text.includes('This week I shipped a quieter writing experience.')})()`
                 ),
                 'Writing opens the seeded 200-paragraph draft before measuring download responsiveness'
             )
@@ -385,7 +391,9 @@ app.on('browser-window-created', (_, window) => {
             await shot('06-hub-update-popover')
             await escape()
             await click('[aria-label="Open journal"]')
-            await wait(`!!document.querySelector('[aria-label="Journal body"]')`)
+            await wait(
+                `document.querySelector('[aria-label="Journal body"]')?.getAttribute('contenteditable')==='true'`
+            )
             await js(`window.__editor=document.querySelector('[aria-label="Journal body"]')`)
             await js(`window.__editor.focus()`)
 

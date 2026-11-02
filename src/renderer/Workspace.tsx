@@ -26,6 +26,7 @@ import { ActivityDayFilter, useActivityDays } from './ActivityDays'
 import { ProjectFilter } from './ProjectFilter'
 import { hasCachedDetails } from './activity-cache'
 import { Breadcrumb } from './components/arc/breadcrumb/breadcrumb'
+import { checkpointBeforeUpdate } from './update-checkpoint'
 import { HeaderAtmosphere } from './HeaderAtmosphere'
 import './workspace.css'
 import { useActivityRefresh } from './use-activity-refresh'
@@ -204,7 +205,13 @@ export function Workspace({
             channel.current = undefined
         }
     }, [state, week, cite, canCite])
-    const changeWeek = (value: string) => {
+    const changeWeek = async (value: string) => {
+        let resume: (() => void) | undefined
+        try {
+            resume = await checkpointBeforeUpdate()
+        } catch {
+            return
+        }
         setWeek(value)
         setSelectedId(undefined)
         setDetached(undefined)
@@ -214,6 +221,7 @@ export function Workspace({
         const url = new URL(window.location.href)
         url.searchParams.set('week', value)
         window.history.replaceState({}, '', url)
+        resume()
     }
     const popout = async () => {
         if (!selected) return
@@ -286,7 +294,23 @@ export function Workspace({
                         <div ref={breadcrumb}>
                             <Breadcrumb
                                 ariaLabel="Journal breadcrumb"
-                                items={[{ label: 'Hub', onClick: () => onBack(week) }, { label: 'Weekly entry' }]}
+                                items={[
+                                    {
+                                        label: 'Hub',
+                                        onClick: () => {
+                                            void checkpointBeforeUpdate().then(
+                                                (resume) => {
+                                                    onBack(week)
+                                                    resume()
+                                                },
+                                                () => {
+                                                    /* The writing status reports the failure. */
+                                                }
+                                            )
+                                        }
+                                    },
+                                    { label: 'Weekly entry' }
+                                ]}
                             />
                         </div>
                     </div>

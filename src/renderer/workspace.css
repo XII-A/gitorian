@@ -194,7 +194,7 @@
     font-weight: 400;
     letter-spacing: var(--tracking-display);
 }
-.ws-title textarea {
+.ws-title-input .ProseMirror {
     display: block;
     width: 100%;
     height: auto;
@@ -210,7 +210,8 @@
     letter-spacing: inherit;
     overflow-y: hidden;
 }
-.ws-title textarea::placeholder {
+.ws-title-input .ProseMirror:empty::before {
+    content: attr(data-placeholder);
     color: var(--text-secondary);
 }
 .ws-writing-footer {
@@ -231,20 +232,6 @@
     display: flex;
     align-items: center;
     gap: var(--space-1);
-}
-.ws-conflict-form {
-    display: grid;
-    gap: var(--space-6);
-}
-.ws-conflict-options {
-    min-width: 0;
-    margin: 0;
-    padding: 0;
-    border: 0;
-}
-.ws-conflict-error {
-    margin: 0;
-    color: var(--danger);
 }
 .ws-writing-footer kbd {
     padding: 0 var(--space-1);

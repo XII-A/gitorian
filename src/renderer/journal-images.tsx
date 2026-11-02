@@ -1,4 +1,5 @@
-import { Node, Extension, mergeAttributes } from '@tiptap/react'
+import { ImageNode } from '../shared/writing-schema'
+import { Extension, mergeAttributes } from '@tiptap/react'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import type { Editor } from '@tiptap/react'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
@@ -12,11 +13,7 @@ import { Skeleton } from './components/arc/skeleton/skeleton'
 import { JournalImageView } from './JournalImageView'
 import { imageURL, imageIdPattern, imageLimits } from '../shared/images'
 
-export const JournalImageNode = Node.create({
-    name: 'image',
-    group: 'block',
-    atom: true,
-    draggable: true,
+export const JournalImageNode = ImageNode.extend({
     addAttributes() {
         return {
             assetId: { default: '', parseHTML: (element) => element.getAttribute('data-journal-image') },

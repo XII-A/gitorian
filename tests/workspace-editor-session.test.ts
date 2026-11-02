@@ -1,112 +1,201 @@
 // @vitest-environment happy-dom
-import { act, createElement } from 'react'
-import { createRoot } from 'react-dom/client'
-import type { Editor as TiptapEditor } from '@tiptap/react'
-import { expect, it, vi } from 'vitest'
-import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
+import { expect, it } from 'vitest'
+import { EditorState } from '@tiptap/pm/state'
+import { WritingClient } from '../src/renderer/writing-client'
+import { bodySchema } from '../src/shared/writing-schema'
 import { sampleState } from './workspace-fixture'
-import type { Command, Reply } from '../src/shared/model'
+import { writingFixture } from './writing-fixture'
 
-const notifications = vi.hoisted(() => ({ toast: vi.fn(), dismiss: vi.fn(), update: vi.fn() }))
-vi.mock('../src/renderer/components/arc/toast-stack/toast-stack', () => ({
-    useToastStack: () => notifications
-}))
-
-it('keeps actual editor revisions through idle saves, title edits, citations, in-flight writes and pagehide', async () => {
-    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-    vi.useFakeTimers()
-    const host = document.createElement('div')
-    document.body.append(host)
-    const root = createRoot(host)
+it('claims the latest recovery checkpoint rather than the copy read while its owner was still editing', async () => {
+    localStorage.clear()
     const state = sampleState('2026-10-05')
-    state.drafts[0].body = {
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Original' }] }]
-    }
-    let finish: ((reply: Reply) => void) | undefined
-    const saved: Command[] = []
-    const run = vi.fn((command: Command) => {
-        saved.push(structuredClone(command))
-        return new Promise<Reply>((resolve) => {
-            finish = (reply) =>
-                resolve({
-                    ...reply,
-                    ...(command.type === 'draft'
-                        ? { draftSaved: { id: command.draft.id, version: command.draft.version + 1 } }
-                        : {})
-                })
-        })
-    })
-    const props = {
-        state,
-        week: '2026-10-05',
-        notionConnected: true,
-        run,
-        publishTarget: null,
-        onReady: vi.fn(),
-        onSettings: vi.fn()
-    }
-    const update = async (action: () => void) => {
-        await act(async () => {
-            action()
-            await Promise.resolve()
-        })
-    }
+    const app = await writingFixture(state)
+    let owner: WritingClient | undefined
+    let recovered: WritingClient | undefined
     try {
-        await update(() => root.render(createElement(WorkspaceDraft, props)))
-        const writing = (host.querySelector('.tiptap') as HTMLElement & { editor: TiptapEditor }).editor
-        await update(() => {
-            writing.commands.setTextSelection(writing.state.doc.content.size - 1)
-            writing.commands.insertContent(' first')
+        owner = await WritingClient.open(app.bridge, bodySchema, state.drafts[0].id, state.restoreId!, 'body', () => {
+            /* fixture */
         })
-        const serialize = vi.spyOn(writing.state.doc, 'toJSON')
-        await update(() => vi.advanceTimersByTime(250))
-        expect(serialize).not.toHaveBeenCalled()
-        expect(run).not.toHaveBeenCalled()
-        await update(() => vi.advanceTimersByTime(750))
-        expect(serialize).toHaveBeenCalledTimes(1)
-        expect(saved[0]).toMatchObject({ type: 'draft', draft: { body: writing.getJSON() } })
-        await update(() => {
-            finish?.({ state, connections: { remote: false, notion: true, protectedStorage: false } })
+        let editor = EditorState.create({ schema: bodySchema, doc: owner.initial, plugins: [owner.plugin] })
+        owner.attach({
+            state: () => editor,
+            dispatch: (tr) => {
+                editor = editor.apply(tr)
+            }
         })
-        await update(() => writing.commands.insertContent(' second'))
-        // A title change must read the current editor revision rather than feed an older saved body back into it.
-        const title = host.querySelector('textarea')!
-        await update(() => {
-            Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(title, 'New title')
-            title.dispatchEvent(new Event('input', { bubbles: true }))
-        })
-        expect(writing.getText()).toContain('Original first second')
-        await update(() =>
-            root.render(
-                createElement(WorkspaceDraft, {
-                    ...props,
-                    citation: { id: 1, title: 'My citation', url: 'https://example.com/work' }
-                })
-            )
+        await owner.flush()
+        editor = editor.apply(editor.tr.insertText('X', 1))
+        owner.cache()
+        const claim = app.bridge.claim
+        app.bridge.claim = async (client) => {
+            if (client === owner!.client) {
+                editor = editor.apply(editor.tr.insertText('Y', 2))
+                owner!.cache()
+                owner!.dispose()
+            }
+            return claim(client)
+        }
+        recovered = await WritingClient.open(
+            app.bridge,
+            bodySchema,
+            state.drafts[0].id,
+            state.restoreId!,
+            'body',
+            () => {
+                /* fixture */
+            }
         )
-        expect(writing.getText()).toContain('Original first second')
-        expect(writing.getText()).toContain('My citation')
-        await update(() => writing.commands.undo())
-        expect(writing.getText()).not.toContain('My citation')
-        expect(writing.getText()).toContain('Original first second')
-        await update(() => vi.advanceTimersByTime(1000))
-        expect(saved[1]).toMatchObject({ type: 'draft', draft: { title: 'New title', body: writing.getJSON() } })
-        await update(() => writing.commands.insertContent(' last'))
-        await update(() => {
-            finish?.({ state, connections: { remote: false, notion: true, protectedStorage: false } })
-        })
-        expect(host.querySelector('[role="status"]')?.textContent).toContain('Saving')
-        await update(() => window.dispatchEvent(new Event('pagehide')))
-        expect(saved[2]).toMatchObject({ type: 'draft', draft: { body: writing.getJSON() } })
-        expect(localStorage.getItem(localStorage.key(0)!)).toContain('last')
-        await update(() => {
-            finish?.({ state, connections: { remote: false, notion: true, protectedStorage: false } })
-        })
+        expect(recovered.initial.textContent.startsWith('XY')).toBe(true)
+        expect(localStorage.length).toBe(0)
+        expect(
+            bodySchema.nodeFromJSON((await app.store.draft(state.drafts[0].id))!.body).textContent.startsWith('XY')
+        ).toBe(true)
     } finally {
-        await update(() => root.unmount())
-        localStorage.clear()
-        vi.useRealTimers()
-        host.remove()
+        owner?.dispose()
+        recovered?.dispose()
+        await app.close()
+    }
+})
+
+it('rejects an unrepresentable paste before admitting it and can save the unrelated writing that follows', async () => {
+    localStorage.clear()
+    const state = sampleState('2026-10-05')
+    const app = await writingFixture(state)
+    const statuses: string[] = []
+    const client = await WritingClient.open(
+        app.bridge,
+        bodySchema,
+        state.drafts[0].id,
+        state.restoreId!,
+        'body',
+        (value) => statuses.push(value)
+    )
+    try {
+        let editor = EditorState.create({
+            schema: bodySchema,
+            doc: client.initial,
+            plugins: [client.plugin, client.admission]
+        })
+        client.attach({
+            state: () => editor,
+            dispatch: (tr) => {
+                editor = editor.apply(tr)
+            }
+        })
+        await client.flush()
+        editor = editor.apply(editor.tr.insertText('before ', 1))
+        const retainedLength = editor.doc.textContent.length
+        editor = editor.apply(editor.tr.insertText('x'.repeat(2_000_010), 8))
+        expect(editor.doc.textContent.length).toBe(retainedLength)
+        expect(statuses.at(-1)).toContain('Could not add')
+        expect(bodySchema.nodeFromJSON(client.rejectedWriting!).textContent.length).toBeGreaterThan(2_000_000)
+        editor = editor.apply(editor.tr.insertText('after ', 8))
+        client.changed()
+        await client.flush()
+        const saved = bodySchema.nodeFromJSON((await app.store.draft(state.drafts[0].id))!.body)
+        expect(saved.textContent.startsWith('before after ')).toBe(true)
+        expect(saved.textContent.length).toBeLessThan(10000)
+    } finally {
+        client.dispose()
+        await app.close()
+    }
+})
+
+it('splits a pending prefix by serialized bytes so individually valid edits remain saveable', async () => {
+    localStorage.clear()
+    const state = sampleState('2026-10-05')
+    const app = await writingFixture(state)
+    const client = await WritingClient.open(
+        app.bridge,
+        bodySchema,
+        state.drafts[0].id,
+        state.restoreId!,
+        'body',
+        () => {
+            /* fixture */
+        }
+    )
+    try {
+        let editor = EditorState.create({
+            schema: bodySchema,
+            doc: client.initial,
+            plugins: [client.plugin, client.admission]
+        })
+        client.attach({
+            state: () => editor,
+            dispatch: (tr) => {
+                editor = editor.apply(tr)
+            }
+        })
+        await client.flush()
+        const initialLength = editor.doc.textContent.length
+        editor = editor.apply(editor.tr.insertText('a'.repeat(1_100_000), 1))
+        editor = editor.apply(editor.tr.insertText('b'.repeat(1_100_000), 1))
+        client.changed()
+        await client.flush()
+        expect(bodySchema.nodeFromJSON((await app.store.draft(state.drafts[0].id))!.body).textContent.length).toBe(
+            initialLength + 2_200_000
+        )
+    } finally {
+        client.dispose()
+        await app.close()
+    }
+})
+
+it('retains dependent pending edits on failed saves and recovers them in a fresh session', async () => {
+    localStorage.clear()
+    const state = sampleState('2026-10-05')
+    const app = await writingFixture(state)
+    const statuses: string[] = []
+    const original = app.bridge.submit
+    let fail = false
+    app.bridge.submit = async (request) => {
+        if (fail) throw new Error('disk unavailable')
+        return original(request)
+    }
+    let client: WritingClient | undefined
+    try {
+        client = await WritingClient.open(
+            app.bridge,
+            bodySchema,
+            state.drafts[0].id,
+            state.restoreId!,
+            'body',
+            (value) => statuses.push(value)
+        )
+        let editor = EditorState.create({ schema: bodySchema, doc: client.initial, plugins: [client.plugin] })
+        client.attach({
+            state: () => editor,
+            dispatch: (tr) => {
+                editor = editor.apply(tr)
+            }
+        })
+        await client.flush()
+        fail = true
+        editor = editor.apply(editor.tr.insertText('dependent ', 1))
+        editor = editor.apply(editor.tr.insertText('recovery ', 11))
+        client.changed()
+        await expect(client.flush()).rejects.toThrow('disk unavailable')
+        expect(statuses.at(-1)).toContain('Could not save')
+        expect(localStorage.length).toBe(1)
+        client.dispose()
+        client = undefined
+        fail = false
+        client = await WritingClient.open(
+            app.bridge,
+            bodySchema,
+            state.drafts[0].id,
+            state.restoreId!,
+            'body',
+            (value) => statuses.push(value)
+        )
+        expect(client.initial.textContent).toContain('dependent recovery ')
+        expect(localStorage.length).toBe(0)
+        expect((await app.store.draft(state.drafts[0].id))!.body.content![0].content![0].text).toContain(
+            'dependent recovery '
+        )
+    } finally {
+        client?.dispose()
+        await app.close()
     }
 })

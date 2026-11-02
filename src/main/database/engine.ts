@@ -34,6 +34,15 @@ import type { GitHistory } from '../git'
 import { DatabaseError, type AcquisitionBatch, type Configuration, type JournalView } from './types'
 import * as t from './schema'
 import { upgradeJournalBackup } from '../../shared/journal-upgrade'
+import { bodySchema, titleSchema, titleDocument } from '../../shared/writing-schema'
+import { Step } from '@tiptap/pm/transform'
+import {
+    writingRequest,
+    writingLimits,
+    writingSize,
+    type WritingRequest,
+    type WritingState
+} from '../../shared/writing'
 import {
     providerAccountSchema,
     providerRemote,
@@ -1200,11 +1209,117 @@ export class JournalEngine {
             return this.draft(id)!
         }, generation)
     }
+    openWriting(draftId: string, field: 'body' | 'title', generation: string): WritingState {
+        return this.write(() => {
+            const draft = this.draft(draftId)
+            if (!draft) throw new DatabaseError('invalid', 'Draft is unavailable')
+            const schema = field === 'body' ? bodySchema : titleSchema
+            let row = this.db
+                .select()
+                .from(t.writingDocuments)
+                .where(and(eq(t.writingDocuments.draftId, draftId), eq(t.writingDocuments.field, field)))
+                .get()
+            if (!row) {
+                const document = schema.nodeFromJSON(field === 'body' ? draft.body : titleDocument(draft.title))
+                document.check()
+                row = { draftId, field, document: document.toJSON(), version: 0 }
+                this.db.insert(t.writingDocuments).values(row).run()
+            }
+            return { ...row, generation, fromVersion: row.version, steps: [], clients: [] }
+        }, generation)
+    }
+    private writingChanges(
+        draftId: string,
+        field: 'body' | 'title',
+        generation: string,
+        fromVersion: number
+    ): WritingState {
+        const row = this.db
+            .select()
+            .from(t.writingDocuments)
+            .where(and(eq(t.writingDocuments.draftId, draftId), eq(t.writingDocuments.field, field)))
+            .get()!
+        const changes = this.db
+            .select()
+            .from(t.writingSteps)
+            .where(
+                and(
+                    eq(t.writingSteps.draftId, draftId),
+                    eq(t.writingSteps.field, field),
+                    gte(t.writingSteps.version, fromVersion)
+                )
+            )
+            .orderBy(asc(t.writingSteps.version))
+            .all()
+        return {
+            ...row,
+            generation,
+            fromVersion,
+            steps: changes.map((r) => r.step),
+            clients: changes.map((r) => r.client)
+        }
+    }
+    submitWriting(input: WritingRequest): WritingState {
+        const request = writingRequest.parse(input)
+        return this.write(() => {
+            const { draftId, field, generation, version, client, steps } = request
+            const row = this.db
+                .select()
+                .from(t.writingDocuments)
+                .where(and(eq(t.writingDocuments.draftId, draftId), eq(t.writingDocuments.field, field)))
+                .get()
+            if (!row) throw new DatabaseError('invalid', 'Open writing before editing')
+            if (version > row.version) throw new DatabaseError('invalid', 'Invalid writing version')
+            // A lost acknowledgement is resolved by returning the durable ordered
+            // history. receiveTransaction confirms our steps or rebases pending work.
+            if (version !== row.version || !steps.length)
+                return this.writingChanges(draftId, field, generation, version)
+            if (writingSize(steps) > writingLimits.updateBytes)
+                throw new DatabaseError('invalid', 'Writing update is too large')
+            const schema = field === 'body' ? bodySchema : titleSchema
+            let document = schema.nodeFromJSON(row.document)
+            for (const json of steps) {
+                const result = Step.fromJSON(schema, json).apply(document)
+                if (!result.doc) throw new DatabaseError('invalid', 'Writing update is invalid')
+                document = result.doc
+                document.check()
+            }
+            if (writingSize(document.toJSON()) > writingLimits.documentBytes)
+                throw new DatabaseError('invalid', 'This draft is too large to save')
+            const body = document.toJSON() as JournalNode
+            if (field === 'body') this.setImageReferences(`draft:${draftId}`, body)
+            this.db
+                .update(t.drafts)
+                .set({
+                    ...(field === 'body' ? { body } : { title: document.textContent }),
+                    updatedAt: new Date(this.now()).toISOString(),
+                    version: sql`${t.drafts.version}+1`
+                })
+                .where(eq(t.drafts.id, draftId))
+                .run()
+            for (const [offset, step] of steps.entries())
+                this.db
+                    .insert(t.writingSteps)
+                    .values({ draftId, field, version: version + offset, client, step })
+                    .run()
+            this.db
+                .update(t.writingDocuments)
+                .set({ document: body, version: version + steps.length })
+                .where(and(eq(t.writingDocuments.draftId, draftId), eq(t.writingDocuments.field, field)))
+                .run()
+            return this.writingChanges(draftId, field, generation, version)
+        }, request.generation)
+    }
     saveDraft(input: Draft, expectedVersion: number, generation: string): Draft {
         return this.write(() => {
             const draft = draftSchema.parse(input),
                 previous = this.draft(draft.id)
             if (!previous) throw new DatabaseError('invalid', 'Draft is unavailable')
+            if (this.db.select().from(t.writingDocuments).where(eq(t.writingDocuments.draftId, draft.id)).get())
+                throw new DatabaseError(
+                    'conflict',
+                    'This draft uses a shared writing session. Reopen it before editing.'
+                )
             if (
                 previous.version === expectedVersion + 1 &&
                 previous.title === draft.title &&

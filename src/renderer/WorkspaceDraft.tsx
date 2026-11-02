@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { registerUpdateCheckpoint } from './update-checkpoint'
-import type { Command, Draft, JournalNode, Reply, State } from '../shared/model'
-import { draftSchema } from '../shared/model'
+import type { Command, Draft, Reply, State } from '../shared/model'
 import { plainText } from '../shared/notion-format'
 import { Editor, type EditorHandle } from './Editor'
-import { journalWordCount, type EditorSnapshot } from './editor-snapshot'
+import { journalWordCount } from './editor-snapshot'
 import { Button } from './components/arc/button/button'
-import { Dialog, DialogContent } from './components/arc/dialog/dialog'
-import { RadioGroup } from './components/arc/radio-group/radio-group'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
 import { useToastStack } from './components/arc/toast-stack/toast-stack'
+import { WritingClient } from './writing-client'
+import { bodySchema, titleSchema } from '../shared/writing-schema'
+import { WritingTitle } from './WritingTitle'
+import { settleWritingSelections } from './writing-commands'
+import { draftSchema } from '../shared/model'
+import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 
 export interface Citation {
     id: number
@@ -29,12 +32,6 @@ interface Props {
     onReady: (ready: boolean) => void
     onSettings: () => void
 }
-
-interface WritingConflict {
-    saved: Draft
-    recovery: Draft
-}
-
 export function WorkspaceDraft({
     state,
     week,
@@ -46,331 +43,175 @@ export function WorkspaceDraft({
     onReady,
     onSettings
 }: Props) {
-    const [draft, setDraft] = useState<Draft>()
-    const [status, setStatus] = useState('')
-    const [saveIssue, setSaveIssue] = useState<{ kind: 'save' | 'recovery' }>()
-    const [recoveryConflict, setRecoveryConflict] = useState<WritingConflict>()
-    const conflict = useRef<WritingConflict | undefined>(undefined)
-    const [conflictChoice, setConflictChoice] = useState('')
-    const [conflictError, setConflictError] = useState('')
-    const [resolvingConflict, setResolvingConflict] = useState(false)
-    const resolving = useRef(false)
-    const titleInput = useRef<HTMLTextAreaElement>(null)
-    const [busy, setBusy] = useState(false)
-    const [imagesReady, setImagesReady] = useState(true)
-    const [words, setWords] = useState(0)
-    const [focusWriting, setFocusWriting] = useState(initialWrite)
-    const writingStarted = useRef(false)
-    const editor = useRef<EditorHandle>(null)
-    const bodySnapshot = useRef<EditorSnapshot | undefined>(undefined)
-    const wordTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-    const { toast, dismiss, update } = useToastStack()
-    const latest = useRef<Draft | undefined>(undefined)
-    const dirty = useRef(false)
-    const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-    const checkpoint = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-    const pending = useRef<Promise<boolean> | undefined>(undefined)
-    const mounted = useRef(true)
-    const notifiedSave = useRef('')
-    const drafts = state.drafts.filter((item) => item.week === week)
-    const ready = !!draft && !busy && !recoveryConflict
-    const storageKey = `gitorian:recovery:${state.restoreId ?? 'local'}:${week}`
-    const snapshot = useCallback(() => {
-        if (bodySnapshot.current && latest.current) {
-            latest.current = { ...latest.current, body: bodySnapshot.current.read() }
-            bodySnapshot.current = undefined
-        }
-        return latest.current
+    const savedDraft = state.drafts.find((d) => d.week === week)
+    const [draft, setDraft] = useState<Draft | undefined>(savedDraft)
+    const [sessions, setSessions] = useState<{ body: WritingClient; title: WritingClient }>()
+    const [opening, setOpening] = useState(false)
+    const [retrying, setRetrying] = useState(false)
+    const [openAttempt, setOpenAttempt] = useState(0)
+    const [status, setStatus] = useState('Opening writing...')
+    const [rejectedRevision, setRejectedRevision] = useState(0)
+    const fieldStatus = useRef({ body: '', title: '' })
+    const report = useCallback((field: 'body' | 'title', value: string) => {
+        if (value.startsWith('Could not add')) setRejectedRevision((revision) => revision + 1)
+        fieldStatus.current[field] = value
+        const values = Object.values(fieldStatus.current)
+        setStatus(
+            values.find((v) => v.startsWith('Could not') || v.startsWith('Recovery storage')) ??
+                (values.some((v) => v.startsWith('Saving')) ? 'Saving...' : value)
+        )
     }, [])
-    const cache = useCallback(() => {
-        if (!conflict.current && (!dirty.current || !latest.current)) return
+    const [busy, setBusy] = useState(false)
+    const [frozen, setFrozen] = useState(false)
+    const holds = useRef(new Set<symbol>())
+    const [focusWriting, setFocusWriting] = useState(initialWrite)
+    const [imagesReady, setImagesReady] = useState(true)
+    const [legacyRecovery, setLegacyRecovery] = useState<Draft>()
+    const [words, setWords] = useState(savedDraft ? journalWordCount(savedDraft.body) : 0)
+    const editor = useRef<EditorHandle>(null)
+    const notifiedSave = useRef('')
+    const started = useRef(false)
+    const { toast, dismiss, update } = useToastStack()
+    const legacyKey = `gitorian:recovery:${state.restoreId ?? 'local'}:${week}`
+    const readLegacy = useEffectEvent(() => {
         try {
-            localStorage.setItem(storageKey, JSON.stringify(conflict.current?.recovery ?? snapshot()))
-        } catch {
-            if (mounted.current) setSaveIssue((issue) => (issue?.kind === 'save' ? issue : { kind: 'recovery' }))
-        }
-    }, [storageKey, snapshot])
-    const showConflict = useCallback(
-        (saved: Draft, recovery: Draft) => {
-            clearTimeout(timer.current)
-            clearTimeout(checkpoint.current)
-            checkpoint.current = undefined
-            conflict.current = { saved, recovery }
-            setRecoveryConflict(conflict.current)
-            setSaveIssue(undefined)
-            setConflictChoice('')
-            setConflictError('')
-            cache()
-        },
-        [cache]
-    )
-    const persist = useCallback(async (): Promise<boolean> => {
-        while (pending.current) {
-            const saved = await pending.current
-            if (!saved) return false
-        }
-        if (conflict.current) return false
-        if (!dirty.current || !latest.current) return true
-        const writing = snapshot()!
-        const request = (async () => {
-            const result = await run({ type: 'draft', draft: writing })
-            const committed = result?.draftSaved
+            const raw = localStorage.getItem(legacyKey)
+            if (!raw || !savedDraft) return
+            const copy = draftSchema.parse(JSON.parse(raw))
             if (
-                !result ||
-                result.state.restoreId !== state.restoreId ||
-                committed?.id !== writing.id ||
-                committed.version !== writing.version + 1
-            ) {
-                const saved =
-                    result?.state.restoreId === state.restoreId
-                        ? result?.state.drafts.find((item) => item.id === writing.id)
-                        : undefined
-                if (mounted.current && saved && saved.version !== writing.version) {
-                    showConflict(saved, snapshot()!)
-                    return false
-                }
-                if (mounted.current) {
-                    setStatus('')
-                    setSaveIssue({ kind: 'save' })
-                }
-                return false
-            }
-            if (latest.current) {
-                latest.current.version = committed.version
-                writing.version = committed.version
-            }
-            if (latest.current === writing) {
-                dirty.current = false
-                try {
-                    localStorage.removeItem(storageKey)
-                } catch {
-                    /* The backend has saved the draft. */
-                }
-                if (mounted.current) {
-                    setSaveIssue(undefined)
-                    dismiss('workspace-save')
-                    setStatus('Saved on this device')
-                }
-            }
-            return true
-        })()
-        pending.current = request
-        const result = await request
-        if (pending.current === request) pending.current = undefined
-        return result
-    }, [run, storageKey, snapshot, showConflict, state.restoreId, dismiss])
-    useEffect(() => {
-        if (!saveIssue || recoveryConflict) {
-            dismiss('workspace-save')
-            return
+                copy.id === savedDraft.id &&
+                (copy.title !== savedDraft.title || JSON.stringify(copy.body) !== JSON.stringify(savedDraft.body))
+            )
+                setLegacyRecovery(copy)
+            else localStorage.removeItem(legacyKey)
+        } catch {
+            setStatus('Could not read the previous recovery copy. Keep this profile available.')
         }
+    })
+    useEffect(() => readLegacy(), [legacyKey, savedDraft?.id])
+    const resetDraft = useEffectEvent(() => setDraft(savedDraft))
+    useEffect(() => resetDraft(), [savedDraft?.id])
+    const draftId = draft?.id
+    useEffect(() => {
+        if (!draftId || !state.restoreId || !window.journal.writing) return
+        let disposed = false
+        const clients: WritingClient[] = []
+        setSessions(undefined)
+        setOpening(true)
+        const open = async () => {
+            // Sequential registration makes partial initialization cleanup explicit.
+            const body = await WritingClient.open(
+                window.journal.writing!,
+                bodySchema,
+                draftId,
+                state.restoreId!,
+                'body',
+                (value) => report('body', value)
+            )
+            clients.push(body)
+            const title = await WritingClient.open(
+                window.journal.writing!,
+                titleSchema,
+                draftId,
+                state.restoreId!,
+                'title',
+                (value) => report('title', value)
+            )
+            clients.push(title)
+            if (disposed) {
+                clients.forEach((c) => c.dispose())
+                return
+            }
+            setSessions({ body, title })
+            setOpening(false)
+        }
+        void open().catch(() => {
+            if (!disposed) setStatus('Could not open writing. Reopen this week to retry.')
+            if (!disposed) setOpening(false)
+            clients.forEach((c) => c.dispose())
+        })
+        return () => {
+            disposed = true
+            clients.forEach((c) => c.dispose())
+        }
+    }, [draftId, state.restoreId, report, openAttempt])
+    const checkpoint = useCallback(async () => {
+        if (!imagesReady) throw new Error('Finish or cancel image imports before closing.')
+        if (draftId && opening) throw new Error('Writing is still opening.')
+        const hold = Symbol()
+        holds.current.add(hold)
+        const resume = () => {
+            holds.current.delete(hold)
+            setFrozen(holds.current.size > 0)
+        }
+        flushSync(() => setFrozen(true))
+        try {
+            await sessions?.body.flush()
+            await sessions?.title.flush()
+            await settleWritingSelections()
+        } catch {
+            resume()
+            throw new Error('Could not save your writing. Retry saving before closing or updating.')
+        }
+        return resume
+    }, [sessions, imagesReady, draftId, opening])
+    useEffect(() => registerUpdateCheckpoint(checkpoint), [checkpoint])
+    useEffect(() => {
+        if (!rejectedRevision || !sessions) return
         toast({
-            id: 'workspace-save',
+            id: 'workspace-rejected',
             type: 'error',
-            title: saveIssue.kind === 'save' ? 'Could not save writing' : 'Recovery storage is unavailable',
-            ...(saveIssue.kind === 'recovery' ? { description: 'Save writing to the journal before closing.' } : {}),
+            title: 'Could not add this edit',
+            description: 'This edit is too large. Download the rejected copy to keep it, then paste smaller sections.',
             duration: Infinity,
             action: {
-                label: 'Retry saving',
+                label: 'Download rejected copy',
                 onClick: () => {
-                    // Keep recovery available until the write is acknowledged.
-                    update('workspace-save', {})
-                    void persist()
+                    const copy = { body: sessions.body.rejectedWriting, title: sessions.title.rejectedWriting }
+                    const url = URL.createObjectURL(
+                        new Blob([JSON.stringify(copy, null, 2)], { type: 'application/json' })
+                    )
+                    const link = document.createElement('a')
+                    link.href = url
+                    link.download = 'gitorian-rejected-writing.json'
+                    link.click()
+                    setTimeout(() => URL.revokeObjectURL(url), 1000)
                 }
             }
         })
-    }, [saveIssue, recoveryConflict, persist, toast, dismiss, update])
-    useEffect(() => () => dismiss('workspace-save'), [dismiss])
-    const choose = useCallback(
-        (item: Draft) => {
-            let recovered = item
-            dirty.current = false
-            conflict.current = undefined
-            setRecoveryConflict(undefined)
-            try {
-                const raw = localStorage.getItem(storageKey)
-                const parsed = raw ? draftSchema.safeParse(JSON.parse(raw)) : undefined
-                if (parsed?.success && parsed.data.id === item.id) {
-                    const copy = parsed.data
-                    const differs = copy.title !== item.title || JSON.stringify(copy.body) !== JSON.stringify(item.body)
-                    if (differs && copy.version !== item.version) {
-                        showConflict(item, copy)
-                    } else if (differs && copy.updatedAt > item.updatedAt) {
-                        recovered = { ...copy, publishedEntryId: item.publishedEntryId }
-                        dirty.current = true
-                    } else if (!differs) {
-                        localStorage.removeItem(storageKey)
-                    }
-                }
-            } catch {
-                /* An unavailable recovery cache does not prevent opening saved writing. */
-            }
-            latest.current = recovered
-            bodySnapshot.current = undefined
-            setDraft(recovered)
-            setWords(journalWordCount(recovered.body))
-            setStatus(dirty.current ? 'Recovered your latest writing. Saving…' : 'Saved on this device')
-            if (dirty.current) void persist()
-        },
-        [persist, storageKey, showConflict]
-    )
-    const resolveConflict = async () => {
-        const current = conflict.current
-        if (!current || !conflictChoice || resolving.current) return
-        resolving.current = true
-        setResolvingConflict(true)
-        setConflictError('')
-        try {
-            const writing = {
-                ...current.recovery,
-                version: current.saved.version,
-                publishedEntryId: current.saved.publishedEntryId
-            }
-            const result = await run(
-                conflictChoice === 'recovery' ? { type: 'draft', draft: writing } : { type: 'state' }
-            )
-            if (!mounted.current) return
-            const saved = result?.state.drafts.find((item) => item.id === current.saved.id)
-            if (!result || result.state.restoreId !== state.restoreId || !saved) {
-                setConflictError('Could not confirm this choice. Both copies are still available. Try again.')
-                return
-            }
-            const acknowledged =
-                result.draftSaved?.id === writing.id && result.draftSaved.version === writing.version + 1
-            const expected = conflictChoice === 'recovery' && acknowledged ? writing.version + 1 : current.saved.version
-            if (saved.version !== expected) {
-                showConflict(saved, current.recovery)
-                setConflictError('Saved writing changed again. Choose which copy to keep.')
-                return
-            }
-            if (conflictChoice === 'recovery' && !acknowledged) {
-                setConflictError('Could not save the recovery copy. Both copies are still available. Try again.')
-                return
-            }
-            // Keep recovery storage and both in-memory copies until the chosen write
-            // is acknowledged (or the saved version is confirmed without writing).
-            localStorage.removeItem(storageKey)
-            latest.current = saved
-            bodySnapshot.current = undefined
-            dirty.current = false
-            setDraft(saved)
-            setWords(journalWordCount(saved.body))
-            setStatus('Saved on this device')
-            conflict.current = undefined
-            setRecoveryConflict(undefined)
-        } catch {
-            setConflictError('Could not finish this choice. Both copies are still available. Try again.')
-        } finally {
-            resolving.current = false
-            if (mounted.current) setResolvingConflict(false)
-        }
-    }
-    useEffect(
-        () =>
-            registerUpdateCheckpoint(async () => {
-                if (busy || conflict.current)
-                    throw new Error('Finish the current journal action, then try updating again.')
-                if (!imagesReady) throw new Error('Finish or cancel image imports, then try updating again.')
-                flushSync(() => setBusy(true))
-                clearTimeout(timer.current)
-                clearTimeout(checkpoint.current)
-                checkpoint.current = undefined
-                cache()
-                try {
-                    do {
-                        if (!(await persist()))
-                            throw new Error('Could not save your writing. Retry saving before updating.')
-                    } while (dirty.current)
-                } catch (error) {
-                    setBusy(false)
-                    throw error
-                }
-                return () => setBusy(false)
-            }),
-        [busy, imagesReady, cache, persist]
-    )
+    }, [rejectedRevision, sessions, toast])
     useEffect(() => {
-        const first = drafts.at(-1)
-        if (!latest.current && first) {
-            choose(first)
-        }
-        const confirmed = drafts.find((item) => item.id === latest.current?.id && item.publishedEntryId)
-        if (confirmed && !latest.current?.publishedEntryId) {
-            if (dirty.current) {
-                latest.current = { ...latest.current!, publishedEntryId: confirmed.publishedEntryId }
-                setDraft(latest.current)
-            } else {
-                latest.current = confirmed
-                bodySnapshot.current = undefined
-                setDraft(confirmed)
-                setWords(journalWordCount(confirmed.body))
-                setStatus('Published to Notion')
+        if (status === 'Saved on this device') dismiss('workspace-save')
+        if (!status.startsWith('Could not save') && !status.startsWith('Recovery storage')) return
+        toast({
+            id: 'workspace-save',
+            type: 'error',
+            title: 'Could not save writing',
+            description: status,
+            duration: Infinity,
+            action: {
+                label: retrying ? 'Retrying...' : 'Retry saving',
+                onClick: () => {
+                    if (retrying) return
+                    // Arc actions dismiss unless updated synchronously by the handler.
+                    update('workspace-save', {})
+                    setRetrying(true)
+                    void Promise.allSettled([sessions?.body.flush(), sessions?.title.flush()]).finally(() =>
+                        setRetrying(false)
+                    )
+                }
             }
-        }
-    }, [drafts, choose])
+        })
+    }, [status, sessions, retrying, toast, dismiss, update])
     useEffect(() => {
-        onReady(ready)
+        onReady(!!sessions && !busy && !frozen)
         return () => onReady(false)
-    }, [ready, onReady])
+    }, [sessions, busy, frozen, onReady])
+    const cited = useRef<number | undefined>(undefined)
     useEffect(() => {
-        mounted.current = true
-        const flush = () => {
-            cache()
-            void persist()
-        }
-        window.addEventListener('pagehide', flush)
-        return () => {
-            mounted.current = false
-            clearTimeout(timer.current)
-            clearTimeout(checkpoint.current)
-            clearTimeout(wordTimer.current)
-            cache()
-            window.removeEventListener('pagehide', flush)
-            void persist()
-        }
-    }, [persist, cache])
-    const edit = useCallback(
-        (value: Draft, render = true) => {
-            const updated = { ...value, updatedAt: new Date().toISOString() }
-            latest.current = updated
-            dirty.current = true
-            if (render) setDraft(updated)
-            setStatus('Saving…')
-            clearTimeout(timer.current)
-            timer.current = setTimeout(() => {
-                clearTimeout(checkpoint.current)
-                checkpoint.current = undefined
-                cache()
-                void persist()
-            }, 1000)
-            if (!checkpoint.current)
-                checkpoint.current = setTimeout(() => {
-                    checkpoint.current = undefined
-                    clearTimeout(timer.current)
-                    cache()
-                    void persist()
-                }, 5000)
-        },
-        [cache, persist]
-    )
-
-    const editBody = useCallback(
-        (document: EditorSnapshot) => {
-            if (!latest.current) return
-            bodySnapshot.current = document
-            edit(latest.current, false)
-            if (!wordTimer.current)
-                wordTimer.current = setTimeout(() => {
-                    wordTimer.current = undefined
-                    const current = bodySnapshot.current
-                    setWords(current ? current.wordCount() : journalWordCount(latest.current!.body))
-                }, 200)
-        },
-        [edit]
-    )
-    useEffect(() => {
-        if (!citation || !latest.current) return
-        const content: JournalNode = {
+        if (!citation || !sessions || cited.current === citation.id) return
+        cited.current = citation.id
+        editor.current?.insertBlock({
             type: 'paragraph',
             content: [
                 {
@@ -379,66 +220,53 @@ export function WorkspaceDraft({
                     ...(citation.url ? { marks: [{ type: 'link', attrs: { href: citation.url } }] } : {})
                 }
             ]
-        }
-        editor.current?.insertBlock(content)
-    }, [citation])
+        })
+    }, [citation, sessions])
     const create = useCallback(async () => {
         setBusy(true)
-        if (!(await persist())) {
-            setBusy(false)
-            return
-        }
         const result = await run({ type: 'newDraft', week })
-        if (!mounted.current) return
-        const created = result?.state.drafts.filter((item) => item.week === week).at(-1)
+        const created = result?.state.drafts.find((d) => d.week === week)
         if (created) {
+            setDraft(created)
             setFocusWriting(true)
-            choose(created)
-        } else toast({ type: 'error', title: 'Could not create an entry', description: 'Try starting an entry again.' })
+        }
+        if (!result) toast({ type: 'error', title: 'Could not create an entry' })
         setBusy(false)
-    }, [persist, run, week, choose, toast])
+    }, [run, week, toast])
     useEffect(() => {
-        if (!initialWrite || writingStarted.current) return
-        writingStarted.current = true
-        if (!latest.current && drafts.length === 0) void create()
-    }, [initialWrite, drafts.length, create])
+        if (!initialWrite || started.current) return
+        started.current = true
+        if (!savedDraft) void create()
+    }, [initialWrite, savedDraft, create])
+    const publicationId = savedDraft?.publishedEntryId
+    useEffect(() => {
+        setDraft((current) => current && { ...current, publishedEntryId: publicationId })
+    }, [publicationId])
     const publish = async () => {
-        if (!imagesReady) return
-        const updating = !!latest.current?.publishedEntryId
+        if (!draft || !sessions || !imagesReady) return
         setBusy(true)
-        clearTimeout(timer.current)
-        clearTimeout(checkpoint.current)
-        checkpoint.current = undefined
-        if (!(await persist()) || !latest.current) {
+        let resume: (() => void) | undefined
+        try {
+            resume = await checkpoint()
+            const result = await run({ type: 'publish', draftId: draft.id })
+            if (!result) throw new Error('Could not publish to Notion')
+            const saved = result.state.drafts.find((d) => d.id === draft.id)
+            if (saved?.publishedEntryId) setDraft((d) => d && { ...d, publishedEntryId: saved.publishedEntryId })
+            if (
+                saved?.publishedEntryId &&
+                result.state.saves.some((save) => save.draftId === draft.id && save.status === 'confirmed')
+            )
+                toast({
+                    id: 'workspace-publish-success',
+                    type: 'success',
+                    title: draft.publishedEntryId ? 'Updated in Notion' : 'Published to Notion'
+                })
+        } catch (error) {
+            toast({ type: 'error', title: error instanceof Error ? error.message : 'Could not publish writing' })
+        } finally {
+            resume?.()
             setBusy(false)
-            return
         }
-        // A keystroke during a pending write must be saved before publishing.
-        if (dirty.current && !(await persist())) {
-            setBusy(false)
-            return
-        }
-        const result = await run({ type: 'publish', draftId: latest.current.id })
-        const saved = result?.state.drafts.find((item) => item.id === latest.current?.id)
-        const save = result?.state.saves.filter((item) => item.draftId === latest.current?.id).at(-1)
-        if (saved?.publishedEntryId && save?.status === 'confirmed') {
-            latest.current = saved
-            setDraft(saved)
-            setStatus(updating ? 'Updated in Notion' : 'Published to Notion')
-            toast({
-                id: 'workspace-publish-success',
-                type: 'success',
-                title: updating ? 'Updated in Notion' : 'Published to Notion'
-            })
-        } else if (!result || !result.state.saves.some((save) => save.draftId === latest.current?.id))
-            toast({
-                id: 'workspace-publish',
-                type: 'error',
-                title: 'Could not publish to Notion',
-                description: 'Draft saved. Check Notion settings and retry.',
-                action: { label: 'Review settings', onClick: onSettings }
-            })
-        setBusy(false)
     }
     const publishSave = state.saves.filter((save) => save.draftId === draft?.id).at(-1)
     const uncertain = !!publishSave && ['unknown', 'pending'].includes(publishSave.status)
@@ -506,7 +334,7 @@ export function WorkspaceDraft({
                     <Button
                         size="sm"
                         loading={busy}
-                        disabled={!needsNotion && (!draft || uncertain || !imagesReady || !!recoveryConflict)}
+                        disabled={!needsNotion && (!draft || uncertain || !imagesReady || !sessions)}
                         title={
                             needsNotion
                                 ? 'Choose a publishing destination in settings'
@@ -533,27 +361,26 @@ export function WorkspaceDraft({
                     {draft ? (
                         <>
                             <h1 className="ws-title" aria-label={draft.title || 'Untitled weekly entry'}>
-                                <textarea
-                                    ref={titleInput}
-                                    aria-label="Entry title"
-                                    dir="auto"
-                                    value={draft.title}
-                                    placeholder="Entry title"
-                                    readOnly={busy || !!recoveryConflict}
-                                    rows={2}
-                                    onChange={(event) => edit({ ...snapshot()!, title: event.target.value })}
-                                />
+                                {sessions && (
+                                    <WritingTitle
+                                        client={sessions.title}
+                                        readOnly={busy || frozen}
+                                        onChange={(title) => setDraft((d) => d && { ...d, title })}
+                                    />
+                                )}
                             </h1>
                             <Editor
-                                key={draft.id}
+                                label="Journal body"
+                                key={sessions?.body.client ?? draft.id}
                                 restoreId={state.restoreId}
                                 allowImageImport
                                 onImagesReadyChange={setImagesReady}
                                 ref={editor}
                                 value={draft.body}
                                 template={entryTemplate}
-                                onEdit={editBody}
-                                readOnly={busy || !!recoveryConflict}
+                                writing={sessions?.body}
+                                onEdit={(snapshot) => setWords(snapshot.wordCount())}
+                                readOnly={busy || frozen || !sessions}
                                 autoFocus={focusWriting}
                             />
                         </>
@@ -571,66 +398,63 @@ export function WorkspaceDraft({
             <footer className="ws-writing-footer">
                 <span>{`${new Intl.NumberFormat().format(draft ? words : 0)} ${draft && words === 1 ? 'word' : 'words'}`}</span>
                 <span role="status">
-                    {status && !recoveryConflict && <WorkspaceIcon name="check" width="14" height="14" />}
-                    {!recoveryConflict && status}
+                    {status === 'Saved on this device' && <WorkspaceIcon name="check" width="14" height="14" />}
+                    {status.startsWith('Could not add')
+                        ? 'Edit not added'
+                        : status.startsWith('Could not save') || status.startsWith('Recovery storage')
+                          ? 'Saving paused'
+                          : status}
+                    {!sessions && !opening && draft && (
+                        <Button variant="ghost" onClick={() => setOpenAttempt((value) => value + 1)}>
+                            Retry opening writing
+                        </Button>
+                    )}
                 </span>
                 <span className="ws-slash-hint">
                     <kbd>/</kbd> for formatting
                 </span>
             </footer>
-            <Dialog open={!!recoveryConflict}>
+            <Dialog open={!!legacyRecovery}>
                 <DialogContent
-                    title="Choose which writing to keep"
-                    description="Saved writing changed elsewhere. Keep the saved writing or replace it with the recovery copy."
+                    title="Recover previous writing"
+                    description="An older recovery copy cannot be merged automatically. Append it to the shared draft, or discard this recovery copy."
                     showCloseButton={false}
                     onEscapeKeyDown={(event) => event.preventDefault()}
                     onInteractOutside={(event) => event.preventDefault()}
-                    onCloseAutoFocus={(event) => {
-                        event.preventDefault()
-                        titleInput.current?.focus()
-                    }}
                 >
-                    <form
-                        className="ws-conflict-form"
-                        aria-busy={resolvingConflict}
-                        onSubmit={(event) => {
-                            event.preventDefault()
-                            void resolveConflict()
+                    <Button
+                        disabled={!sessions}
+                        onClick={() => {
+                            if (!legacyRecovery) return
+                            editor.current?.insertBlock({
+                                type: 'paragraph',
+                                content: [{ type: 'text', text: `Recovered: ${legacyRecovery.title}` }]
+                            })
+                            for (const block of legacyRecovery.body.content ?? []) editor.current?.insertBlock(block)
+                            try {
+                                sessions?.body.cache()
+                                localStorage.removeItem(legacyKey)
+                                setLegacyRecovery(undefined)
+                            } catch {
+                                setStatus('Recovery storage unavailable. Keep this window open and retry saving.')
+                            }
                         }}
                     >
-                        <fieldset disabled={resolvingConflict} className="ws-conflict-options">
-                            <RadioGroup
-                                label="Writing to keep"
-                                name="writing-copy"
-                                value={conflictChoice}
-                                onValueChange={setConflictChoice}
-                                options={[
-                                    {
-                                        value: 'saved',
-                                        label: 'Saved writing',
-                                        description: 'Keep the writing saved on this device. Discard the recovery copy.'
-                                    },
-                                    {
-                                        value: 'recovery',
-                                        label: 'Recovery copy',
-                                        description: 'Keep the unsaved writing. Replace the saved writing.'
-                                    }
-                                ]}
-                            />
-                        </fieldset>
-                        {conflictError && (
-                            <p className="ws-conflict-error" role="alert">
-                                {conflictError}
-                            </p>
-                        )}
-                        <Button type="submit" disabled={!conflictChoice} loading={resolvingConflict}>
-                            {conflictChoice === 'saved'
-                                ? 'Keep saved writing'
-                                : conflictChoice === 'recovery'
-                                  ? 'Use recovery copy'
-                                  : 'Keep selected writing'}
-                        </Button>
-                    </form>
+                        Append recovery writing
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        onClick={() => {
+                            try {
+                                localStorage.removeItem(legacyKey)
+                                setLegacyRecovery(undefined)
+                            } catch {
+                                setStatus('Could not clear the recovery copy.')
+                            }
+                        }}
+                    >
+                        Discard recovery copy
+                    </Button>
                 </DialogContent>
             </Dialog>
         </section>

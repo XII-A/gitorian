@@ -1,5 +1,5 @@
-// One editable weekly draft is mounted in the main window. Keep its update
-// checkpoint independent of progress subscriptions so downloads never rerender it.
+// One mounted writer per renderer. The main process collects all renderers before
+// update/quit; local navigation uses this same durability checkpoint.
 let checkpoint: (() => Promise<() => void>) | undefined
 
 export function registerUpdateCheckpoint(prepare: () => Promise<() => void>): () => void {

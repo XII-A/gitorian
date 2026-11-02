@@ -15,6 +15,8 @@ import {
     useState
 } from 'react'
 import type { Ref } from 'react'
+import { Extension } from '@tiptap/core'
+import type { WritingClient } from './writing-client'
 import { flushSync } from 'react-dom'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor as TiptapEditor } from '@tiptap/react'
@@ -118,7 +120,8 @@ export const Editor = memo(function Editor({
     template,
     restoreId,
     allowImageImport = true,
-    onImagesReadyChange
+    onImagesReadyChange,
+    writing
 }: {
     value: JournalNode
     onChange?: (body: JournalNode) => void
@@ -133,6 +136,7 @@ export const Editor = memo(function Editor({
     restoreId?: string
     allowImageImport?: boolean
     onImagesReadyChange?: (ready: boolean) => void
+    writing?: WritingClient
 }) {
     const imports = useRef<ImageImports | undefined>(undefined)
     const [imageJobs, setImageJobs] = useState<ImageImportJob[]>([])
@@ -153,7 +157,20 @@ export const Editor = memo(function Editor({
     const menuViewport = useRef<HTMLDivElement>(null)
     const menuElement = useRef<HTMLDivElement>(null)
     const emitted = useRef<JournalNode>(value)
-    const extensions = useMemo(journalExtensions, [])
+    const extensions = useMemo(
+        () => [
+            ...journalExtensions(),
+            ...(writing
+                ? [
+                      Extension.create({
+                          name: 'writingSession',
+                          addProseMirrorPlugins: () => [writing.plugin, writing.admission]
+                      })
+                  ]
+                : [])
+        ],
+        [writing]
+    )
     const [bar, setBar] = useState<{ x: number; y: number }>()
     const [linkOpen, setLinkOpen] = useState(false)
     const [linkURL, setLinkURL] = useState('')
@@ -316,12 +333,13 @@ export const Editor = memo(function Editor({
     const editor = useEditor({
         extensions,
         shouldRerenderOnTransaction: false,
-        content: value,
+        content: writing ? writing.initial.toJSON() : value,
         editable: !readOnly,
         editorProps: {
             attributes: {
                 'aria-label': label ?? (readOnly ? 'Journal entry' : 'Journal body'),
                 role: 'textbox',
+                'aria-readonly': String(readOnly),
                 'aria-multiline': 'true'
             },
             handlePaste: (_view, event) => {
@@ -413,11 +431,15 @@ export const Editor = memo(function Editor({
             updateMenu(updated)
         },
         onTransaction: ({ editor: updated }) => {
+            writing?.changed()
             imports.current?.sync()
             onHistoryChange?.({ canUndo: updated.can().undo(), canRedo: updated.can().redo() })
         },
         onSelectionUpdate: ({ editor: updated }) => updateMenu(updated)
     })
+    useEffect(() => {
+        if (editor && writing) writing.attach({ state: () => editor.state, dispatch: (tr) => editor.view.dispatch(tr) })
+    }, [editor, writing])
     useEffect(() => {
         if (!editor || !canImportImages) return
         const manager = new ImageImports(
@@ -485,10 +507,15 @@ export const Editor = memo(function Editor({
         editorRef.current = editor
     }, [editor])
     useEffect(() => {
-        if (editor && value !== emitted.current && JSON.stringify(value) !== JSON.stringify(editor.getJSON()))
+        if (
+            !writing &&
+            editor &&
+            value !== emitted.current &&
+            JSON.stringify(value) !== JSON.stringify(editor.getJSON())
+        )
             loadWriting(editor, value)
         emitted.current = value
-    }, [value, editor])
+    }, [value, editor, writing])
     useEffect(() => {
         editor?.setEditable(!readOnly, false)
     }, [editor, readOnly])

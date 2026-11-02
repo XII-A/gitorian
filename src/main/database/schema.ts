@@ -391,6 +391,35 @@ export const gitHistoryItems = sqliteTable(
     },
     (t) => [primaryKey({ columns: [t.repositoryId, t.activityId] })]
 )
+export const writingDocuments = sqliteTable(
+    'writing_documents',
+    {
+        draftId: text()
+            .notNull()
+            .references(() => drafts.id, { onDelete: 'cascade' }),
+        field: text({ enum: ['body', 'title'] }).notNull(),
+        document: text({ mode: 'json' }).$type<JournalNode>().notNull(),
+        version: integer().notNull().default(0)
+    },
+    (t) => [primaryKey({ columns: [t.draftId, t.field] })]
+)
+export const writingSteps = sqliteTable(
+    'writing_steps',
+    {
+        draftId: text().notNull(),
+        field: text({ enum: ['body', 'title'] }).notNull(),
+        version: integer().notNull(),
+        client: text().notNull(),
+        step: text({ mode: 'json' }).$type<unknown>().notNull()
+    },
+    (t) => [
+        primaryKey({ columns: [t.draftId, t.field, t.version] }),
+        foreignKey({
+            columns: [t.draftId, t.field],
+            foreignColumns: [writingDocuments.draftId, writingDocuments.field]
+        }).onDelete('cascade')
+    ]
+)
 export const images = sqliteTable(
     'images',
     {

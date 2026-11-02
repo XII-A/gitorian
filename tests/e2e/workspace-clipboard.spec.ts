@@ -169,7 +169,7 @@ test('workspace clipboard: native rich text, title, keyboard, read-only and pers
         await title.press('Control+A')
         await title.click({ button: 'right' })
         await item('Cut').click()
-        await expect(title).toHaveValue('')
+        await expect(title).toHaveText('')
         await expect.poll(clipboardText).toBe('Weekly clipboard title')
         await title.press('Shift+F10')
         await expect(menu).toBeVisible()
@@ -178,7 +178,7 @@ test('workspace clipboard: native rich text, title, keyboard, read-only and pers
         await title.press('Shift+F10')
         await page.keyboard.press('End')
         await page.keyboard.press('Enter')
-        await expect(title).toHaveValue('Weekly clipboard title')
+        await expect(title).toHaveText('Weekly clipboard title')
         await expect(title).toBeFocused()
     })
     await test.step('read-only workspace text offers only copy, and outside press dismisses', async () => {
@@ -210,7 +210,7 @@ test('workspace clipboard: native rich text, title, keyboard, read-only and pers
         // Reopen if navigation returns to the hub after reload.
         if (await page.getByRole('button', { name: 'Open journal', exact: true }).isVisible())
             await page.getByRole('button', { name: 'Open journal', exact: true }).click()
-        await expect(title).toHaveValue('Weekly clipboard title')
+        await expect(title).toHaveText('Weekly clipboard title')
         await expect(body.locator('strong')).toHaveCount(2)
         await shot('04-reloaded-draft')
         await desktop.close()

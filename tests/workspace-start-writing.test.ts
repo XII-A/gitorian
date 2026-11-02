@@ -1,3 +1,4 @@
+import { writingFixture } from './writing-fixture'
 // @vitest-environment happy-dom
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -6,7 +7,7 @@ import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
 import { sampleState } from './workspace-fixture'
 import type { Command, Reply } from '../src/shared/model'
 
-const notifications = vi.hoisted(() => ({ toast: vi.fn(), dismiss: vi.fn() }))
+const notifications = vi.hoisted(() => ({ toast: vi.fn(), dismiss: vi.fn(), update: vi.fn() }))
 vi.mock('../src/renderer/components/arc/toast-stack/toast-stack', () => ({ useToastStack: () => notifications }))
 vi.mock('../src/renderer/components/arc/button/button', () => ({
     Button: ({ children, onClick, loading }: { children: React.ReactNode; onClick: () => void; loading?: boolean }) =>
@@ -17,11 +18,12 @@ it.each(['hub', 'workspace', 'existing'] as const)(
     'focuses the writing body after the %s writing action',
     async (action) => {
         Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-        vi.useFakeTimers()
+        localStorage.clear()
         const host = document.createElement('div')
         document.body.append(host)
         const root = createRoot(host)
         const state = sampleState('2026-10-05')
+        const fixture = await writingFixture(state)
         const created = state.drafts[0]
         if (action !== 'existing') state.drafts = []
         let finish: ((reply: Reply) => void) | undefined
@@ -34,7 +36,7 @@ it.each(['hub', 'workspace', 'existing'] as const)(
         const update = async (change: () => void) => {
             await act(async () => {
                 change()
-                await Promise.resolve()
+                await new Promise((resolve) => setTimeout(resolve, 100))
             })
         }
         const props = {
@@ -67,18 +69,19 @@ it.each(['hub', 'workspace', 'existing'] as const)(
                     })
                 )
             } else expect(run).not.toHaveBeenCalled()
-            await update(() => vi.advanceTimersByTime(100))
+            await update(() => undefined)
             const editor = host.querySelector<HTMLElement>('.tiptap')!
             expect(editor).not.toBeNull()
             expect(document.activeElement).toBe(editor)
             // A subsequent backend update must not steal focus from a title edit.
-            const title = host.querySelector('textarea')!
+            const title = host.querySelector<HTMLElement>('[aria-label="Entry title"]')!
             title.focus()
             await update(() => root.render(createElement(WorkspaceDraft, { ...props, state: { ...state } })))
-            await update(() => vi.advanceTimersByTime(100))
+            await update(() => undefined)
             expect(document.activeElement).toBe(title)
         } finally {
             await update(() => root.unmount())
+            await fixture.close()
             host.remove()
             vi.useRealTimers()
         }

@@ -1,4 +1,5 @@
 import { activityUpdating } from './background-work'
+import { beginWritingSelection } from './writing-commands'
 import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import type { Command, Reply } from '../shared/model'
 import { WeeklyHub } from './WeeklyHub'
@@ -57,8 +58,16 @@ function JournalApp() {
     currentReply.current = reply
     const run = useCallback(
         async (command: Command): Promise<Reply | undefined> => {
+            const selection =
+                command.type === 'select'
+                    ? beginWritingSelection(`${command.draftId}:${command.activityId}`)
+                    : undefined
+            let success = false
             const startup = !currentReply.current
-            if (startup && startupInFlight.current) return undefined
+            if (startup && startupInFlight.current) {
+                selection?.(false)
+                return undefined
+            }
             if (startup) {
                 startupInFlight.current = true
                 setStartupPending(true)
@@ -75,6 +84,7 @@ function JournalApp() {
                 }
                 if (command.type !== 'state') dismiss(`journal-command:${command.type}`)
                 setError('')
+                success = true
                 return result
             } catch (failure) {
                 if (startup) setStartupFailures((count) => count + 1)
@@ -113,6 +123,7 @@ function JournalApp() {
                 } else setError(String(failure))
                 return undefined
             } finally {
+                selection?.(success)
                 if (startup) {
                     startupInFlight.current = false
                     setStartupPending(false)
