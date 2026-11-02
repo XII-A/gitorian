@@ -329,3 +329,57 @@ it('resumes due queue and unassigned connection waits without a history window a
     state.acquisition['remote:unassigned'].retryAt = '2026-10-30T12:02:00Z'
     expect(nextAcquisition(eligible, now)).toBeUndefined()
 })
+
+it('settles covered history after reopening and resumes its retained cursor for an earlier week', async () => {
+    const app = await workspace()
+    let reopened: JournalDatabase | undefined
+    const index = vi.spyOn(gitModule, 'indexCommits')
+    try {
+        await app.store.saveRepository({ ...app.repository, trackingStart: '2026-10-05' })
+        await app.git('commit', '--allow-empty', '--date=2020-01-07T12:00:00Z', '-m', 'Earlier retained work')
+        await run(app.service.refresh({ source: 'git' }))
+        const key = 'git:' + app.repository.id
+        const status = app.store.config.acquisition[key]
+        const cursor = { phase: 'body' as const, offset: 0, group: 0, alias: 0 }
+        const windowEnd = new Date().toISOString()
+        await app.store.saveCheckpoint(key, { ...status, status: 'idle', windowEnd, gitCursor: cursor })
+        reopened = await JournalDatabase.open(join(app.directory, 'tracking.sqlite'))
+        const store = reopened
+        const service = await journalClient(
+            store,
+            app.github,
+            app.notion,
+            () => ({ remote: false, notion: false, protectedStorage: false }),
+            app.requests
+        )
+        index.mockClear()
+        // Bound the diagnostic so a synchronous retry loop fails instead of hanging the runner.
+        const descriptor = Object.getOwnPropertyDescriptor(JournalDatabase.prototype, 'config')!
+        let reads = 0
+        const config = vi.spyOn(store, 'config', 'get').mockImplementation(() => {
+            if (++reads > 200) throw new Error('History acquisition is spinning without doing work')
+            return descriptor.get!.call(store)
+        })
+        try {
+            await run(service.handle({ type: 'loadWeek', since: status.historySince! }))
+            expect(index).not.toHaveBeenCalled()
+            expect(store.config.acquisition[key]).toMatchObject({ status: 'idle', windowEnd, gitCursor: cursor })
+        } finally {
+            config.mockRestore()
+        }
+        expect((await journalState(store)).activities.map((activity) => activity.title)).not.toContain(
+            'Earlier retained work'
+        )
+        await run(service.handle({ type: 'loadWeek', since: '2020-01-06' }))
+        expect((await journalState(store)).activities.map((activity) => activity.title)).toContain(
+            'Earlier retained work'
+        )
+        expect(store.config.acquisition[key]).toMatchObject({ status: 'idle', historySince: '2020-01-06' })
+        expect(store.config.acquisition[key].gitCursor).toBeUndefined()
+        expect(store.config.acquisition[key].windowEnd).toBeUndefined()
+    } finally {
+        index.mockRestore()
+        await reopened?.close()
+        await app.close()
+    }
+})

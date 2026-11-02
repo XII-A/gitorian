@@ -187,6 +187,7 @@ function makeAcquisition() {
                             store.saveProgress({ lastRefreshAttempt: new Date().toISOString() }, generation)
                         )
                     let acquired = false
+                    const batches = { git: 0, remote: 0 }
                     const acquire = (key: string, repository: Repository) =>
                         source(key).lane.withPermits(1)(
                             Effect.gen(function* () {
@@ -267,6 +268,7 @@ function makeAcquisition() {
                                             Effect.gen(function* () {
                                                 if (stopped(key, token, generation)) return
                                                 acquired = true
+                                                batches[provider]++
                                                 Object.assign(status, {
                                                     status: 'running',
                                                     error: undefined,
@@ -790,11 +792,14 @@ function makeAcquisition() {
                                             (statusFor(b.key).lastProgressAt ?? 0)
                                     )
                                 if (!entries.length) return
+                                const before = batches[provider]
                                 yield* Effect.forEach(entries, ({ key, repository }) => acquire(key, repository), {
                                     concurrency: 2,
                                     discard: true
                                 })
-                                if (!options.since) return
+                                // Covered, stopped or deferred sources can retain an unfinished cursor.
+                                // Retry only when this round actually admitted a batch.
+                                if (!options.since || batches[provider] === before) return
                                 first = false
                             }
                         })
