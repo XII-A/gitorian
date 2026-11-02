@@ -1,20 +1,21 @@
 ## New
 
-- Right-click while writing to correct spelling and manage dictionary words.
+- Copy a diagnostic report after a crash without including your writing, credentials, or repository paths.
+- On Windows, use independent recovery controls to wait, share diagnostics, or restart a frozen app.
 
 ## Updates
 
-- Read and write with consistent Geist Sans and Geist Mono typography throughout the app.
+- Recovery keeps saved writing available and pauses automatic refresh until you choose to resume.
 
 ## Fixes
 
-- Activity filter counts now reflect the selected day.
-- Closing activity filters now animates smoothly.
+- Fixed a freeze after importing repositories or reopening previously loaded history.
+- Stalled journal operations now ask you to reopen and verify the last save instead of waiting indefinitely.
 
 ## Supported machines and installation
 
 Windows 10 or 11, 64-bit Intel or AMD (x64).
 
-Download and run `gitorian-0.1.9-windows-x64-setup.exe` from **Assets** below to install Gitorian. Existing installations can download this update in the background and restart when ready.
+Download and run `gitorian-0.1.10-windows-x64-setup.exe` from **Assets** below to install Gitorian. Existing installations can download this update in the background and restart when ready.
 
 See the [installation details](https://github.com/XII-A/gitorian#downloads) for unsigned installer warnings and checksums.
