@@ -1,6 +1,5 @@
 .hub-detail-dialog,
 .ws-details-content {
-    --font-inter: 'Inter Variable';
     --file-deleted: var(--danger);
     --file-added: var(--success);
     --file-modified: color-mix(in oklab, var(--warning) 85%, var(--foreground));
@@ -106,7 +105,6 @@
     cursor: pointer;
 }
 .hub-detail-branch-popover {
-    --font-inter: 'Inter Variable';
     font-family: var(--font-body);
     font-size: var(--text-sm);
 }
@@ -391,7 +389,7 @@
 }
 .hub-detail-file-directory {
     color: var(--detail-muted);
-    font-family: ui-monospace, monospace;
+    font-family: var(--font-mono);
     font-size: var(--text-xs);
 }
 .hub-detail-footer {

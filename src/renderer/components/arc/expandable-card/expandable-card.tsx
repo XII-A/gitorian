@@ -26,6 +26,8 @@ export interface ExpandableCardProps extends Omit<
 > {
     title: string
     description?: string
+    /** Class for the description text slot. */
+    descriptionClassName?: string
     /** A render function defers expensive details until the first expansion, then keeps them mounted. */
     children: ReactNode | (() => ReactNode)
     defaultExpanded?: boolean
@@ -96,6 +98,7 @@ function RollingText({ text, reduced }: { text: string; reduced: boolean }) {
 export function ExpandableCard({
     title,
     description,
+    descriptionClassName,
     children,
     defaultExpanded = false,
     width,
@@ -189,7 +192,7 @@ export function ExpandableCard({
                     <span className={styles.copy}>
                         <strong>{title}</strong>
                         {description && (
-                            <span className={styles.description}>
+                            <span className={[styles.description, descriptionClassName].filter(Boolean).join(' ')}>
                                 <RollingText text={description} reduced={reduceMotion} />
                             </span>
                         )}

@@ -1,10 +1,10 @@
 'use client'
 
 import { createPortal } from 'react-dom'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import type { ComponentProps, CSSProperties, FocusEvent, KeyboardEvent, ReactNode } from 'react'
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from 'motion/react'
-import { Check, Copy, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Check, Copy, Trash2 } from 'lucide-react'
 import { motionTokens } from '../motion-tokens'
 import styles from './context-menu.module.css'
 import { ShortcutKbd } from '../shortcut-recorder/shortcut-kbd'
@@ -22,6 +22,7 @@ export interface ContextMenuItem {
     onSelect?: () => void
     disabled?: boolean
     destructive?: boolean
+    separatorBefore?: boolean
     checked?: boolean
     shortcut?: string
 }
@@ -32,7 +33,8 @@ export interface ContextMenuProps {
     label?: string
     /** Keep ordinary editing clicks available to the children. */
     openOnClick?: boolean
-    onOpen?: (target: HTMLElement) => void
+    onOpen?: (target: HTMLElement, native?: boolean) => void
+    subscribeOpen?: (open: (x: number, y: number, target: HTMLElement) => void) => () => void
     restoreFocus?: () => void
 }
 
@@ -65,6 +67,7 @@ export function ContextMenu({
     label = 'Context menu',
     openOnClick = true,
     onOpen,
+    subscribeOpen,
     restoreFocus
 }: ContextMenuProps) {
     const reduced = useReducedMotion()
@@ -93,6 +96,10 @@ export function ContextMenu({
     useLayoutEffect(() => {
         const node = menuRef.current
         if (!open || !node) return
+        if (!items.length) {
+            setOpen(false)
+            return
+        }
         const next = clampTo(anchor.current.x, anchor.current.y, node.offsetWidth, node.offsetHeight)
         setPoint((current) =>
             current.x === next.x &&
@@ -102,7 +109,7 @@ export function ContextMenu({
                 ? current
                 : { ...next, key: current.key }
         )
-    }, [open, point.key])
+    }, [open, point.key, items.length])
     useEffect(() => () => window.clearTimeout(clearTimer.current), [])
     useEffect(() => {
         if (!open) return
@@ -122,11 +129,17 @@ export function ContextMenu({
             window.removeEventListener('scroll', closeOnViewportChange, true)
             window.removeEventListener('resize', closeOnViewportChange)
         }
-    }, [open, point.key])
+    }, [open, point.key, items.length])
 
     function showMenu(x: number, y: number) {
         anchor.current = { x, y }
-        const estimate = clampTo(x, y, MENU_WIDTH, Math.min(300, items.length * 34 + 12))
+        const separators = items.filter((item, index) => index > 0 && item.separatorBefore).length
+        const estimate = clampTo(
+            x,
+            y,
+            MENU_WIDTH,
+            Math.min(window.innerHeight - 16, items.length * 34 + separators * 11 + 12)
+        )
         setPoint((current) => ({ ...estimate, key: current.key + 1 }))
         window.clearTimeout(clearTimer.current)
         pointer.current = false
@@ -134,6 +147,12 @@ export function ContextMenu({
         setPortal(true)
         setOpen(true)
     }
+
+    const openNativeMenu = useEffectEvent((x: number, y: number, target: HTMLElement) => {
+        onOpen?.(target, true)
+        showMenu(x, y)
+    })
+    useEffect(() => subscribeOpen?.((x, y, target) => openNativeMenu(x, y, target)), [subscribeOpen])
 
     function returnFocus() {
         if (restoreFocus) restoreFocus()
@@ -206,7 +225,8 @@ export function ContextMenu({
             if (!pointer.current && item.matches(':focus-visible')) place(item, false)
             return
         }
-        // A short grace period keeps the highlight gliding across the gap between rows.
+        // Clear only after focus leaves the rows (for example when the pointer leaves the menu).
+        // Dividers retain the previous row's focus and highlight so the next row can glide from it.
         window.clearTimeout(clearTimer.current)
         clearTimer.current = window.setTimeout(() => setHighlight(null), pointer.current ? 70 : 0)
     }
@@ -223,6 +243,7 @@ export function ContextMenu({
                 }}
                 onClick={onTargetClick}
                 onContextMenu={(event) => {
+                    if (subscribeOpen) return
                     event.preventDefault()
                     event.stopPropagation()
                     onOpen?.(event.target as HTMLElement)
@@ -232,6 +253,7 @@ export function ContextMenu({
                 aria-label={label}
                 aria-haspopup="menu"
                 aria-expanded={open}
+                data-context-menu-open={open || undefined}
             >
                 {children}
             </div>
@@ -309,52 +331,59 @@ export function ContextMenu({
                                       }}
                                   />
                                   {items.map((item, index) => (
-                                      <button
-                                          key={item.id}
-                                          type="button"
-                                          role="menuitem"
-                                          tabIndex={-1}
-                                          data-index={index}
-                                          aria-keyshortcuts={item.shortcut?.replace('Ctrl+', 'Control+')}
-                                          data-tone={item.destructive ? 'danger' : undefined}
-                                          style={{ '--i': index } as CSSProperties}
-                                          disabled={item.disabled}
-                                          className={[styles.item, item.destructive ? styles.destructive : '']
-                                              .filter(Boolean)
-                                              .join(' ')}
-                                          onPointerMove={(event) => {
-                                              if (!live.current) return
-                                              window.clearTimeout(clearTimer.current)
-                                              if (document.activeElement !== event.currentTarget)
-                                                  event.currentTarget.focus({ preventScroll: true })
-                                              if (highlight?.index !== index) place(event.currentTarget, true)
-                                          }}
-                                          onPointerLeave={() => {
-                                              if (live.current) menuRef.current?.focus({ preventScroll: true })
-                                          }}
-                                          onClick={() => {
-                                              if (!live.current) return
-                                              live.current = false
-                                              setOpen(false)
-                                              returnFocus()
-                                              item.onSelect?.()
-                                          }}
-                                      >
-                                          <span className={styles.icon} aria-hidden="true">
-                                              {item.icon ??
-                                                  (item.checked ? <Check size={15} /> : <MoreHorizontal size={15} />)}
-                                          </span>
-                                          <span className={styles.label}>{item.label}</span>
-                                          {item.shortcut && (
-                                              <span className={styles.shortcut} aria-hidden="true">
-                                                  {item.shortcut.split('+').map((key) => (
-                                                      <ShortcutKbd key={key} size="sm">
-                                                          {key}
-                                                      </ShortcutKbd>
-                                                  ))}
-                                              </span>
+                                      <Fragment key={item.id}>
+                                          {item.separatorBefore && index > 0 && (
+                                              <div role="separator" className={styles.separator} />
                                           )}
-                                      </button>
+                                          <button
+                                              key={item.id}
+                                              type="button"
+                                              role="menuitem"
+                                              tabIndex={-1}
+                                              data-index={index}
+                                              aria-keyshortcuts={item.shortcut?.replace('Ctrl+', 'Control+')}
+                                              data-tone={item.destructive ? 'danger' : undefined}
+                                              style={{ '--i': index } as CSSProperties}
+                                              disabled={item.disabled}
+                                              className={[styles.item, item.destructive ? styles.destructive : '']
+                                                  .filter(Boolean)
+                                                  .join(' ')}
+                                              onPointerMove={(event) => {
+                                                  if (!live.current) return
+                                                  window.clearTimeout(clearTimer.current)
+                                                  if (document.activeElement !== event.currentTarget)
+                                                      event.currentTarget.focus({ preventScroll: true })
+                                                  if (highlight?.index !== index) place(event.currentTarget, true)
+                                              }}
+                                              onClick={() => {
+                                                  if (!live.current) return
+                                                  live.current = false
+                                                  setOpen(false)
+                                                  returnFocus()
+                                                  item.onSelect?.()
+                                              }}
+                                          >
+                                              {(item.icon || item.checked) && (
+                                                  <span className={styles.icon} aria-hidden="true">
+                                                      {item.icon ?? <Check size={15} />}
+                                                  </span>
+                                              )}
+                                              <span className={styles.label}>{item.label}</span>
+                                              {item.shortcut && (
+                                                  <span className={styles.shortcut} aria-hidden="true">
+                                                      {item.shortcut.split('+').map((key) => (
+                                                          <ShortcutKbd
+                                                              key={key}
+                                                              size="sm"
+                                                              className={styles.shortcutKey}
+                                                          >
+                                                              {key}
+                                                          </ShortcutKbd>
+                                                      ))}
+                                                  </span>
+                                              )}
+                                          </button>
+                                      </Fragment>
                                   ))}
                               </MenuSurface>
                           )}

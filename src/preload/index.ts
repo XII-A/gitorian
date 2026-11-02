@@ -1,8 +1,16 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
-import type { DesktopBridge, RepositoryImportProgress, NotionDiscoveryEvent } from '../shared/model'
+import type { SpellingContext, DesktopBridge, RepositoryImportProgress, NotionDiscoveryEvent } from '../shared/model'
 import type { AppUpdateState } from '../shared/app-updates'
 
 const bridge: DesktopBridge = {
+    spelling: {
+        onContext: (listener) => {
+            const receive = (_event: Electron.IpcRendererEvent, context: SpellingContext) => listener(context)
+            ipcRenderer.on('journal:spelling-context', receive)
+            return () => ipcRenderer.removeListener('journal:spelling-context', receive)
+        },
+        act: (id, action, word) => ipcRenderer.invoke('journal:spelling-action', { id, action, word })
+    },
     readEntry: (id, restoreId) => ipcRenderer.invoke('journal:entry', { id, restoreId }),
     clipboard: (action) => ipcRenderer.invoke('journal:clipboard', action),
     writeClipboardText: (text) => ipcRenderer.invoke('journal:clipboard-text', text),

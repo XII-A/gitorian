@@ -50,14 +50,15 @@ const users = {
     102: { id: 102, login: 'alex-work', email: 'work@example.test' },
     201: { id: 201, username: 'alex-lab', email: 'lab@example.test' }
 }
+const contributionDate = new Date().toISOString()
 const mergeRequest = (iid) => ({
     iid,
     title: iid === 1 ? 'Improve GitLab workflow' : 'Older review work',
     description: 'Handle interrupted saves safely.',
     web_url: `https://gitlab.com/team/sub/project/-/merge_requests/${iid}`,
     author: { id: iid === 1 ? 201 : 301, username: iid === 1 ? 'alex-lab' : 'teammate' },
-    created_at: iid === 1 ? '2026-10-26T10:00:00Z' : '2025-01-01T10:00:00Z',
-    updated_at: iid === 1 ? '2026-10-28T10:00:00Z' : '2025-01-01T10:00:00Z',
+    created_at: iid === 1 ? contributionDate : '2025-01-01T10:00:00Z',
+    updated_at: iid === 1 ? contributionDate : '2025-01-01T10:00:00Z',
     state: 'opened',
     merged_at: null,
     closed_at: null,
@@ -130,7 +131,7 @@ globalThis.fetch = async (input, init = {}) => {
                               title: 'Support interrupted saves',
                               message: 'Support interrupted saves',
                               author_email: 'lab@example.test',
-                              authored_date: '2026-10-28T10:00:00Z',
+                              authored_date: contributionDate,
                               web_url: 'https://gitlab.com/team/sub/project/-/commit/' + 'a'.repeat(40)
                           }
                       ]
@@ -144,7 +145,7 @@ globalThis.fetch = async (input, init = {}) => {
                               id: 900,
                               body: 'Please handle interrupted saves.',
                               author: { id: 201, username: 'alex-lab' },
-                              created_at: '2026-10-28T11:00:00Z',
+                              created_at: contributionDate,
                               system: false
                           }
                       ]

@@ -177,6 +177,11 @@
     width: 1px;
     pointer-events: none;
 }
+/* Preserve the selection while the context menu owns the editing controls. */
+[data-context-menu-open] .journal-format-bar {
+    display: none;
+}
+
 .journal-format-bar {
     position: absolute;
     z-index: 20;
@@ -241,7 +246,7 @@
     border-radius: var(--radius-key);
     padding: var(--space-1);
     background: var(--surface-muted);
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-size: var(--text-sm);
 }
 .journal-editor .tiptap pre {

@@ -19,3 +19,8 @@ https://github.com/radiumcoders/23rd.dev/tree/main/registry/shader-sky
 The upstream README explicitly invites copying registry modules into applications
 and shipping them. Gitorian supplies a time palette and bounded header lifecycle;
 no upstream demo, theme integration, pointer interaction or lightning is used.
+
+Geist Sans and Geist Mono font software is by The Geist Project Authors:
+https://github.com/vercel/geist-font
+Their SIL Open Font License 1.1 notices are retained in resources/fonts/
+and included with the packaged application.

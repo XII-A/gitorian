@@ -77,6 +77,21 @@
 .root[data-disabled] .shape {
     opacity: 0.55;
 }
+/* Keep the material through the main contraction, then fade it as the chip settles.
+   Opening removes the delay, so a close can reverse immediately. */
+.root[data-floating]:not([data-open]) .shape {
+    transition-duration: var(--duration-fast);
+    transition-delay: var(--duration-standard);
+}
+.root[data-floating]:not([data-open]) .shape::after {
+    transition-delay: var(--duration-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+    .root[data-floating]:not([data-open]) .shape,
+    .root[data-floating]:not([data-open]) .shape::after {
+        transition-delay: 0s;
+    }
+}
 @media (hover: hover) and (pointer: fine) {
     .root:not([data-open], [data-disabled]) .shape:hover {
         background: var(--surface-muted);

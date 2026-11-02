@@ -30,6 +30,14 @@ The local Arc `EmptyState.iconVariant="plain"` extension removes the icon frame 
 
 Background source warnings use a short one-line toast title and a `Review` action. The notification viewport may be wider on desktop but must stay within the viewport on phones. The local toast-stack responsive breakpoint moves actions below the copy at 24rem or narrower, keeping source-warning titles on one line on phones. Never truncate the title or force overflowing text to stay on one line.
 
+## Typography
+
+The shared font interface lives in `components/arc/foundation.css`: `--font-body` selects bundled Geist Sans (`Geist Variable`), `--font-display` resolves to that same family, and `--font-mono` selects bundled Geist Mono (`Geist Mono Variable`). Load normal and real italic variable faces once in `src.tsx`. The document uses the body token, including startup, portals and detached references. Do not redefine font roles per page or use brand-specific aliases.
+
+Use sans for interface text, prose, headings and technical toolbar labels. Use the mono token for code, diffs, technical paths, SHAs and device codes; optional ligatures are disabled on technical text. Keep tabular numerals where already needed. Preserve system fallback for unsupported scripts and emoji; never disable synthesis globally. The full font license notices ship in `resources/fonts/`. The local `ExpandableCard` and `Checkbox` `descriptionClassName` slot applies the shared `repository-path` role to Settings and import path values; missing-folder guidance remains ordinary sans text.
+
+Mermaid images are isolated from document fonts. Their on-demand font adapter embeds trusted bundled sans WOFF2 faces with their Unicode ranges, and loads the same family before measuring labels. Images decode before appearing; a rendering/decode failure retains Source. Keep inert SVG image output, strict Mermaid configuration and the existing CSP; authored font URLs must never enter font preparation. Manual review covers native small-text clarity, normal/italic multilingual fallback, narrow widths/zoom, and image-versus-document font metrics.
+
 ## Corner radii
 
 The radius definitions live in `src/renderer/components/arc/foundation.css`. Use these tokens for new UI and keep their values shared across pages.

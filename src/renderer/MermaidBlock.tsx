@@ -34,7 +34,8 @@ async function renderDiagram(id: string, source: string) {
     if (source.length > 50_000)
         throw new Error('This diagram is too large to preview. View or copy the source instead.')
     const { default: mermaid } = await import('mermaid')
-    await document.fonts.ready
+    const { diagramTypography } = await import('./mermaid-fonts')
+    const typography = await diagramTypography(source)
     const foreground = themeColor('--foreground')
     const surface = themeColor('--surface-muted')
     const border = themeColor('--border-strong')
@@ -47,7 +48,7 @@ async function renderDiagram(id: string, source: string) {
         htmlLabels: false,
         theme: 'base',
         look: 'classic',
-        fontFamily: 'Inter, system-ui, sans-serif',
+        fontFamily: typography.family,
         secure: [
             'secure',
             'securityLevel',
@@ -105,7 +106,7 @@ async function renderDiagram(id: string, source: string) {
         const document = new DOMParser().parseFromString(svg, 'image/svg+xml')
         const root = document.documentElement
         const staticStyle = document.createElementNS('http://www.w3.org/2000/svg', 'style')
-        staticStyle.textContent = '* { animation: none !important; transition: none !important; }'
+        staticStyle.textContent = `${typography.svgStyle}\n* { animation: none !important; transition: none !important; }`
         root.append(staticStyle)
         const dimensions = root
             .getAttribute('viewBox')
@@ -117,7 +118,10 @@ async function renderDiagram(id: string, source: string) {
             root.setAttribute('height', String(dimensions[3]))
         }
         // SVG image context is inert: authored scripts, links and external resources cannot act on the app.
-        return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(root))}`
+        const image = new Image()
+        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(root))}`
+        await image.decode()
+        return image.src
     } finally {
         container.remove()
     }
@@ -149,7 +153,7 @@ export function MermaidBlock({ source }: { source: string }) {
                         error:
                             error instanceof Error && (!source.trim() || source.length > 50_000)
                                 ? error.message
-                                : 'Could not render this diagram. View the source to check the Mermaid syntax.'
+                                : 'Could not render this diagram. View the source to read its definition or check the Mermaid syntax.'
                     })
             }
         })

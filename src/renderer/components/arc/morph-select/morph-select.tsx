@@ -216,6 +216,7 @@ export function MorphSelect({
     const rootRef = useRef<HTMLDivElement>(null)
     const anchorRef = useRef<HTMLDivElement>(null)
     const portalRef = useRef<HTMLDivElement>(null)
+    const shapeRef = useRef<HTMLDivElement>(null)
     const returnFocus = useRef(false)
     const measureRef = useRef<HTMLSpanElement>(null)
     const listFaceRef = useRef<HTMLDivElement>(null)
@@ -236,6 +237,7 @@ export function MorphSelect({
 
     const [open, setOpen] = useState(false)
     const [floating, setFloating] = useState(false)
+    const [portalFontFamily, setPortalFontFamily] = useState<string>()
     const [position, setPosition] = useState({ left: 0, top: 0, width: 0, viewportHeight: 0, align })
     const [query, setQuery] = useState('')
     const [active, setActive] = useState<string | null>(null)
@@ -268,13 +270,14 @@ export function MorphSelect({
         shapeH = useMotionValue<number | string>('100%'),
         radius = useMotionValue(22)
     const sizes = useRef({ trigger: 0, lid: 0, listW: 0, listH: 0 })
-    const layerTransform = useTransform(shapeH, (height) => {
+    const portalX = useMotionValue(0),
+        portalY = useMotionValue(0)
+    const layerTransform = useTransform(() => {
+        const height = shapeH.get()
         if (typeof height !== 'number' || !floating) return 'none'
-        const shift = Math.min(
-            Math.max(0, position.top - 8),
-            Math.max(0, height - (position.viewportHeight - position.top - 8))
-        )
-        return `translateY(${-shift}px)`
+        const top = position.top + portalY.get()
+        const shift = Math.min(Math.max(0, top - 8), Math.max(0, height - (position.viewportHeight - top - 8)))
+        return `translate3d(${portalX.get()}px, ${portalY.get() - shift}px, 0)`
     })
     const live = useRef({ open: false, reduced: false, measured: false })
     useLayoutEffect(() => {
@@ -305,11 +308,7 @@ export function MorphSelect({
             if (animateTriggerWidth) animate(anchorW, trigger, trigger < lastAnchor ? NARROW : WIDTH)
             else anchorW.jump(trigger)
             animate(shapeW, next.w, isOpen ? transition : next.w < lastW ? NARROW : WIDTH)
-            const heightAnimation = animate(shapeH, next.h, transition)
-            if (portal && !isOpen)
-                void heightAnimation.then(() => {
-                    if (!live.current.open) setFloating(false)
-                })
+            animate(shapeH, next.h, transition)
             animate(radius, next.r, transition)
         },
         [anchorW, radius, shapeH, shapeW, animateTriggerWidth, portal]
@@ -349,6 +348,9 @@ export function MorphSelect({
     const positionPortal = useCallback(() => {
         const rect = anchorRef.current?.getBoundingClientRect()
         if (!rect) return
+        // The portal leaves the workspace's font scope. Keep its visible text in
+        // the same font as the inline measurement, including during the handoff.
+        if (rootRef.current) setPortalFontFamily(getComputedStyle(rootRef.current).fontFamily)
         const width = Math.min(panelWidth, window.innerWidth - 32)
         const edge = rect.left + width > window.innerWidth - 8 ? 'end' : rect.right - width < 8 ? 'start' : align
         setPosition((previous) =>
@@ -369,14 +371,55 @@ export function MorphSelect({
             }
             return
         }
-        positionPortal()
-        window.addEventListener('resize', positionPortal)
-        window.addEventListener('scroll', positionPortal, true)
-        return () => {
-            window.removeEventListener('resize', positionPortal)
-            window.removeEventListener('scroll', positionPortal, true)
+        let frame = 0
+        let revealed = false
+        let lastLeft = NaN,
+            lastTop = NaN
+        const followAnchor = () => {
+            const anchor = anchorRef.current
+            if (!anchor) return
+            // Reveal the final-sized chip while its floating face is still visible. Otherwise
+            // focus restoration can scroll the toolbar only after the portal disappears.
+            if (live.current.open) revealed = false
+            if (!live.current.open && returnFocus.current && !revealed) {
+                revealed = true
+                anchor.focus({ preventScroll: true })
+                triggerRef.current?.focus({ preventScroll: true })
+            }
+            const rect = anchor.getBoundingClientRect()
+            const left = position.align === 'end' ? rect.right - position.width : rect.left
+            if (left !== lastLeft || rect.top !== lastTop) {
+                const x = left - position.left,
+                    y = rect.top - position.top
+                if (live.current.open || live.current.reduced) {
+                    portalX.jump(x)
+                    portalY.jump(y)
+                } else {
+                    animate(portalX, x, SHRINK)
+                    animate(portalY, y, SHRINK)
+                }
+                lastLeft = left
+                lastTop = rect.top
+            }
+            // Width, height and position can settle on different frames, especially after
+            // a search or a longer selection. Reopening simply retargets these same values.
+            if (
+                !live.current.open &&
+                ![anchorW, shapeW, shapeH, radius, portalX, portalY].some((value) => value.isAnimating()) &&
+                !shapeRef.current?.getAnimations().some((animation) => animation.playState === 'running')
+            ) {
+                setFloating(false)
+                return
+            }
+            frame = requestAnimationFrame(followAnchor)
         }
-    }, [floating, positionPortal])
+        frame = requestAnimationFrame(followAnchor)
+        window.addEventListener('resize', positionPortal)
+        return () => {
+            cancelAnimationFrame(frame)
+            window.removeEventListener('resize', positionPortal)
+        }
+    }, [floating, positionPortal, position, portalX, portalY, anchorW, shapeW, shapeH, radius])
 
     useLayoutEffect(() => {
         if (live.current.open === open) return
@@ -448,7 +491,10 @@ export function MorphSelect({
         scrollIntent.current = true
         pendingFocus.current = canSearch ? 'input' : 'trigger'
         setAnnouncement('')
-        if (portal) {
+        returnFocus.current = false
+        if (portal && !floating) {
+            portalX.jump(0)
+            portalY.jump(0)
             positionPortal()
             setFloating(true)
         }
@@ -515,7 +561,9 @@ export function MorphSelect({
         const printable = key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey
         const typing = performance.now() - typeahead.current.at < TYPEAHEAD_RESET && typeahead.current.buffer.length > 0
 
-        if (!open) {
+        // The closing face is still portaled; Tab must retain the toolbar's order
+        // until that face has handed focus back to its inline trigger.
+        if (!open && !(floating && key === 'Tab')) {
             if (key === 'ArrowDown' || key === 'ArrowUp' || key === 'Enter' || (key === ' ' && !typing)) {
                 event.preventDefault()
                 openList()
@@ -665,7 +713,10 @@ export function MorphSelect({
     }, [close, open])
     const onBlur = (event: ReactFocusEvent<HTMLDivElement>) => {
         const next = event.relatedTarget
-        if (open && next && !event.currentTarget.contains(next) && !portalRef.current?.contains(next)) close(false)
+        if (next && !event.currentTarget.contains(next) && !portalRef.current?.contains(next)) {
+            returnFocus.current = false
+            if (open) close(false)
+        }
     }
 
     const onQuery = (next: string) => {
@@ -702,7 +753,11 @@ export function MorphSelect({
     } as CSSProperties
 
     const surface = (
-        <motion.div className={styles.shape} style={{ width: shapeW, height: shapeH, borderRadius: radius }}>
+        <motion.div
+            ref={shapeRef}
+            className={styles.shape}
+            style={{ width: shapeW, height: shapeH, borderRadius: radius }}
+        >
             <div className={styles.lid}>
                 <button
                     ref={triggerRef}
@@ -994,7 +1049,7 @@ export function MorphSelect({
                 {label}
             </span>
 
-            <motion.div ref={anchorRef} className={styles.anchor} style={{ width: anchorW }}>
+            <motion.div ref={anchorRef} className={styles.anchor} style={{ width: anchorW }} tabIndex={-1}>
                 {/* Sizes the closed trigger. It holds the chosen label with the trigger's own padding, so the width spring has a target before anything moves. */}
                 <span ref={measureRef} className={`${styles.trigger} ${styles.measure}`} aria-hidden="true">
                     {renderValue(selectedOption)}
@@ -1004,8 +1059,9 @@ export function MorphSelect({
                     ? createPortal(
                           <motion.div
                               ref={portalRef}
+                              data-floating=""
                               className={[styles.root, className].filter(Boolean).join(' ')}
-                              data-open=""
+                              data-open={open || undefined}
                               data-align={position.align}
                               data-variant={variant}
                               data-size={size}
@@ -1013,6 +1069,7 @@ export function MorphSelect({
                               style={
                                   {
                                       ...rootStyle,
+                                      fontFamily: portalFontFamily,
                                       '--ms-trigger-w': `${sizes.current.trigger}px`,
                                       '--ms-list-max': `${Math.min(maxListHeight, Math.max(48, position.viewportHeight - sizes.current.lid - 24))}px`,
                                       position: 'fixed',

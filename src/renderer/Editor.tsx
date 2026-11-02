@@ -179,6 +179,33 @@ export const Editor = memo(function Editor({
     const [active, setActive] = useState(0)
     const activeRef = useRef(0)
     const host = useRef<HTMLDivElement>(null)
+    const contextSelection = useRef(false)
+    useEffect(() => {
+        const dismissContextSelection = (event: PointerEvent) => {
+            const inEditor = event.target instanceof Node && host.current?.contains(event.target)
+            if (host.current?.closest('[data-context-menu-open]') || (inEditor && event.button === 2)) {
+                // Focus restoration and native clipboard edits can produce separate selection updates.
+                // Keep their transient selection from reopening the formatting toolbar.
+                contextSelection.current = true
+                setBar(undefined)
+            } else if (inEditor && event.button === 0) contextSelection.current = false
+        }
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (host.current?.closest('[data-context-menu-open]')) {
+                contextSelection.current = true
+                setBar(undefined)
+            } else if (event.target instanceof Node && host.current?.contains(event.target)) {
+                contextSelection.current = event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')
+                if (contextSelection.current) setBar(undefined)
+            }
+        }
+        document.addEventListener('pointerdown', dismissContextSelection, true)
+        document.addEventListener('keydown', onKeyDown, true)
+        return () => {
+            document.removeEventListener('pointerdown', dismissContextSelection, true)
+            document.removeEventListener('keydown', onKeyDown, true)
+        }
+    }, [])
     const id = useId()
     const menuOpen = !!menu
     useLayoutEffect(() => {
@@ -195,7 +222,13 @@ export const Editor = memo(function Editor({
     }, [menuOpen])
     const updateMenu = (editor: TiptapEditor) => {
         const { $from, empty, from } = editor.state.selection
-        if (!empty && !readOnly && !$from.parent.type.spec.code && editor.state.selection instanceof TextSelection) {
+        if (
+            !contextSelection.current &&
+            !empty &&
+            !readOnly &&
+            !$from.parent.type.spec.code &&
+            editor.state.selection instanceof TextSelection
+        ) {
             const rect = host.current?.getBoundingClientRect()
             const coords = editor.view.coordsAtPos(from)
             setBar({

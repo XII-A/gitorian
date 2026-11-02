@@ -11,6 +11,8 @@ import styles from './checkbox.module.css'
 export interface CheckboxProps extends ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root> {
     label?: string
     description?: string
+    /** Class for the description text slot. */
+    descriptionClassName?: string
 }
 
 /** Both marks share three points, so the check morphs into the dash and back instead of swapping. */
@@ -18,7 +20,7 @@ const checkPath = 'M4.25 9.25 L7.25 12.25 L13.75 5.75'
 const dashPath = 'M4.75 9 L9 9 L13.25 9'
 
 export const Checkbox = forwardRef<ComponentRef<typeof CheckboxPrimitive.Root>, CheckboxProps>(function Checkbox(
-    { label, description, id, className, checked, defaultChecked, onCheckedChange, ...props },
+    { label, description, descriptionClassName, id, className, checked, defaultChecked, onCheckedChange, ...props },
     ref
 ) {
     const generatedId = useId()
@@ -82,7 +84,11 @@ export const Checkbox = forwardRef<ComponentRef<typeof CheckboxPrimitive.Root>, 
             {label || description ? (
                 <div className={styles.copy}>
                     {label ? <label htmlFor={controlId}>{label}</label> : null}
-                    {description ? <span id={`${controlId}-description`}>{description}</span> : null}
+                    {description ? (
+                        <span id={`${controlId}-description`} className={descriptionClassName}>
+                            {description}
+                        </span>
+                    ) : null}
                 </div>
             ) : null}
         </div>
