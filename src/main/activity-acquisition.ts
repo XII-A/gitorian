@@ -16,6 +16,8 @@ import { Notion } from './notion'
 import { ActivityRecords } from './activity-records'
 import { GitLabFailure } from './gitlab'
 import { JournalPublishing } from './journal-publishing'
+import { RecoveryPolicy } from './recovery-admission'
+import { Diagnostics } from './diagnostic-observer'
 import { ConnectionState, JournalError, JournalStore } from './journal-context'
 function batchSlots() {
     return Effect.gen(function* () {
@@ -43,6 +45,8 @@ export const ActivityAcquisitionLive = Layer.scoped(ActivityAcquisition, makeAcq
 function makeAcquisition() {
     return Effect.gen(function* () {
         const work = yield* ApplicationWork
+        const recovery = yield* RecoveryPolicy
+        const diagnostics = yield* Diagnostics
         const store = yield* JournalStore
         const github = yield* RemoteContributions
         const accounts = yield* ProviderAccounts
@@ -161,9 +165,12 @@ function makeAcquisition() {
                 )
                 const identity = { settings: config.settings, restoreId: generation }
                 const keys = repositories.flatMap((r) => [
-                    ...(!options.source || options.source === 'git' ? [`git:${r.id}`] : []),
+                    ...((!options.source || options.source === 'git') && recovery.permits('git', r.id)
+                        ? [`git:${r.id}`]
+                        : []),
                     ...((!options.source || options.source === 'remote') &&
                     connections().remote &&
+                    recovery.permits('remote', r.id) &&
                     providerRemote(r.remote)
                         ? [`remote:${r.id}`]
                         : [])
@@ -194,6 +201,7 @@ function makeAcquisition() {
                                 const token = tokens.get(key)!
                                 if (stopped(key, token, generation)) return
                                 const provider = key.startsWith('git:') ? 'git' : 'remote'
+                                if (!recovery.permits(provider, repository.id)) return
                                 let resolutionError: Error | undefined
                                 if (provider === 'remote' && !repository.accountId) {
                                     yield* accounts.resolve(repository.id, undefined, true).pipe(
@@ -694,6 +702,7 @@ function makeAcquisition() {
                                                             }),
                                                         onFailure: (error) =>
                                                             Effect.gen(function* () {
+                                                                diagnostics.failure('source-' + provider, error)
                                                                 if (stopped(key, token, generation)) return
                                                                 if (provider === 'git') {
                                                                     const persisted = yield* local(() =>
@@ -801,6 +810,8 @@ function makeAcquisition() {
                                 // Retry only when this round actually admitted a batch.
                                 if (!options.since || batches[provider] === before) return
                                 first = false
+                                // Let native input and heartbeat timers run between acquisition quanta.
+                                yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
                             }
                         })
                     const jobs = [rounds('git'), rounds('remote')]

@@ -48,6 +48,7 @@
             "output": "release"
         },
         "asarUnpack": [
+            "out/main/recovery-terminate.ps1",
             "node_modules/sharp/**/*",
             "node_modules/@img/**/*"
         ],

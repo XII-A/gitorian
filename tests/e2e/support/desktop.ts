@@ -14,6 +14,7 @@ interface Desktop {
     chooseFolder: (path: string, delay?: number) => Promise<void>
     shot: (name: string) => Promise<void>
     close: () => Promise<void>
+    prepareForTermination: () => Promise<void>
     restart: () => Promise<{ app: ElectronApplication; page: Page }>
 }
 
@@ -50,6 +51,7 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string; deskto
             signal: undefined as NodeJS.Signals | null | undefined,
             previousProcesses: [] as { pid: number | undefined; exit: number | null | undefined }[],
             passed: false,
+            expectedTermination: false,
             cleanup: { removed: false },
             evidenceRetained: false,
             error: ''
@@ -58,14 +60,21 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string; deskto
         save()
         console.info(`Evidence: ${info.outputDir}`)
         let app: ElectronApplication | undefined
+        let ownedProcess: ReturnType<ElectronApplication['process']> | undefined
         let page: Page | undefined
         let closed = false
         let tracing = false
         let shutdownError: Error | undefined
         const close = async () => {
             if (!app || closed) return
-            const child = app.process()
+            const child = ownedProcess ?? app.process()
             const alive = () => child.exitCode === null && child.signalCode === null
+            if (report.expectedTermination && !alive()) {
+                closed = true
+                report.exit = child.exitCode
+                report.signal = child.signalCode
+                return
+            }
             try {
                 // The deadline includes trace export: it can stall before Electron is asked to quit.
                 await within(
@@ -127,6 +136,7 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string; deskto
             delete env.ELECTRON_RUN_AS_NODE
             delete env.ELECTRON_RENDERER_URL
             app = await _electron.launch({ args: [desktopEntry], env, timeout: 30_000 })
+            ownedProcess = app.process()
             report.pid = app.process().pid
             save()
             for (const [stream, file] of [
@@ -161,11 +171,20 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string; deskto
                 scratch,
                 profile,
                 close,
+                prepareForTermination: async () => {
+                    if (tracing) {
+                        await app!.context().tracing.stop({ path: info.outputPath('trace.zip') })
+                        tracing = false
+                    }
+                    report.expectedTermination = true
+                    save()
+                },
                 restart: async () => {
                     await close()
                     report.previousProcesses.push({ pid: report.pid, exit: report.exit })
                     closed = false
                     app = await _electron.launch({ args: [desktopEntry], env, timeout: 30_000 })
+                    ownedProcess = app.process()
                     report.pid = app.process().pid
                     report.exit = undefined
                     report.signal = undefined
@@ -233,7 +252,10 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string; deskto
                     'stdout.log',
                     'stderr.log'
                 ].every((file) => existsSync(info.outputPath(file)))
-                report.passed &&= report.cleanup.removed && report.exit === 0 && report.evidenceRetained
+                report.passed &&=
+                    report.cleanup.removed &&
+                    (report.exit === 0 || report.expectedTermination) &&
+                    report.evidenceRetained
                 save()
                 for (const file of ['trace.zip', 'failure.png'])
                     if (existsSync(info.outputPath(file))) await info.attach(file, { path: info.outputPath(file) })
@@ -244,7 +266,7 @@ export const test = base.extend<{ desktop: Desktop; desktopEntry: string; deskto
         expect(report.cleanup.removed, `Owned profile was not removed: ${scratch}`).toBe(true)
         if (info.status === info.expectedStatus) {
             expect(report.evidenceRetained, 'Desktop evidence must survive cleanup').toBe(true)
-            expect(report.exit, 'Electron must exit cleanly').toBe(0)
+            if (!report.expectedTermination) expect(report.exit, 'Electron must exit cleanly').toBe(0)
         }
     }
 })

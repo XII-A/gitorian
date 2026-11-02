@@ -36,6 +36,8 @@ This lock covers the canonical compiled build/automated desktop path. `pnpm dev`
 
 ## Coverage ownership
 
+- `tests/e2e/crash-recovery.spec.ts` owns native report sharing and Windows multi-process recovery. Its explicitly declared termination scenario exports the trace before inducing failure and accepts the expected owned process exit; all ordinary scenarios still require clean exit. The restarted process records its profile/state proof and exits before fixture cleanup. `tests/recovery-termination.test.ts` owns the Windows adapter's handle/ancestry checks and watchdog exclusion. See the [recovery recipe](../.agents/skills/verify-gitorian/features/crash-recovery.md).
+
 - `tests/e2e/mermaid.spec.ts`: PR descriptions across hub/workspace/reference Details, exact source, syntax recovery and inert untrusted diagrams. Seed synthetic activity through `seedJournal` before launch; it owns the backup-format detail.
 - Other desktop journeys own durable writing, recovery conflicts, clipboard, selection/editing, code blocks, checklist editing, history, actionable command/save errors and repository import. Keep these behavioral contracts even when their UI is visually reviewed.
 - `tests/git.test.ts` owns native full-page Git parsing/resumption. `tests/week-loading.test.ts` uses a small gated index adapter with real stores to prove partial activity and loading completion; `tests/week-history.test.ts` owns acquisition scheduling.

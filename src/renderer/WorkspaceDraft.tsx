@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
-import { registerUpdateCheckpoint } from './update-checkpoint'
+import { registerWritingCheckpoint } from './writing-checkpoint'
 import type { Command, Draft, JournalNode, Reply, State } from '../shared/model'
 import { draftSchema } from '../shared/model'
 import { plainText } from '../shared/notion-format'
@@ -267,7 +267,7 @@ export function WorkspaceDraft({
     }
     useEffect(
         () =>
-            registerUpdateCheckpoint(async () => {
+            registerWritingCheckpoint(async () => {
                 if (busy || conflict.current)
                     throw new Error('Finish the current journal action, then try updating again.')
                 if (!imagesReady) throw new Error('Finish or cancel image imports, then try updating again.')

@@ -11,6 +11,7 @@ import { filesFromDiff } from './diff-files'
 import { hasFileStatistics } from '../shared/change-statistics'
 import { isCombinedDiff } from '../shared/diff-format'
 import type { Activity } from '../shared/model'
+import { RecoveryPolicy } from './recovery-admission'
 export interface ActivityRecords {
     readonly capture: (
         activityId: string,
@@ -35,6 +36,18 @@ export const ActivityRecordsLive = Layer.scoped(
     Effect.gen(function* () {
         const store = yield* JournalStore
         const github = yield* RemoteContributions
+        const recovery = yield* RecoveryPolicy
+        const requireSource = (activity: Activity) =>
+            Effect.suspend(() =>
+                recovery.permits('remote', activity.repositoryId) ||
+                (activity.kind === 'commit' && recovery.permits('git', activity.repositoryId))
+                    ? Effect.void
+                    : Effect.fail(
+                          new JournalError(
+                              'Details are not cached. Resume this source or continue normally to load them.'
+                          )
+                      )
+            )
         const lease = (activity: Activity) => {
             if (!activity.remoteSource) return activity
             const repository = store.config.repositories.find((r) => r.id === activity.repositoryId)
@@ -73,6 +86,12 @@ export const ActivityRecordsLive = Layer.scoped(
                 const stored = yield* local(() => store.activity(activityId))
                 const activity = stored && lease(stored)
                 if (!activity) return yield* Effect.fail(new JournalError('Work is no longer available'))
+                if (!recovery.normal) {
+                    const existing = yield* local(() => store.revisions(activity.id))
+                    if (activity.revision && existing.some((revision) => revision.id === activity.revision))
+                        return activity.revision
+                }
+                yield* requireSource(activity)
                 const repository = store.config.repositories.find((r) => r.id === activity.repositoryId)
                 if (!repository) return yield* Effect.fail(new JournalError('Repository is no longer available'))
                 const snapshot = yield* github.snapshot(repository, activity, options.background)
@@ -105,6 +124,7 @@ export const ActivityRecordsLive = Layer.scoped(
             })
         const loadDetails = (activity: Activity, includeDiff: boolean): Effect.Effect<void, Error> =>
             Effect.gen(function* () {
+                yield* requireSource(activity)
                 const readLease = activity.remoteSource
                 const generation = store.generation
                 const repository = store.config.repositories.find((r) => r.id === activity.repositoryId)
@@ -120,7 +140,7 @@ export const ActivityRecordsLive = Layer.scoped(
                 } else if (activity.sha) {
                     const sha = activity.sha
                     const details = yield* (
-                        repository.available
+                        repository.available && recovery.permits('git', activity.repositoryId)
                             ? local(() => commitDetails(repository, sha, includeDiff))
                             : Effect.fail(new JournalError('Local checkout unavailable'))
                     ).pipe(
@@ -134,6 +154,8 @@ export const ActivityRecordsLive = Layer.scoped(
                                                 '). Locate the repository, or connect GitHub and select its remote in Settings.'
                                         )
                                     )
+                                if (!recovery.permits('remote', activity.repositoryId))
+                                    return Effect.fail(new JournalError('Remote fallback is paused during recovery.'))
                                 return github.commitDetails(
                                     activity.remoteSource
                                         ? {

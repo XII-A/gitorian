@@ -1,4 +1,5 @@
 import sharp from 'sharp'
+import { RecoveryPolicy } from './recovery-admission'
 import { downloadImage } from './images'
 import { randomUUID } from 'node:crypto'
 import { Context, Effect, Exit, Fiber, Layer, Scope } from 'effect'
@@ -63,6 +64,7 @@ export const ProviderAccountsLive = (adapters: ProviderAccountAdapters) =>
 function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabClientId }: ProviderAccountAdapters) {
     return Effect.gen(function* () {
         const store = yield* JournalStore
+        const recovery = yield* RecoveryPolicy
         const http = yield* Http
         const scope = yield* Scope.make()
         const locks = new Map<string, Effect.Semaphore>()
@@ -235,8 +237,10 @@ function makeAccounts({ vault, fetcher = fetch, gitlabClientId = defaultGitLabCl
                     }
                 })
             )
-        yield* cleanup()
-        for (const pending of store.config.accountPreparations) yield* recover(pending.id)
+        if (recovery.normal) {
+            yield* cleanup()
+            for (const pending of store.config.accountPreparations) yield* recover(pending.id)
+        }
         yield* Effect.addFinalizer(() =>
             Effect.gen(function* () {
                 closed = true

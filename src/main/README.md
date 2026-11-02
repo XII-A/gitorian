@@ -1,6 +1,16 @@
 # Backend modules
 
-Electron assembles `desktopLayer` and owns the single `ManagedRuntime`. IPC commands compose Effects and execute through `ApplicationWork`; fixtures construct the same journal Layers with disposable native adapters. Creating an operation does not execute it.
+`index.ts` selects the journal or database-independent native recovery role. `desktop-main.ts` assembles `desktopLayer` and owns the single `ManagedRuntime`. IPC commands compose Effects and execute through `ApplicationWork`; fixtures construct the same journal Layers with disposable native adapters. Creating an operation does not execute it.
+
+## Desktop diagnostics and recovery
+
+`DesktopDiagnostics` owns the desktop's reliability interface. Windows runs the bounded `IncidentReports` implementation in a detached Node watchdog using the packaged Electron runtime; other platforms retain local reporting without claiming live main-hang recovery. The watchdog observes main-loop pulses independently and opens an incident-only Electron native dialog for renderer/main/storage failures or unexpected exit. The dialog uses separate temporary browser storage and never opens SQLite, credentials or the journal runtime. There is no automatic upload or native memory-dump collection.
+
+The main journal holds the per-profile native single-instance lease, including while blocked. A confirmed restart first invokes the mounted writing checkpoint and cooperative shutdown. The Windows adapter pins the original process handle, verifies creation times at every process-tree edge, excludes the watchdog branch and confirms native exit before relaunch. Its PowerShell script is unpacked beside the application archive. No command terminates by process name or trusts a stale PID file.
+
+`RecoveryAdmission` is shared through the Effect context. Unexpected exit and interrupted recovery preserve a paused launch disposition independently of clean shutdown. Acquisition and records enforce source admission; cache misses cannot silently trigger Git/provider fallback. Explicit remote resumption retains the existing credential recovery/rotation protocol. `Continue normally` is the only transition clearing the paused disposition. A storage deadline instead quarantines the dependency until reopening; it does not replay a timed-out mutation. `ApplicationWork` observes detached/periodic outcomes; acquisition records source failures that were already converted into checkpoints.
+
+Reports project bounded operation metadata and reviewed application stack frames before persistence. Raw messages, arguments, paths, URLs, writing and tokens are excluded. Copy and Save use the same versioned representation; in-memory report access remains available when diagnostic storage fails. After desktop exit, the retained recovery helper shares its finalized report in memory and releases persistence so a manually reopened session owns its markers. Retention is ten incident reports or fourteen days, with bounded events/bytes and explicit dropped-observation counts. Build identity covers the journal implementation, and the doctor hashes every compiled main entry/chunk and native adapter.
 
 Follow a command from `index.ts` to `service.ts`, then to its owner:
 

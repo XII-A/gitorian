@@ -18,10 +18,11 @@ export class JournalDatabase {
     private reopening?: Promise<void>
     private constructor(
         private readonly path: string,
-        private connection: DatabaseWorker
+        private connection: DatabaseWorker,
+        private readonly onStall?: () => void
     ) {}
-    static async open(path: string) {
-        return new JournalDatabase(path, await DatabaseWorker.open(path, import.meta.url))
+    static async open(path: string, onStall?: () => void) {
+        return new JournalDatabase(path, await DatabaseWorker.open(path, import.meta.url, onStall), onStall)
     }
     get config(): Configuration {
         return this.connection.config
@@ -34,10 +35,15 @@ export class JournalDatabase {
         ...args: Parameters<JournalEngine[K]>
     ): Promise<Result<K>> {
         if (this.closing) throw new DatabaseError('storage', 'The journal is closing.')
+        if (this.connection.stalled)
+            throw new DatabaseError(
+                'storage',
+                'The journal stopped responding. Reopen to verify the last save before retrying.'
+            )
         if (!this.connection.available) {
             this.reopening ??= (async () => {
                 await this.connection.close()
-                this.connection = await DatabaseWorker.open(this.path, import.meta.url)
+                this.connection = await DatabaseWorker.open(this.path, import.meta.url, this.onStall)
             })().finally(() => {
                 this.reopening = undefined
             })

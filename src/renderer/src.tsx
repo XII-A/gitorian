@@ -10,4 +10,6 @@ import './styles.css'
 import './desktop.css'
 
 // Keep index.html's dark theme until light mode is ready. Theme tokens stay available.
+window.addEventListener('error', () => window.journal.diagnostics?.error('render'))
+window.addEventListener('unhandledrejection', () => window.journal.diagnostics?.error('promise'))
 createRoot(document.getElementById('root')!).render(<App />)

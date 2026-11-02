@@ -28,6 +28,7 @@ import { Editor } from './Editor'
 import { dateKey, dateValue } from './workspace-model'
 import { hasUnsavedSettings, timezoneOptions } from './settings-model'
 import './settings.css'
+import { DiagnosticActions } from './Diagnostics'
 
 export function Settings({
     state,
@@ -624,6 +625,14 @@ export function Settings({
                                             </div>
                                         </div>
                                         <p className="settings-hint">Excludes credentials and repository files.</p>
+                                    </section>
+                                    <section className="settings-section">
+                                        <h3>Diagnostics</h3>
+                                        <p className="settings-hint">
+                                            Share a local report with support. Reports exclude writing, credentials and
+                                            repository paths.
+                                        </p>
+                                        <DiagnosticActions />
                                     </section>
                                 </TabsContent>
                             </ScrollArea>

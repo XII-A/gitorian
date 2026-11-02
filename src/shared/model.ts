@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { DiagnosticsBridge } from './diagnostics'
 import type { AppUpdateState } from './app-updates'
 import type { StateCursor, UpdateReply } from './state-updates'
 import { providerAccountSchema, providerSchema } from './provider-accounts'
@@ -514,6 +515,7 @@ export interface SpellingContext {
     enabled: boolean
 }
 export interface DesktopBridge {
+    diagnostics?: DiagnosticsBridge
     spelling?: {
         onContext: (listener: (context: SpellingContext) => void) => () => void
         act: (id: number, action: 'replace' | 'learn' | 'toggle', word?: string) => Promise<void>

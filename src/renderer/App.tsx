@@ -19,13 +19,17 @@ import { WindowTitleBar } from './WindowTitleBar'
 import { useOnboarding } from './use-onboarding'
 import type { SetupSection } from './GettingStarted'
 import { AppUpdateNotifications } from './AppUpdates'
+import { RecoveryNotice, WindowRecovery } from './Diagnostics'
 
 export function App() {
     return (
         <ToastStackProvider>
             <WindowTitleBar />
             <AppUpdateNotifications />
-            <JournalApp />
+            <RecoveryNotice />
+            <WindowRecovery>
+                <JournalApp />
+            </WindowRecovery>
             <ToastStack className="journal-notifications" />
         </ToastStackProvider>
     )

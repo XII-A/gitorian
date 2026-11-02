@@ -1,4 +1,5 @@
 import { hubRepository } from './hub-fixtures'
+import { RecoveryAdmission } from '../src/main/recovery-admission'
 import { nextAcquisition } from '../src/shared/acquisition'
 import { cp, mkdir } from 'node:fs/promises'
 import { journalState } from './database-fixtures'
@@ -11,6 +12,27 @@ import * as gitModule from '../src/main/git'
 import { JournalDatabase } from '../src/main/journal-database'
 import { join } from 'node:path'
 import { rangeActivities } from '../src/renderer/hub-model'
+it('keeps automatic week loading cache-only in recovery until that Git source is resumed', async () => {
+    const recovery = new RecoveryAdmission(true)
+    const app = await workspace(recovery)
+    const index = vi.spyOn(gitModule, 'indexCommits')
+    try {
+        const key = `git:${app.repository.id}`
+        await app.store.saveCheckpoint(key, { status: 'idle', windowEnd: new Date().toISOString() })
+        expect((await run(app.service.reply())).state.acquisition?.[key].status).toBe('cancelled')
+        expect(app.store.config.acquisition[key].status).toBe('idle')
+        await run(app.service.handle({ type: 'loadWeek', since: '2020-01-01' }))
+        expect(index).not.toHaveBeenCalled()
+        expect((await journalState(app.store)).activities).toHaveLength(0)
+        recovery.resume('git', app.repository.id)
+        await run(app.service.handle({ type: 'loadWeek', since: '2020-01-01' }))
+        expect((await journalState(app.store)).activities).toHaveLength(1)
+        expect(recovery.normal).toBe(false)
+    } finally {
+        index.mockRestore()
+        await app.close()
+    }
+})
 it('loads newly imported repositories when an earlier request for the same week is still running', async () => {
     const app = await workspace()
     const imported = await workspace()

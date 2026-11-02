@@ -2,8 +2,8 @@ import { CircleAlert } from 'lucide-react'
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import { Button } from './components/arc/button/button'
 import { Accordion } from './components/arc/accordion/accordion'
-import { CopyButton } from './components/arc/copy-button/copy-button'
 import logo from '../../resources/icon.svg?raw'
+import { DiagnosticActions } from './Diagnostics'
 
 export function StartupRecovery({
     error,
@@ -43,13 +43,19 @@ export function StartupRecovery({
                             aria-disabled={pending}
                             aria-busy={pending}
                             onClick={() => {
-                                if (!pending) void onRetry()
+                                if (!pending)
+                                    void (async () => {
+                                        const state = await window.journal.diagnostics?.state()
+                                        if (state?.startupFailed) await window.journal.diagnostics?.act('restart')
+                                        else await onRetry()
+                                    })()
                             }}
                         >
                             {pending ? 'Retrying…' : 'Retry'}
                         </Button>
                     }
                 />
+                <DiagnosticActions />
                 <p className="sr-only" role="status" aria-atomic="true">
                     <span key={`${failures}:${pending}`}>
                         {pending
@@ -70,7 +76,6 @@ export function StartupRecovery({
                                 <div className="startup-diagnostics-block">
                                     <div className="startup-diagnostics-toolbar">
                                         <span>Error details</span>
-                                        <CopyButton value={error} label="Copy details" variant="plain" />
                                     </div>
                                     <pre className="startup-diagnostics" role="region" aria-label="Error details">
                                         <code>{error}</code>

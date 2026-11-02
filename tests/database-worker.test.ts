@@ -7,6 +7,38 @@ import { expect, it, vi } from 'vitest'
 import { JournalDatabase } from '../src/main/journal-database'
 import sharp from 'sharp'
 
+it('surfaces a stalled save without replaying it and permits an explicit retry after worker exit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gitorian-worker-stall-'))
+    const stalled = vi.fn()
+    let database = await JournalDatabase.open(join(root, 'journal.sqlite'), stalled)
+    try {
+        const draft = await database.createDraft('2026-10-26')
+        const edit = { ...draft, title: 'Explicitly retried writing' }
+        const post = vi.spyOn(Worker.prototype, 'postMessage').mockImplementationOnce(() => undefined)
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        const outcome = database.saveDraft(edit, draft.version).then(
+            () => undefined,
+            (error: unknown) => error
+        )
+        await vi.advanceTimersByTimeAsync(30001)
+        vi.useRealTimers()
+        expect(await outcome).toBeInstanceOf(Error)
+        expect(stalled).toHaveBeenCalledTimes(1)
+        expect(post).toHaveBeenCalledTimes(1)
+        post.mockRestore()
+        await expect(database.draft(draft.id)).rejects.toThrow('Reopen')
+        await database.close()
+        database = await JournalDatabase.open(join(root, 'journal.sqlite'))
+        expect((await database.draft(draft.id))?.title).toBe(draft.title)
+        expect((await database.saveDraft(edit, draft.version)).title).toBe(edit.title)
+    } finally {
+        vi.useRealTimers()
+        vi.restoreAllMocks()
+        await database.close()
+        await rm(root, { recursive: true, force: true })
+    }
+})
+
 it('retries a failed image import without another draft edit and retains the bytes after reopen', async () => {
     const root = await mkdtemp(join(tmpdir(), 'gitorian-worker-image-'))
     const path = join(root, 'journal.sqlite')
