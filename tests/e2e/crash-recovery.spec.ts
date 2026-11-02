@@ -63,27 +63,39 @@ test.describe('forced recovery restart', () => {
         await copyFile(join(profile, 'diagnostics', 'report.txt'), info.outputPath('force-restart-report.txt'))
     })
 })
-test('recovery: unexpected exit, native report copy/export and explicit normal admission', async ({
-    desktop
-}, info) => {
+test('recovery: contextual diagnostic copy and explicit refresh resumption', async ({ desktop }, info) => {
     const { page, app, profile } = desktop
-    await expect(page.getByRole('region', { name: 'Recovery mode' })).toBeVisible()
-    const notice = page.getByRole('region', { name: 'Recovery mode' })
-    await notice.getByRole('button', { name: 'Copy diagnostic report' }).click()
+    const copy = page.getByRole('button', { name: 'Copy diagnostic report', exact: true })
+    await expect(copy).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Recovery mode' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Save report', exact: true })).toHaveCount(0)
+    await desktop.shot('01-recovery-toast')
+    await page.locator('.journal-notifications').screenshot({ path: info.outputPath('01b-recovery-toast-detail.png') })
+    await page.setViewportSize({ width: 320, height: 740 })
+    await expect
+        .poll(async () => {
+            const bounds = await copy.boundingBox()
+            return !!bounds && bounds.x >= 0 && bounds.x + bounds.width <= 320
+        })
+        .toBe(true)
+    await expect(copy).toBeInViewport({ ratio: 1 })
+    await desktop.shot('02-narrow-recovery-toast')
+    await app.evaluate(({ app }) => app.emit('gitorian-fail-copy'))
+    await copy.click()
+    await expect(page.getByText('Could not copy the report', { exact: true })).toBeVisible()
+    await copy.click()
+    await expect(page.getByText('Diagnostic report copied', { exact: true })).toBeVisible()
     const copied = await app.evaluate(({ clipboard }) => clipboard.readText())
     expect(JSON.parse(copied).incident).toBe('unexpected-exit')
     expect(copied).not.toContain(profile)
-    await notice.getByRole('button', { name: 'Save report' }).click()
-    await expect(notice.getByText('Diagnostic report saved')).toBeVisible()
-    expect(await readFile(join(profile, 'report-export.txt'), 'utf8')).toBe(copied)
-    await desktop.shot('01-recovery-mode')
-    await page.setViewportSize({ width: 390, height: 740 })
+    expect(await page.evaluate(() => window.journal.diagnostics!.state())).toMatchObject({ recovery: true })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await notice.getByRole('button', { name: 'Continue normally' }).focus()
+    await page.getByRole('button', { name: 'Resume automatic refresh', exact: true }).focus()
     await page.keyboard.press('Enter')
-    await expect(notice).toHaveCount(0)
-    await desktop.shot('02-normal-admission')
-    await copyFile(join(profile, 'report-export.txt'), info.outputPath('diagnostic-report.txt'))
+    await expect.poll(() => page.evaluate(() => window.journal.diagnostics!.state())).toMatchObject({ recovery: false })
+    await expect(page.getByRole('button', { name: 'Resume automatic refresh', exact: true })).toHaveCount(0)
+    await desktop.shot('03-normal-admission')
+    await writeFile(info.outputPath('diagnostic-report.txt'), copied)
 })
 
 test('recovery: independent native controls and report remain available while main is blocked', async ({

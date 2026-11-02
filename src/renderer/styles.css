@@ -535,31 +535,3 @@ legend {
 :where(code, pre, .path, .comparison, .diff, .activity-row-reference, .hub-detail-file-directory, .github-signin-code) {
     font-variant-ligatures: none;
 }
-/* Recovery controls stay outside the journal so startup failures can still share a report. */
-.diagnostic-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-}
-.diagnostic-actions [aria-live] {
-    color: var(--text-muted);
-    font-size: var(--text-sm);
-}
-.recovery-notice {
-    margin: 12px 24px;
-    padding: 16px;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-control);
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px;
-}
-.recovery-notice p {
-    color: var(--text-muted);
-    margin: 4px 0 0;
-}
-.recovery-notice strong {
-    font-weight: 500;
-}

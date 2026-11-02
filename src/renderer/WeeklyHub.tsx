@@ -177,7 +177,7 @@ export function WeeklyHub({
     const [project, setProject] = useState('all')
     const [tab, setTab] = useState<'all' | 'commit' | 'change-request'>('all')
     const detailDialog = useRef<HubActivityDialogHandle>(null)
-    const { refresh, refreshing: busy } = useActivityRefresh(run, start, end, state.settings.timezone)
+    const { refresh, refreshLabel, refreshing: busy } = useActivityRefresh(run, start, end, state.settings.timezone)
     const loadingWeek = useWeekHistory(state, run, start)
     const repositories = state.repositories
     const items = useMemo(() => rangeActivities(state, start, end), [state, start, end])
@@ -294,7 +294,7 @@ export function WeeklyHub({
                 {items.length
                     ? 'Show all activity'
                     : state.repositories.some((repo) => !repo.removed)
-                      ? 'Refresh activity'
+                      ? refreshLabel
                       : 'Connect a repository'}
             </Button>
         </div>
@@ -408,13 +408,13 @@ export function WeeklyHub({
                                 </Button>
                             </Tooltip>
                             <EntryHistory state={state} run={run} onWrite={(week) => onWrite(week || currentWeek)} />
-                            <Tooltip content="Refresh activity" side="bottom">
+                            <Tooltip content={refreshLabel} side="bottom">
                                 <Button
                                     variant="ghost"
                                     size="sm"
                                     loading={busy || loadingWeek}
                                     onClick={() => void refresh()}
-                                    aria-label="Refresh activity"
+                                    aria-label={refreshLabel}
                                 >
                                     <RefreshCw size={16} aria-hidden="true" />
                                 </Button>
@@ -438,7 +438,7 @@ export function WeeklyHub({
                                 loading={busy || loadingWeek}
                                 onClick={() => void refresh()}
                             >
-                                Refresh activity
+                                {refreshLabel}
                             </Button>
                         </Alert>
                     )}

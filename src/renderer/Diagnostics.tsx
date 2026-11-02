@@ -1,53 +1,60 @@
-import { Component, useEffect, useState, type ReactNode } from 'react'
+import { Component, createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button } from './components/arc/button/button'
 import { StartupRecovery } from './StartupRecovery'
 import type { DiagnosticState } from '../shared/diagnostics'
 import { checkpointWriting } from './writing-checkpoint'
+import { useToastStack } from './components/arc/toast-stack/toast-stack'
 
-export function DiagnosticActions() {
-    const [status, setStatus] = useState('')
-    const [pending, setPending] = useState(false)
+export function DiagnosticReportButton() {
+    const [status, setStatus] = useState<'idle' | 'pending' | 'copied' | 'failed'>('idle')
     const [enabled, setEnabled] = useState(false)
     useEffect(() => setEnabled(!!window.journal.diagnostics), [])
     if (!enabled) return null
-    const act = async (action: 'copy' | 'save') => {
-        setPending(true)
+    const copy = async () => {
+        setStatus('pending')
         try {
-            const completed = await window.journal.diagnostics!.act(action)
-            setStatus(completed ? (action === 'copy' ? 'Diagnostic report copied' : 'Diagnostic report saved') : '')
+            setStatus((await window.journal.diagnostics!.act('copy')) ? 'copied' : 'failed')
         } catch {
-            setStatus('Could not share the report. Try again.')
-        } finally {
-            setPending(false)
+            setStatus('failed')
         }
     }
     return (
-        <div className="diagnostic-actions">
-            <Button variant="secondary" disabled={pending} onClick={() => act('copy')}>
-                Copy diagnostic report
+        <>
+            <Button variant="ghost" size="sm" loading={status === 'pending'} onClick={copy}>
+                {status === 'copied'
+                    ? 'Diagnostic report copied'
+                    : status === 'failed'
+                      ? 'Retry copying report'
+                      : 'Copy diagnostic report'}
             </Button>
-            <Button variant="ghost" disabled={pending} onClick={() => act('save')}>
-                Save report
-            </Button>
-            <span aria-live="polite">{status}</span>
-        </div>
+            <span className="sr-only" role="status">
+                {status === 'copied'
+                    ? 'Diagnostic report copied'
+                    : status === 'failed'
+                      ? 'Could not copy the report. Try again.'
+                      : ''}
+            </span>
+        </>
     )
 }
 
-export function RecoveryNotice() {
-    const [paused, setPaused] = useState(false)
-    const [restartRequired, setRestartRequired] = useState(false)
-    const [issue, setIssue] = useState('')
+const RecoveryContext = createContext({
+    refreshLabel: 'Refresh activity',
+    prepareRefresh: () => Promise.resolve(true)
+})
+
+export const useRecovery = () => useContext(RecoveryContext)
+
+/** Keep recovery admission independent of notification dismissal and ordinary journal reads. */
+export function RecoveryProvider({ children }: { children: ReactNode }) {
+    const [state, setState] = useState<DiagnosticState>()
+    const { toast, update, dismiss } = useToastStack()
     useEffect(() => {
-        const apply = (state: DiagnosticState) => {
-            setPaused(state.recovery && !state.startupFailed)
-            setRestartRequired(!!state.restartRequired)
-        }
         void window.journal.diagnostics
             ?.state()
-            .then(apply)
+            .then(setState)
             .catch(() => undefined)
-        return window.journal.diagnostics?.onState?.(apply)
+        return window.journal.diagnostics?.onState?.(setState)
     }, [])
     useEffect(
         () =>
@@ -56,34 +63,87 @@ export function RecoveryNotice() {
             }),
         []
     )
-    if (!paused) return null
-    return (
-        <section className="recovery-notice" aria-label="Recovery mode">
-            <div>
-                <strong>Gitorian is in recovery mode</strong>
-                <p>
-                    {restartRequired
-                        ? 'The journal stopped responding. Reopen it to verify the last save.'
-                        : 'The previous session ended unexpectedly. Saved writing is available. Automatic refresh is paused.'}
-                </p>
-            </div>
-            <DiagnosticActions />
-            <Button
-                variant="secondary"
-                onClick={async () => {
-                    try {
-                        await window.journal.diagnostics?.act(restartRequired ? 'restart' : 'continue')
-                        if (!restartRequired) setPaused(false)
-                    } catch {
-                        setIssue('Could not resume. Try again.')
-                    }
-                }}
-            >
-                {restartRequired ? 'Reopen journal' : 'Continue normally'}
-            </Button>
-            {issue && <p role="alert">{issue}</p>}
-        </section>
-    )
+    useEffect(() => {
+        const id = 'journal-recovery'
+        if (!state?.recovery || state.startupFailed) {
+            dismiss(id)
+            return
+        }
+        const copy = () => {
+            // Updating synchronously keeps the toast open until the native clipboard confirms success.
+            update(id, { type: 'loading', title: 'Copying diagnostic report', action: undefined, duration: Infinity })
+            void window.journal.diagnostics!.act('copy').then(
+                (copied) => {
+                    if (copied)
+                        update(id, {
+                            type: 'success',
+                            title: 'Diagnostic report copied',
+                            description: 'Paste it into your bug report.',
+                            action: undefined,
+                            duration: 4000
+                        })
+                    else failed()
+                },
+                () => failed()
+            )
+        }
+        const failed = () =>
+            update(id, {
+                type: 'error',
+                title: 'Could not copy the report',
+                description: 'Try copying it again.',
+                action: { label: 'Copy diagnostic report', onClick: copy },
+                duration: Infinity
+            })
+        toast({
+            id,
+            type: 'warning',
+            title: state.restartRequired ? 'Journal stopped responding' : 'Previous session ended unexpectedly',
+            description: state.restartRequired
+                ? 'Use the refresh button to reopen and verify the last save.'
+                : 'Automatic refresh is paused. Use the refresh button to resume.',
+            action: { label: 'Copy diagnostic report', onClick: copy },
+            duration: Infinity
+        })
+    }, [state?.recovery, state?.startupFailed, state?.restartRequired, toast, update, dismiss])
+    const prepareRefresh = useCallback(async () => {
+        try {
+            const diagnostics = window.journal.diagnostics
+            // Read at the click, including when the initial state subscription is still loading.
+            const current = await diagnostics?.state()
+            if (!current) {
+                dismiss('recovery-resume')
+                return true
+            }
+            setState(current)
+            if (current.restartRequired || current.startupFailed) {
+                if (await diagnostics!.act('restart')) dismiss('recovery-resume')
+                return false
+            }
+            if (current.recovery) {
+                if (!(await diagnostics!.act('continue'))) return false
+                setState({ ...current, recovery: false })
+            }
+            dismiss('recovery-resume')
+            return true
+        } catch {
+            toast({
+                id: 'recovery-resume',
+                type: 'error',
+                title: 'Could not resume refresh',
+                description: 'Use the refresh control to try again.',
+                duration: Infinity
+            })
+            return false
+        }
+    }, [toast, dismiss])
+    const refreshLabel = state?.restartRequired
+        ? 'Reopen journal'
+        : state?.recovery
+          ? 'Resume automatic refresh'
+          : 'Refresh activity'
+    const value = useMemo(() => ({ refreshLabel, prepareRefresh }), [refreshLabel, prepareRefresh])
+    return <RecoveryContext.Provider value={value}>{children}</RecoveryContext.Provider>
 }
 
 export class WindowRecovery extends Component<{ children: ReactNode }, { failed: boolean }> {

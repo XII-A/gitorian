@@ -1,4 +1,4 @@
-import { app, dialog } from 'electron'
+import { app, clipboard } from 'electron'
 import { mkdirSync, existsSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -38,7 +38,13 @@ if (!existsSync(join(directory, 'current.json')))
         })
     )
 process.env.GITORIAN_E2E_RECOVERY_ENTRY = resolve('tests/e2e/support/recovery-dialog-main.mjs')
-dialog.showSaveDialog = async () => ({ canceled: false, filePath: join(profile, 'report-export.txt') })
+app.on('gitorian-fail-copy', () => {
+    const write = clipboard.writeText
+    clipboard.writeText = async () => {
+        clipboard.writeText = write
+        throw new Error('Fixture: clipboard temporarily unavailable')
+    }
+})
 app.on('gitorian-block-main', () =>
     setTimeout(() => {
         // Finite only to guarantee fixture cleanup; no timer/IPC callback can run during this interval.

@@ -1,11 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { release } from 'node:os'
-import { app, clipboard, dialog, powerMonitor } from 'electron'
+import { app, clipboard, powerMonitor } from 'electron'
 import { IncidentReports, failureObservation } from './incident-reports'
 import { RecoveryAdmission } from './recovery-admission'
 import type { DiagnosticObservation, DiagnosticState } from '../shared/diagnostics'
@@ -192,12 +192,6 @@ export class DesktopDiagnostics implements DiagnosticObserver {
         this.recovery.pause()
         this.local?.pause()
         this.send({ type: 'pause' })
-    }
-    async save() {
-        const result = await dialog.showSaveDialog({ defaultPath: 'gitorian-diagnostic-report.txt' })
-        if (!result.filePath) return false
-        await writeFile(result.filePath, await this.report())
-        return true
     }
     async finish() {
         clearInterval(this.timer)

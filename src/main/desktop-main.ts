@@ -176,9 +176,8 @@ void app
         })
         ipcMain.handle('journal:diagnostic-action', async (event, input: unknown) => {
             diagnosticOwner(event)
-            const action = z.enum(['copy', 'save', 'continue', 'restart']).parse(input)
+            const action = z.enum(['copy', 'continue', 'restart']).parse(input)
             if (action === 'copy') return diagnostics.copy()
-            if (action === 'save') return diagnostics.save()
             if (referenceWindows.has(event.sender.id)) throw new Error('Use the main journal window to resume.')
             if (action === 'restart') {
                 app.relaunch()
@@ -191,7 +190,6 @@ void app
             if (work && service) {
                 const providers = await runtime.runPromise(ProviderAccounts)
                 void execute(work.fork(providers.migrateLegacy))
-                if (store.config.settings.refreshMinutes > 0) void execute(service.startRefresh())
                 appUpdatesStart?.()
             }
             return true
@@ -400,7 +398,7 @@ void app
         })
         ipcMain.handle('journal:app-update-install', async (event) => {
             updateOwner(event)
-            if (!diagnostics.recovery.normal) throw new Error('Continue normally before installing an update.')
+            if (!diagnostics.recovery.normal) throw new Error('Resume automatic refresh before installing an update.')
             await appUpdates.install()
             return appUpdates.snapshot()
         })
@@ -439,7 +437,7 @@ void app
                     ].includes(command.type)
                 )
                     return yield* Effect.fail(
-                        new Error('This action is paused during recovery. Continue normally to use it.')
+                        new Error('This action is paused during recovery. Use Resume automatic refresh to continue.')
                     )
                 const trusted = BrowserWindow.fromWebContents(event.sender)
                 if (!trusted || event.senderFrame !== trusted.webContents.mainFrame)
@@ -451,7 +449,9 @@ void app
                     return yield* Effect.fail(new Error('Reference windows are read-only'))
                 if (!diagnostics.recovery.normal && command.type === 'refresh') {
                     if (!command.repositoryId || (command.source !== 'git' && command.source !== 'remote'))
-                        return yield* Effect.fail(new Error('Choose a source to resume, or continue normally.'))
+                        return yield* Effect.fail(
+                            new Error('Choose a source to resume, or use Resume automatic refresh.')
+                        )
                     diagnostics.recovery.resume(command.source, command.repositoryId)
                 }
                 switch (command.type) {

@@ -5,7 +5,7 @@ export interface DiagnosticState {
     startupFailed?: boolean
     restartRequired?: boolean
 }
-export type DiagnosticAction = 'copy' | 'save' | 'continue' | 'restart'
+export type DiagnosticAction = 'copy' | 'continue' | 'restart'
 export interface DiagnosticObservation {
     type: 'operation' | 'failure' | 'health' | 'source'
     operation: string

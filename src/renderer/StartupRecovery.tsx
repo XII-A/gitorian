@@ -3,7 +3,7 @@ import { EmptyState } from './components/arc/empty-state/empty-state'
 import { Button } from './components/arc/button/button'
 import { Accordion } from './components/arc/accordion/accordion'
 import logo from '../../resources/icon.svg?raw'
-import { DiagnosticActions } from './Diagnostics'
+import { DiagnosticReportButton } from './Diagnostics'
 
 export function StartupRecovery({
     error,
@@ -55,7 +55,6 @@ export function StartupRecovery({
                         </Button>
                     }
                 />
-                <DiagnosticActions />
                 <p className="sr-only" role="status" aria-atomic="true">
                     <span key={`${failures}:${pending}`}>
                         {pending
@@ -76,6 +75,7 @@ export function StartupRecovery({
                                 <div className="startup-diagnostics-block">
                                     <div className="startup-diagnostics-toolbar">
                                         <span>Error details</span>
+                                        <DiagnosticReportButton />
                                     </div>
                                     <pre className="startup-diagnostics" role="region" aria-label="Error details">
                                         <code>{error}</code>

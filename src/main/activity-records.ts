@@ -44,7 +44,7 @@ export const ActivityRecordsLive = Layer.scoped(
                     ? Effect.void
                     : Effect.fail(
                           new JournalError(
-                              'Details are not cached. Resume this source or continue normally to load them.'
+                              'Details are not cached. Resume this source or use Resume automatic refresh to load them.'
                           )
                       )
             )
