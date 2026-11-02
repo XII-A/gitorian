@@ -38,6 +38,7 @@ it.each(['hub', 'workspace', 'existing'] as const)(
             })
         }
         const props = {
+            currentRestoreId: () => state.restoreId,
             state,
             week: '2026-10-05',
             notionConnected: true,

@@ -34,3 +34,7 @@ The installed journey also quits with an update ready and reopens the old versio
 
 The existing draft-only workflow must include the NSIS installer, its blockmap, latest.yml and SHA256SUMS covering all assets. Production uses the GitHub provider configured under win.publish. Unsigned Windows updates intentionally omit publisher-name verification; download hashes remain verified. Signing is deferred. A real GitHub release is not part of local verification and needs release authorization.
 
+
+## Writing session ownership
+
+`src/renderer/writing-session.ts` owns save acknowledgment, recovery and exclusive publication/update preparation. `use-writing-session.ts` owns React/browser attachment. Run `pnpm test tests/writing-session.test.ts tests/workspace-editor-session.test.ts tests/workspace-start-writing.test.ts tests/workspace-writing.test.ts` for deterministic protocol and editor checks; retain the desktop journeys above for native input and durable state. Update failure must release editing, and leaving a week must retain its last accepted keystroke even while a save is pending.

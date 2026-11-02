@@ -38,6 +38,7 @@ it('keeps actual editor revisions through idle saves, title edits, citations, in
         })
     })
     const props = {
+        currentRestoreId: () => state.restoreId,
         state,
         week: '2026-10-05',
         notionConnected: true,

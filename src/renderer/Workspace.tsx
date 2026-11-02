@@ -43,6 +43,7 @@ function ClearHistoryIcon() {
 interface Props {
     state: State
     notionConnected: boolean
+    currentRestoreId: () => string | undefined
     run: (command: Command) => Promise<Reply | undefined>
     initialWeek: string
     initialActivity?: string
@@ -55,6 +56,7 @@ export function Workspace({
     state,
     notionConnected,
     run,
+    currentRestoreId,
     initialWeek,
     initialActivity,
     initialWrite = false,
@@ -538,6 +540,7 @@ export function Workspace({
                             initialWrite={week === writingWeek.current}
                             notionConnected={notionConnected}
                             run={run}
+                            currentRestoreId={currentRestoreId}
                             citation={citation}
                             publishTarget={publishTarget}
                             onReady={setCanCite}

@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { WorkspaceDraft } from '../src/renderer/WorkspaceDraft'
 import { sampleState } from './workspace-fixture'
-import type { Command, JournalNode, Reply } from '../src/shared/model'
+import type { JournalNode } from '../src/shared/model'
 import type { EditorSnapshot } from '../src/renderer/editor-snapshot'
 
 const notifications = vi.hoisted(() => ({
@@ -68,45 +68,13 @@ const body = (text: string): JournalNode => ({
     content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
 })
 
-it('does no synchronous recovery writes or backend saves during a typing burst, then saves the latest document once', async () => {
-    const state = sampleState('2026-10-05')
-    const run = vi.fn((_command: Command) =>
-        Promise.resolve({ state, connections: { remote: false, notion: true, protectedStorage: false } })
-    )
-    await update(() =>
-        root.render(
-            createElement(WorkspaceDraft, {
-                state,
-                week: '2026-10-05',
-                notionConnected: true,
-                run,
-                publishTarget: null,
-                onReady: vi.fn(),
-                onSettings: vi.fn()
-            })
-        )
-    )
-    await update(() => vi.advanceTimersByTime(1200))
-    expect(run).not.toHaveBeenCalled()
-    for (let index = 0; index < 20; index++) {
-        await update(() => {
-            writer.change?.(body(`Writing ${index}`))
-            vi.advanceTimersByTime(100)
-        })
-        expect(localStorage.length).toBe(0)
-        expect(run).not.toHaveBeenCalled()
-    }
-    await update(() => vi.advanceTimersByTime(1000))
-    expect(run).toHaveBeenCalledTimes(1)
-    expect(run.mock.calls[0][0]).toMatchObject({ type: 'draft', draft: { body: body('Writing 19') } })
-})
-
 it('keeps unsaved writing in recovery storage when leaving before the debounce finishes', async () => {
     const state = sampleState('2026-10-05')
     const run = vi.fn(() => Promise.resolve(undefined))
     await update(() =>
         root.render(
             createElement(WorkspaceDraft, {
+                currentRestoreId: () => undefined,
                 state,
                 week: '2026-10-05',
                 notionConnected: true,
@@ -124,7 +92,7 @@ it('keeps unsaved writing in recovery storage when leaving before the debounce f
     expect(run).toHaveBeenCalledTimes(1)
 })
 
-it('checkpoints continuous typing and lets an existing empty draft apply the saved template', async () => {
+it('lets an existing empty draft apply the saved template', async () => {
     const state = sampleState('2026-10-05')
     state.drafts[0].body = { type: 'doc', content: [{ type: 'paragraph' }] }
     state.settings.template = body('Weekly template')
@@ -134,6 +102,7 @@ it('checkpoints continuous typing and lets an existing empty draft apply the sav
     await update(() =>
         root.render(
             createElement(WorkspaceDraft, {
+                currentRestoreId: () => undefined,
                 state,
                 week: '2026-10-05',
                 notionConnected: true,
@@ -146,14 +115,6 @@ it('checkpoints continuous typing and lets an existing empty draft apply the sav
     )
     expect(container.textContent).not.toContain('Use entry template')
     expect(writer.template).toBe(state.settings.template)
-    for (let index = 0; index < 11; index++) {
-        await update(() => {
-            writer.change?.(body(`Uninterrupted ${index}`))
-            vi.advanceTimersByTime(500)
-        })
-    }
-    expect(run).toHaveBeenCalledTimes(1)
-    expect(run.mock.calls[0]).toMatchObject([{ type: 'draft', draft: { body: body('Uninterrupted 9') } }])
     expect(state.settings.template).toEqual(body('Weekly template'))
 })
 
@@ -178,6 +139,7 @@ it.each([true, false])(
         await update(() =>
             root.render(
                 createElement(WorkspaceDraft, {
+                    currentRestoreId: () => undefined,
                     state,
                     week: '2026-10-05',
                     notionConnected,
@@ -206,6 +168,7 @@ it('reopens published weekly writing as editable with a publish action', async (
     await update(() =>
         root.render(
             createElement(WorkspaceDraft, {
+                currentRestoreId: () => undefined,
                 state,
                 week: '2026-10-05',
                 notionConnected: true,
@@ -257,6 +220,7 @@ it.each([false, true])(
         await update(() =>
             root.render(
                 createElement(WorkspaceDraft, {
+                    currentRestoreId: () => undefined,
                     state,
                     week: '2026-10-05',
                     notionConnected: true,
@@ -279,58 +243,12 @@ it.each([false, true])(
     }
 )
 
-it('advances dirty writing only to its own save acknowledgment when another writer changes the snapshot', async () => {
-    const state = sampleState('2026-10-05')
-    state.drafts[0].version = 1
-    let release!: (value: Reply) => void
-    const run = vi.fn(
-        (_command: Command) =>
-            new Promise<Reply>((resolve) => {
-                release = resolve
-            })
-    )
-    await update(() =>
-        root.render(
-            createElement(WorkspaceDraft, {
-                state,
-                week: '2026-10-05',
-                notionConnected: true,
-                run,
-                publishTarget: null,
-                onReady: vi.fn(),
-                onSettings: vi.fn()
-            })
-        )
-    )
-    await update(() => writer.change?.(body('First edit')))
-    await update(() => vi.advanceTimersByTime(1000))
-    await update(() => writer.change?.(body('Continued local writing')))
-    await update(() =>
-        release({
-            state: { ...state, drafts: [{ ...state.drafts[0], version: 3, body: body('Another writer') }] },
-            draftSaved: { id: state.drafts[0].id, version: 2 },
-            connections: { remote: false, notion: true, protectedStorage: false }
-        })
-    )
-    await update(() => vi.advanceTimersByTime(1000))
-    expect(run.mock.calls[1][0]).toMatchObject({
-        type: 'draft',
-        draft: { version: 2, body: body('Continued local writing') }
-    })
-    await update(() =>
-        release({
-            state,
-            draftSaved: { id: state.drafts[0].id, version: 3 },
-            connections: { remote: false, notion: true, protectedStorage: false }
-        })
-    )
-})
-
 it('omits publishing and footer connection prompts without Notion', async () => {
     const state = sampleState('2026-10-05')
     await update(() =>
         root.render(
             createElement(WorkspaceDraft, {
+                currentRestoreId: () => undefined,
                 state,
                 week: '2026-10-05',
                 notionConnected: false,
@@ -350,6 +268,7 @@ it('opens settings to finish publishing setup for a connected profile without a 
     await update(() =>
         root.render(
             createElement(WorkspaceDraft, {
+                currentRestoreId: () => undefined,
                 state: sampleState('2026-10-05'),
                 week: '2026-10-05',
                 notionConnected: true,

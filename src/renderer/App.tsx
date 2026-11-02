@@ -55,6 +55,7 @@ function JournalApp() {
     const polling = useRef(false)
     const currentReply = useRef(reply)
     currentReply.current = reply
+    const currentRestoreId = useCallback(() => currentReply.current?.state.restoreId, [])
     const run = useCallback(
         async (command: Command): Promise<Reply | undefined> => {
             const startup = !currentReply.current
@@ -246,6 +247,7 @@ function JournalApp() {
                 <WorkspaceReference state={reply.state} run={run} kind={reference.kind} id={reference.id} />
             ) : screen === 'workspace' && reply ? (
                 <Workspace
+                    currentRestoreId={currentRestoreId}
                     state={reply.state}
                     notionConnected={reply.connections.notion}
                     run={run}

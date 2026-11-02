@@ -35,7 +35,7 @@ Do not redefine these tokens for an entire page. A filter chip may locally set `
 
 Compute derived values during rendering; use memoization when it avoids meaningful work. Put user-triggered work in event handlers. Effects synchronize with external systems such as browser events, editor subscriptions and preload notifications: declare their dependencies and release subscriptions, timers and resources during cleanup. Keep reactive dependencies visible rather than hiding them in a generic mount-only hook.
 
-Keep persistence, cancellation and stale-result handling with the existing owner. Follow WorkspaceDraft for writing acknowledgments and recovery, and the backend owner map for durable work. A refactor should reduce what callers must know; extracting callbacks into many hooks is not itself an improvement.
+Keep persistence, cancellation and stale-result handling with the existing owner. Follow WritingSession for writing acknowledgments and recovery, and the backend owner map for durable work. A refactor should reduce what callers must know; extracting callbacks into many hooks is not itself an improvement.
 
 ## Read before changing a feature
 
