@@ -142,7 +142,7 @@ test('provider accounts: multiple identities, GitLab, automatic assignment and r
                 (a) =>
                     a.kind === 'review' &&
                     a.description === 'Please handle interrupted saves.' &&
-                    a.date.startsWith('2026-10-28')
+                    a.date.startsWith(new Date().toISOString().slice(0, 10))
             )
         ).toBe(true)
         expect(state.activities.find((a) => a.sha === 'a'.repeat(40))?.changeRequestId).toBe(request.id)
