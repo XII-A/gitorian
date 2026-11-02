@@ -10,14 +10,19 @@ import { ConnectionState, JournalStore } from './journal-context'
 import { JournalModulesLive } from './journal-layer'
 import type { JournalDatabase } from './journal-database'
 import type { Vault } from './vault'
+import { RecoveryPolicy, RecoveryAdmission } from './recovery-admission'
+import { Diagnostics, type DiagnosticObserver } from './diagnostic-observer'
 
 /** Native adapters and scoped modules are assembled once for the desktop lifetime. */
 export function desktopLayer(
     store: JournalDatabase,
     vault: Vault,
-    connection: Omit<ConnectionAdapters, 'vault'> & { gitlabClientId?: string }
+    connection: Omit<ConnectionAdapters, 'vault'> & { gitlabClientId?: string },
+    reliability?: { recovery: RecoveryAdmission; diagnostics: DiagnosticObserver }
 ) {
     const native = Layer.mergeAll(
+        Layer.succeed(RecoveryPolicy, reliability?.recovery ?? new RecoveryAdmission()),
+        Layer.succeed(Diagnostics, reliability?.diagnostics ?? { observe: () => undefined, failure: () => undefined }),
         Layer.scope,
         Layer.succeed(JournalStore, store),
         HttpLive(connection.fetcher, {

@@ -230,7 +230,12 @@ export function Workspace({
             else setNotice('The browser blocked the window. Allow pop-ups for this app and try again.')
         }
     }
-    const { refresh, refreshing } = useActivityRefresh(run, week, offsetDay(week, 6), state.settings.timezone)
+    const { refresh, refreshLabel, refreshing } = useActivityRefresh(
+        run,
+        week,
+        offsetDay(week, 6),
+        state.settings.timezone
+    )
     const loadingWeek = useWeekHistory(state, run, week)
     const emptyActivityAction = useCallback(() => {
         dayFilter.setDay('all')
@@ -321,8 +326,8 @@ export function Workspace({
                             size="sm"
                             onClick={refresh}
                             loading={refreshing || loadingWeek}
-                            aria-label="Refresh activity"
-                            title="Refresh activity"
+                            aria-label={refreshLabel}
+                            title={refreshLabel}
                         >
                             <WorkspaceIcon name="refresh" width={16} height={16} />
                         </Button>
@@ -498,6 +503,7 @@ export function Workspace({
                                 hasActivity={items.length > 0}
                                 onEmptyAction={emptyActivityAction}
                                 refreshing={refreshing || loadingWeek}
+                                refreshLabel={refreshLabel}
                             />
                         </ScrollArea>
                         {detached && (

@@ -1,8 +1,29 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import type { SpellingContext, DesktopBridge, RepositoryImportProgress, NotionDiscoveryEvent } from '../shared/model'
 import type { AppUpdateState } from '../shared/app-updates'
+import type { DiagnosticState } from '../shared/diagnostics'
 
 const bridge: DesktopBridge = {
+    diagnostics: {
+        onRestart: (listener) => {
+            const receive = () => {
+                void Promise.resolve()
+                    .then(listener)
+                    .then(() => ipcRenderer.invoke('journal:recovery-ready'))
+                    .catch(() => undefined)
+            }
+            ipcRenderer.on('journal:prepare-recovery', receive)
+            return () => ipcRenderer.removeListener('journal:prepare-recovery', receive)
+        },
+        onState: (listener) => {
+            const receive = (_event: Electron.IpcRendererEvent, state: DiagnosticState) => listener(state)
+            ipcRenderer.on('journal:diagnostic-state-changed', receive)
+            return () => ipcRenderer.removeListener('journal:diagnostic-state-changed', receive)
+        },
+        state: () => ipcRenderer.invoke('journal:diagnostic-state'),
+        act: (action) => ipcRenderer.invoke('journal:diagnostic-action', action),
+        error: (kind) => ipcRenderer.send('journal:renderer-error', kind)
+    },
     spelling: {
         onContext: (listener) => {
             const receive = (_event: Electron.IpcRendererEvent, context: SpellingContext) => listener(context)

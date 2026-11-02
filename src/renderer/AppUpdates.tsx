@@ -1,7 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { Download } from 'lucide-react'
 import type { AppUpdateState } from '../shared/app-updates'
-import { checkpointBeforeUpdate } from './update-checkpoint'
+import { checkpointWriting } from './writing-checkpoint'
 import { Button } from './components/arc/button/button'
 import { Popover, PopoverContent, PopoverTrigger } from './components/arc/popover/popover'
 import { useToastStack } from './components/arc/toast-stack/toast-stack'
@@ -62,7 +62,7 @@ async function installUpdate() {
     installing = true
     try {
         if (document.querySelector('.settings')) throw new Error('Save or close Settings, then try updating again.')
-        resumeWriting = await checkpointBeforeUpdate()
+        resumeWriting = await checkpointWriting()
         receive({ status: 'installing', version: state.version })
         const result = await window.journal.appUpdates.install()
         receive(result)

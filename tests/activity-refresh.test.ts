@@ -5,9 +5,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import { useActivityRefresh } from '../src/renderer/use-activity-refresh'
 import { sampleState } from './workspace-fixture'
 import type { Command, Reply } from '../src/shared/model'
+import { RecoveryProvider } from '../src/renderer/Diagnostics'
 
 const toast = vi.hoisted(() => vi.fn())
-vi.mock('../src/renderer/components/arc/toast-stack/toast-stack', () => ({ useToastStack: () => ({ toast }) }))
+vi.mock('../src/renderer/components/arc/toast-stack/toast-stack', () => ({
+    useToastStack: () => ({ toast, update: vi.fn(), dismiss: vi.fn() })
+}))
+const originalBridge = Object.getOwnPropertyDescriptor(window, 'journal')
 let root: Root
 let container: HTMLDivElement
 let controls: ReturnType<typeof useActivityRefresh>
@@ -52,6 +56,41 @@ afterEach(async () => {
         await Promise.resolve()
         root.unmount()
     })
+    if (originalBridge) Object.defineProperty(window, 'journal', originalBridge)
+    else Reflect.deleteProperty(window, 'journal')
+})
+
+it('reopens quarantined storage without resuming or running refresh, including a late stall', async () => {
+    let stalled = false
+    const diagnosticAction = vi.fn(() => Promise.resolve(true))
+    Object.defineProperty(window, 'journal', {
+        configurable: true,
+        value: {
+            diagnostics: {
+                state: () =>
+                    Promise.resolve({
+                        recovery: stalled,
+                        restartRequired: stalled,
+                        available: true,
+                        liveRecovery: false
+                    }),
+                act: diagnosticAction
+            }
+        }
+    })
+    const run = vi.fn(() => Promise.resolve(reply()))
+    await act(async () => {
+        root.render(
+            createElement(RecoveryProvider, null, createElement(Harness, { run, start: '2026-10-05', timezone: 'UTC' }))
+        )
+        await Promise.resolve()
+    })
+    expect(controls.refreshLabel).toBe('Refresh activity')
+    stalled = true
+    await act(async () => controls.refresh())
+    expect(diagnosticAction).toHaveBeenCalledExactlyOnceWith('restart')
+    expect(run).not.toHaveBeenCalled()
+    expect(controls.refreshLabel).toBe('Reopen journal')
 })
 
 it('does not announce an empty result when the selected week has activity', async () => {

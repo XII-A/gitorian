@@ -1,4 +1,5 @@
 import { NotionRequests } from '../src/main/notion-request'
+import type { RecoveryAdmission } from '../src/main/recovery-admission'
 import { Effect, ManagedRuntime } from 'effect'
 import { journalLayer } from '../src/main/journal-layer'
 import { JournalService } from '../src/main/service'
@@ -45,7 +46,8 @@ afterAll(async () => {
 export const patch =
     'diff --git a/a.ts b/a.ts\nindex 1111111..2222222 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n'
 export async function journal(
-    credential: { access_token: string; refresh_token?: string; expires?: number } = { access_token: 'test-token' }
+    credential: { access_token: string; refresh_token?: string; expires?: number } = { access_token: 'test-token' },
+    recovery?: RecoveryAdmission
 ) {
     const directory = await mkdtemp(join(tmpdir(), 'gitorian-test-'))
     const store = await JournalDatabase.open(join(directory, 'tracking.sqlite'))
@@ -69,6 +71,7 @@ export async function journal(
     await store.finishProviderAccount(accountId)
     const runtime = ManagedRuntime.make(
         journalLayer({
+            recovery,
             store,
             fetcher: (...args) => remote.fetch(...args),
             vault: {
@@ -104,8 +107,8 @@ export async function journal(
         }
     }
 }
-export async function workspace() {
-    const app = await journal()
+export async function workspace(recovery?: RecoveryAdmission) {
+    const app = await journal(undefined, recovery)
     const git = gitAt(app.directory)
     try {
         // Copy a pristine real repository, never hardlink it or share mutable refs.

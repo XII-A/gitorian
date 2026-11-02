@@ -2,8 +2,8 @@ import { CircleAlert } from 'lucide-react'
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import { Button } from './components/arc/button/button'
 import { Accordion } from './components/arc/accordion/accordion'
-import { CopyButton } from './components/arc/copy-button/copy-button'
 import logo from '../../resources/icon.svg?raw'
+import { DiagnosticReportButton } from './Diagnostics'
 
 export function StartupRecovery({
     error,
@@ -43,7 +43,12 @@ export function StartupRecovery({
                             aria-disabled={pending}
                             aria-busy={pending}
                             onClick={() => {
-                                if (!pending) void onRetry()
+                                if (!pending)
+                                    void (async () => {
+                                        const state = await window.journal.diagnostics?.state()
+                                        if (state?.startupFailed) await window.journal.diagnostics?.act('restart')
+                                        else await onRetry()
+                                    })()
                             }}
                         >
                             {pending ? 'Retrying…' : 'Retry'}
@@ -70,7 +75,7 @@ export function StartupRecovery({
                                 <div className="startup-diagnostics-block">
                                     <div className="startup-diagnostics-toolbar">
                                         <span>Error details</span>
-                                        <CopyButton value={error} label="Copy details" variant="plain" />
+                                        <DiagnosticReportButton />
                                     </div>
                                     <pre className="startup-diagnostics" role="region" aria-label="Error details">
                                         <code>{error}</code>

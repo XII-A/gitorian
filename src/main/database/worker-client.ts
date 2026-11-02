@@ -12,9 +12,15 @@ export class DatabaseWorker {
     private readonly pending = new Map<number, { resolve: (value: never) => void; reject: (error: Error) => void }>()
     private closed = false
     private failure?: Error
+    private timedOut = false
     private configuration!: Configuration
     private readonly ready: Promise<void>
-    private constructor(path: string, base: string) {
+    private readonly deadlines = new Map<number, ReturnType<typeof setTimeout>>()
+    private constructor(
+        path: string,
+        base: string,
+        private readonly onStall?: () => void
+    ) {
         let file = new URL('./database-worker.js', base)
         if (new URL(base).pathname.endsWith('.ts')) {
             const require = createRequire(base)
@@ -54,16 +60,20 @@ export class DatabaseWorker {
                         return
                     }
                     const pending = this.pending.get(message.id!)
+                    clearTimeout(this.deadlines.get(message.id!))
+                    this.deadlines.delete(message.id!)
                     this.pending.delete(message.id!)
                     if (error) pending?.reject(error)
                     else pending?.resolve(message.result!)
                 }
             )
             const fail = (error: Error) => {
-                this.failure = error
-                reject(error)
-                for (const pending of this.pending.values()) pending.reject(error)
+                this.failure ??= error
+                reject(this.failure)
+                for (const pending of this.pending.values()) pending.reject(this.failure)
                 this.pending.clear()
+                for (const deadline of this.deadlines.values()) clearTimeout(deadline)
+                this.deadlines.clear()
             }
             this.worker.on('error', fail)
             this.worker.on('exit', (code) => {
@@ -77,8 +87,9 @@ export class DatabaseWorker {
             })
         })
     }
-    static async open(path: string, base: string) {
-        const database = new DatabaseWorker(path, base)
+    static async open(path: string, base: string, onStall?: () => void) {
+        const database = new DatabaseWorker(path, base, onStall)
+        const timeout = setTimeout(() => database.stall(), 60000)
         try {
             await database.ready
             return database
@@ -86,7 +97,30 @@ export class DatabaseWorker {
             database.closed = true
             await database.worker.terminate()
             throw error
+        } finally {
+            clearTimeout(timeout)
         }
+    }
+    private stall() {
+        if (this.failure) return
+        this.timedOut = true
+        this.failure = new DatabaseError(
+            'storage',
+            'The journal stopped responding. The last save may have completed. Reopen to verify it before retrying.'
+        )
+        try {
+            this.onStall?.()
+        } catch {
+            /* Diagnostics cannot prevent failure propagation. */
+        }
+        for (const pending of this.pending.values()) pending.reject(this.failure)
+        this.pending.clear()
+        for (const deadline of this.deadlines.values()) clearTimeout(deadline)
+        this.deadlines.clear()
+        void this.worker.terminate()
+    }
+    get stalled() {
+        return this.timedOut
     }
     get config(): Configuration {
         return structuredClone(this.configuration)
@@ -100,6 +134,13 @@ export class DatabaseWorker {
         return new Promise((resolve, reject) => {
             const id = ++this.sequence
             this.pending.set(id, { resolve: resolve, reject })
+            this.deadlines.set(
+                id,
+                setTimeout(
+                    () => this.stall(),
+                    operation === 'exportJournal' || operation === 'restore' ? 180000 : 30000
+                )
+            )
             this.worker.postMessage({ id, operation, args, now: Date.now() })
         })
     }
@@ -116,6 +157,10 @@ export class DatabaseWorker {
         await new Promise<void>((resolve, reject) => {
             const id = ++this.sequence
             this.pending.set(id, { resolve: () => resolve(), reject })
+            this.deadlines.set(
+                id,
+                setTimeout(() => this.stall(), 30000)
+            )
             this.worker.postMessage({ id, operation: 'close', args: [], now: Date.now() })
         })
         await this.worker.terminate()

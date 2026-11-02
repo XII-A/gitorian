@@ -2,7 +2,16 @@ import { activityEvidence } from './database-evidence.mjs'
 import { spawn, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+    appendFileSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    rmSync,
+    writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -84,8 +93,9 @@ if (
 
 function doctor() {
     const files = [
-        'out/main/index.js',
-        'out/main/database-worker.js',
+        ...readdirSync(join(root, 'out/main'))
+            .filter((file) => /\.(js|ps1)$/.test(file))
+            .map((file) => `out/main/${file}`),
         'out/preload/index.cjs',
         'out/renderer/index.html'
     ]
@@ -103,7 +113,11 @@ function doctor() {
         node: process.version,
         version: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version,
         commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim(),
-        changes: execFileSync('git', ['diff', '--stat'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim(),
+        changes: execFileSync('git', ['diff', 'HEAD', '--stat'], {
+            cwd: root,
+            encoding: 'utf8',
+            windowsHide: true
+        }).trim(),
         hashes
     }
 }

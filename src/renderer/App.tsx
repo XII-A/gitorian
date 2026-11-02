@@ -19,19 +19,25 @@ import { WindowTitleBar } from './WindowTitleBar'
 import { useOnboarding } from './use-onboarding'
 import type { SetupSection } from './GettingStarted'
 import { AppUpdateNotifications } from './AppUpdates'
+import { RecoveryProvider, useRecovery, WindowRecovery } from './Diagnostics'
 
 export function App() {
     return (
         <ToastStackProvider>
             <WindowTitleBar />
             <AppUpdateNotifications />
-            <JournalApp />
+            <RecoveryProvider>
+                <WindowRecovery>
+                    <JournalApp />
+                </WindowRecovery>
+            </RecoveryProvider>
             <ToastStack className="journal-notifications" />
         </ToastStackProvider>
     )
 }
 
 function JournalApp() {
+    const { refreshLabel, prepareRefresh } = useRecovery()
     const [screen, setScreen] = useState<'hub' | 'workspace'>('hub')
     const [reply, setReply] = useState<Reply>()
     const [remotes, setRemotes] = useState<Record<string, string[]>>({})
@@ -313,10 +319,12 @@ function JournalApp() {
                             action: () => setSettingsOpen(true)
                         },
                         {
-                            name: 'Refresh activity',
+                            name: refreshLabel,
                             hint: 'Discover work',
                             action: () => {
-                                void run({ type: 'refresh' })
+                                void prepareRefresh().then(async (ready) => {
+                                    if (ready) await run({ type: 'refresh' })
+                                })
                             }
                         }
                     ]}

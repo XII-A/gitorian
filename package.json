@@ -1,6 +1,6 @@
 {
     "name": "gitorian",
-    "version": "0.1.9",
+    "version": "0.1.10",
     "private": true,
     "description": "A local developer journal with revision-aware Notion coverage",
     "main": "out/main/index.js",
@@ -48,6 +48,7 @@
             "output": "release"
         },
         "asarUnpack": [
+            "out/main/recovery-terminate.ps1",
             "node_modules/sharp/**/*",
             "node_modules/@img/**/*"
         ],

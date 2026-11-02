@@ -3,6 +3,7 @@ import type { Command, Reply } from '../shared/model'
 import { actionableSources } from './background-work'
 import { rangeActivities } from './hub-model'
 import { useToastStack } from './components/arc/toast-stack/toast-stack'
+import { useRecovery } from './Diagnostics'
 
 interface RefreshRequest {
     selection: { start: string; end: string; timezone?: string }
@@ -16,6 +17,7 @@ export function useActivityRefresh(
     timezone?: string
 ) {
     const { toast } = useToastStack()
+    const { prepareRefresh, refreshLabel } = useRecovery()
     const selection = useMemo(() => ({ start, end, timezone }), [start, end, timezone])
     const [request, setRequest] = useState<RefreshRequest>()
     const pending = useRef<RefreshRequest | undefined>(undefined)
@@ -34,6 +36,7 @@ export function useActivityRefresh(
         pending.current = next
         setRequest(next)
         try {
+            if (!(await prepareRefresh())) return
             const reply = await run({ type: 'refresh', since: start })
             if (
                 reply &&
@@ -52,6 +55,6 @@ export function useActivityRefresh(
             if (pending.current === next) pending.current = undefined
             if (mounted.current) setRequest((current) => (current === next ? undefined : current))
         }
-    }, [run, start, end, selection, toast])
-    return { refresh, refreshing: request?.selection === selection }
+    }, [run, start, end, selection, toast, prepareRefresh])
+    return { refresh, refreshLabel, refreshing: request?.selection === selection }
 }

@@ -49,7 +49,8 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
     onInspect,
     hasActivity,
     onEmptyAction,
-    refreshing = false
+    refreshing = false,
+    refreshLabel = 'Refresh activity'
 }: {
     activities: Activity[]
     dayFilter: ReturnType<typeof useActivityDays>
@@ -61,6 +62,7 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
     hasActivity: boolean
     onEmptyAction: () => void
     refreshing?: boolean
+    refreshLabel?: string
 }) {
     const groups = useMemo(
         () => groupActivityDays(activities, timezone, dayFilter.day),
@@ -124,7 +126,7 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
                               : 'Choose another week or refresh your repositories. You can write at any time.'}
                     </p>
                     <Button variant="secondary" size="sm" onClick={onEmptyAction} loading={!hasActivity && refreshing}>
-                        {hasActivity ? 'Clear activity filters' : 'Refresh activity'}
+                        {hasActivity ? 'Clear activity filters' : refreshLabel}
                     </Button>
                 </div>
             )}

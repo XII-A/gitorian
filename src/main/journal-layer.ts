@@ -13,6 +13,7 @@ import { ActivityAcquisitionLive } from './activity-acquisition'
 import { JournalLive } from './service'
 import type { Reply } from '../shared/model'
 import type { JournalDatabase } from './journal-database'
+import { RecoveryPolicy, RecoveryAdmission } from './recovery-admission'
 
 /** One acyclic graph, shared by Electron and fixtures. */
 export const JournalModulesLive = JournalLive.pipe(
@@ -23,6 +24,7 @@ export const JournalModulesLive = JournalLive.pipe(
 )
 
 export interface JournalAdapters {
+    recovery?: RecoveryAdmission
     store: JournalDatabase
     fetcher?: typeof fetch
     imageDownload?: typeof downloadImage
@@ -34,6 +36,7 @@ export interface JournalAdapters {
 
 export function journalLayer(adapters: JournalAdapters) {
     const native = Layer.mergeAll(
+        Layer.succeed(RecoveryPolicy, adapters.recovery ?? new RecoveryAdmission()),
         Layer.succeed(JournalStore, adapters.store),
         Layer.succeed(ConnectionState, { snapshot: adapters.connections }),
         HttpLive(adapters.fetcher, {

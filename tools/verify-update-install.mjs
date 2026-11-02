@@ -254,12 +254,20 @@ try {
     await run(join(scratch, 'old/fixture-0.1.4.exe'), ['/S', `/D=${installed}`], 'initial-install', 60000)
     const executable = join(installed, 'Gitorian Update Verification.exe')
     assert(existsSync(executable), 'Initial unsigned installer installs in the owned scratch directory')
+    assert(
+        existsSync(join(installed, 'resources/app.asar.unpacked/out/main/recovery-terminate.ps1')),
+        'Native recovery adapter is unpacked for Windows execution'
+    )
     let child = spawn(executable, [], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
     report.initialPid = child.pid
     for (const stream of [child.stdout, child.stderr])
         stream.on('data', (data) => appendFileSync(join(output, 'app-old.log'), data))
     await connect()
     await wait(`!!document.querySelector('[aria-label="Open settings"]')`)
+    assert(
+        (await js(`window.journal.diagnostics.state()`)).liveRecovery,
+        'Installed package starts its independent recovery watchdog'
+    )
     assert(
         (await evaluate(`__electron.app.getPath('userData')`)) === profile,
         'Installed app owns only the disposable profile'

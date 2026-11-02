@@ -12,6 +12,7 @@ import { discoverRepositories, repositoryPathKey } from './repository-discovery'
 import { weekOf } from '../shared/model'
 import type { Command, Reply, RepositoryImportProgress, Repository, Selection } from '../shared/model'
 import type { JournalView } from './database/types'
+import { RecoveryPolicy } from './recovery-admission'
 import { ProviderAccounts } from './provider-accounts'
 export interface JournalService {
     readonly reply: (extra?: Partial<Reply>, view?: JournalView) => Effect.Effect<Reply, JournalFailure>
@@ -41,6 +42,7 @@ function makeJournal() {
         const acquisition = yield* ActivityAcquisition
         const publishing = yield* JournalPublishing
         const records = yield* ActivityRecords
+        const recovery = yield* RecoveryPolicy
         const connections = (yield* ConnectionState).snapshot
         const local = <A>(operation: () => Promise<A>) =>
             Effect.tryPromise({ try: operation, catch: (error) => toJournalFailure(error) })
@@ -93,11 +95,18 @@ function makeJournal() {
                 } else yield* acquisition.stop(source, repositoryId)
             })
         const reply = (extra: Partial<Reply> = {}, view?: JournalView) =>
-            local(async (): Promise<Reply> => ({
-                state: { ...(await store.readWorkspace(view)), accounts: accounts.accounts() },
-                connections: connections(),
-                ...extra
-            }))
+            local(async (): Promise<Reply> => {
+                const state = await store.readWorkspace(view)
+                return {
+                    state: {
+                        ...state,
+                        acquisition: recovery.project(state.acquisition),
+                        accounts: accounts.accounts()
+                    },
+                    connections: connections(),
+                    ...extra
+                }
+            })
         const addRepository = (path: string, signal?: AbortSignal): Effect.Effect<void, Error> =>
             Effect.gen(function* () {
                 const inspected = yield* Effect.tryPromise({

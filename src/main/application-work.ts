@@ -1,4 +1,5 @@
-import { Context, Data, Deferred, Effect, Exit, Fiber, FiberRef, Layer, Scope } from 'effect'
+import { Cause, Context, Data, Deferred, Effect, Exit, Fiber, FiberRef, Layer, Scope } from 'effect'
+import { Diagnostics } from './diagnostic-observer'
 
 export class WorkClosed extends Data.TaggedError('WorkClosed') {
     readonly message = 'Journal work is closed'
@@ -25,6 +26,7 @@ export const ApplicationWorkLive = Layer.scoped(
     ApplicationWork,
     Effect.gen(function* () {
         const scope = yield* Scope.Scope
+        const diagnostics = yield* Diagnostics
         const tasks = new Map<symbol, Deferred.Deferred<undefined>>()
         const ancestry = yield* FiberRef.make<readonly symbol[]>([])
         const shutdownLock = yield* Effect.makeSemaphore(1)
@@ -104,7 +106,15 @@ export const ApplicationWorkLive = Layer.scoped(
                     yield* Effect.forkIn(
                         accept(Deferred.succeed(started, undefined).pipe(Effect.zipRight(restore(operation)))).pipe(
                             Effect.onExit((exit) =>
-                                Exit.isFailure(exit) ? Deferred.fail(started, new WorkClosed()) : Effect.void
+                                Exit.isFailure(exit)
+                                    ? Effect.zipRight(
+                                          Effect.sync(() => {
+                                              if (!Cause.isInterruptedOnly(exit.cause))
+                                                  diagnostics.failure('background', Cause.squash(exit.cause))
+                                          }),
+                                          Deferred.fail(started, new WorkClosed())
+                                      )
+                                    : Effect.void
                             ),
                             Effect.exit
                         ),
@@ -124,7 +134,19 @@ export const ApplicationWorkLive = Layer.scoped(
                             Effect.forever(
                                 Effect.sleep(milliseconds).pipe(
                                     Effect.zipRight(
-                                        Effect.suspend(() => (scheduling ? Effect.exit(accept(tick)) : Effect.void))
+                                        Effect.suspend(() =>
+                                            scheduling
+                                                ? accept(tick).pipe(
+                                                      Effect.tapErrorCause((cause) =>
+                                                          Effect.sync(() => {
+                                                              if (!Cause.isInterruptedOnly(cause))
+                                                                  diagnostics.failure('periodic', Cause.squash(cause))
+                                                          })
+                                                      ),
+                                                      Effect.exit
+                                                  )
+                                                : Effect.void
+                                        )
                                     )
                                 )
                             )

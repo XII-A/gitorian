@@ -15,6 +15,10 @@ test('settings refresh: panels and saved preferences', async ({ desktop }) => {
     for (const name of ['Repositories', 'Connections', 'Preferences', 'Template', 'Backup']) {
         await page.getByRole('tab', { name, exact: true }).click()
         await expect(page.getByRole('tabpanel', { name, exact: true })).toBeVisible()
+        if (name === 'Backup') {
+            await expect(page.getByRole('heading', { name: 'Diagnostics', exact: true })).toHaveCount(0)
+            await expect(page.getByRole('button', { name: 'Copy diagnostic report', exact: true })).toHaveCount(0)
+        }
         await expect(page.locator('[role=tabpanel][data-state=inactive]')).toHaveCount(0)
         // Let the shared tab highlight settle before taking visual evidence.
         await page.waitForTimeout(500)
