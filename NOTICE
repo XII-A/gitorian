@@ -7,8 +7,10 @@ are retained, with component-scoped keyboard focus feedback, inert collapsed
 accordion panels, vertical tabs, and a portaled date-picker popup that fits the
 desktop window.
 
-Runtime dependency licenses are supplied with the packaged dependencies and
-Electron's LICENSES.chromium.html. No Arc Pro source is included.
+Bundled renderer dependency licenses are retained in
+out/renderer/THIRD-PARTY-LICENSES.txt inside the application archive.
+External runtime dependency licenses are supplied with the packaged dependencies
+and Electron's LICENSES.chromium.html. No Arc Pro source is included.
 
 The GitHub circular mark is from GitHub's MIT-licensed Primer Octicons:
 https://github.com/primer/octicons/blob/main/icons/mark-github-24.svg

@@ -27,6 +27,10 @@ pnpm package      # Build an installer for the current platform into release/
 
 Build on the target operating system for the most predictable installer results. Packaging alone does not publish a GitHub Release. Review build output, signing, and installer behavior before uploading release assets.
 
+Renderer-only libraries belong in `devDependencies`: Vite bundles them into `out/renderer`, so shipping their original distributions in `node_modules` duplicates the payload. Keep dependencies imported by the externalized main process, preload or database worker in `dependencies`, including native runtime dependencies such as Sharp. Preserve version specifiers when reclassifying a dependency and update `pnpm-lock.yaml` with the manifest.
+
+Packaging excludes source-map files through `build.files`; installed runtime JavaScript and native binaries remain included. Vite emits bundled renderer license notices at `out/renderer/THIRD-PARTY-LICENSES.txt`, which ships with the compiled output. Keep all Electron locales. After changing dependency classification or file filters, inspect an actual package and verify its desktop behavior; development mode can hide missing runtime dependencies by resolving them from the checkout.
+
 See [testing](testing.md) for focused commands, Playwright debugging, retained evidence, and guidance for adding or migrating tests.
 
 The app icon's editable source is `resources/icon.svg`, exported from [Paper](https://app.paper.design/file/01M5S7QJ9BJRNKDCTRHEA0E1CF). After replacing it, run `pnpm icons` and commit the generated PNG, Windows ICO, and macOS ICNS files. The runtime window icon and Linux package use the PNG; Windows and macOS packages use their native formats. Windows resource editing stays enabled to embed the icon while signing remains disabled.
