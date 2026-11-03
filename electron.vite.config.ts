@@ -28,5 +28,8 @@ export default defineConfig({
     preload: {
         build: { externalizeDeps: true, rollupOptions: { output: { format: 'cjs', entryFileNames: 'index.cjs' } } }
     },
-    renderer: { plugins: [react()] }
+    renderer: {
+        plugins: [react()],
+        build: { license: { fileName: 'THIRD-PARTY-LICENSES.txt' } }
+    }
 })
