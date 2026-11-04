@@ -145,6 +145,25 @@
     border-radius: 0;
     background: transparent;
 }
+.tree[data-density='compact'] .item {
+    height: 28px;
+    min-height: 28px;
+    padding-inline-end: var(--space-2);
+    border-radius: var(--radius-key);
+    font-size: var(--text-xs);
+}
+.tree[data-density='compact'] .selection {
+    border-radius: var(--radius-key);
+}
+@media (pointer: coarse) {
+    .tree[data-density='compact'] .row {
+        min-height: 46px;
+    }
+    .tree[data-density='compact'] .item {
+        min-height: 44px;
+        height: auto;
+    }
+}
 .tree[data-wrap-labels] .row {
     height: auto;
 }

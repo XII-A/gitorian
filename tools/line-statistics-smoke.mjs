@@ -368,20 +368,30 @@ app.on('browser-window-created', (_, window) => {
             await shot('workspace-counts-unfocused')
             await captureStates('workspace')
             await click('.ws-inspector [role="tab"][data-value="diff"]')
-            await wait(`!!document.querySelector('.ws-file-heading')`)
-            // Search and select through the real changed-file tree.
+            await wait(`!!document.querySelector('.diff-stream-heading')`)
+            // Review file counts by scrolling the continuous compact reader.
             const selectFile = async (path, expected) => {
-                await click('.changed-file-picker [role="combobox"]')
-                await wait(`!!document.querySelector('input[aria-label="Search changed file"]')`)
-                await js(`document.querySelector('input[aria-label="Search changed file"]').focus()`)
-                window.webContents.insertText(path)
-                await pause(300)
-                await click(`[role="treeitem"][title="${path}"]`)
-                await wait(`document.querySelector('.ws-file-heading code')?.textContent===${JSON.stringify(path)}`)
+                const heading = `.diff-stream-heading[data-file="${path}"]`
+                await js(`document.querySelector('.ws-pierre-viewport').scrollTop = 0`)
+                let visible = false
+                for (let attempt = 0; attempt < 100; attempt++) {
+                    visible = await js(`(() => {
+                        const viewport = document.querySelector('.ws-pierre-viewport')
+                        const heading = viewport.querySelector(${JSON.stringify(heading)})
+                        const frame = viewport.getBoundingClientRect()
+                        const bounds = heading?.getBoundingClientRect()
+                        if (bounds && bounds.top >= frame.top && bounds.bottom <= frame.bottom) return true
+                        viewport.scrollTop += Math.max(80, viewport.clientHeight - 96)
+                        return false
+                    })()`)
+                    if (visible) break
+                    await pause(60)
+                }
+                if (!visible) throw new Error(`File header did not become visible: ${path}`)
                 await assert(
                     expected === null
-                        ? `document.querySelector('.ws-file-heading .line-counts-note')?.textContent==='Binary'`
-                        : `document.querySelector('.ws-file-heading .line-counts')?.getAttribute('aria-label')===${JSON.stringify(expected)}`,
+                        ? `document.querySelector(${JSON.stringify(heading + ' .diff-stream-file-state')})?.textContent==='Binary file'`
+                        : `document.querySelector(${JSON.stringify(heading + ' .line-counts')})?.getAttribute('aria-label')===${JSON.stringify(expected)}`,
                     `Selected-file counts: ${path}`
                 )
             }
@@ -390,21 +400,23 @@ app.on('browser-window-created', (_, window) => {
             await selectFile('tests/retry.test.ts', '77 lines added, 1 line deleted')
             await shot('selected-test-diff')
             await selectFile('assets/retry.bin', null)
-            await wait(`!!document.querySelector('.ws-file-diff .ws-diff-state [data-variant="plain"]')`)
+            await wait(
+                `!!document.querySelector('.diff-stream-heading[data-file="assets/retry.bin"] .diff-stream-file-state')`
+            )
             await pause(350)
             await assert(
                 `(() => {
-                const viewport=document.querySelector('.ws-file-diff .ws-diff-state-viewport')
-                const content=viewport.firstElementChild
-                const frame=viewport.getBoundingClientRect(),state=content.getBoundingClientRect()
-                return content.textContent.includes('Binary file') && Math.abs(state.y+state.height/2-frame.y-frame.height/2)<4 && Math.abs(state.x+state.width/2-frame.x-frame.width/2)<4
+                const viewport=document.querySelector('.ws-pierre-viewport').getBoundingClientRect()
+                const state=document.querySelector('.diff-stream-heading[data-file="assets/retry.bin"] .diff-stream-file-state')
+                const bounds=state.getBoundingClientRect()
+                return state.textContent.includes('Binary file') && bounds.top>=viewport.top && bounds.bottom<=viewport.bottom
             })()`,
-                'Binary file uses the centered plain diff empty state'
+                'Binary file retains its inline state in the continuous reader'
             )
             await shot('selected-binary-diff')
             await selectFile('src/renamed.ts', '0 lines added, 0 lines deleted')
             await wait(
-                `!!document.querySelector('.ws-file-diff .ws-diff-state') && document.querySelector('.ws-file-diff .ws-diff-state').textContent.includes('No text changes')`
+                `document.querySelector('.diff-stream-heading[data-file="src/renamed.ts"] .diff-stream-file-state')?.textContent.includes('No text changes')`
             )
             await click('.ws-inspector [role="tab"][data-value="details"]')
             await click('[aria-label="Pop out diff"]')

@@ -239,6 +239,7 @@ export function WorkspaceInspector({
                                         : undefined
                                 }
                                 initialSplit={reference}
+                                detached={reference}
                             />
                         </>
                     )}
@@ -271,19 +272,19 @@ export function WorkspaceInspector({
                     />
                 </TabsContent>
             </Tabs>
-            <footer className="ws-inspector-footer">
-                <span role="status">
-                    {citationStatus ||
-                        (canCite
-                            ? 'Insert a reference to this activity in your entry.'
-                            : reference
-                              ? 'Citations go to your open draft.'
-                              : 'Start a draft to cite this change.')}
-                </span>
-                <Button variant="secondary" size="sm" disabled={!canCite} onClick={onCite}>
-                    Cite in entry
-                </Button>
-            </footer>
+            {!reference && (
+                <footer className="ws-inspector-footer">
+                    <span role="status">
+                        {citationStatus ||
+                            (canCite
+                                ? 'Insert a reference to this activity in your entry.'
+                                : 'Start a draft to cite this change.')}
+                    </span>
+                    <Button variant="secondary" size="sm" disabled={!canCite} onClick={onCite}>
+                        Cite in entry
+                    </Button>
+                </footer>
+            )}
         </section>
     )
 }

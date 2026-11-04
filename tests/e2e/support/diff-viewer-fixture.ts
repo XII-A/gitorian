@@ -62,3 +62,71 @@ state.revisions = [
         diff: ordinary + copyPatch + large + long
     }
 ]
+
+function changedSource(path: string, before: string[], after: string[]) {
+    return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1,${before.length} +1,${after.length} @@\n${before.map((line) => '-' + line).join('\n')}\n${after.map((line) => '+' + line).join('\n')}\n`
+}
+
+const toolbar = changedSource(
+    'src/components/Toolbar.tsx',
+    ['export function Toolbar() {', '    return <button>Open file</button>', '}'],
+    [
+        'export function Toolbar({ files, onSelect }) {',
+        '    return (',
+        '        <nav aria-label="Changed files">',
+        '            <FileTree files={files} onSelect={onSelect} />',
+        '        </nav>',
+        '    )',
+        '}'
+    ]
+)
+const theme = changedSource(
+    'src/theme.css',
+    ['.diff-header {', '    background: var(--surface-muted);', '    padding: 12px 16px;', '}'],
+    [
+        '.diff-header {',
+        '    background: var(--surface);',
+        '    padding: 16px;',
+        '    border-bottom: 1px solid var(--border-subtle);',
+        '}'
+    ]
+)
+const navigationTest = changedSource(
+    'tests/navigation.test.ts',
+    ['it("opens one file", async () => {', '    await selectFile("theme.css")', '})'],
+    [
+        'it("navigates the complete change set", async () => {',
+        '    await selectFile("theme.css")',
+        '    expect(await visibleFiles()).toContain("Toolbar.tsx")',
+        '})'
+    ]
+)
+const binary =
+    'diff --git a/public/mark.png b/public/mark.png\nBinary files a/public/mark.png and b/public/mark.png differ\n'
+const rename =
+    'diff --git a/docs/overview.md b/docs/review.md\nsimilarity index 100%\nrename from docs/overview.md\nrename to docs/review.md\n'
+const designPatch = toolbar + theme + navigationTest + binary + rename
+const designActivity: Activity = {
+    ...activity,
+    id: 'diff-design-fixture',
+    title: 'Review continuous changes',
+    description: 'Make every changed file part of one continuous review.',
+    revision: 'design-revision',
+    diffRevision: 'design-revision',
+    files: [
+        { name: 'src/components/Toolbar.tsx', status: 'modified', lineStats: { additions: 7, deletions: 3 } },
+        { name: 'src/theme.css', status: 'modified', lineStats: { additions: 5, deletions: 4 } },
+        { name: 'tests/navigation.test.ts', status: 'modified', lineStats: { additions: 4, deletions: 3 } },
+        { name: 'public/mark.png', status: 'modified', lineStats: null },
+        { name: 'docs/review.md', status: 'renamed', lineStats: { additions: 0, deletions: 0 } }
+    ]
+}
+state.activities.push(designActivity)
+state.diffs[designActivity.id] = designPatch
+state.revisions.push({
+    id: 'design-revision',
+    activityId: designActivity.id,
+    base: 'base',
+    head: 'head',
+    diff: designPatch
+})

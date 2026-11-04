@@ -20,6 +20,8 @@ export interface TreeNode {
     icon?: ReactNode
     /** Full path or name when a compact label is used. */
     title?: string
+    /** A complete name for compact rows whose visible label omits path or status. */
+    ariaLabel?: string
     /** Group labels expand their children instead of becoming a selection. */
     selectable?: boolean
 }
@@ -39,6 +41,8 @@ export interface TreeViewProps {
     wrapLabels?: boolean
     /** An enclosing morph surface can own the size animation instead of the rows. */
     animateExpansion?: boolean
+    /** Dense, single-line explorer rows retain the same keyboard interaction. */
+    density?: 'comfortable' | 'compact'
     /** Keep branch selection independent from its disclosure button. */
     selectBranches?: boolean
     /** Closes an enclosing picker and restores its trigger focus. */
@@ -130,6 +134,7 @@ export function TreeView({
     variant = 'surface',
     wrapLabels = false,
     animateExpansion = true,
+    density = 'comfortable',
     selectBranches = false,
     onEscape
 }: TreeViewProps) {
@@ -237,6 +242,7 @@ export function TreeView({
             id={id}
             className={styles.tree}
             data-variant={variant}
+            data-density={density}
             data-wrap-labels={wrapLabels || undefined}
             role="tree"
             aria-label={ariaLabel}
@@ -259,7 +265,12 @@ export function TreeView({
                             layout={rowReduced ? false : 'position'}
                             initial={rowReduced ? false : { height: 0, opacity: 0, x: -6, overflow: 'hidden' }}
                             animate={{
-                                height: wrapLabels || branchEnds.has(item.node.id) ? 'auto' : rowHeight,
+                                height:
+                                    wrapLabels || branchEnds.has(item.node.id)
+                                        ? 'auto'
+                                        : density === 'compact'
+                                          ? 30
+                                          : rowHeight,
                                 opacity: 1,
                                 x: 0,
                                 pointerEvents: 'auto',
@@ -304,6 +315,7 @@ export function TreeView({
                                 className={styles.item}
                                 role="treeitem"
                                 title={item.node.title ?? item.node.label}
+                                aria-label={item.node.ariaLabel}
                                 aria-level={item.depth}
                                 aria-posinset={item.position}
                                 aria-setsize={item.setSize}
@@ -321,7 +333,7 @@ export function TreeView({
                                         toggle(item.node)
                                 }}
                             >
-                                {isSelected && <Selection layoutId={selectionLayoutId} reduced={reduced} />}
+                                {isSelected && <Selection layoutId={selectionLayoutId} reduced={rowReduced} />}
                                 {item.depth > 1 && (
                                     <motion.span
                                         aria-hidden="true"
@@ -366,7 +378,7 @@ export function TreeView({
                                         aria-hidden="true"
                                         initial={false}
                                         animate={{ rotate: isExpanded ? 90 : 0 }}
-                                        transition={reduced ? still : motionTokens.spring.snappy}
+                                        transition={rowReduced ? still : motionTokens.spring.snappy}
                                     >
                                         {hasChildren ? <ChevronRight size={14} strokeWidth={1.9} /> : null}
                                     </motion.span>
@@ -380,7 +392,7 @@ export function TreeView({
                                 >
                                     {item.node.icon ??
                                         (hasChildren ? (
-                                            <FolderIcon open={isExpanded} reduced={reduced} />
+                                            <FolderIcon open={isExpanded} reduced={rowReduced} />
                                         ) : (
                                             <File size={16} strokeWidth={1.7} />
                                         ))}
