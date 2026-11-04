@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { test, expect } from './support/desktop'
 import { ordinary } from './support/diff-viewer-fixture'
-import type { ElectronApplication } from '@playwright/test'
+import type { ElectronApplication, Page } from '@playwright/test'
 
 test.use({ desktopEntry: 'tests/e2e/support/diff-viewer-main.mjs', desktopRepositoryIds: ['fixture'] })
 
@@ -11,6 +11,31 @@ async function resizeReference(app: ElectronApplication, width: number) {
         window.setMinimumSize(0, 0)
         window.setContentSize(width, 900)
     }, width)
+}
+
+async function retainDiffAcrossTabs(page: Page) {
+    const viewport = page.getByRole('region', { name: 'All file changes', exact: true })
+    await expect(viewport).toBeVisible()
+    await page.getByRole('button', { name: 'Collapse all files', exact: true }).click()
+    await page.getByRole('button', { name: 'Expand view.ts. Modified file', exact: true }).click()
+    await viewport.hover()
+    await page.mouse.wheel(0, 500)
+    await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(100)
+    const top = await viewport.evaluate((node) => node.scrollTop)
+    for (const tab of ['Details', 'Related']) {
+        await page.getByRole('tab', { name: tab, exact: true }).click()
+        await expect(viewport).toBeHidden()
+        await page.getByRole('tab', { name: 'Diff', exact: true }).click()
+        await expect(viewport).toBeVisible()
+        await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeCloseTo(top, 0)
+    }
+    await viewport.hover()
+    await page.mouse.wheel(0, -10000)
+    await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0)
+    await expect(page.getByRole('button', { name: 'Expand copy.ts. Modified file', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Collapse view.ts. Modified file', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Collapse all files', exact: true }).click()
+    await page.getByRole('button', { name: 'Expand all files', exact: true }).click()
 }
 
 test('Atlas: continuous file disclosure, explorer filters and a focused detached reader', async ({ desktop }, info) => {
@@ -38,31 +63,41 @@ test('Atlas: continuous file disclosure, explorer filters and a focused detached
     const opened = app.waitForEvent('window')
     await page.getByRole('button', { name: 'Pop out diff', exact: true }).click()
     const reference = await opened
-    await reference.getByRole('tab', { name: 'Diff', exact: true }).click()
+    await expect(reference.getByRole('tab', { name: 'Diff', exact: true })).toHaveAttribute('aria-selected', 'true')
     await resizeReference(app, 1440)
     const tree = reference.getByRole('tree', { name: 'Changed files', exact: true })
     await expect(tree).toBeVisible()
     await expect(reference.getByRole('button', { name: 'Cite in entry', exact: true })).toHaveCount(0)
-    await expect(reference.getByRole('searchbox', { name: 'Filter changed files', exact: true })).toHaveCount(0)
+    await expect(reference.getByRole('searchbox', { name: 'Find a file', exact: true })).toHaveCount(0)
     const sourceFolder = tree.getByRole('treeitem', { name: /^src / })
     await expect(sourceFolder).toContainText('+12')
     await expect(sourceFolder).toContainText('−7')
     await reference.getByRole('button', { name: 'Find a file', exact: true }).click()
-    await reference.getByRole('searchbox', { name: 'Filter changed files', exact: true }).fill('theme')
+    await reference.getByRole('searchbox', { name: 'Find a file', exact: true }).fill('theme')
+    await expect(reference.getByRole('listbox')).toHaveCount(0)
     await expect(tree.getByRole('treeitem', { name: /Toolbar.tsx/ })).toHaveCount(0)
     await tree.getByRole('treeitem', { name: /theme.css/ }).click()
     await expect(
         reference.locator('diffs-container[data-diff-file="src/theme.css"] [data-line]').first()
     ).toBeInViewport()
-    await reference.getByRole('searchbox', { name: 'Filter changed files', exact: true }).press('Escape')
+    await reference.getByRole('searchbox', { name: 'Find a file', exact: true }).press('Escape')
     await expect(reference.getByRole('button', { name: 'Find a file', exact: true })).toBeFocused()
 
     await reference.getByRole('button', { name: 'File filters and ordering', exact: true }).click()
-    await reference.getByRole('button', { name: /^Binary/ }).click()
+    await reference.getByRole('switch', { name: 'Exclude test files', exact: true }).check()
+    await expect(tree.getByRole('treeitem', { name: /navigation.test.ts/ })).toHaveCount(0)
+    await reference.getByRole('switch', { name: 'Exclude documentation', exact: true }).check()
+    await expect(tree.getByRole('treeitem', { name: /review.md/ })).toHaveCount(0)
+    await expect(reference.getByText('3 files of 5', { exact: true })).toBeVisible()
+    await expect(tree.getByRole('treeitem', { name: /Toolbar.tsx/ })).toBeVisible()
+    await reference.getByRole('button', { name: 'Reset', exact: true }).click()
+    await reference.getByRole('combobox', { name: 'File status', exact: true }).click()
+    await reference.getByRole('option', { name: /^Binary/ }).click()
+    await reference.keyboard.press('Escape')
     await expect(tree.getByRole('treeitem', { name: /mark.png/ })).toBeVisible()
     await expect(tree.getByRole('treeitem', { name: /theme.css/ })).toHaveCount(0)
     await expect(reference.locator('.diff-stream-file-state').filter({ hasText: 'Binary file' })).toBeVisible()
-    await reference.getByRole('button', { name: 'Clear file filter', exact: true }).click()
+    await reference.getByRole('button', { name: 'Clear file filters', exact: true }).click()
     await tree.getByRole('treeitem', { name: /review.md/ }).click()
     await expect(reference.locator('.diff-stream-file-state').filter({ hasText: 'No text changes' })).toBeInViewport()
     await tree.getByRole('treeitem', { name: /Toolbar.tsx/ }).click()
@@ -97,12 +132,16 @@ test('diff viewer: compact source copy, virtualized range selection and detached
     await expect(main.locator('code.language-ts [data-code-token]').first()).toBeVisible()
     await main.getByRole('button', { name: 'Open in workspace', exact: true }).click()
     await main.getByRole('tab', { name: 'Diff', exact: true }).click()
+    await test.step('Docked diff retains scroll and file disclosure across Details and Related', () =>
+        retainDiffAcrossTabs(main))
     const opened = app.waitForEvent('window')
     await main.getByRole('button', { name: 'Pop out diff', exact: true }).click()
     const page = await opened
     page.on('pageerror', (error) => errors.push(error.message))
     await page.getByRole('tab', { name: 'Diff', exact: true }).click()
     await resizeReference(app, 1440)
+    await test.step('Detached diff retains scroll and file disclosure across Details and Related', () =>
+        retainDiffAcrossTabs(page))
     const navigate = async (name: string) => {
         await page.locator(`[role="treeitem"][title="${name}"]`).click()
     }

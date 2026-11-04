@@ -3,7 +3,7 @@ import { EmptyState } from './components/arc/empty-state/empty-state'
 import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
 import { readableError } from './background-work'
 import { useEffect, useId, useMemo, useState } from 'react'
-import type { Activity, Command, Reply, State } from '../shared/model'
+import type { Activity, Command, Reply, State, InspectorTab } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/arc/tabs/tabs'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -28,10 +28,10 @@ interface Props {
     error?: string
     reference?: boolean
     canCite?: boolean
-    initialTab?: 'diff' | 'details'
+    initialTab?: InspectorTab
     citationStatus?: string
     onCite: () => void
-    onPopout?: () => void
+    onPopout?: (tab: InspectorTab) => void
     onClose?: () => void
     onInspect?: (activity: Activity, tab?: 'diff' | 'details') => void
 }
@@ -50,9 +50,13 @@ export function WorkspaceInspector({
     onClose,
     onInspect
 }: Props) {
-    const [tab, setTab] = useState<string>(initialTab)
+    const [tab, setTab] = useState<InspectorTab>(initialTab)
+    const [diffActivity, setDiffActivity] = useState(initialTab === 'diff' ? activity.id : undefined)
     const titleId = useId()
-    useEffect(() => setTab(initialTab), [activity.id, initialTab])
+    useEffect(() => {
+        setTab(initialTab)
+        if (initialTab === 'diff') setDiffActivity(activity.id)
+    }, [activity.id, initialTab])
     const repository = state.repositories.find((repo) => repo.id === activity.repositoryId)
     const related = useMemo(
         () =>
@@ -85,7 +89,9 @@ export function WorkspaceInspector({
                 value={tab}
                 variant="underline"
                 onValueChange={(value) => {
+                    if (value !== 'details' && value !== 'diff' && value !== 'related') return
                     setTab(value)
+                    if (value === 'diff') setDiffActivity(activity.id)
                     if (value === 'diff' && !hasCachedDetails(state, activity)) onInspect?.(activity, 'diff')
                     if (value === 'details' && !hasFileStatistics(activity) && !loading)
                         onInspect?.(activity, 'details')
@@ -129,7 +135,7 @@ export function WorkspaceInspector({
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={onPopout}
+                                    onClick={() => onPopout(tab)}
                                     aria-label="Pop out diff"
                                     title="Open in a separate window"
                                 >
@@ -161,7 +167,13 @@ export function WorkspaceInspector({
                         </TabsTrigger>
                     </TabsList>
                 </header>
-                <TabsContent value="diff">
+                <TabsContent
+                    value="diff"
+                    className="ws-inspector-diff"
+                    forceMount={diffActivity === activity.id ? true : undefined}
+                    inert={tab !== 'diff'}
+                    aria-hidden={tab !== 'diff'}
+                >
                     {state.diffs[activity.id] === undefined && (loading || error) ? (
                         loading ? (
                             <DiffSkeleton />

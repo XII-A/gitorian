@@ -8,6 +8,8 @@
 
 .diff-stream .ws-pierre-viewport {
     scroll-padding-block: var(--space-12) var(--space-4);
+    /* CodeView preserves its logical item anchor as virtualized file heights change. */
+    overflow-anchor: none;
 }
 
 .diff-stream {

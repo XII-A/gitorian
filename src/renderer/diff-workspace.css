@@ -92,6 +92,7 @@
 }
 
 .diff-file-tree {
+    --diff-explorer-icon-size: var(--space-8);
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -100,6 +101,7 @@
 }
 
 .diff-explorer-heading {
+    position: relative;
     display: flex;
     flex: none;
     align-items: center;
@@ -125,9 +127,24 @@
     font-variant-numeric: tabular-nums;
 }
 
-.diff-tree-search {
+.diff-explorer-search-slot {
     flex: none;
-    padding: 0 var(--space-1) var(--space-2);
+    width: var(--diff-explorer-icon-size);
+    height: var(--diff-explorer-icon-size);
+}
+
+.diff-explorer-heading .diff-explorer-search {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: var(--space-2);
+    inset-inline-end: calc(var(--diff-explorer-icon-size) + var(--space-2));
+    width: auto;
+    transform: translateY(-50%);
+}
+
+.diff-explorer-heading[data-search-expanded='true'] h3,
+.diff-explorer-heading[data-search-expanded='true'] .diff-explorer-folders {
+    visibility: hidden;
 }
 
 .diff-tree-scroll {
@@ -172,13 +189,20 @@
 }
 
 .diff-file-filters {
-    display: grid;
-    gap: var(--space-3);
-    width: 280px;
+    width: 296px;
     max-width: min(calc(100dvi - var(--space-8)), var(--radix-popover-content-available-width));
     max-height: var(--radix-popover-content-available-height);
+    padding: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+}
+
+.diff-file-filters-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
 }
 
 .diff-file-filters h3 {
@@ -188,39 +212,17 @@
     font-weight: 500;
 }
 
-.diff-file-filter-options {
+.diff-file-filters-section {
     display: grid;
-    gap: var(--space-1);
+    padding: var(--space-2) var(--space-4);
+    border-top: 1px solid var(--border-subtle);
 }
 
-.diff-file-filter-option {
-    width: 100%;
-    min-width: 0;
-}
-
-.diff-file-filter-option[aria-pressed='true'] {
-    background: var(--surface-muted);
-}
-
-.diff-file-filter-row,
-.diff-file-filter-value {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-}
-
-.diff-file-filter-row {
-    width: 100%;
-    justify-content: space-between;
-}
-
-.diff-file-filter-value {
+.diff-file-filters h4 {
+    margin: var(--space-1) 0;
     color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
-}
-
-.diff-file-filter-check {
-    width: 14px;
+    font-size: var(--text-xs);
+    font-weight: 400;
 }
 
 .diff-file-filter-setting {
@@ -228,12 +230,21 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    padding-top: var(--space-2);
-    color: var(--text-secondary);
-    font-size: var(--text-xs);
+    min-height: var(--control-height-md);
+    color: var(--foreground);
+    font-size: var(--text-sm);
+}
+
+.diff-file-filter-select {
+    width: auto;
+    min-height: var(--space-8);
+    padding-inline: var(--space-2);
 }
 
 @media (pointer: coarse) {
+    .diff-file-tree {
+        --diff-explorer-icon-size: var(--control-height-md);
+    }
     .diff-toolbar-icon {
         width: var(--control-height-md);
         min-height: var(--control-height-md);

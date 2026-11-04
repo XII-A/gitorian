@@ -11,7 +11,7 @@ import { readFile, writeFile, stat } from 'node:fs/promises'
 import { ApplicationWork } from './application-work'
 import { Cause, Deferred, Effect, Exit, ManagedRuntime, Scope } from 'effect'
 import { commandSchema } from '../shared/model'
-import type { Reply, RepositoryImportProgress, NotionDiscoveryProgress } from '../shared/model'
+import type { Reply, RepositoryImportProgress, NotionDiscoveryProgress, InspectorTab } from '../shared/model'
 import { JournalDatabase } from './journal-database'
 import type { JournalView } from './database/types'
 import { weekOf } from '../shared/model'
@@ -82,7 +82,7 @@ function holdJournal(): () => void {
     runtime.runSync(Scope.extend(service.suspend, scope))
     return () => runtime.runSync(Scope.close(scope, Exit.void))
 }
-function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
+function windowFor(reference?: { kind: string; id: string; tab?: InspectorTab }): BrowserWindow {
     const window = new BrowserWindow({
         title: 'Gitorian',
         icon: join(directory, '../../resources/icon.png'),
@@ -135,7 +135,13 @@ function windowFor(reference?: { kind: string; id: string }): BrowserWindow {
     window.once('ready-to-show', () => {
         window.show()
     })
-    const query = reference ? `?reference=${reference.kind}&id=${encodeURIComponent(reference.id)}` : ''
+    const parameters = new URLSearchParams()
+    if (reference) {
+        parameters.set('reference', reference.kind)
+        parameters.set('id', reference.id)
+        if (reference.tab) parameters.set('tab', reference.tab)
+    }
+    const query = reference ? `?${parameters}` : ''
     if (process.env.ELECTRON_RENDERER_URL) void window.loadURL(`${process.env.ELECTRON_RENDERER_URL}${query}`)
     else void window.loadFile(join(directory, '../renderer/index.html'), { search: query })
     return window

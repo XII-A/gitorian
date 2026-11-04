@@ -1,58 +1,28 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Check, FoldVertical, ListFilter, Search, UnfoldVertical, X } from 'lucide-react'
+import { FoldVertical, UnfoldVertical, X } from 'lucide-react'
 import { Button } from './components/arc/button/button'
-import { Popover, PopoverContent, PopoverTrigger } from './components/arc/popover/popover'
-import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { ChangeCounts } from './ChangeStatistics'
-import { SearchField } from './components/arc/search-field/search-field'
+import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { TreeView, type TreeNode } from './components/arc/tree-view/tree-view'
 import { changeLabels } from './activity-details'
-import {
-    diffFileKind,
-    FileChangeIcon,
-    matchesDiffFilter,
-    type DiffFileFilter,
-    type DiffFileList,
-    type DiffFileOrder
-} from './diff-file-presentation'
+import { diffFileKind, FileChangeIcon } from './diff-file-presentation'
+import { DiffFileFilters, diffFileFilters, type DiffFileFilterControls } from './DiffFileFilters'
 import { diffStats, type DiffFile } from './diff-model'
 
-interface DiffFileTreeProps {
-    files: DiffFile[]
+interface DiffFileTreeProps extends DiffFileFilterControls {
     visibleFiles: DiffFile[]
     activeFile: string
     onSelectFile: (name: string) => void
-    filter: DiffFileFilter
-    onFilterChange: (filter: DiffFileFilter) => void
-    fileList: DiffFileList
-    onFileListChange: (list: DiffFileList) => void
-    order: DiffFileOrder
-    onOrderChange: (order: DiffFileOrder) => void
 }
-
-const fileFilters: { value: DiffFileFilter; label: string }[] = [
-    { value: 'all', label: 'All files' },
-    { value: 'modified', label: 'Modified' },
-    { value: 'added', label: 'Added' },
-    { value: 'deleted', label: 'Deleted' },
-    { value: 'renamed', label: 'Renamed' },
-    { value: 'binary', label: 'Binary' }
-]
 
 /** Search narrows navigation; status filters and ordering apply to the complete reading workspace. */
 export function DiffFileTree(props: DiffFileTreeProps) {
-    const { files, visibleFiles, activeFile, onSelectFile, fileList, order } = props
+    const { visibleFiles, activeFile, onSelectFile, fileList, order } = props
     const [query, setQuery] = useState('')
-    const [searchOpen, setSearchOpen] = useState(false)
-    const [filtersOpen, setFiltersOpen] = useState(false)
+    const [searchExpanded, setSearchExpanded] = useState(false)
     const [expanded, setExpanded] = useState<string[]>()
-    const search = useRef<HTMLInputElement>(null)
-    const searchButton = useRef<HTMLButtonElement>(null)
     const viewport = useRef<HTMLDivElement>(null)
-    useLayoutEffect(() => {
-        if (searchOpen) search.current?.focus()
-    }, [searchOpen])
     const tree = useMemo(() => {
         const roots: TreeNode[] = []
         const folders = new Map<string, TreeNode>()
@@ -163,35 +133,23 @@ export function DiffFileTree(props: DiffFileTreeProps) {
     }, [activeFile, expanded, query, fileList])
     const expandedIds = query.trim() ? tree.directories : (expanded ?? tree.directories)
     const foldersOpen = expandedIds.length > 0
-    const filterLabel = fileFilters.find((item) => item.value === props.filter)?.label
-    const closeSearch = () => {
-        setQuery('')
-        setSearchOpen(false)
-        searchButton.current?.focus()
-    }
+    const activeFilters = [
+        ...(props.filter !== 'all' ? [diffFileFilters.find((item) => item.value === props.filter)!.label] : []),
+        ...(props.exclusions.tests ? ['Tests excluded'] : []),
+        ...(props.exclusions.docs ? ['Docs excluded'] : [])
+    ]
     return (
         <div className="diff-file-tree">
-            <div className="diff-explorer-heading">
+            <div className="diff-explorer-heading" data-search-expanded={searchExpanded}>
                 <h3>
                     Files <span>{visibleFiles.length}</span>
                 </h3>
                 <div className="diff-explorer-actions">
                     <Button
-                        ref={searchButton}
-                        className="diff-toolbar-icon"
+                        className="diff-toolbar-icon diff-explorer-folders"
                         variant="ghost"
                         size="sm"
-                        aria-label="Find a file"
-                        title="Find a file"
-                        aria-expanded={searchOpen}
-                        onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
-                    >
-                        <Search size={15} aria-hidden="true" />
-                    </Button>
-                    <Button
-                        className="diff-toolbar-icon"
-                        variant="ghost"
-                        size="sm"
+                        inert={searchExpanded}
                         aria-label={foldersOpen ? 'Collapse folders' : 'Expand folders'}
                         title={foldersOpen ? 'Collapse folders' : 'Expand folders'}
                         disabled={fileList === 'list' || !tree.directories.length}
@@ -203,119 +161,33 @@ export function DiffFileTree(props: DiffFileTreeProps) {
                             <UnfoldVertical size={15} aria-hidden="true" />
                         )}
                     </Button>
-                    <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
-                        <PopoverTrigger asChild>
-                            <Button
-                                className="diff-toolbar-icon"
-                                variant="ghost"
-                                size="sm"
-                                aria-label="File filters and ordering"
-                                title="Filter files"
-                                data-active={props.filter !== 'all' || fileList !== 'tree' || order !== 'path'}
-                            >
-                                <ListFilter size={15} aria-hidden="true" />
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent
-                            className="diff-file-filters"
-                            align="start"
-                            aria-label="File filters and ordering"
-                        >
-                            <h3>Filter files</h3>
-                            <div className="diff-file-filter-options" role="group" aria-label="File status">
-                                {fileFilters.map((item) => {
-                                    const count = files.filter((file) => matchesDiffFilter(file, item.value)).length
-                                    if (!count && item.value !== 'all' && item.value !== props.filter) return null
-                                    return (
-                                        <Button
-                                            key={item.value}
-                                            className="diff-file-filter-option"
-                                            variant="ghost"
-                                            size="sm"
-                                            contentLayout="stack"
-                                            animateContent={false}
-                                            aria-pressed={props.filter === item.value}
-                                            onClick={() => {
-                                                props.onFilterChange(item.value)
-                                                setFiltersOpen(false)
-                                            }}
-                                        >
-                                            <span className="diff-file-filter-row">
-                                                <span>{item.label}</span>
-                                                <span className="diff-file-filter-value">
-                                                    {count}
-                                                    {props.filter === item.value ? (
-                                                        <Check size={14} aria-hidden="true" />
-                                                    ) : (
-                                                        <span className="diff-file-filter-check" />
-                                                    )}
-                                                </span>
-                                            </span>
-                                        </Button>
-                                    )
-                                })}
-                            </div>
-                            <div className="diff-file-filter-setting">
-                                <span>File list</span>
-                                <SegmentedControl
-                                    size="sm"
-                                    label="File list"
-                                    value={fileList}
-                                    onValueChange={(value) =>
-                                        props.onFileListChange(value === 'list' ? 'list' : 'tree')
-                                    }
-                                    options={[
-                                        { value: 'tree', label: 'Tree' },
-                                        { value: 'list', label: 'List' }
-                                    ]}
-                                />
-                            </div>
-                            <div className="diff-file-filter-setting">
-                                <span>Order by</span>
-                                <SegmentedControl
-                                    size="sm"
-                                    label="File order"
-                                    value={order}
-                                    onValueChange={(value) =>
-                                        props.onOrderChange(value === 'changes' ? 'changes' : 'path')
-                                    }
-                                    options={[
-                                        { value: 'path', label: 'Path' },
-                                        { value: 'changes', label: 'Changes' }
-                                    ]}
-                                />
-                            </div>
-                        </PopoverContent>
-                    </Popover>
+                    <div className="diff-explorer-search-slot">
+                        <ExpandingSearch
+                            className="diff-explorer-search"
+                            label="Find a file"
+                            placeholder="Find a file…"
+                            variant="filter"
+                            size="sm"
+                            expandedWidth="container"
+                            value={query}
+                            onValueChange={setQuery}
+                            onExpandedChange={setSearchExpanded}
+                        />
+                    </div>
+                    <DiffFileFilters {...props} />
                 </div>
             </div>
-            {searchOpen && (
-                <div className="diff-tree-search">
-                    <SearchField
-                        ref={search}
-                        label="Filter changed files"
-                        hideLabel
-                        placeholder="Find a file…"
-                        value={query}
-                        onValueChange={setQuery}
-                        onKeyDown={(event) => {
-                            if (event.key === 'Escape') {
-                                event.stopPropagation()
-                                closeSearch()
-                            }
-                        }}
-                    />
-                </div>
-            )}
-            {props.filter !== 'all' && (
+            {activeFilters.length > 0 && (
                 <div className="diff-explorer-filter">
-                    <span>{filterLabel}</span>
+                    <span title={activeFilters.join(', ')}>
+                        {activeFilters.length === 1 ? activeFilters[0] : `${activeFilters.length} filters`}
+                    </span>
                     <Button
                         variant="ghost"
                         size="sm"
                         className="diff-toolbar-icon"
-                        aria-label="Clear file filter"
-                        onClick={() => props.onFilterChange('all')}
+                        aria-label="Clear file filters"
+                        onClick={props.onClearFilters}
                     >
                         <X size={12} aria-hidden="true" />
                     </Button>

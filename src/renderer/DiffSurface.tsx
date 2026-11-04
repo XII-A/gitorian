@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { CodeView, CUSTOM_HEADER_SLOT_ID, type CodeViewOptions, type CodeViewRenderedItem } from '@pierre/diffs'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -16,13 +16,12 @@ const surfaceCSS = `
  --diffs-bg-deletion-override:color-mix(in oklab,var(--danger) 6%,var(--surface));
  --diffs-bg-addition-emphasis-override:color-mix(in oklab,var(--success) 16%,var(--surface));
  --diffs-bg-deletion-emphasis-override:color-mix(in oklab,var(--danger) 15%,var(--surface));
- --diffs-fg-number-override:var(--text-secondary); --diffs-bg-separator-override:var(--surface);
+ --diffs-fg-number-override:var(--text-secondary); --diffs-bg-separator-override:var(--surface-muted);
  --diffs-bg-buffer-override:var(--surface); --diffs-bg-context-override:var(--surface);
  --diffs-bg-context-gutter-override:var(--surface); --diffs-bg-selection-override:var(--accent-subtle); }
 [data-code] [data-line] { text-indent:calc(-1 * var(--diff-indent,0ch)); overflow:clip; tab-size:4; }
 [data-separator-content] { color:var(--text-muted); font-size:var(--text-xs); }
-[data-separator-wrapper], [data-separator-content] { background:var(--surface); }
-[data-separator] { border-block:1px solid var(--border-subtle); }
+[data-separator-wrapper], [data-separator-content], [data-separator] { background:var(--surface-muted); border:0; }
 [data-error-wrapper] { display:none; }
 `
 
@@ -68,6 +67,7 @@ export function DiffSurface({
     const latestCollapsed = useRef(collapsed)
     latestCollapsed.current = collapsed
     const versions = useRef(new Map<string, { collapsed: boolean; version: number }>())
+    const disclosureAnchor = useRef<{ id: string; offset: number } | undefined>(undefined)
     const fileMap = useMemo(() => new Map(files.map((file) => [file.name, file])), [files])
     const indents = useMemo(() => new Map(files.map((file) => [file.name, compactDiffIndents(file)])), [files])
     const options = useMemo<CodeViewOptions<undefined, undefined>>(
@@ -118,7 +118,7 @@ export function DiffSurface({
     )
     const latestOptions = useRef(options)
     latestOptions.current = options
-    useEffect(() => {
+    useLayoutEffect(() => {
         const root = viewport.current
         if (!root) return
         inEffect.current = true
@@ -203,7 +203,7 @@ export function DiffSurface({
             viewerRef.current = undefined
         }
     }, [files, onFailure])
-    useEffect(() => {
+    useLayoutEffect(() => {
         inEffect.current = true
         try {
             viewerRef.current?.setOptions(options)
@@ -214,7 +214,7 @@ export function DiffSurface({
             inEffect.current = false
         }
     }, [options, onFailure])
-    useEffect(() => {
+    useLayoutEffect(() => {
         const viewer = viewerRef.current
         if (!viewer) return
         inEffect.current = true
@@ -230,14 +230,25 @@ export function DiffSurface({
                     return { type: 'diff', id: file.name, fileDiff: file, collapsed: isCollapsed, version }
                 })
             )
+            // Keep the disclosure under the pointer while CodeView measures the newly opened source.
+            const anchor = disclosureAnchor.current
+            disclosureAnchor.current = undefined
+            if (anchor && fileMap.has(anchor.id))
+                viewer.scrollTo({
+                    type: 'item',
+                    id: anchor.id,
+                    align: 'start',
+                    offset: anchor.offset,
+                    behavior: 'instant'
+                })
             viewer.render(true)
         } catch {
             onFailure()
         } finally {
             inEffect.current = false
         }
-    }, [files, collapsed, onFailure])
-    useEffect(() => {
+    }, [files, fileMap, collapsed, onFailure])
+    useLayoutEffect(() => {
         if (!navigation || !fileMap.has(navigation.name)) return
         const viewer = viewerRef.current
         inEffect.current = true
@@ -269,7 +280,17 @@ export function DiffSurface({
                               <DiffFileHeader
                                   file={file}
                                   collapsed={item.item.collapsed ?? false}
-                                  onToggle={() => onToggleFile(file.name)}
+                                  onToggle={(event) => {
+                                      const root = viewport.current
+                                      const heading = event.currentTarget.closest('.diff-stream-heading')
+                                      if (root && heading)
+                                          disclosureAnchor.current = {
+                                              id: file.name,
+                                              offset:
+                                                  heading.getBoundingClientRect().top - root.getBoundingClientRect().top
+                                          }
+                                      onToggleFile(file.name)
+                                  }}
                                   showLineCounts={showLineCounts}
                               />
                           </div>,

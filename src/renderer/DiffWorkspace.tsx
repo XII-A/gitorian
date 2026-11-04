@@ -4,21 +4,14 @@ import { Button } from './components/arc/button/button'
 import { ChangeCounts } from './ChangeStatistics'
 import { DiffFileTree } from './DiffFileTree'
 import { DiffDisplayOptions, type DiffDisplayPreferences } from './DiffDisplayOptions'
-import type { DiffFileFilter, DiffFileList, DiffFileOrder } from './diff-file-presentation'
+import type { DiffFileFilterControls } from './DiffFileFilters'
 import { diffStats, type DiffFile } from './diff-model'
 import './diff-workspace.css'
 
-interface DiffWorkspaceProps extends DiffDisplayPreferences {
-    files: DiffFile[]
+interface DiffWorkspaceProps extends DiffDisplayPreferences, DiffFileFilterControls {
     visibleFiles: DiffFile[]
     activeFile: string
     onSelectFile: (name: string) => void
-    filter: DiffFileFilter
-    onFilterChange: (filter: DiffFileFilter) => void
-    fileList: DiffFileList
-    onFileListChange: (list: DiffFileList) => void
-    order: DiffFileOrder
-    onOrderChange: (order: DiffFileOrder) => void
     allCollapsed: boolean
     onToggleAll: () => void
     detached: boolean
@@ -52,6 +45,7 @@ export function DiffWorkspace(props: DiffWorkspaceProps) {
     )
     const FoldIcon = props.allCollapsed ? UnfoldVertical : FoldVertical
     const toggleLabel = props.allCollapsed ? 'Expand all files' : 'Collapse all files'
+    const filtered = props.filter !== 'all' || props.exclusions.tests || props.exclusions.docs
     return (
         <div ref={root} className="diff-workspace" data-detached={detached} data-wide={wide}>
             {wide && (
@@ -63,6 +57,9 @@ export function DiffWorkspace(props: DiffWorkspaceProps) {
                         onSelectFile={props.onSelectFile}
                         filter={props.filter}
                         onFilterChange={props.onFilterChange}
+                        exclusions={props.exclusions}
+                        onExclusionsChange={props.onExclusionsChange}
+                        onClearFilters={props.onClearFilters}
                         fileList={props.fileList}
                         onFileListChange={props.onFileListChange}
                         order={props.order}
@@ -75,21 +72,21 @@ export function DiffWorkspace(props: DiffWorkspaceProps) {
                     <div className="diff-workspace-summary">
                         <span>
                             {visibleFiles.length} {visibleFiles.length === 1 ? 'file' : 'files'}
-                            {props.filter !== 'all' ? ` of ${files.length}` : ' changed'}
+                            {filtered ? ` of ${files.length}` : ' changed'}
                         </span>
                         {props.showLineCounts && visibleFiles.some((file) => !file.binary) && (
                             <ChangeCounts stats={totals} />
                         )}
                     </div>
                     <div className="diff-workspace-actions">
-                        {!wide && props.filter !== 'all' && (
+                        {!wide && filtered && (
                             <Button
                                 className="diff-toolbar-icon"
                                 variant="ghost"
                                 size="sm"
-                                aria-label="Clear file filter"
+                                aria-label="Clear file filters"
                                 title="Show all files"
-                                onClick={() => props.onFilterChange('all')}
+                                onClick={props.onClearFilters}
                             >
                                 <X size={15} aria-hidden="true" />
                             </Button>

@@ -1,6 +1,7 @@
 import { activityUpdating } from './background-work'
 import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
-import type { Command, Reply } from '../shared/model'
+import type { Command, Reply, InspectorTab } from '../shared/model'
+import { inspectorTabSchema } from '../shared/model'
 import { WeeklyHub } from './WeeklyHub'
 import { Settings } from './Settings'
 import { CommandMenu } from './components/CommandMenu'
@@ -53,7 +54,7 @@ function JournalApp() {
     const [workspaceWeek, setWorkspaceWeek] = useState('')
     const [workspaceActivity, setWorkspaceActivity] = useState<string>()
     const [workspaceWriting, setWorkspaceWriting] = useState(false)
-    const [reference, setReference] = useState<{ kind: string; id: string }>()
+    const [reference, setReference] = useState<{ kind: string; id: string; tab: InspectorTab }>()
     const [sourcesOpen, setSourcesOpen] = useState(false)
     const { toast, update, dismiss } = useToastStack()
     const commandSurfaceVisible = useRef(false)
@@ -131,7 +132,10 @@ function JournalApp() {
         const parameters = new URLSearchParams(window.location.search)
         const referenceKind = parameters.get('reference')
         const referenceId = parameters.get('id')
-        if (referenceKind && referenceId) setReference({ kind: referenceKind, id: referenceId })
+        if (referenceKind && referenceId) {
+            const tab = inspectorTabSchema.safeParse(parameters.get('tab'))
+            setReference({ kind: referenceKind, id: referenceId, tab: tab.success ? tab.data : 'details' })
+        }
         const requestedWeek = parameters.get('week')
         if (
             requestedWeek &&
@@ -249,7 +253,13 @@ function JournalApp() {
                 </>
             )}
             {reference && reply ? (
-                <WorkspaceReference state={reply.state} run={run} kind={reference.kind} id={reference.id} />
+                <WorkspaceReference
+                    state={reply.state}
+                    run={run}
+                    kind={reference.kind}
+                    id={reference.id}
+                    initialTab={reference.tab}
+                />
             ) : screen === 'workspace' && reply ? (
                 <Workspace
                     state={reply.state}

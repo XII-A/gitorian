@@ -1,4 +1,5 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import type { MouseEvent } from 'react'
 import { Button } from './components/arc/button/button'
 import { ChangeCounts } from './ChangeStatistics'
 import { changeLabels } from './activity-details'
@@ -13,7 +14,7 @@ export function DiffFileHeader({
 }: {
     file: DiffFile
     collapsed: boolean
-    onToggle: () => void
+    onToggle: (event: MouseEvent<HTMLButtonElement>) => void
     showLineCounts: boolean
 }) {
     const Chevron = collapsed ? ChevronRight : ChevronDown

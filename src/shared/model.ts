@@ -345,6 +345,9 @@ export function inbox(state: State, week: string): Activity[] {
         return date < end && (activity.explicit || date >= repository.trackingStart)
     })
 }
+export const inspectorTabSchema = z.enum(['details', 'diff', 'related'])
+export type InspectorTab = z.infer<typeof inspectorTabSchema>
+
 export const commandSchema = z.discriminatedUnion('type', [
     z.object({
         type: z.literal('view'),
@@ -438,7 +441,12 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('export') }),
     z.object({ type: z.literal('import') }),
     z.object({ type: z.literal('open'), url: z.url() }),
-    z.object({ type: z.literal('popout'), kind: z.enum(['entry', 'activity']), id: z.string() })
+    z.object({
+        type: z.literal('popout'),
+        kind: z.enum(['entry', 'activity']),
+        id: z.string(),
+        tab: inspectorTabSchema.optional()
+    })
 ])
 export type Command = z.infer<typeof commandSchema>
 export type ConnectionService = 'notion'

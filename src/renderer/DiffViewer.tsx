@@ -11,7 +11,13 @@ import { diffStats, type DiffFile } from './diff-model'
 import { DiffSurface, type DiffNavigation } from './DiffSurface'
 import { DiffWorkspace } from './DiffWorkspace'
 import { DiffFileHeader } from './DiffFileHeader'
-import { matchesDiffFilter, type DiffFileFilter, type DiffFileList, type DiffFileOrder } from './diff-file-presentation'
+import {
+    matchesDiffFilter,
+    type DiffFileExclusions,
+    type DiffFileFilter,
+    type DiffFileList,
+    type DiffFileOrder
+} from './diff-file-presentation'
 import './diff-viewer.css'
 
 function DiffEmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
@@ -136,6 +142,7 @@ export function DiffViewer({
     const [showLineCounts, setShowLineCounts] = useState(true)
     const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
     const [filter, setFilter] = useState<DiffFileFilter>('all')
+    const [exclusions, setExclusions] = useState<DiffFileExclusions>({ tests: false, docs: false })
     const [fileList, setFileList] = useState<DiffFileList>('tree')
     const [order, setOrder] = useState<DiffFileOrder>('path')
     const [parsed, setParsed] = useState<{ text: string; files: DiffFile[] }>()
@@ -146,7 +153,7 @@ export function DiffViewer({
     const visibleFiles = useMemo(
         () =>
             files
-                .filter((file) => matchesDiffFilter(file, filter))
+                .filter((file) => matchesDiffFilter(file, filter, exclusions))
                 .sort((a, b) => {
                     if (order === 'changes') {
                         const first = diffStats(a),
@@ -160,8 +167,12 @@ export function DiffViewer({
                     }
                     return a.name.localeCompare(b.name)
                 }),
-        [files, filter, order]
+        [files, filter, exclusions, order]
     )
+    const clearFilters = () => {
+        setFilter('all')
+        setExclusions({ tests: false, docs: false })
+    }
     useEffect(() => {
         if (!needsParsing) return
         let current = true
@@ -254,6 +265,9 @@ export function DiffViewer({
                 onShowLineCountsChange={setShowLineCounts}
                 filter={filter}
                 onFilterChange={setFilter}
+                exclusions={exclusions}
+                onExclusionsChange={setExclusions}
+                onClearFilters={clearFilters}
                 fileList={fileList}
                 onFileListChange={setFileList}
                 order={order}
@@ -277,7 +291,7 @@ export function DiffViewer({
                         title="No matching files"
                         description="Choose another file filter or show all changes."
                         action={
-                            <Button variant="secondary" size="sm" onClick={() => setFilter('all')}>
+                            <Button variant="secondary" size="sm" onClick={clearFilters}>
                                 Show all files
                             </Button>
                         }
