@@ -49,7 +49,10 @@ export function DiffSurface({
             tokenizeMaxLength: codeLimits.patch,
             enableLineSelection: true,
             onSelectedLinesChange(selection) {
-                if (selection) viewport.current?.focus({ preventScroll: true })
+                if (selection) {
+                    window.getSelection()?.removeAllRanges()
+                    viewport.current?.focus({ preventScroll: true })
+                }
             },
             unsafeCSS: surfaceCSS,
             onPostRender(node, _, phase) {
@@ -86,7 +89,11 @@ export function DiffSurface({
                 (!selection || selection.isCollapsed) && root.contains(document.activeElement)
                     ? viewer.getSelectedLines()
                     : null
-            const source = native ?? (selected ? selectedDiffLines(file, selected.range) : undefined)
+            const source =
+                native ??
+                (selected
+                    ? selectedDiffLines(file, selected.range, latestOptions.current.diffStyle === 'split')
+                    : undefined)
             if (source === undefined) return
             event.clipboardData?.setData('text/plain', source)
             event.preventDefault()

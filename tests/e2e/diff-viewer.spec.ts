@@ -42,6 +42,52 @@ test('diff viewer: compact source copy, virtualized range selection and detached
     await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('alu')
     await page.keyboard.press('Control+C')
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('alu')
+    await page.getByRole('combobox', { name: 'Changed file', exact: true }).click()
+    await page.getByRole('treeitem', { name: 'copy.ts', exact: true }).click()
+    const sourcePoint = async (line: number, offset: number) =>
+        page.locator(`diffs-container [data-code] [data-line="${line}"]`).evaluate((node, offset) => {
+            const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
+            let text = walker.nextNode()!
+            while (offset > text.textContent!.length) {
+                offset -= text.textContent!.length
+                text = walker.nextNode()!
+            }
+            const range = document.createRange()
+            range.setStart(text, offset)
+            range.collapse(true)
+            const rect = range.getBoundingClientRect()
+            return { x: rect.x, y: rect.y + rect.height / 2 }
+        }, offset)
+    await expect(lines.first()).toContainText('old')
+    const start = await sourcePoint(20, 4)
+    const end = await sourcePoint(22, 8)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 8 })
+    await page.mouse.up()
+    await page.keyboard.press('Control+C')
+    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('    new\n\n    tail')
+    // Endpoints deliberately have different old/new line numbers.
+    const copyGutter = page.locator('diffs-container [data-gutter] [data-column-number]')
+    await copyGutter.filter({ hasText: /^10$/ }).click()
+    await copyGutter.filter({ hasText: /^20$/ }).click({ modifiers: ['Shift'] })
+    await page.keyboard.press('Control+C')
+    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('    old\n    new')
+    await copyGutter.filter({ hasText: /^20$/ }).click()
+    await copyGutter.filter({ hasText: /^10$/ }).click({ modifiers: ['Shift'] })
+    await page.keyboard.press('Control+C')
+    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('    old\n    new')
+    await page.getByRole('button', { name: 'Split', exact: true }).click()
+    await page.locator('diffs-container [data-deletions] [data-gutter] [data-column-number]').first().click()
+    await page
+        .locator('diffs-container [data-additions] [data-gutter] [data-column-number]')
+        .first()
+        .click({ modifiers: ['Shift'] })
+    await page.keyboard.press('Control+C')
+    await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('    old\n    new')
+    await page.getByRole('button', { name: 'Unified', exact: true }).click()
+    await page.getByRole('combobox', { name: 'Changed file', exact: true }).click()
+    await page.getByRole('treeitem', { name: 'view.ts', exact: true }).click()
     await page.getByRole('button', { name: 'Split', exact: true }).click()
     await expect(page.locator('diffs-container [data-code][data-deletions]')).toBeVisible()
     await page.getByRole('button', { name: 'Diff display options' }).click()

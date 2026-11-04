@@ -65,8 +65,10 @@ export function compactDiffIndents(file: FileDiffMetadata) {
 }
 
 /** Public line-range selection uses source coordinates, including unmounted lines. */
-export function selectedDiffLines(file: FileDiffMetadata, selection: SelectedLineRange): string {
+export function selectedDiffLines(file: FileDiffMetadata, selection: SelectedLineRange, split = false): string {
     const side = selection.side ?? 'additions'
+    const endSide = selection.endSide ?? side
+    if (endSide !== side) return selectedCrossSideLines(file, selection, side, endSide, split)
     const first = Math.min(selection.start, selection.end),
         last = Math.max(selection.start, selection.end)
     const lines = side === 'deletions' ? file.deletionLines : file.additionLines
@@ -79,4 +81,51 @@ export function selectedDiffLines(file: FileDiffMetadata, selection: SelectedLin
             result.push(lines[index + line - start].replace(/\r?\n$/, ''))
     }
     return result.join('\n')
+}
+
+/** Mixed-side selections copy display rows, left before right, with context once and no patch markers. */
+function selectedCrossSideLines(
+    file: FileDiffMetadata,
+    selection: SelectedLineRange,
+    side: 'additions' | 'deletions',
+    endSide: 'additions' | 'deletions',
+    split: boolean
+): string {
+    const rows: string[] = []
+    let first: number | undefined, last: number | undefined
+    for (const hunk of file.hunks) {
+        for (const content of hunk.hunkContent) {
+            const append = (deletion: number | undefined, addition: number | undefined) => {
+                const coordinates = {
+                    deletions:
+                        deletion === undefined ? undefined : hunk.deletionStart + deletion - hunk.deletionLineIndex,
+                    additions:
+                        addition === undefined ? undefined : hunk.additionStart + addition - hunk.additionLineIndex
+                }
+                if (coordinates[side] === selection.start) first = rows.length
+                if (coordinates[endSide] === selection.end) last = rows.length
+                const text: string[] = []
+                if (deletion !== undefined) text.push(file.deletionLines[deletion].replace(/\r?\n$/, ''))
+                if (addition !== undefined && (deletion === undefined || content.type !== 'context'))
+                    text.push(file.additionLines[addition].replace(/\r?\n$/, ''))
+                rows.push(text.join('\n'))
+            }
+            if (content.type === 'context') {
+                for (let i = 0; i < content.lines; i++)
+                    append(content.deletionLineIndex + i, content.additionLineIndex + i)
+            } else if (split) {
+                for (let i = 0; i < Math.max(content.deletions, content.additions); i++)
+                    append(
+                        i < content.deletions ? content.deletionLineIndex + i : undefined,
+                        i < content.additions ? content.additionLineIndex + i : undefined
+                    )
+            } else {
+                for (let i = 0; i < content.deletions; i++) append(content.deletionLineIndex + i, undefined)
+                for (let i = 0; i < content.additions; i++) append(undefined, content.additionLineIndex + i)
+            }
+        }
+    }
+    return first === undefined || last === undefined
+        ? ''
+        : rows.slice(Math.min(first, last), Math.max(first, last) + 1).join('\n')
 }

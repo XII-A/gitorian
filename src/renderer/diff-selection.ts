@@ -20,20 +20,24 @@ export function selectedSource(range: Range, root: ShadowRoot): string | undefin
         before.setEnd(contents.startContainer, contents.startOffset)
         const start = before.toString().length
         const indent = Number(line.dataset.indentCharacters ?? 0)
-        selected.push((start <= indent ? (line.textContent ?? '').slice(0, start) : '') + contents.toString())
+        // Pierre gives empty rows a newline placeholder; separators below already represent it.
+        const text = line.textContent === '\n' ? '' : contents.toString()
+        selected.push((start <= indent ? (line.textContent ?? '').slice(0, start) : '') + text)
     }
     return selected.length ? selected.join('\n') : undefined
 }
 
 export function sourceSelection(root: ShadowRoot): string | undefined {
     const selection = window.getSelection()
-    if (!selection || selection.isCollapsed) return undefined
+    if (!selection) return undefined
     const composed = selection.getComposedRanges?.({ shadowRoots: [root] })[0]
     const range = document.createRange()
     if (composed) {
+        if (composed.startContainer === composed.endContainer && composed.startOffset === composed.endOffset)
+            return undefined
         range.setStart(composed.startContainer, composed.startOffset)
         range.setEnd(composed.endContainer, composed.endOffset)
-    } else if (selection.rangeCount) return selectedSource(selection.getRangeAt(0), root)
+    } else if (!selection.isCollapsed && selection.rangeCount) return selectedSource(selection.getRangeAt(0), root)
     else return undefined
     if (range.startContainer.getRootNode() !== root) return undefined
     return selectedSource(range, root)
