@@ -5,15 +5,6 @@
 .writing-workspace,
 .ws-reference {
     --workspace-footer-height: 64px;
-    --diff-background-color: var(--surface);
-    --diff-text-color: var(--foreground);
-    --diff-selection-background-color: var(--accent-subtle);
-    --diff-gutter-insert-background-color: color-mix(in oklab, var(--success) 9%, var(--surface));
-    --diff-gutter-delete-background-color: color-mix(in oklab, var(--danger) 8%, var(--surface));
-    --diff-code-insert-background-color: color-mix(in oklab, var(--success) 7%, var(--surface));
-    --diff-code-delete-background-color: color-mix(in oklab, var(--danger) 6%, var(--surface));
-    --diff-code-insert-edit-background-color: color-mix(in oklab, var(--success) 16%, var(--surface));
-    --diff-code-delete-edit-background-color: color-mix(in oklab, var(--danger) 15%, var(--surface));
     color: var(--foreground);
     background: var(--background);
     font: var(--text-sm)/1.6 var(--font-display);
@@ -416,31 +407,6 @@
     flex-direction: column;
     gap: var(--space-4);
 }
-.ws-diff-source-line {
-    display: block;
-    min-height: 1lh;
-    text-indent: calc(-1 * var(--diff-indent, 0ch));
-    overflow: hidden;
-    tab-size: 4;
-}
-.ws-diff-viewer[data-wrap='true'] .diff {
-    min-width: 100%;
-}
-.ws-diff-viewer[data-wrap='false'] .diff {
-    width: max-content;
-    min-width: 100%;
-    table-layout: auto;
-}
-.ws-diff-viewer[data-wrap='false'] .diff-code {
-    white-space: pre;
-    word-break: normal;
-    overflow-wrap: normal;
-}
-.ws-diff-viewer[data-wrap='true'] .diff-code {
-    white-space: pre-wrap;
-    word-break: normal;
-    overflow-wrap: anywhere;
-}
 .ws-diff-layout,
 .ws-diff-layout * {
     user-select: none;
@@ -474,19 +440,6 @@
     flex: 1;
     min-height: 0;
     width: 100%;
-}
-.ws-diff-scroll .diff {
-    font-size: var(--text-xs);
-    line-height: 1.7;
-    min-width: 560px;
-}
-.ws-diff-scroll .diff-gutter {
-    color: var(--text-secondary);
-    user-select: none;
-}
-.ws-diff-scroll .diff-hunk-header {
-    background: var(--surface-muted);
-    color: var(--text-secondary);
 }
 .ws-diff-scroll .diff-fallback {
     margin: 0;
@@ -575,40 +528,6 @@
     align-content: start;
     gap: var(--space-6);
     padding: var(--space-6);
-}
-:root {
-    --syntax-keyword: oklch(43% 0.16 290);
-    --syntax-string: oklch(40% 0.1 155);
-    --syntax-value: oklch(43% 0.12 55);
-    --syntax-name: var(--foreground);
-}
-:root[data-theme='dark'] {
-    --syntax-keyword: oklch(82% 0.1 290);
-    --syntax-string: oklch(82% 0.1 155);
-    --syntax-value: oklch(85% 0.1 65);
-}
-.ws-diff-scroll .token.comment {
-    color: var(--text-muted);
-    font-style: italic;
-}
-.ws-diff-scroll :is(.token.keyword, .token.tag, .token.selector, .token.atrule, .token.title, .token.list) {
-    color: var(--syntax-keyword);
-}
-.ws-diff-scroll :is(.token.string, .token.template-string, .token.attr-value, .token.regex, .token.url) {
-    color: var(--syntax-string);
-}
-.ws-diff-scroll :is(.token.number, .token.boolean, .token.constant, .token.attr-name) {
-    color: var(--syntax-value);
-}
-.ws-diff-scroll :is(.token.function, .token.class-name, .token.property) {
-    color: var(--syntax-name);
-    font-weight: 500;
-}
-.ws-diff-scroll :is(.token.bold, .token.important) {
-    font-weight: 500;
-}
-.ws-diff-scroll .token.italic {
-    font-style: italic;
 }
 .ws-detached-status {
     display: flex;
@@ -1021,4 +940,14 @@
     padding: var(--space-3) var(--space-6);
     color: var(--text-secondary);
     font-size: var(--text-sm);
+}
+
+.ws-pierre-viewport {
+    min-height: 0;
+    height: 100%;
+}
+.ws-diff-fallback-actions {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
 }

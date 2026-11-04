@@ -26,16 +26,39 @@ afterEach(() => {
 it('highlights selected code languages without serializing decorations or guessing plain and unknown languages', async () => {
     const writing = open('<pre data-language="typescript"><code>const count: number = 42</code></pre>')
     render(createElement(EditorContent, { editor: writing }))
-    await expect.poll(() => writing.view.dom.querySelector('.hljs-keyword')?.textContent).toBe('const')
-    expect(writing.getHTML()).not.toContain('hljs-')
+    await expect
+        .poll(() => writing.view.dom.querySelector('[style*="--code-token-keyword"]')?.textContent?.trim())
+        .toBe('const')
+    expect(writing.getHTML()).not.toContain('data-code-token')
     writing.commands.setTextSelection(2)
     writing.commands.updateAttributes('codeBlock', { language: null })
-    expect(writing.view.dom.querySelector('[class*="hljs-"]')).toBeNull()
+    expect(writing.view.dom.querySelector('[data-code-token]')).toBeNull()
     writing.commands.updateAttributes('codeBlock', { language: 'custom-language' })
-    expect(writing.view.dom.querySelector('[class*="hljs-"]')).toBeNull()
+    expect(writing.view.dom.querySelector('[data-code-token]')).toBeNull()
     writing.commands.updateAttributes('codeBlock', { language: 'python' })
-    expect(writing.view.dom.querySelector('.hljs-number')?.textContent).toBe('42')
+    expect(writing.view.dom.querySelector('[style*="--code-token-constant"]')?.textContent).toBe('42')
     expect(writing.state.doc.firstChild?.textContent).toBe('const count: number = 42')
+})
+
+it('keeps highlighting readiness out of document updates and history while code edits remain undoable', async () => {
+    let updates = 0
+    const writing = open('<pre data-language="typescript"><code>const value = "😀";</code></pre><p>Notes</p>')
+    writing.on('update', () => {
+        updates++
+    })
+    render(createElement(EditorContent, { editor: writing }))
+    await expect.poll(() => writing.view.dom.querySelectorAll('[data-code-token]').length).toBeGreaterThan(0)
+    expect(updates).toBe(0)
+    expect(writing.can().undo()).toBe(false)
+    const before = writing.getJSON()
+    writing.commands.setTextSelection(7)
+    writing.commands.insertContent('changed')
+    expect(writing.getText()).toContain('changed')
+    writing.commands.undo()
+    expect(writing.getJSON()).toEqual(before)
+    writing.commands.redo()
+    expect(writing.getText()).toContain('changed')
+    expect(writing.getHTML()).not.toContain('data-code-token')
 })
 
 function open(content = '<p>First thought</p>') {

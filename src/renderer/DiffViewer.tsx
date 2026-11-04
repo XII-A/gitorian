@@ -1,7 +1,6 @@
 import { Button } from './components/arc/button/button'
-import { useEffect, useMemo, useState, type ReactNode, type CSSProperties } from 'react'
-import { Diff, Hunk, type FileData, type HunkTokens } from 'react-diff-view'
-import { cachedDiff, cachedDiffTokens, loadDiff, loadDiffTokens } from './diff-loader'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { cachedDiff, loadDiff } from './diff-loader'
 import { DiffSkeleton } from './DiffSkeleton'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { ChangedFilePicker } from './ChangedFilePicker'
@@ -10,10 +9,11 @@ import { EmptyState } from './components/arc/empty-state/empty-state'
 import { FileDiff, SlidersHorizontal } from 'lucide-react'
 import { Switch } from './components/arc/switch/switch'
 import { Popover, PopoverContent, PopoverTrigger } from './components/arc/popover/popover'
-import { presentationTokens, selectedSource } from './diff-presentation'
 import { ChangeCounts } from './ChangeStatistics'
-import { diffLineStats } from '../shared/change-statistics'
 import { providerName, type Provider } from '../shared/provider-accounts'
+import { codeLimits, loadCodeHighlighting } from './code-highlighting'
+import { diffStats, type DiffFile } from './diff-model'
+import { DiffSurface } from './DiffSurface'
 
 function DiffEmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
     return (
@@ -44,9 +44,11 @@ export function DiffViewer({
     const [selected, setSelected] = useState('')
     const [wrapLines, setWrapLines] = useState(true)
     const [originalIndentation, setOriginalIndentation] = useState(false)
-    const [parsed, setParsed] = useState<{ text: string; files: Awaited<ReturnType<typeof loadDiff>> }>()
-    const [highlighted, setHighlighted] = useState<{ file: FileData; tokens?: HunkTokens }>()
-    const needsParsing = text.startsWith('diff --git') && text.length <= 2_000_000
+    const [parsed, setParsed] = useState<{ text: string; files: DiffFile[] }>()
+    const [runtime, setRuntime] = useState<'ready' | 'unavailable'>()
+    const [failed, setFailed] = useState<DiffFile>()
+    const [copyStatus, setCopyStatus] = useState<{ file: DiffFile; status: 'copied' | 'error' }>()
+    const needsParsing = text.startsWith('diff --git') && text.length <= codeLimits.patch
     const files = useMemo(() => cachedDiff(text) ?? (parsed?.text === text ? parsed.files : []), [text, parsed])
     useEffect(() => {
         if (!needsParsing) return
@@ -58,44 +60,25 @@ export function DiffViewer({
             current = false
         }
     }, [text, needsParsing])
-    const paths = useMemo(
-        () => files.map((file) => (file.newPath === '/dev/null' ? file.oldPath : file.newPath)),
-        [files]
-    )
-    const active = useMemo(
-        () =>
-            files.find((file) => (file.newPath === '/dev/null' ? file.oldPath : file.newPath) === selected) ?? files[0],
-        [files, selected]
-    )
     useEffect(() => {
-        if (!active) return
         let current = true
-        void loadDiffTokens(active).then((tokens) => {
-            if (current) setHighlighted({ file: active, tokens })
+        void loadCodeHighlighting().then((result) => {
+            if (current) setRuntime(result.status)
         })
         return () => {
             current = false
         }
-    }, [active])
-    const tokens = active
-        ? (cachedDiffTokens(active) ?? (highlighted?.file === active ? highlighted.tokens : undefined))
-        : undefined
-    const lineCount = useMemo(
-        () => active?.hunks.reduce((total, hunk) => total + hunk.changes.length, 0) ?? 0,
-        [active]
-    )
-    const displayTokens = useMemo(
-        () => (active && lineCount <= 4000 ? presentationTokens(active, tokens, !originalIndentation) : undefined),
-        [active, tokens, originalIndentation, lineCount]
-    )
-    const unavailable =
-        text.length > 2_000_000 || /^(Diff is too large\.|GitHub could not provide this diff)/.test(text)
+    }, [])
+    const paths = useMemo(() => files.map((file) => file.name), [files])
+    const active = files.find((file) => file.name === selected) ?? files[0]
+    const onFailure = useCallback(() => setFailed(active), [active])
+    const ready = runtime === 'ready' && active !== failed
     const sourceAction = onOpenSource && (
         <Button variant="secondary" size="sm" onClick={onOpenSource}>
             {provider ? `Open on ${providerName(provider)}` : 'Open source'}
         </Button>
     )
-    if (unavailable)
+    if (text.length > codeLimits.patch || /^(Diff is too large\.|GitHub could not provide this diff)/.test(text))
         return (
             <DiffEmptyState
                 title={
@@ -116,116 +99,115 @@ export function DiffViewer({
             />
         )
     if (needsParsing && !cachedDiff(text) && parsed?.text !== text) return <DiffSkeleton label="Preparing changes" />
-    if (!files.length)
+    if (!active)
         return (
             <ScrollArea className="ws-diff-scroll" orientation="both" label="Text diff" fade={0}>
-                <pre className="diff-fallback">{text.slice(0, 8000)}</pre>
+                <pre className="diff-fallback">{text}</pre>
             </ScrollArea>
         )
-    if (!active) return null
-    const path = active.newPath === '/dev/null' ? active.oldPath : active.newPath
     return (
         <div className="diff-viewer ws-diff-viewer" data-wrap={wrapLines}>
             <div className="ws-diff-tools">
-                <ChangedFilePicker value={path} onValueChange={setSelected} paths={paths} />
-                <div className="ws-diff-actions">
-                    <SegmentedControl
-                        className="ws-diff-layout"
-                        size="sm"
-                        label="Diff layout"
-                        value={mode}
-                        onValueChange={setMode}
-                        options={[
-                            { value: 'unified', label: 'Unified' },
-                            { value: 'split', label: 'Split' }
-                        ]}
-                    />
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button
-                                className="ws-diff-settings"
-                                variant="ghost"
-                                size="sm"
-                                aria-label="Diff display options"
-                                title="Display options"
-                            >
-                                <SlidersHorizontal size={16} aria-hidden="true" />
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent align="end" className="ws-diff-options" aria-label="Diff display options">
-                            <Switch label="Wrap lines" checked={wrapLines} onCheckedChange={setWrapLines} />
-                            <Switch
-                                label="Original indentation"
-                                checked={originalIndentation}
-                                onCheckedChange={setOriginalIndentation}
-                            />
-                        </PopoverContent>
-                    </Popover>
-                </div>
+                <ChangedFilePicker value={active.name} onValueChange={setSelected} paths={paths} />
+                {ready && (
+                    <div className="ws-diff-actions">
+                        <SegmentedControl
+                            className="ws-diff-layout"
+                            size="sm"
+                            label="Diff layout"
+                            value={mode}
+                            onValueChange={setMode}
+                            options={[
+                                { value: 'unified', label: 'Unified' },
+                                { value: 'split', label: 'Split' }
+                            ]}
+                        />
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    className="ws-diff-settings"
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-label="Diff display options"
+                                    title="Display options"
+                                >
+                                    <SlidersHorizontal size={16} aria-hidden="true" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="end" className="ws-diff-options" aria-label="Diff display options">
+                                <Switch label="Wrap lines" checked={wrapLines} onCheckedChange={setWrapLines} />
+                                <Switch
+                                    label="Original indentation"
+                                    checked={originalIndentation}
+                                    onCheckedChange={setOriginalIndentation}
+                                />
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+                )}
             </div>
-            <section
-                className="file-diff ws-file-diff"
-                aria-label={`Changes in ${path}`}
-                onCopy={(event) => {
-                    const selection = window.getSelection()
-                    if (!selection?.rangeCount || !event.clipboardData) return
-                    const source = selectedSource(selection.getRangeAt(0), event.currentTarget)
-                    if (source !== undefined) {
-                        event.clipboardData.setData('text/plain', source)
-                        event.preventDefault()
-                    }
-                }}
-            >
+            <section className="file-diff ws-file-diff" aria-label={`Changes in ${active.name}`}>
                 <div className="ws-file-heading">
-                    <code>{path}</code>
-                    <ChangeCounts stats={diffLineStats(active)} />
+                    <code>{active.name}</code>
+                    <ChangeCounts stats={diffStats(active)} />
                 </div>
-                {lineCount > 4000 ? (
+                {active.binary || !active.hunks.length ? (
                     <DiffEmptyState
-                        title="This file is too large to display"
-                        description="This file has more than 4,000 diff lines. View the full changes at the source."
-                        action={sourceAction}
-                    />
-                ) : !active.hunks.length ? (
-                    <DiffEmptyState
-                        title={active.isBinary ? 'Binary file' : 'No text changes'}
+                        title={active.binary ? 'Binary file' : 'No text changes'}
                         description={
-                            active.isBinary
+                            active.binary
                                 ? 'Binary files do not have a text diff.'
                                 : 'This file contains only a rename or metadata changes.'
                         }
                         action={sourceAction}
                     />
+                ) : ready ? (
+                    <DiffSurface
+                        file={active}
+                        split={mode === 'split'}
+                        wrap={wrapLines}
+                        originalIndentation={originalIndentation}
+                        onFailure={onFailure}
+                    />
                 ) : (
-                    <ScrollArea
-                        className="ws-diff-scroll"
-                        orientation="both"
-                        label={`Scrollable diff for ${path}`}
-                        fade={0}
-                    >
-                        <Diff
-                            viewType={mode === 'split' ? 'split' : 'unified'}
-                            diffType={active.type}
-                            hunks={active.hunks}
-                            tokens={displayTokens}
-                            renderToken={(token, renderDefault, index) =>
-                                token.type === 'source-line' ? (
-                                    <span
-                                        key={index}
-                                        className="ws-diff-source-line"
-                                        data-indent-characters={token.indentCharacters}
-                                        style={{ '--diff-indent': `${token.indentColumns}ch` } as CSSProperties}
-                                    >
-                                        {token.children?.map(renderDefault)}
-                                    </span>
-                                ) : (
-                                    renderDefault(token, index)
-                                )
-                            }
+                    <>
+                        <div className="ws-diff-notice" role="status">
+                            {runtime === undefined
+                                ? 'Preparing syntax highlighting'
+                                : 'Showing the raw patch. Syntax highlighting is unavailable.'}
+                        </div>
+                        {runtime !== undefined && (
+                            <div className="ws-diff-fallback-actions">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={async () => {
+                                        try {
+                                            await window.journal.writeClipboardText(active.raw)
+                                            setCopyStatus({ file: active, status: 'copied' })
+                                        } catch {
+                                            setCopyStatus({ file: active, status: 'error' })
+                                        }
+                                    }}
+                                >
+                                    {copyStatus?.file === active
+                                        ? copyStatus.status === 'copied'
+                                            ? 'Patch copied'
+                                            : 'Copy failed. Try again'
+                                        : 'Copy patch'}
+                                </Button>
+                                {sourceAction}
+                            </div>
+                        )}
+                        <ScrollArea
+                            className="ws-diff-scroll"
+                            orientation="both"
+                            label={`Raw patch for ${active.name}`}
+                            fade={0}
                         >
-                            {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
-                        </Diff>
-                    </ScrollArea>
+                            <pre className="diff-fallback">{active.raw}</pre>
+                        </ScrollArea>
+                    </>
                 )}
             </section>
         </div>

@@ -9,7 +9,7 @@ import { execFile, execFileSync } from 'node:child_process'
 import { commits, commitDetails, inspectRepository, githubRemote, indexCommits } from '../src/main/git'
 import { workspace } from './fixtures'
 import { inbox, weekOf, type Repository } from '../src/shared/model'
-import { parseDiff } from 'react-diff-view'
+import parser from 'gitdiff-parser'
 import { hasCachedDetails } from '../src/renderer/activity-cache'
 it('chooses a GitHub fetch source using upstream, origin, then another named remote', async () => {
     const app = await workspace()
@@ -58,7 +58,8 @@ it('loads first-parent merge changes and replaces cached combined patches', asyn
         const reply = await run(app.service.handle({ type: 'details', activityId: activity.id }))
         expect(reply.diff).toMatch(/^diff --git /)
         expect(
-            parseDiff(reply.diff!)
+            parser
+                .parse(reply.diff!)
                 .map((file) => file.newPath)
                 .sort()
         ).toEqual(['feature.txt', 'work.txt'])

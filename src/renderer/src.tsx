@@ -5,7 +5,7 @@ import '@fontsource-variable/geist/wght-italic.css'
 import '@fontsource-variable/geist-mono'
 import '@fontsource-variable/geist-mono/wght-italic.css'
 import './components/arc/foundation.css'
-import 'react-diff-view/style/index.css'
+import './code-highlighting.css'
 import './styles.css'
 import './desktop.css'
 

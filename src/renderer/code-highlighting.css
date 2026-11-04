@@ -1,0 +1,20 @@
+:root {
+    --code-background: var(--surface);
+    --code-foreground: var(--foreground);
+    --code-token-comment: var(--text-muted);
+    --code-token-keyword: oklch(43% 0.16 290);
+    --code-token-string-expression: oklch(40% 0.1 155);
+    --code-token-string: var(--code-token-string-expression);
+    --code-token-constant: oklch(43% 0.12 55);
+    --code-token-function: var(--foreground);
+    --code-token-parameter: var(--foreground);
+    --code-token-punctuation: var(--foreground);
+    --code-token-link: var(--accent);
+    --code-token-inserted: var(--success);
+    --code-token-deleted: var(--danger);
+}
+:root[data-theme='dark'] {
+    --code-token-keyword: oklch(82% 0.1 290);
+    --code-token-string-expression: oklch(82% 0.1 155);
+    --code-token-constant: oklch(85% 0.1 65);
+}
