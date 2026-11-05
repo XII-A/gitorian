@@ -21,7 +21,7 @@ export function diffLineStats(file: {
 const categories: ChangeCategory[] = ['Runtime', 'Tests', 'Evals', 'Docs', 'Other']
 
 /** Path conventions partition files once. Rename destinations describe the resulting work. */
-function categoryFor(name: string): ChangeCategory {
+export function changeCategoryFor(name: string): ChangeCategory {
     const path = name.toLowerCase()
     if (/(^|\/)(evals?|__evals__|evaluations?|benchmarks?)(\/|$)|[.-](eval|bench)\./.test(path)) return 'Evals'
     if (/(^|\/)(__tests__|tests?|specs?|e2e|fixtures?)(\/|$)|[.-](test|spec)\./.test(path)) return 'Tests'
@@ -50,7 +50,7 @@ export function summarizeChanges(files: Activity['files']) {
             binaryFiles++
             continue
         }
-        const group = groups.find((group) => group.category === categoryFor(file.name))!
+        const group = groups.find((group) => group.category === changeCategoryFor(file.name))!
         group.files++
         group.additions += file.lineStats.additions
         group.deletions += file.lineStats.deletions

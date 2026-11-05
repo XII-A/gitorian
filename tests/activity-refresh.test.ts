@@ -45,10 +45,44 @@ async function render(run: (command: Command) => Promise<Reply | undefined>, sta
     })
 }
 beforeEach(() => {
+    localStorage.clear()
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
     toast.mockClear()
     container = document.createElement('div')
     root = createRoot(container)
+})
+
+it('announces each crash once across recovery remounts, and announces a new crash', async () => {
+    let recoveryNoticeId = 'crash-one'
+    Object.defineProperty(window, 'journal', {
+        configurable: true,
+        value: {
+            diagnostics: {
+                state: () => Promise.resolve({ recovery: true, available: true, liveRecovery: false, recoveryNoticeId })
+            }
+        }
+    })
+    const mount = async () => {
+        await act(async () => {
+            root.render(createElement(RecoveryProvider, null))
+            await Promise.resolve()
+        })
+    }
+    await mount()
+    expect(toast).toHaveBeenCalledTimes(1)
+    await act(async () => {
+        root.render(null)
+        await Promise.resolve()
+    })
+    await mount()
+    expect(toast).toHaveBeenCalledTimes(1)
+    recoveryNoticeId = 'crash-two'
+    await act(async () => {
+        root.render(null)
+        await Promise.resolve()
+    })
+    await mount()
+    expect(toast).toHaveBeenCalledTimes(2)
 })
 afterEach(async () => {
     await act(async () => {

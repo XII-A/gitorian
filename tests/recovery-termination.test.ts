@@ -31,7 +31,8 @@ it.skipIf(process.platform !== 'win32')(
             await rm(directory, { recursive: true, force: true })
         }
     },
-    20000
+    // Include fixture startup and exit/proof observation around the adapter's 20-second deadline.
+    30000
 )
 
 it.skipIf(process.platform !== 'win32')(
@@ -63,5 +64,6 @@ it.skipIf(process.platform !== 'win32')(
             if (desktop.exitCode === null) desktop.kill()
         }
     },
-    20000
+    // Include fixture startup and exit/proof observation around the adapter's 20-second deadline.
+    30000
 )

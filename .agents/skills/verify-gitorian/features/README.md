@@ -1,6 +1,6 @@
 # Gitorian verification map
 
-- [Crash recovery](crash-recovery.md): contextual report copy, explicit refresh resumption, independent Windows hang controls, restart and persistence. `pnpm test:e2e crash-recovery startup-recovery settings-refresh` owns the desktop paths; Windows native process ownership is tested by `tests/recovery-termination.test.ts`.
+- [Crash recovery](crash-recovery.md): once-per-incident notification, contextual report copy, explicit refresh resumption, independent Windows hang controls, restart and persistence. `pnpm test:e2e crash-recovery startup-recovery settings-refresh` owns the desktop paths; Windows native process ownership is tested by `tests/recovery-termination.test.ts`.
 
 - [Onboarding](onboarding.md): first-time checklist, direct Settings actions, writing access, dismissal and header popover, real completion truth, reload persistence, existing-profile migration, themes, narrow widths and zoom. Run `pnpm verify onboarding`; use `GITORIAN_VERIFY_ONBOARDING_INLINE=1` for completion from the inline card.
 - [Checklist motion](onboarding.md#disclosure-text-stability): `pnpm verify onboarding-disclosure` isolates step/body expansion and native text raster stability with no repositories or account setup.

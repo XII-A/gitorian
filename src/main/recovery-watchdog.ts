@@ -152,7 +152,12 @@ function recover() {
         if (!parentAlive && !restart) process.exit(0)
     })
 }
-send({ type: 'ready', recovery: reports.recoveryPending, available: reports.available })
+send({
+    type: 'ready',
+    recovery: reports.recoveryPending,
+    available: reports.available,
+    recoveryNoticeId: reports.recoveryNoticeId
+})
 process.on('message', (message: unknown) => {
     if (!message || typeof message !== 'object' || !('type' in message)) return
     if (message.type === 'pulse') {

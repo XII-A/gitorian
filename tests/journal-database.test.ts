@@ -16,6 +16,56 @@ async function open() {
     return { root, database: await JournalDatabase.open(join(root, 'journal.sqlite')) }
 }
 
+it('supplies diff defaults for older journals without saved diff preferences', async () => {
+    const { database } = await open()
+    try {
+        const backup = JSON.parse(await database.export())
+        delete backup.state.settings.diff
+        await database.restore(JSON.stringify(backup))
+        expect(database.config.settings.diff).toEqual({
+            dockedSplit: false,
+            detachedSplit: true,
+            wrapLines: true,
+            originalIndentation: false,
+            showLineCounts: true,
+            fileList: 'tree',
+            order: 'path'
+        })
+    } finally {
+        await database.close()
+    }
+})
+
+it('merges independent diff choices and protects them from stale settings saves across restart', async () => {
+    const { database, root } = await open()
+    const stale = database.config.settings
+    try {
+        await Promise.all([
+            database.saveDiffPreferences({ dockedSplit: true, wrapLines: false }),
+            database.saveDiffPreferences({ detachedSplit: false, originalIndentation: true }),
+            database.saveDiffPreferences({ showLineCounts: false, fileList: 'list', order: 'changes' })
+        ])
+        await database.saveSettings({ ...stale, refreshMinutes: 0 })
+    } finally {
+        await database.close()
+    }
+    const reopened = await JournalDatabase.open(join(root, 'journal.sqlite'))
+    try {
+        expect(reopened.config.settings.diff).toEqual({
+            dockedSplit: true,
+            detachedSplit: false,
+            wrapLines: false,
+            originalIndentation: true,
+            showLineCounts: false,
+            fileList: 'list',
+            order: 'changes'
+        })
+        expect(reopened.config.settings.refreshMinutes).toBe(0)
+    } finally {
+        await reopened.close()
+    }
+})
+
 it('retains local writing policy on unchanged refresh, accepts remote edits, and rejects stale refresh', async () => {
     const { database } = await open()
     const body = {

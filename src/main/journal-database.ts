@@ -6,6 +6,7 @@ import { imageIdPattern, imageLimits } from '../shared/images'
 import { stateSchema } from '../shared/model'
 import type { Activity, Destination, Draft, Entry, Repository, Selection, State } from '../shared/model'
 import type { JournalImage } from '../shared/images'
+import type { DiffPreferences } from '../shared/diff-preferences'
 import type { ProviderAccount } from '../shared/provider-accounts'
 import { upgradeJournalBackup } from '../shared/journal-upgrade'
 
@@ -132,6 +133,9 @@ export class JournalDatabase {
     }
     saveSettings(settings: State['settings'], generation = this.generation) {
         return this.request('saveSettings', settings, generation)
+    }
+    saveDiffPreferences(preferences: Partial<DiffPreferences>, generation = this.generation) {
+        return this.request('saveDiffPreferences', preferences, generation)
     }
     setDestination(destination: Destination | undefined, generation = this.generation) {
         return this.request('setDestination', destination, generation)

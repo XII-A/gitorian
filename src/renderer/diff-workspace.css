@@ -1,0 +1,250 @@
+.diff-workspace {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    background: var(--surface);
+}
+
+.diff-explorer {
+    display: flex;
+    flex: 0 0 clamp(240px, 24%, 320px);
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border-inline-end: 1px solid var(--border-subtle);
+    padding: 0 var(--space-2) var(--space-2);
+}
+
+.diff-workspace-reader,
+.diff-workspace-stream {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.diff-workspace-toolbar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-width: 0;
+    min-height: var(--space-12);
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.diff-workspace-summary {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.diff-workspace-summary .line-counts {
+    font-size: var(--text-xs);
+}
+
+.diff-workspace-actions,
+.diff-explorer-actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.diff-toolbar-icon {
+    flex: none;
+    width: var(--space-8);
+    min-height: var(--space-8);
+    padding: 0;
+}
+
+.diff-toolbar-icon[data-active='true'] {
+    color: var(--accent-strong);
+    background: var(--accent-subtle);
+}
+
+.diff-options-popover {
+    width: 248px;
+    max-width: min(calc(100dvi - var(--space-8)), var(--radix-popover-content-available-width));
+    padding: 0;
+    overflow: hidden;
+}
+
+.diff-options-body {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-3);
+}
+
+.diff-options-viewport {
+    --focus-outline-offset: -2px;
+    overscroll-behavior: contain;
+}
+
+.diff-options-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.diff-options-select {
+    min-height: var(--space-8);
+    padding-inline: var(--space-2);
+    font-weight: 500;
+}
+
+.diff-options-sort {
+    min-height: var(--space-8);
+    padding-inline: var(--space-2);
+}
+
+.diff-options-reset {
+    flex: none;
+    width: var(--space-6);
+    min-height: var(--space-6);
+    padding: 0;
+}
+
+.diff-options-group {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    min-width: 0;
+}
+
+.diff-options-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-width: 0;
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.diff-file-tree {
+    --diff-explorer-icon-size: var(--space-8);
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.diff-explorer-heading {
+    position: relative;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: var(--space-12);
+    padding: var(--space-2) var(--space-1) var(--space-2) var(--space-2);
+}
+
+.diff-explorer-heading h3 {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--foreground);
+    font-size: var(--text-xs);
+    font-weight: 500;
+}
+
+.diff-explorer-heading h3 > span {
+    color: var(--text-secondary);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+
+.diff-explorer-search-slot {
+    flex: none;
+    width: var(--diff-explorer-icon-size);
+    height: var(--diff-explorer-icon-size);
+}
+
+.diff-explorer-tools {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.diff-explorer-heading .diff-explorer-search {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: var(--space-2);
+    inset-inline-end: var(--space-1);
+    width: auto;
+    transform: translateY(-50%);
+}
+
+.diff-explorer-heading[data-search-expanded='true'] h3,
+.diff-explorer-heading[data-search-expanded='true'] .diff-explorer-tools {
+    visibility: hidden;
+}
+
+.diff-tree-scroll {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overscroll-behavior: contain;
+}
+
+.diff-tree-scroll .line-counts,
+.diff-tree-scroll .line-counts-note {
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+}
+
+.diff-tree-folder-counts {
+    display: inline-flex;
+    align-items: baseline;
+}
+
+.diff-tree-empty {
+    padding: var(--space-4) var(--space-2);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+}
+
+.diff-tree-empty p {
+    margin: 0 0 var(--space-2);
+}
+
+@media (pointer: coarse) {
+    .diff-explorer {
+        flex-basis: 288px;
+    }
+    .diff-options-popover {
+        width: 288px;
+    }
+    .diff-options-reset {
+        width: var(--control-height-md);
+        min-height: var(--control-height-md);
+    }
+    .diff-file-tree {
+        --diff-explorer-icon-size: var(--control-height-md);
+    }
+    .diff-toolbar-icon {
+        width: var(--control-height-md);
+        min-height: var(--control-height-md);
+    }
+}
+
+@container diff-workspace (max-width: 420px) {
+    .diff-workspace-toolbar {
+        padding-inline: var(--space-3);
+    }
+}

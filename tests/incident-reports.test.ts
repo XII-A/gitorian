@@ -38,13 +38,18 @@ it('archives an unexpected exit across clean recovery sessions until explicitly 
     try {
         new IncidentReports(directory, identity)
         const recovered = new IncidentReports(directory, identity)
+        expect(recovered.recoveryNoticeId).toBeTruthy()
         recovered.finish()
         const reopened = new IncidentReports(directory, identity)
         expect(reopened.recoveryPending).toBe(true)
+        expect(reopened.recoveryNoticeId).toBeUndefined()
         expect(reopened.report()).toContain('unexpected-exit')
         reopened.resume()
         reopened.finish()
         expect(new IncidentReports(directory, identity).recoveryPending).toBe(false)
+        const crashedAgain = new IncidentReports(directory, identity)
+        expect(crashedAgain.recoveryNoticeId).toBeTruthy()
+        expect(crashedAgain.recoveryNoticeId).not.toBe(recovered.recoveryNoticeId)
     } finally {
         await rm(directory, { recursive: true, force: true })
     }

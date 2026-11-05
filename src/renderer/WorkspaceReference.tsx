@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Activity, Command, Reply, State } from '../shared/model'
+import type { Activity, Command, Reply, State, InspectorTab } from '../shared/model'
 import { WorkspaceInspector } from './WorkspaceInspector'
 import { Button } from './components/arc/button/button'
 import { Editor } from './Editor'
@@ -11,15 +11,17 @@ export function WorkspaceReference({
     state,
     run,
     kind,
-    id
+    id,
+    initialTab = 'details'
 }: {
     state: State
     run: (command: Command) => Promise<Reply | undefined>
     kind: string
     id: string
+    initialTab?: InspectorTab
 }) {
     const [selectedId, setSelectedId] = useState(id)
-    const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('details')
+    const [inspectionTab, setInspectionTab] = useState<InspectorTab>(initialTab)
     const activity = state.activities.find((item) => item.id === selectedId)
     const entry = state.entries.find((item) => item.id === id)
     const [status, setStatus] = useState('')
@@ -82,9 +84,9 @@ export function WorkspaceReference({
     useEffect(() => {
         if (activity && !loaded.current) {
             loaded.current = true
-            void inspect(activity)
+            if (initialTab !== 'related') void inspect(activity, initialTab)
         }
-    }, [activity, inspect])
+    }, [activity, inspect, initialTab])
     const cite = () => {
         if (!activity) return
         setStatus('Sending to your workspace…')

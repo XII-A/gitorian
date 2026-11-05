@@ -264,8 +264,7 @@ p {
 .tiptap h3 {
     font-size: 18px;
 }
-.tiptap pre,
-.diff-fallback {
+.tiptap pre {
     background: var(--surface-muted);
     padding: 14px;
     border-radius: var(--radius-control);

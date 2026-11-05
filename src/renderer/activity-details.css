@@ -400,7 +400,6 @@
     gap: var(--space-4);
     padding: var(--space-4) var(--space-6);
     border-top: 1px solid var(--border);
-    background: var(--surface-raised);
 }
 .hub-detail-source-link {
     display: inline-flex;

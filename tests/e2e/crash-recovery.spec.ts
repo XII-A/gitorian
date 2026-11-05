@@ -70,6 +70,8 @@ test('recovery: contextual diagnostic copy and explicit refresh resumption', asy
     await expect(page.getByRole('region', { name: 'Recovery mode' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Save report', exact: true })).toHaveCount(0)
     await desktop.shot('01-recovery-toast')
+    // Let the entrance settle before retaining the visual comparison.
+    await expect(copy).toBeInViewport({ ratio: 1 })
     await page.locator('.journal-notifications').screenshot({ path: info.outputPath('01b-recovery-toast-detail.png') })
     await page.setViewportSize({ width: 320, height: 740 })
     await expect
@@ -90,12 +92,32 @@ test('recovery: contextual diagnostic copy and explicit refresh resumption', asy
     expect(copied).not.toContain(profile)
     expect(await page.evaluate(() => window.journal.diagnostics!.state())).toMatchObject({ recovery: true })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Resume automatic refresh', exact: true })).toBeVisible()
+    await expect(copy).toHaveCount(0)
     await page.getByRole('button', { name: 'Resume automatic refresh', exact: true }).focus()
     await page.keyboard.press('Enter')
     await expect.poll(() => page.evaluate(() => window.journal.diagnostics!.state())).toMatchObject({ recovery: false })
     await expect(page.getByRole('button', { name: 'Resume automatic refresh', exact: true })).toHaveCount(0)
     await desktop.shot('03-normal-admission')
     await writeFile(info.outputPath('diagnostic-report.txt'), copied)
+})
+
+test('recovery: dismissal stays quiet through reload and clean relaunch without resuming refresh', async ({
+    desktop
+}) => {
+    const { page } = desktop
+    await expect(page.getByRole('button', { name: 'Copy diagnostic report', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Copy diagnostic report', exact: true })).toHaveCount(0)
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Resume automatic refresh', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Copy diagnostic report', exact: true })).toHaveCount(0)
+    const reopened = await desktop.restart()
+    await expect(reopened.page.getByRole('button', { name: 'Resume automatic refresh', exact: true })).toBeVisible()
+    await expect(reopened.page.getByRole('button', { name: 'Copy diagnostic report', exact: true })).toHaveCount(0)
+    expect(await reopened.page.evaluate(() => window.journal.diagnostics!.state())).toMatchObject({ recovery: true })
+    await desktop.shot('04-quiet-relaunch-refresh-still-paused')
 })
 
 test('recovery: independent native controls and report remain available while main is blocked', async ({

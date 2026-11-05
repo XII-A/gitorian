@@ -1,9 +1,13 @@
 .root {
+    --es-size: var(--control-height-md);
     position: relative;
     width: 100%;
-    min-width: var(--control-height-md);
-    height: var(--control-height-md);
+    min-width: var(--es-size);
+    height: var(--es-size);
     pointer-events: none;
+}
+.root[data-size='sm'] {
+    --es-size: var(--space-8);
 }
 /* One shell is both the button and the field. Its width rides a spring and its radius follows the width, from a circle to the control radius. */
 .shell {
@@ -13,9 +17,7 @@
     height: 100%;
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: calc(
-        var(--control-height-md) / 2 - (var(--control-height-md) / 2 - var(--radius-control)) * var(--es-open, 0)
-    );
+    border-radius: calc(var(--es-size) / 2 - (var(--es-size) / 2 - var(--radius-control)) * var(--es-open, 0));
     background: var(--surface);
     color: var(--text-secondary);
     pointer-events: auto;
@@ -40,6 +42,19 @@
     box-shadow: 0 0 0 3px var(--focus-ring);
     color: var(--foreground);
 }
+.root[data-appearance='ghost'] .shell:not([data-expanded]) {
+    border-color: transparent;
+    background: transparent;
+}
+.root[data-appearance='ghost'] .trigger {
+    --focus-outline-offset: -2px;
+}
+.root[data-appearance='ghost'] .icon {
+    top: calc(50% - 8px);
+    left: calc(var(--es-size) / 2 - 8px);
+    width: 16px;
+    height: 16px;
+}
 @media (hover: hover) and (pointer: fine) {
     .shell:not([data-expanded]):hover {
         background: var(--surface-muted);
@@ -51,6 +66,9 @@
     .clear:hover {
         background: var(--surface-muted);
         color: var(--foreground);
+    }
+    .root[data-appearance='ghost'] .shell:not([data-expanded]):hover {
+        background: var(--surface-muted);
     }
 }
 /* A compact press while it is still a button; the morph takes over on release. */
@@ -79,7 +97,7 @@
 .icon {
     position: absolute;
     top: calc(50% - 9px);
-    left: calc(var(--control-height-md) / 2 - 10px);
+    left: calc(var(--es-size) / 2 - 10px);
     pointer-events: none;
 }
 .input {
@@ -88,7 +106,7 @@
     width: 100%;
     height: 100%;
     margin: 0;
-    padding: 0 40px 0 38px;
+    padding: 0 40px 0 calc(var(--es-size) / 2 + 16px);
     border: 0;
     background: transparent;
     color: var(--foreground);
@@ -270,6 +288,9 @@
     }
 }
 @media (pointer: coarse) {
+    .root[data-size='sm'] {
+        --es-size: var(--control-height-md);
+    }
     .clear {
         top: 0;
         right: 0;

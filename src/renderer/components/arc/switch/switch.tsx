@@ -10,11 +10,15 @@ import styles from './switch.module.css'
 
 export interface SwitchProps extends ComponentPropsWithoutRef<typeof SwitchPrimitive.Root> {
     label?: string
+    /** A compact track keeps preference rows quiet without reducing their hit area. */
+    size?: 'sm' | 'md'
+    /** Preference lists place the label before the track. */
+    labelPosition?: 'start' | 'end'
 }
 
 /** Track inner width (42 - 6 padding) minus the 18px thumb; keep in sync with switch.module.css. */
-const size = 18
-const travel = 18
+const thumbSize = 18
+const thumbTravel = 18
 /** How far the thumb widens toward the other side while pressed. */
 const stretch = 5
 /** Critically damped: the thumb lands on its end without overshooting the state it reports. */
@@ -23,6 +27,8 @@ const glide: Transition = { type: 'spring', visualDuration: 0.3, bounce: 0 }
 export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, SwitchProps>(function Switch(
     {
         label,
+        size = 'md',
+        labelPosition = 'end',
         className,
         checked,
         defaultChecked,
@@ -41,7 +47,11 @@ export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, Swit
     const reduceMotion = useReducedMotion()
     const [internal, setInternal] = useState(defaultChecked ?? false)
     const [pressed, setPressed] = useState(false)
+    const keyboard = useRef(false)
     const on = checked ?? internal
+    const compact = size === 'sm'
+    const diameter = compact ? 12 : thumbSize
+    const travel = compact ? 12 : thumbTravel
     // A brief stretch along the travel, so the thumb reads as moving mass rather than a sliding dot.
     const scaleX = useMotionValue(1)
     const shown = useRef(on)
@@ -51,15 +61,15 @@ export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, Swit
         if (shown.current === on) return
         shown.current = on
         const fromPress = performance.now() - releasedAt.current < 250
-        if (reduceMotion || fromPress) return
+        if (reduceMotion || fromPress || compact) return
         const controls = animate(scaleX, [1, 1.16, 1], {
             duration: 0.34,
             times: [0, 0.4, 1],
             ease: ['easeOut', 'easeInOut']
         })
         return () => controls.stop()
-    }, [on, reduceMotion, scaleX])
-    const extra = pressed && !reduceMotion && !props.disabled ? stretch : 0
+    }, [on, reduceMotion, scaleX, compact])
+    const extra = pressed && !reduceMotion && !props.disabled && !compact ? stretch : 0
     const classes = [styles.switch, className].filter(Boolean).join(' ')
 
     return (
@@ -73,6 +83,7 @@ export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, Swit
             }}
             onPointerDown={(event) => {
                 onPointerDown?.(event)
+                keyboard.current = false
                 if (event.button === 0) setPressed(true)
             }}
             onPointerUp={(event) => {
@@ -90,6 +101,7 @@ export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, Swit
             }}
             onKeyDown={(event) => {
                 onKeyDown?.(event)
+                keyboard.current = true
                 if (event.key === ' ') setPressed(true)
             }}
             onKeyUp={(event) => {
@@ -102,19 +114,26 @@ export const Switch = forwardRef<ComponentRef<typeof SwitchPrimitive.Root>, Swit
                 setPressed(false)
             }}
             className={classes}
+            data-size={size}
+            data-label-position={labelPosition}
             aria-label={props['aria-label'] ?? label}
         >
+            {label && labelPosition === 'start' ? <span className={styles.label}>{label}</span> : null}
             <span className={styles.track}>
                 {/* The thumb stretches like a held finger and keeps its far edge anchored, then travels on a spring. */}
                 <motion.span
                     className={styles.thumb}
                     style={{ scaleX }}
                     initial={false}
-                    animate={{ x: on ? travel - extra : 0, width: size + extra }}
-                    transition={reduceMotion ? { duration: 0 } : { x: glide, width: motionTokens.spring.snappy }}
+                    animate={{ x: on ? travel - extra : 0, width: diameter + extra }}
+                    transition={
+                        reduceMotion || (compact && keyboard.current)
+                            ? { duration: 0 }
+                            : { x: glide, width: motionTokens.spring.snappy }
+                    }
                 />
             </span>
-            {label ? <span className={styles.label}>{label}</span> : null}
+            {label && labelPosition === 'end' ? <span className={styles.label}>{label}</span> : null}
         </SwitchPrimitive.Root>
     )
 })

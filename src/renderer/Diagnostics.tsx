@@ -1,4 +1,14 @@
-import { Component, createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+    Component,
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type ReactNode
+} from 'react'
 import { Button } from './components/arc/button/button'
 import { StartupRecovery } from './StartupRecovery'
 import type { DiagnosticState } from '../shared/diagnostics'
@@ -48,6 +58,7 @@ export const useRecovery = () => useContext(RecoveryContext)
 /** Keep recovery admission independent of notification dismissal and ordinary journal reads. */
 export function RecoveryProvider({ children }: { children: ReactNode }) {
     const [state, setState] = useState<DiagnosticState>()
+    const announced = useRef<string | undefined>(undefined)
     const { toast, update, dismiss } = useToastStack()
     useEffect(() => {
         void window.journal.diagnostics
@@ -68,6 +79,15 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
         if (!state?.recovery || state.startupFailed) {
             dismiss(id)
             return
+        }
+        const notice = state.recoveryNoticeId
+        if (!notice || announced.current === notice) return
+        announced.current = notice
+        try {
+            if (localStorage.getItem('gitorian:last-recovery-notice') === notice) return
+            localStorage.setItem('gitorian:last-recovery-notice', notice)
+        } catch {
+            // Restricted browser storage must not prevent recovery or repeat within this mount.
         }
         const copy = () => {
             // Updating synchronously keeps the toast open until the native clipboard confirms success.
@@ -98,14 +118,15 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
         toast({
             id,
             type: 'warning',
-            title: state.restartRequired ? 'Journal stopped responding' : 'Previous session ended unexpectedly',
+            title: state.restartRequired ? 'Journal stopped responding' : 'Your last session closed unexpectedly',
             description: state.restartRequired
                 ? 'Use the refresh button to reopen and verify the last save.'
-                : 'Automatic refresh is paused. Use the refresh button to resume.',
+                : 'Your journal is open. Resume automatic refresh when you’re ready.',
+            actionPlacement: 'below',
             action: { label: 'Copy diagnostic report', onClick: copy },
             duration: Infinity
         })
-    }, [state?.recovery, state?.startupFailed, state?.restartRequired, toast, update, dismiss])
+    }, [state?.recovery, state?.startupFailed, state?.restartRequired, state?.recoveryNoticeId, toast, update, dismiss])
     const prepareRefresh = useCallback(async () => {
         try {
             const diagnostics = window.journal.diagnostics
