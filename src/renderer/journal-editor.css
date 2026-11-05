@@ -318,22 +318,6 @@
     clip-path: inset(50%);
     white-space: nowrap;
 }
-.journal-code-block :is(.hljs-keyword, .hljs-selector-tag, .hljs-type, .hljs-built_in) {
-    color: var(--syntax-keyword);
-}
-.journal-code-block :is(.hljs-string, .hljs-regexp, .hljs-attr) {
-    color: var(--syntax-string);
-}
-.journal-code-block :is(.hljs-number, .hljs-literal, .hljs-symbol) {
-    color: var(--syntax-value);
-}
-.journal-code-block :is(.hljs-title, .hljs-property, .hljs-name) {
-    color: var(--syntax-name);
-}
-.journal-code-block :is(.hljs-comment, .hljs-quote) {
-    color: var(--text-muted);
-    font-style: italic;
-}
 @media (hover: none) {
     .journal-code-tools {
         opacity: 1;

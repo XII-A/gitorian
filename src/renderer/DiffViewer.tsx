@@ -1,19 +1,19 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Copy, FileDiff } from 'lucide-react'
 import { Button } from './components/arc/button/button'
-import { useEffect, useMemo, useState, type ReactNode, type CSSProperties } from 'react'
-import { Diff, Hunk, type FileData, type HunkTokens } from 'react-diff-view'
-import { cachedDiff, cachedDiffTokens, loadDiff, loadDiffTokens } from './diff-loader'
-import { DiffSkeleton } from './DiffSkeleton'
-import SegmentedControl from './components/arc/segmented-control/segmented-control'
-import { ChangedFilePicker } from './ChangedFilePicker'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { EmptyState } from './components/arc/empty-state/empty-state'
-import { FileDiff, SlidersHorizontal } from 'lucide-react'
-import { Switch } from './components/arc/switch/switch'
-import { Popover, PopoverContent, PopoverTrigger } from './components/arc/popover/popover'
-import { presentationTokens, selectedSource } from './diff-presentation'
-import { ChangeCounts } from './ChangeStatistics'
-import { diffLineStats } from '../shared/change-statistics'
+import { cachedDiff, loadDiff } from './diff-loader'
+import { DiffSkeleton } from './DiffSkeleton'
 import { providerName, type Provider } from '../shared/provider-accounts'
+import type { DiffPreferences } from '../shared/diff-preferences'
+import { codeLimits, loadCodeHighlighting } from './code-highlighting'
+import { diffStats, type DiffFile } from './diff-model'
+import { DiffSurface, type DiffNavigation } from './DiffSurface'
+import { DiffWorkspace } from './DiffWorkspace'
+import { DiffFileHeader } from './DiffFileHeader'
+import { matchesDiffFilter, type DiffFileExclusions, type DiffFileFilter } from './diff-file-presentation'
+import './diff-viewer.css'
 
 function DiffEmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
     return (
@@ -29,25 +29,161 @@ function DiffEmptyState({ title, description, action }: { title: string; descrip
     )
 }
 
+function PatchViewNotice() {
+    return (
+        <p className="diff-raw-notice" role="status">
+            <FileDiff size={15} strokeWidth={1.75} aria-hidden="true" />
+            <span>Patch view</span>
+            <span className="diff-raw-description">Original patch text</span>
+        </p>
+    )
+}
+
+function RawDiffStream({
+    files,
+    navigation,
+    sourceAction,
+    collapsed,
+    onToggleFile,
+    showLineCounts
+}: {
+    files: DiffFile[]
+    navigation?: DiffNavigation
+    sourceAction: ReactNode
+    collapsed: ReadonlySet<string>
+    onToggleFile: (name: string) => void
+    showLineCounts: boolean
+}) {
+    const viewport = useRef<HTMLDivElement>(null)
+    const [copyStatus, setCopyStatus] = useState<{ file: DiffFile; status: 'copied' | 'error' }>()
+    useEffect(() => {
+        const root = viewport.current
+        if (!root || !navigation) return
+        const section = [...root.querySelectorAll<HTMLElement>('[data-raw-file]')].find(
+            (node) => node.dataset.rawFile === navigation.name
+        )
+        if (section) root.scrollTop += section.getBoundingClientRect().top - root.getBoundingClientRect().top
+    }, [navigation])
+    return (
+        <ScrollArea
+            className="ws-diff-scroll diff-raw-stream"
+            viewportRef={viewport}
+            label="All file patches"
+            fade={0}
+            orientation="both"
+        >
+            {files.map((file) => (
+                <section
+                    className="diff-raw-file"
+                    data-raw-file={file.name}
+                    key={file.name}
+                    aria-label={`Changes in ${file.name}`}
+                >
+                    <DiffFileHeader
+                        file={file}
+                        collapsed={collapsed.has(file.name)}
+                        onToggle={() => onToggleFile(file.name)}
+                        showLineCounts={showLineCounts}
+                        actions={
+                            !collapsed.has(file.name) ? (
+                                <div className="diff-raw-actions">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={async () => {
+                                            try {
+                                                await window.journal.writeClipboardText(file.raw)
+                                                setCopyStatus({ file, status: 'copied' })
+                                            } catch {
+                                                setCopyStatus({ file, status: 'error' })
+                                            }
+                                        }}
+                                    >
+                                        <Copy size={14} strokeWidth={1.75} aria-hidden="true" />
+                                        {copyStatus?.file === file
+                                            ? copyStatus.status === 'copied'
+                                                ? 'Patch copied'
+                                                : 'Copy failed. Try again'
+                                            : 'Copy patch'}
+                                    </Button>
+                                    {sourceAction}
+                                </div>
+                            ) : undefined
+                        }
+                    />
+                    {!collapsed.has(file.name) && (
+                        <>
+                            <pre className="diff-fallback" role="region" aria-label={`Raw patch for ${file.name}`}>
+                                {file.raw}
+                            </pre>
+                        </>
+                    )}
+                </section>
+            ))}
+            <span className="sr-only" role="status">
+                {copyStatus?.status === 'copied'
+                    ? 'Patch copied'
+                    : copyStatus?.status === 'error'
+                      ? 'Copy failed. Try again'
+                      : ''}
+            </span>
+        </ScrollArea>
+    )
+}
+
 export function DiffViewer({
     text,
-    initialSplit = false,
+    preferences,
+    onPreferencesChange,
+    detached = false,
     provider,
     onOpenSource
 }: {
     text: string
-    initialSplit?: boolean
+    preferences: DiffPreferences
+    onPreferencesChange: (preferences: Partial<DiffPreferences>) => void
+    detached?: boolean
     provider?: Provider
     onOpenSource?: () => void
 }) {
-    const [mode, setMode] = useState(initialSplit ? 'split' : 'unified')
+    const { wrapLines, originalIndentation, showLineCounts, fileList, order } = preferences
+    const split = detached ? preferences.detachedSplit : preferences.dockedSplit
+    function setPreference<Key extends keyof DiffPreferences>(key: Key, value: DiffPreferences[Key]) {
+        if (preferences[key] !== value) onPreferencesChange({ [key]: value })
+    }
     const [selected, setSelected] = useState('')
-    const [wrapLines, setWrapLines] = useState(true)
-    const [originalIndentation, setOriginalIndentation] = useState(false)
-    const [parsed, setParsed] = useState<{ text: string; files: Awaited<ReturnType<typeof loadDiff>> }>()
-    const [highlighted, setHighlighted] = useState<{ file: FileData; tokens?: HunkTokens }>()
-    const needsParsing = text.startsWith('diff --git') && text.length <= 2_000_000
+    const [navigation, setNavigation] = useState<DiffNavigation>()
+    const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
+    const [filter, setFilter] = useState<DiffFileFilter>('all')
+    const [exclusions, setExclusions] = useState<DiffFileExclusions>({ tests: false, docs: false })
+    const [parsed, setParsed] = useState<{ text: string; files: DiffFile[] }>()
+    const [runtime, setRuntime] = useState<'ready' | 'unavailable'>()
+    const [failed, setFailed] = useState<string>()
+    const needsParsing = text.startsWith('diff --git') && text.length <= codeLimits.patch
     const files = useMemo(() => cachedDiff(text) ?? (parsed?.text === text ? parsed.files : []), [text, parsed])
+    const visibleFiles = useMemo(
+        () =>
+            files
+                .filter((file) => matchesDiffFilter(file, filter, exclusions))
+                .sort((a, b) => {
+                    if (order === 'changes') {
+                        const first = diffStats(a),
+                            second = diffStats(b)
+                        const delta =
+                            (second?.additions ?? 0) +
+                            (second?.deletions ?? 0) -
+                            (first?.additions ?? 0) -
+                            (first?.deletions ?? 0)
+                        if (delta) return delta
+                    }
+                    return a.name.localeCompare(b.name)
+                }),
+        [files, filter, exclusions, order]
+    )
+    const clearFilters = () => {
+        setFilter('all')
+        setExclusions({ tests: false, docs: false })
+    }
     useEffect(() => {
         if (!needsParsing) return
         let current = true
@@ -58,44 +194,45 @@ export function DiffViewer({
             current = false
         }
     }, [text, needsParsing])
-    const paths = useMemo(
-        () => files.map((file) => (file.newPath === '/dev/null' ? file.oldPath : file.newPath)),
-        [files]
-    )
-    const active = useMemo(
-        () =>
-            files.find((file) => (file.newPath === '/dev/null' ? file.oldPath : file.newPath) === selected) ?? files[0],
-        [files, selected]
-    )
     useEffect(() => {
-        if (!active) return
         let current = true
-        void loadDiffTokens(active).then((tokens) => {
-            if (current) setHighlighted({ file: active, tokens })
+        void loadCodeHighlighting().then((result) => {
+            if (current) setRuntime(result.status)
         })
         return () => {
             current = false
         }
-    }, [active])
-    const tokens = active
-        ? (cachedDiffTokens(active) ?? (highlighted?.file === active ? highlighted.tokens : undefined))
-        : undefined
-    const lineCount = useMemo(
-        () => active?.hunks.reduce((total, hunk) => total + hunk.changes.length, 0) ?? 0,
-        [active]
+    }, [])
+    const onFailure = useCallback(() => setFailed(text), [text])
+    const toggleFile = useCallback(
+        (name: string) =>
+            setCollapsed((previous) => {
+                const next = new Set(previous)
+                if (next.has(name)) next.delete(name)
+                else next.add(name)
+                return next
+            }),
+        []
     )
-    const displayTokens = useMemo(
-        () => (active && lineCount <= 4000 ? presentationTokens(active, tokens, !originalIndentation) : undefined),
-        [active, tokens, originalIndentation, lineCount]
-    )
-    const unavailable =
-        text.length > 2_000_000 || /^(Diff is too large\.|GitHub could not provide this diff)/.test(text)
+    const selectFile = useCallback((name: string) => {
+        setCollapsed((previous) => {
+            if (!previous.has(name)) return previous
+            const next = new Set(previous)
+            next.delete(name)
+            return next
+        })
+        setSelected(name)
+        setNavigation((previous) => ({ name, revision: (previous?.revision ?? 0) + 1 }))
+    }, [])
+    const active = visibleFiles.find((file) => file.name === selected) ?? visibleFiles[0]
+    const ready = runtime === 'ready' && failed !== text
+    const allCollapsed = visibleFiles.length > 0 && visibleFiles.every((file) => collapsed.has(file.name))
     const sourceAction = onOpenSource && (
         <Button variant="secondary" size="sm" onClick={onOpenSource}>
             {provider ? `Open on ${providerName(provider)}` : 'Open source'}
         </Button>
     )
-    if (unavailable)
+    if (text.length > codeLimits.patch || /^(Diff is too large\.|GitHub could not provide this diff)/.test(text))
         return (
             <DiffEmptyState
                 title={
@@ -118,116 +255,91 @@ export function DiffViewer({
     if (needsParsing && !cachedDiff(text) && parsed?.text !== text) return <DiffSkeleton label="Preparing changes" />
     if (!files.length)
         return (
-            <ScrollArea className="ws-diff-scroll" orientation="both" label="Text diff" fade={0}>
-                <pre className="diff-fallback">{text.slice(0, 8000)}</pre>
-            </ScrollArea>
-        )
-    if (!active) return null
-    const path = active.newPath === '/dev/null' ? active.oldPath : active.newPath
-    return (
-        <div className="diff-viewer ws-diff-viewer" data-wrap={wrapLines}>
-            <div className="ws-diff-tools">
-                <ChangedFilePicker value={path} onValueChange={setSelected} paths={paths} />
-                <div className="ws-diff-actions">
-                    <SegmentedControl
-                        className="ws-diff-layout"
-                        size="sm"
-                        label="Diff layout"
-                        value={mode}
-                        onValueChange={setMode}
-                        options={[
-                            { value: 'unified', label: 'Unified' },
-                            { value: 'split', label: 'Split' }
-                        ]}
-                    />
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button
-                                className="ws-diff-settings"
-                                variant="ghost"
-                                size="sm"
-                                aria-label="Diff display options"
-                                title="Display options"
-                            >
-                                <SlidersHorizontal size={16} aria-hidden="true" />
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent align="end" className="ws-diff-options" aria-label="Diff display options">
-                            <Switch label="Wrap lines" checked={wrapLines} onCheckedChange={setWrapLines} />
-                            <Switch
-                                label="Original indentation"
-                                checked={originalIndentation}
-                                onCheckedChange={setOriginalIndentation}
-                            />
-                        </PopoverContent>
-                    </Popover>
-                </div>
+            <div className="diff-raw-reader">
+                <PatchViewNotice />
+                <ScrollArea className="ws-diff-scroll" orientation="both" label="Text diff" fade={0}>
+                    <pre className="diff-fallback">{text}</pre>
+                </ScrollArea>
             </div>
-            <section
-                className="file-diff ws-file-diff"
-                aria-label={`Changes in ${path}`}
-                onCopy={(event) => {
-                    const selection = window.getSelection()
-                    if (!selection?.rangeCount || !event.clipboardData) return
-                    const source = selectedSource(selection.getRangeAt(0), event.currentTarget)
-                    if (source !== undefined) {
-                        event.clipboardData.setData('text/plain', source)
-                        event.preventDefault()
-                    }
-                }}
-            >
-                <div className="ws-file-heading">
-                    <code>{path}</code>
-                    <ChangeCounts stats={diffLineStats(active)} />
-                </div>
-                {lineCount > 4000 ? (
-                    <DiffEmptyState
-                        title="This file is too large to display"
-                        description="This file has more than 4,000 diff lines. View the full changes at the source."
-                        action={sourceAction}
-                    />
-                ) : !active.hunks.length ? (
-                    <DiffEmptyState
-                        title={active.isBinary ? 'Binary file' : 'No text changes'}
-                        description={
-                            active.isBinary
-                                ? 'Binary files do not have a text diff.'
-                                : 'This file contains only a rename or metadata changes.'
+        )
+    return (
+        <div className="diff-viewer ws-diff-viewer diff-workspace-container" data-wrap={wrapLines}>
+            <DiffWorkspace
+                files={files}
+                visibleFiles={visibleFiles}
+                activeFile={active?.name ?? ''}
+                onSelectFile={selectFile}
+                split={split}
+                onSplitChange={(value) => setPreference(detached ? 'detachedSplit' : 'dockedSplit', value)}
+                wrapLines={wrapLines}
+                onWrapLinesChange={(value) => setPreference('wrapLines', value)}
+                originalIndentation={originalIndentation}
+                onOriginalIndentationChange={(value) => setPreference('originalIndentation', value)}
+                showLineCounts={showLineCounts}
+                onShowLineCountsChange={(value) => setPreference('showLineCounts', value)}
+                filter={filter}
+                onFilterChange={setFilter}
+                exclusions={exclusions}
+                onExclusionsChange={setExclusions}
+                onClearFilters={clearFilters}
+                fileList={fileList}
+                onFileListChange={(value) => setPreference('fileList', value)}
+                order={order}
+                onOrderChange={(value) => setPreference('order', value)}
+                allCollapsed={allCollapsed}
+                onToggleAll={() =>
+                    setCollapsed((previous) => {
+                        const next = new Set(previous)
+                        for (const file of visibleFiles) {
+                            if (allCollapsed) next.delete(file.name)
+                            else next.add(file.name)
                         }
-                        action={sourceAction}
+                        return next
+                    })
+                }
+                detached={detached}
+                structured={ready}
+            >
+                {!visibleFiles.length ? (
+                    <DiffEmptyState
+                        title="No matching files"
+                        description="Choose another file filter or show all changes."
+                        action={
+                            <Button variant="secondary" size="sm" onClick={clearFilters}>
+                                Show all files
+                            </Button>
+                        }
                     />
+                ) : ready ? (
+                    <DiffSurface
+                        files={visibleFiles}
+                        split={split}
+                        wrap={wrapLines}
+                        originalIndentation={originalIndentation}
+                        collapsed={collapsed}
+                        onToggleFile={toggleFile}
+                        showLineCounts={showLineCounts}
+                        initialFile={active?.name ?? ''}
+                        navigation={navigation}
+                        onActiveFileChange={setSelected}
+                        onFailure={onFailure}
+                    />
+                ) : runtime === undefined ? (
+                    <DiffSkeleton label="Preparing syntax highlighting" />
                 ) : (
-                    <ScrollArea
-                        className="ws-diff-scroll"
-                        orientation="both"
-                        label={`Scrollable diff for ${path}`}
-                        fade={0}
-                    >
-                        <Diff
-                            viewType={mode === 'split' ? 'split' : 'unified'}
-                            diffType={active.type}
-                            hunks={active.hunks}
-                            tokens={displayTokens}
-                            renderToken={(token, renderDefault, index) =>
-                                token.type === 'source-line' ? (
-                                    <span
-                                        key={index}
-                                        className="ws-diff-source-line"
-                                        data-indent-characters={token.indentCharacters}
-                                        style={{ '--diff-indent': `${token.indentColumns}ch` } as CSSProperties}
-                                    >
-                                        {token.children?.map(renderDefault)}
-                                    </span>
-                                ) : (
-                                    renderDefault(token, index)
-                                )
-                            }
-                        >
-                            {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
-                        </Diff>
-                    </ScrollArea>
+                    <div className="diff-raw-reader">
+                        <PatchViewNotice />
+                        <RawDiffStream
+                            files={visibleFiles}
+                            navigation={navigation}
+                            sourceAction={sourceAction}
+                            collapsed={collapsed}
+                            onToggleFile={toggleFile}
+                            showLineCounts={showLineCounts}
+                        />
+                    </div>
                 )}
-            </section>
+            </DiffWorkspace>
         </div>
     )
 }

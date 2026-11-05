@@ -145,6 +145,25 @@
     border-radius: 0;
     background: transparent;
 }
+.tree[data-density='compact'] .item {
+    height: 28px;
+    min-height: 28px;
+    padding-inline-end: var(--space-2);
+    border-radius: var(--radius-key);
+    font-size: var(--text-xs);
+}
+.tree[data-density='compact'] .selection {
+    border-radius: var(--radius-key);
+}
+@media (pointer: coarse) {
+    .tree[data-density='compact'] .row {
+        min-height: 46px;
+    }
+    .tree[data-density='compact'] .item {
+        min-height: 44px;
+        height: auto;
+    }
+}
 .tree[data-wrap-labels] .row {
     height: auto;
 }
@@ -197,4 +216,34 @@
     padding-inline-start: calc(32px + (var(--tree-depth) - 1) * 18px);
     padding-inline-end: var(--space-3);
     pointer-events: none;
+}
+
+/* Each branch bounds its pinned heading; the next sibling pushes it away. */
+.tree[data-sticky-folders] {
+    --tree-row-height: 38px;
+    overflow: visible;
+    isolation: isolate;
+}
+.tree[data-sticky-folders][data-density='compact'] {
+    --tree-row-height: 30px;
+}
+.branchGroup {
+    position: relative;
+    /* A descendant pushed out of its branch slides behind its own pinned ancestor. */
+    isolation: isolate;
+}
+.row[data-sticky-folder] {
+    position: sticky;
+    top: calc((var(--tree-depth) - 1) * var(--tree-row-height));
+    z-index: 2;
+    background: var(--surface);
+}
+@media (pointer: coarse) {
+    .tree[data-sticky-folders][data-density] {
+        --tree-row-height: 46px;
+    }
+}
+
+.tree[data-sticky-folders] .item {
+    scroll-margin-block-start: calc((var(--tree-depth) - 1) * var(--tree-row-height));
 }

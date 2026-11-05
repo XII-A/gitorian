@@ -31,7 +31,14 @@ export interface ExpandingSearchItem {
 export interface ExpandingSearchProps {
     /** Names the button, the field, and the results, such as "Search projects and docs". */
     label: string
-    items: ExpandingSearchItem[]
+    items?: ExpandingSearchItem[]
+    /** Filter an existing list in place without opening a results panel. */
+    variant?: 'results' | 'filter'
+    /** A borderless collapsed toolbar button; the expanded field keeps its border. */
+    appearance?: 'surface' | 'ghost'
+    value?: string
+    onValueChange?: (value: string) => void
+    size?: 'sm' | 'md'
     /** Shown before anything is typed, such as recent searches. */
     suggestions?: ExpandingSearchItem[]
     suggestionsLabel?: string
@@ -309,7 +316,12 @@ function Listbox({
 
 export function ExpandingSearch({
     label,
-    items,
+    items = [],
+    variant = 'results',
+    appearance = 'surface',
+    value,
+    onValueChange,
+    size: controlSize = 'md',
     suggestions = [],
     suggestionsLabel = 'Recent',
     placeholder,
@@ -329,7 +341,12 @@ export function ExpandingSearch({
     const buttonRef = useRef<HTMLButtonElement>(null)
     const [expanded, setExpanded] = useState(false)
     const [focused, setFocused] = useState(false)
-    const [query, setQuery] = useState('')
+    const [internalQuery, setInternalQuery] = useState('')
+    const query = value ?? internalQuery
+    const setQuery = (next: string) => {
+        if (value === undefined) setInternalQuery(next)
+        onValueChange?.(next)
+    }
     const [active, setActive] = useState(-1)
     const open = useRef(false)
     const size = useRef({
@@ -431,7 +448,7 @@ export function ExpandingSearch({
     const activeItem = flat[activeIndex]
     const optionId = (item: ExpandingSearchItem) => `${id}-${mode}-${item.id}`
     const listboxId = `${id}-${mode}-listbox`
-    const panelOpen = expanded && focused && mode !== null
+    const panelOpen = variant === 'results' && expanded && focused && mode !== null
     const announcement = !panelOpen
         ? ''
         : mode === 'empty'
@@ -448,6 +465,7 @@ export function ExpandingSearch({
     function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
         if (event.key === 'Escape') {
             event.preventDefault()
+            if (variant === 'filter') event.stopPropagation()
             collapse(true)
             return
         }
@@ -470,7 +488,13 @@ export function ExpandingSearch({
         : { opacity: 0, scale: 0.6, filter: `blur(${motionTokens.blur.subtle}px)` }
 
     return (
-        <div ref={rootRef} className={[styles.root, className].filter(Boolean).join(' ')} data-anchor={anchor}>
+        <div
+            ref={rootRef}
+            className={[styles.root, className].filter(Boolean).join(' ')}
+            data-anchor={anchor}
+            data-size={controlSize}
+            data-appearance={appearance}
+        >
             <motion.div ref={shellRef} className={styles.shell} data-expanded={expanded || undefined} style={{ width }}>
                 <button
                     ref={buttonRef}
@@ -480,20 +504,26 @@ export function ExpandingSearch({
                     hidden={expanded}
                     onClick={expand}
                 />
-                <Search className={styles.icon} width={18} height={18} weight="bold" aria-hidden="true" />
+                <Search
+                    className={styles.icon}
+                    width={18}
+                    height={18}
+                    weight={appearance === 'ghost' ? 'regular' : 'bold'}
+                    aria-hidden="true"
+                />
                 {/* The placeholder waits for the shape to start moving, then fades in; on close it leaves first. */}
                 <motion.input
                     ref={inputRef}
                     className={styles.input}
                     type="text"
-                    role="combobox"
+                    role={variant === 'filter' ? 'searchbox' : 'combobox'}
                     inert={!expanded}
                     value={query}
                     placeholder={placeholder ?? label}
                     aria-label={label}
-                    aria-expanded={panelOpen}
+                    aria-expanded={variant === 'results' ? panelOpen : undefined}
                     aria-controls={panelOpen && mode !== 'empty' ? listboxId : undefined}
-                    aria-autocomplete="list"
+                    aria-autocomplete={variant === 'results' ? 'list' : undefined}
                     aria-activedescendant={panelOpen && activeItem ? optionId(activeItem) : undefined}
                     autoComplete="off"
                     autoCorrect="off"

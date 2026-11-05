@@ -82,7 +82,8 @@
     --menu-x: 0px;
     --menu-y: -5px;
     position: relative;
-    z-index: 60;
+    /* Nested menus sit above popovers (80) and below tooltips (90). */
+    z-index: 85;
     min-width: min(12rem, var(--radix-dropdown-menu-content-available-width));
     max-width: var(--radix-dropdown-menu-content-available-width);
     padding: 5px;

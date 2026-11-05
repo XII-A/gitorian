@@ -4,7 +4,7 @@ import { AppUpdateButton } from './AppUpdates'
 import { ActivitySourcesButton } from './ActivitySourcesButton'
 import { Alert } from './components/arc/alert/alert'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Activity, Command, Reply, State } from '../shared/model'
+import type { Activity, Command, Reply, State, InspectorTab } from '../shared/model'
 import { localDate, shiftWeek, weekOf } from '../shared/model'
 import { offsetDay, journalWeek, rangeActivities } from './hub-model'
 import { Button } from './components/arc/button/button'
@@ -80,7 +80,7 @@ export function Workspace({
         activityViewport.current?.scrollTo({ top: 0, behavior: 'instant' })
     }, [week, project, branch, kind, authors, dayFilter.day])
     const [searchExpanded, setSearchExpanded] = useState(false)
-    const [inspectionTab, setInspectionTab] = useState<'diff' | 'details'>('details')
+    const [inspectionTab, setInspectionTab] = useState<InspectorTab>('details')
     const [publishTarget, setPublishTarget] = useState<HTMLElement | null>(null)
     const [selectedId, setSelectedId] = useState(initialActivity)
     const [detailBusy, setDetailBusy] = useState(false)
@@ -215,16 +215,18 @@ export function Workspace({
         url.searchParams.set('week', value)
         window.history.replaceState({}, '', url)
     }
-    const popout = async () => {
+    const popout = async (tab: InspectorTab) => {
         if (!selected) return
+        setInspectionTab(tab)
         if (navigator.userAgent.includes('Electron/')) {
-            const reply = await run({ type: 'popout', kind: 'activity', id: selected.id })
+            const reply = await run({ type: 'popout', kind: 'activity', id: selected.id, tab })
             if (reply) setDetached(selected.id)
         } else {
             const url = new URL(window.location.href)
             url.search = ''
             url.searchParams.set('reference', 'activity')
             url.searchParams.set('id', selected.id)
+            url.searchParams.set('tab', tab)
             const popup = window.open(url, `gitorian-${selected.id}`, 'popup,width=1400,height=900')
             if (popup) setDetached(selected.id)
             else setNotice('The browser blocked the window. Allow pop-ups for this app and try again.')

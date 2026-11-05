@@ -1,46 +1,11 @@
 import { remarkEmoji } from './provider-emoji'
-import { Fragment } from 'react'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Activity, Repository } from '../shared/model'
 import { markdownUrl } from './activity-details'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { MermaidBlock } from './MermaidBlock'
-
-function DiffBlock({ value }: { value: string }) {
-    const lines = value.match(/[^\n]*\n|[^\n]+$/g) ?? []
-    return (
-        <ScrollArea
-            className="hub-detail-code-scroll hub-detail-diff-scroll"
-            orientation="both"
-            maxHeight={360}
-            label="Diff code block"
-            fade={0}
-        >
-            <pre className="hub-detail-diff">
-                <code className="language-diff">
-                    {lines.map((part, index) => {
-                        const line = part.endsWith('\n') ? part.slice(0, -1) : part
-                        const change =
-                            line.startsWith('+') && !line.startsWith('+++ ')
-                                ? 'added'
-                                : line.startsWith('-') && !line.startsWith('--- ')
-                                  ? 'removed'
-                                  : 'context'
-                        return (
-                            <Fragment key={index}>
-                                <span className="hub-detail-diff-line" data-diff-line={change}>
-                                    {line}
-                                </span>
-                                {part.endsWith('\n') ? '\n' : null}
-                            </Fragment>
-                        )
-                    })}
-                </code>
-            </pre>
-        </ScrollArea>
-    )
-}
+import { CodeBlock } from './CodeBlock'
 
 const DescriptionPre: NonNullable<Components['pre']> = ({ node, children }) => {
     const code = node?.children[0]
@@ -53,12 +18,18 @@ const DescriptionPre: NonNullable<Components['pre']> = ({ node, children }) => {
         (text?.type === 'text' || !text)
     )
         return <MermaidBlock source={text?.type === 'text' ? text.value : ''} />
-    return code?.type === 'element' &&
-        code.tagName === 'code' &&
-        Array.isArray(code.properties.className) &&
-        code.properties.className.includes('language-diff') &&
-        text?.type === 'text' ? (
-        <DiffBlock value={text.value} />
+    return code?.type === 'element' && code.tagName === 'code' && (text?.type === 'text' || !text) ? (
+        <CodeBlock
+            source={text?.type === 'text' ? text.value : ''}
+            language={
+                Array.isArray(code.properties.className)
+                    ? code.properties.className
+                          .find((value) => typeof value === 'string' && value.startsWith('language-'))
+                          ?.toString()
+                          .slice(9)
+                    : undefined
+            }
+        />
     ) : (
         <ScrollArea className="hub-detail-code-scroll" orientation="both" maxHeight={360} label="Code block" fade={0}>
             <pre>{children}</pre>

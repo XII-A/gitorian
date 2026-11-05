@@ -1,11 +1,12 @@
 /* A quiet native-window frame, kept outside the scrolling application. */
 body:has(.window-chrome) {
     --window-frame-background: var(--surface-muted);
+    --window-caption-background: var(--window-frame-background);
     background: var(--window-frame-background);
 }
-/* Detached references keep their inspector colors; only their chrome changes. */
+/* Detached captions stay dark; the outer sides and bottom retain the shared gray frame. */
 body:has(.window-chrome):has(.ws-reference .ws-inspector-header) {
-    --window-frame-background: var(--surface);
+    --window-caption-background: var(--surface);
 }
 #root:has(.window-chrome),
 #root:has(.window-chrome):has(> .writing-workspace) {
@@ -24,12 +25,12 @@ body:has(.window-chrome) [data-arc-dialog-overlay] {
     clip-path: inset(6px round var(--radius-inset));
 }
 /* Only this small mask moves; the page keeps its static rounded clip.
-   The circular cutouts continue the content corners below the growing frame. */
+   The circular cutouts round the bottom of the caption into the outer frame. */
 .window-frame-cap {
     position: fixed;
     inset: 6px 6px auto;
     height: 32px;
-    background: var(--window-frame-background);
+    background: var(--window-caption-background);
     transform: translateY(-32px);
     transition: transform var(--duration-fast) var(--ease-standard);
     pointer-events: none;
@@ -47,7 +48,7 @@ body:has(.window-chrome) [data-arc-dialog-overlay] {
     background: radial-gradient(
         circle at bottom right,
         transparent calc(var(--radius-inset) - 0.5px),
-        var(--window-frame-background) var(--radius-inset)
+        var(--window-caption-background) var(--radius-inset)
     );
 }
 .window-frame-cap::after {
@@ -55,8 +56,13 @@ body:has(.window-chrome) [data-arc-dialog-overlay] {
     background: radial-gradient(
         circle at bottom left,
         transparent calc(var(--radius-inset) - 0.5px),
-        var(--window-frame-background) var(--radius-inset)
+        var(--window-caption-background) var(--radius-inset)
     );
+}
+/* A contrasting detached caption rounds from the window edge, not from the
+   content's 6px inset. The gray side frame continues below the curve. */
+body:has(.ws-reference .ws-inspector-header) .window-frame-cap {
+    inset-inline: 0;
 }
 .window-chrome[data-revealed='true'] .window-frame-cap {
     transform: translateY(0);
@@ -75,7 +81,7 @@ body:has(.window-chrome) [data-arc-dialog-overlay] {
 .window-title-bar {
     display: flex;
     height: 38px;
-    background: transparent;
+    background: var(--window-caption-background);
     color: var(--foreground);
     transform: translateY(-100%);
     opacity: 0;

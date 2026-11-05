@@ -1,29 +1,21 @@
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
-import { all, createLowlight } from 'lowlight'
+import CodeBlock from '@tiptap/extension-code-block'
 import { NodeViewWrapper, NodeViewContent, ReactNodeViewRenderer, useEditorState } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { useEffect, useState } from 'react'
 import { Check, ChevronDown, Copy, WrapText, AlertCircle } from 'lucide-react'
-import { codeLanguage, codeLanguageLabel } from '../shared/code-languages'
+import { codeLanguage, codeLanguageLabel, codeLanguages } from '../shared/code-languages'
 import { Combobox } from './components/arc/combobox/combobox'
 import { Button } from './components/arc/button/button'
 import { FloatingButtonGroup } from './components/arc/floating-button-group/floating-button-group'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
-
-const lowlight = createLowlight(all)
-lowlight.registerAlias({
-    objectivec: 'objective-c',
-    vbnet: 'vb.net',
-    vbscript: 'visual basic',
-    javascript: 'jsx',
-    typescript: 'tsx'
-})
-const languages = Array.from(new Set([...lowlight.listLanguages(), 'html', 'jsx', 'tsx'].map(codeLanguage)))
-    .filter((value): value is string => value !== null)
-    .sort()
+import { codeLanguageChoices } from './code-highlighting'
+import { codeHighlightingPlugin } from './code-highlighting-plugin'
 
 /** One code module owns its editable view and transient highlighting; neither controls nor colors serialize. */
-export const JournalCodeBlock = CodeBlockLowlight.extend({
+export const JournalCodeBlock = CodeBlock.extend({
+    addProseMirrorPlugins() {
+        return [...(this.parent?.() ?? []), codeHighlightingPlugin()]
+    },
     addAttributes() {
         return {
             language: {
@@ -41,21 +33,17 @@ export const JournalCodeBlock = CodeBlockLowlight.extend({
     addNodeView() {
         return ReactNodeViewRenderer(CodeBlockView)
     }
-}).configure({
-    defaultLanguage: 'plaintext',
-    lowlight: {
-        ...lowlight,
-        // Plain text and unfamiliar fences stay literal rather than guessing a language.
-        highlightAuto: () => ({ children: [] })
-    }
-})
+}).configure({ defaultLanguage: null })
 
 function CodeBlockView({ node, editor, updateAttributes }: NodeViewProps) {
     const editable = useEditorState({ editor, selector: ({ editor: current }) => current.isEditable })
     const [wrapped, setWrapped] = useState(false)
     const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle')
     const language = codeLanguage(node.attrs.language) ?? 'plain text'
-    const options = ['plain text', ...languages]
+    const options = [
+        'plain text',
+        ...new Set([...codeLanguageChoices, ...codeLanguages.filter((value) => value !== 'plain text')])
+    ].sort()
     if (!options.includes(language)) options.unshift(language)
     useEffect(() => {
         if (copyStatus !== 'copied') return
