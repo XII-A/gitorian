@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { FileDiff } from 'lucide-react'
+import { Copy, FileDiff } from 'lucide-react'
 import { Button } from './components/arc/button/button'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { EmptyState } from './components/arc/empty-state/empty-state'
@@ -26,6 +26,16 @@ function DiffEmptyState({ title, description, action }: { title: string; descrip
                 action={action}
             />
         </ScrollArea>
+    )
+}
+
+function PatchViewNotice() {
+    return (
+        <p className="diff-raw-notice" role="status">
+            <FileDiff size={15} strokeWidth={1.75} aria-hidden="true" />
+            <span>Patch view</span>
+            <span className="diff-raw-description">Original patch text</span>
+        </p>
     )
 }
 
@@ -74,30 +84,35 @@ function RawDiffStream({
                         collapsed={collapsed.has(file.name)}
                         onToggle={() => onToggleFile(file.name)}
                         showLineCounts={showLineCounts}
+                        actions={
+                            !collapsed.has(file.name) ? (
+                                <div className="diff-raw-actions">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={async () => {
+                                            try {
+                                                await window.journal.writeClipboardText(file.raw)
+                                                setCopyStatus({ file, status: 'copied' })
+                                            } catch {
+                                                setCopyStatus({ file, status: 'error' })
+                                            }
+                                        }}
+                                    >
+                                        <Copy size={14} strokeWidth={1.75} aria-hidden="true" />
+                                        {copyStatus?.file === file
+                                            ? copyStatus.status === 'copied'
+                                                ? 'Patch copied'
+                                                : 'Copy failed. Try again'
+                                            : 'Copy patch'}
+                                    </Button>
+                                    {sourceAction}
+                                </div>
+                            ) : undefined
+                        }
                     />
                     {!collapsed.has(file.name) && (
                         <>
-                            <div className="diff-raw-actions">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={async () => {
-                                        try {
-                                            await window.journal.writeClipboardText(file.raw)
-                                            setCopyStatus({ file, status: 'copied' })
-                                        } catch {
-                                            setCopyStatus({ file, status: 'error' })
-                                        }
-                                    }}
-                                >
-                                    {copyStatus?.file === file
-                                        ? copyStatus.status === 'copied'
-                                            ? 'Patch copied'
-                                            : 'Copy failed. Try again'
-                                        : 'Copy patch'}
-                                </Button>
-                                {sourceAction}
-                            </div>
                             <pre className="diff-fallback" role="region" aria-label={`Raw patch for ${file.name}`}>
                                 {file.raw}
                             </pre>
@@ -240,9 +255,12 @@ export function DiffViewer({
     if (needsParsing && !cachedDiff(text) && parsed?.text !== text) return <DiffSkeleton label="Preparing changes" />
     if (!files.length)
         return (
-            <ScrollArea className="ws-diff-scroll" orientation="both" label="Text diff" fade={0}>
-                <pre className="diff-fallback">{text}</pre>
-            </ScrollArea>
+            <div className="diff-raw-reader">
+                <PatchViewNotice />
+                <ScrollArea className="ws-diff-scroll" orientation="both" label="Text diff" fade={0}>
+                    <pre className="diff-fallback">{text}</pre>
+                </ScrollArea>
+            </div>
         )
     return (
         <div className="diff-viewer ws-diff-viewer diff-workspace-container" data-wrap={wrapLines}>
@@ -310,9 +328,7 @@ export function DiffViewer({
                     <DiffSkeleton label="Preparing syntax highlighting" />
                 ) : (
                     <div className="diff-raw-reader">
-                        <p className="diff-raw-notice" role="status">
-                            Showing raw patches. Syntax highlighting is unavailable.
-                        </p>
+                        <PatchViewNotice />
                         <RawDiffStream
                             files={visibleFiles}
                             navigation={navigation}

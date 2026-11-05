@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react'
-import { useState, type MouseEvent } from 'react'
+import { useState, type MouseEvent, type ReactNode } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { motionTokens } from './components/arc/motion-tokens'
 import { Button } from './components/arc/button/button'
@@ -14,12 +14,14 @@ export function DiffFileHeader({
     file,
     collapsed,
     onToggle,
-    showLineCounts
+    showLineCounts,
+    actions
 }: {
     file: DiffFile
     collapsed: boolean
     onToggle: (event: MouseEvent<HTMLButtonElement>) => void
     showLineCounts: boolean
+    actions?: ReactNode
 }) {
     const reduced = useReducedMotion()
     const [pointerToggle, setPointerToggle] = useState(false)
@@ -71,6 +73,7 @@ export function DiffFileHeader({
                 ) : null}
                 {showLineCounts && !file.binary && <ChangeCounts stats={diffStats(file)} />}
             </span>
+            {actions}
         </div>
     )
 }

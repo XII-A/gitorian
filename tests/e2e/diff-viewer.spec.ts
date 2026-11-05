@@ -665,5 +665,16 @@ test('diff highlighting failure retains exact raw patch and native copy without 
     const resources = await page.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name))
     expect(resources.some((name) => /\/shiki-[^/]+\.js/.test(name))).toBe(false)
     writeFileSync(info.outputPath('fallback-resources.json'), JSON.stringify(resources, null, 2))
+    await page.getByRole('button', { name: 'Collapse all files', exact: true }).click()
+    await page.getByRole('button', { name: 'Expand copy.ts. Modified file', exact: true }).click()
+    await page.getByRole('region', { name: 'All file patches', exact: true }).evaluate((node) => {
+        node.scrollTop = 0
+    })
     await desktop.shot('raw-patch-after-wasm-failure')
+    await page.locator('.ws-inspector').screenshot({ path: info.outputPath('patch-view-detail.png') })
+    await page.evaluate(() => {
+        document.documentElement.dataset.theme = 'light'
+        document.documentElement.dataset.accent = 'blue'
+    })
+    await page.locator('.ws-inspector').screenshot({ path: info.outputPath('patch-view-light.png') })
 })
