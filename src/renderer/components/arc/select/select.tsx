@@ -1,7 +1,7 @@
 'use client'
 
 import { forwardRef, useId, useState } from 'react'
-import type { ComponentPropsWithoutRef } from 'react'
+import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import * as SelectPrimitive from '@radix-ui/react-select'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import type { Variants } from 'motion/react'
@@ -19,7 +19,14 @@ export interface SelectProps extends Omit<ComponentPropsWithoutRef<typeof Select
     variant?: 'default' | 'ghost'
     /** Minimum menu width in pixels, still constrained to the viewport. */
     contentMinWidth?: number
-    options: { value: string; label: string; disabled?: boolean; count?: number }[]
+    options: {
+        value: string
+        label: string
+        disabled?: boolean
+        count?: number
+        /** Decorative leading icon, shown in the menu and selected value. */
+        icon?: ReactNode
+    }[]
     'aria-labelledby'?: string
     'aria-label'?: string
 }
@@ -76,6 +83,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
     const index = options.findIndex((option) => option.value === currentValue)
     const shown = currentValue ? (options[index]?.label ?? '') : placeholder
     const count = options[index]?.count
+    const icon = options[index]?.icon
     const [previousIndex, setPreviousIndex] = useState(index)
     const [direction, setDirection] = useState(1)
     if (previousIndex !== index) {
@@ -118,6 +126,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                                 animate="center"
                                 exit="exit"
                             >
+                                {icon && <span className={styles.optionIcon}>{icon}</span>}
                                 <span className={styles.optionLabel}>{shown}</span>
                                 {count !== undefined && <span className={styles.count}>{count}</span>}
                             </motion.span>
@@ -147,12 +156,22 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                                 <SelectPrimitive.Item
                                     key={option.value}
                                     value={option.value}
+                                    textValue={option.label}
                                     disabled={option.disabled}
                                     className={styles.item}
                                 >
-                                    <SelectPrimitive.ItemText>
-                                        {option.label}
-                                        {option.count !== undefined ? ` ${option.count}` : ''}
+                                    {option.icon && (
+                                        <span className={styles.optionIcon} aria-hidden="true">
+                                            {option.icon}
+                                        </span>
+                                    )}
+                                    <SelectPrimitive.ItemText asChild>
+                                        <span className={styles.itemText}>
+                                            <span className={styles.optionLabel}>{option.label}</span>
+                                            {option.count !== undefined && (
+                                                <span className={styles.count}> {option.count}</span>
+                                            )}
+                                        </span>
                                     </SelectPrimitive.ItemText>
                                     <SelectPrimitive.ItemIndicator className={styles.indicator}>
                                         <Check size={16} strokeWidth={1.75} aria-hidden="true" />

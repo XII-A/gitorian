@@ -1,13 +1,14 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { FoldVertical, UnfoldVertical, X } from 'lucide-react'
+import { BookOpen, FlaskConicalOff } from 'lucide-react'
 import { Button } from './components/arc/button/button'
 import { ChangeCounts } from './ChangeStatistics'
 import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
+import { Tooltip } from './components/arc/tooltip/tooltip'
 import { TreeView, type TreeNode } from './components/arc/tree-view/tree-view'
 import { changeLabels } from './activity-details'
 import { diffFileKind, FileChangeIcon } from './diff-file-presentation'
-import { DiffFileFilters, diffFileFilters, type DiffFileFilterControls } from './DiffFileFilters'
+import { DiffFileFilters, type DiffFileFilterControls } from './DiffFileFilters'
 import { diffStats, type DiffFile } from './diff-model'
 
 interface DiffFileTreeProps extends DiffFileFilterControls {
@@ -132,12 +133,6 @@ export function DiffFileTree(props: DiffFileTreeProps) {
         else if (item.bottom > frame.bottom) root.scrollTop += item.bottom - frame.bottom
     }, [activeFile, expanded, query, fileList])
     const expandedIds = query.trim() ? tree.directories : (expanded ?? tree.directories)
-    const foldersOpen = expandedIds.length > 0
-    const activeFilters = [
-        ...(props.filter !== 'all' ? [diffFileFilters.find((item) => item.value === props.filter)!.label] : []),
-        ...(props.exclusions.tests ? ['Tests excluded'] : []),
-        ...(props.exclusions.docs ? ['Docs excluded'] : [])
-    ]
     return (
         <div className="diff-file-tree">
             <div className="diff-explorer-heading" data-search-expanded={searchExpanded}>
@@ -145,28 +140,48 @@ export function DiffFileTree(props: DiffFileTreeProps) {
                     Files <span>{visibleFiles.length}</span>
                 </h3>
                 <div className="diff-explorer-actions">
-                    <Button
-                        className="diff-toolbar-icon diff-explorer-folders"
-                        variant="ghost"
-                        size="sm"
-                        inert={searchExpanded}
-                        aria-label={foldersOpen ? 'Collapse folders' : 'Expand folders'}
-                        title={foldersOpen ? 'Collapse folders' : 'Expand folders'}
-                        disabled={fileList === 'list' || !tree.directories.length}
-                        onClick={() => setExpanded(foldersOpen ? [] : tree.directories)}
-                    >
-                        {foldersOpen ? (
-                            <FoldVertical size={15} aria-hidden="true" />
-                        ) : (
-                            <UnfoldVertical size={15} aria-hidden="true" />
-                        )}
-                    </Button>
+                    <div className="diff-explorer-tools" inert={searchExpanded}>
+                        <Tooltip content="Hide tests">
+                            <Button
+                                className="diff-toolbar-icon"
+                                variant="ghost"
+                                size="sm"
+                                aria-label="Hide tests"
+                                aria-pressed={props.exclusions.tests}
+                                data-active={props.exclusions.tests}
+                                onClick={() =>
+                                    props.onExclusionsChange({ ...props.exclusions, tests: !props.exclusions.tests })
+                                }
+                            >
+                                <FlaskConicalOff size={16} strokeWidth={1.75} aria-hidden="true" />
+                            </Button>
+                        </Tooltip>
+                        <Tooltip content="Hide docs">
+                            <Button
+                                className="diff-toolbar-icon"
+                                variant="ghost"
+                                size="sm"
+                                aria-label="Hide docs"
+                                aria-pressed={props.exclusions.docs}
+                                data-active={props.exclusions.docs}
+                                onClick={() =>
+                                    props.onExclusionsChange({ ...props.exclusions, docs: !props.exclusions.docs })
+                                }
+                            >
+                                <BookOpen size={16} strokeWidth={1.75} aria-hidden="true">
+                                    <path d="m2 2 20 20" />
+                                </BookOpen>
+                            </Button>
+                        </Tooltip>
+                        <DiffFileFilters {...props} />
+                    </div>
                     <div className="diff-explorer-search-slot">
                         <ExpandingSearch
                             className="diff-explorer-search"
                             label="Find a file"
                             placeholder="Find a file…"
                             variant="filter"
+                            appearance="ghost"
                             size="sm"
                             expandedWidth="container"
                             value={query}
@@ -174,25 +189,8 @@ export function DiffFileTree(props: DiffFileTreeProps) {
                             onExpandedChange={setSearchExpanded}
                         />
                     </div>
-                    <DiffFileFilters {...props} />
                 </div>
             </div>
-            {activeFilters.length > 0 && (
-                <div className="diff-explorer-filter">
-                    <span title={activeFilters.join(', ')}>
-                        {activeFilters.length === 1 ? activeFilters[0] : `${activeFilters.length} filters`}
-                    </span>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="diff-toolbar-icon"
-                        aria-label="Clear file filters"
-                        onClick={props.onClearFilters}
-                    >
-                        <X size={12} aria-hidden="true" />
-                    </Button>
-                </div>
-            )}
             <ScrollArea
                 className="diff-tree-scroll"
                 label="Changed file navigation"

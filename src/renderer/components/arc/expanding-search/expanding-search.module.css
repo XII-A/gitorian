@@ -42,6 +42,19 @@
     box-shadow: 0 0 0 3px var(--focus-ring);
     color: var(--foreground);
 }
+.root[data-appearance='ghost'] .shell:not([data-expanded]) {
+    border-color: transparent;
+    background: transparent;
+}
+.root[data-appearance='ghost'] .trigger {
+    --focus-outline-offset: -2px;
+}
+.root[data-appearance='ghost'] .icon {
+    top: calc(50% - 8px);
+    left: calc(var(--es-size) / 2 - 8px);
+    width: 16px;
+    height: 16px;
+}
 @media (hover: hover) and (pointer: fine) {
     .shell:not([data-expanded]):hover {
         background: var(--surface-muted);
@@ -53,6 +66,9 @@
     .clear:hover {
         background: var(--surface-muted);
         color: var(--foreground);
+    }
+    .root[data-appearance='ghost'] .shell:not([data-expanded]):hover {
+        background: var(--surface-muted);
     }
 }
 /* A compact press while it is still a button; the morph takes over on release. */

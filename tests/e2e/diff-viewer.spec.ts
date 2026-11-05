@@ -23,7 +23,7 @@ async function retainDiffAcrossTabs(page: Page) {
     await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(100)
     const top = await viewport.evaluate((node) => node.scrollTop)
     for (const tab of ['Details', 'Related']) {
-        await page.getByRole('tab', { name: tab, exact: true }).click()
+        await page.getByRole('tab', { name: tab === 'Related' ? /^Related\b/ : tab, exact: true }).click()
         await expect(viewport).toBeHidden()
         await page.getByRole('tab', { name: 'Diff', exact: true }).click()
         await expect(viewport).toBeVisible()
@@ -59,6 +59,29 @@ test('Atlas: continuous file disclosure, explorer filters and a focused detached
     await page.getByRole('button', { name: 'Expand all files', exact: true }).click()
     await expect(toolbarFile.locator('[data-code] [data-line]').first()).toContainText('export function')
     await desktop.shot('atlas-docked')
+    await page.getByRole('button', { name: 'Diff display options', exact: true }).click()
+    await desktop.shot('display-options-docked')
+    await page
+        .getByRole('dialog', { name: 'Diff display options' })
+        .screenshot({ path: info.outputPath('display-palette.png') })
+    const counts = page.getByRole('button', { name: 'Show line counts', exact: true })
+    const totals = page
+        .locator('.diff-workspace-summary')
+        .getByRole('img', { name: '16 lines added, 10 lines deleted' })
+    await expect(totals).toBeVisible()
+    await counts.click()
+    await expect(totals).toBeHidden()
+    await counts.click()
+    await expect(totals).toBeVisible()
+    await counts.press('ArrowLeft')
+    await page.keyboard.press('ArrowRight')
+    await expect(page.getByRole('tooltip', { name: 'Show line counts', exact: true })).toBeVisible()
+    await desktop.shot('display-options-hint')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('tooltip', { name: 'Show line counts', exact: true })).toBeHidden()
+    if (await page.getByRole('dialog', { name: 'Diff display options' }).isVisible())
+        await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Diff display options', exact: true })).toBeFocused()
 
     const opened = app.waitForEvent('window')
     await page.getByRole('button', { name: 'Pop out diff', exact: true }).click()
@@ -68,7 +91,7 @@ test('Atlas: continuous file disclosure, explorer filters and a focused detached
     const tree = reference.getByRole('tree', { name: 'Changed files', exact: true })
     await expect(tree).toBeVisible()
     await expect(reference.getByRole('button', { name: 'Cite in entry', exact: true })).toHaveCount(0)
-    await expect(reference.getByRole('searchbox', { name: 'Find a file', exact: true })).toHaveCount(0)
+    await expect(reference.getByRole('button', { name: 'Find a file', exact: true })).toBeVisible()
     const sourceFolder = tree.getByRole('treeitem', { name: /^src / })
     await expect(sourceFolder).toContainText('+12')
     await expect(sourceFolder).toContainText('−7')
@@ -84,30 +107,73 @@ test('Atlas: continuous file disclosure, explorer filters and a focused detached
     await expect(reference.getByRole('button', { name: 'Find a file', exact: true })).toBeFocused()
 
     await reference.getByRole('button', { name: 'File filters and ordering', exact: true }).click()
-    await reference.getByRole('switch', { name: 'Exclude test files', exact: true }).check()
+    await reference.screenshot({ path: info.outputPath('file-options-dark.png') })
+    await reference
+        .getByRole('dialog', { name: 'File filters and ordering' })
+        .screenshot({ path: info.outputPath('file-palette.png') })
+    await test.step('File view and ordering are directly selectable by keyboard and reset together', async () => {
+        const list = reference.getByRole('radiogroup', { name: 'File list', exact: true })
+        await list.getByRole('radio', { name: 'Tree view', exact: true }).focus()
+        await reference.keyboard.press('ArrowRight')
+        await expect(list.getByRole('radio', { name: 'List view', exact: true })).toBeFocused()
+        await reference.keyboard.press('Enter')
+        await expect(tree.getByRole('treeitem')).toHaveCount(5)
+        await expect(tree.getByRole('treeitem').first()).toContainText('docs/review.md')
+        await reference.keyboard.press('Tab')
+        await expect(reference.getByRole('button', { name: 'Sort files', exact: true })).toBeFocused()
+        await reference.keyboard.press('Enter')
+        await reference.keyboard.press('End')
+        await expect(reference.getByRole('menuitem', { name: 'Sort by changes', exact: true })).toBeFocused()
+        await reference.keyboard.press('Enter')
+        await expect(reference.getByRole('dialog', { name: 'File filters and ordering' })).toBeVisible()
+        await reference.screenshot({ path: info.outputPath('file-options-keyboard.png') })
+        await expect(tree.getByRole('treeitem').first()).toContainText('src/components/Toolbar.tsx')
+        await reference.getByRole('button', { name: 'Reset file options', exact: true }).click()
+        await expect(list.getByRole('radio', { name: 'Tree view', exact: true })).toHaveAttribute(
+            'aria-checked',
+            'true'
+        )
+        await expect(reference.getByRole('button', { name: 'Sort files', exact: true })).toContainText('Path')
+        await expect(reference.getByRole('button', { name: 'Reset file options', exact: true })).toBeDisabled()
+    })
+    await reference.keyboard.press('Escape')
+    await reference.getByRole('button', { name: 'Hide tests', exact: true }).click()
     await expect(tree.getByRole('treeitem', { name: /navigation.test.ts/ })).toHaveCount(0)
-    await reference.getByRole('switch', { name: 'Exclude documentation', exact: true }).check()
+    await reference.getByRole('button', { name: 'Hide docs', exact: true }).click()
     await expect(tree.getByRole('treeitem', { name: /review.md/ })).toHaveCount(0)
     await expect(reference.getByText('3 files of 5', { exact: true })).toBeVisible()
     await expect(tree.getByRole('treeitem', { name: /Toolbar.tsx/ })).toBeVisible()
-    await reference.getByRole('button', { name: 'Reset', exact: true }).click()
-    await reference.getByRole('combobox', { name: 'File status', exact: true }).click()
+    await expect(reference.getByRole('button', { name: 'File filters and ordering', exact: true })).toHaveAttribute(
+        'data-active',
+        'false'
+    )
+    await reference.screenshot({ path: info.outputPath('file-options-exclusions.png') })
+    await reference.getByRole('button', { name: 'File filters and ordering', exact: true }).click()
+    await reference.getByRole('button', { name: 'Reset file options', exact: true }).click()
+    await reference.getByRole('combobox', { name: 'Change type', exact: true }).click()
     await reference.getByRole('option', { name: /^Binary/ }).click()
+    await expect(reference.getByRole('combobox', { name: 'Change type', exact: true })).toContainText('Binary')
+    await reference.screenshot({ path: info.outputPath('file-options-change-type.png') })
     await reference.keyboard.press('Escape')
     await expect(tree.getByRole('treeitem', { name: /mark.png/ })).toBeVisible()
     await expect(tree.getByRole('treeitem', { name: /theme.css/ })).toHaveCount(0)
     await expect(reference.locator('.diff-stream-file-state').filter({ hasText: 'Binary file' })).toBeVisible()
-    await reference.getByRole('button', { name: 'Clear file filters', exact: true }).click()
+    await reference.getByRole('button', { name: 'File filters and ordering', exact: true }).click()
+    await reference.getByRole('button', { name: 'Reset file options', exact: true }).click()
+    await reference.keyboard.press('Escape')
     await tree.getByRole('treeitem', { name: /review.md/ }).click()
     await expect(reference.locator('.diff-stream-file-state').filter({ hasText: 'No text changes' })).toBeInViewport()
     await tree.getByRole('treeitem', { name: /Toolbar.tsx/ }).click()
     await reference.screenshot({ path: info.outputPath('atlas-detached-dark.png') })
     await reference.emulateMedia({ reducedMotion: 'reduce' })
-    for (const width of [390, 768, 1024, 1440]) {
+    for (const width of [320, 390, 768, 1024, 1440]) {
         await resizeReference(app, width)
         await expect(reference.getByRole('region', { name: 'All file changes', exact: true })).toBeVisible()
         expect(await reference.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
         await reference.screenshot({ path: info.outputPath(`atlas-${width}.png`) })
+        await reference.getByRole('button', { name: 'Diff display options', exact: true }).click()
+        await reference.screenshot({ path: info.outputPath(`display-options-${width}.png`) })
+        await reference.keyboard.press('Escape')
     }
     await reference.evaluate(() => {
         document.documentElement.dataset.theme = 'light'
@@ -117,8 +183,42 @@ test('Atlas: continuous file disclosure, explorer filters and a focused detached
     await reference.getByRole('button', { name: 'Diff display options', exact: true }).focus()
     await reference.keyboard.press('Enter')
     await expect(reference.getByRole('group', { name: 'Diff layout', exact: true })).toBeVisible()
+    await reference.screenshot({ path: info.outputPath('display-options-light.png') })
     await reference.keyboard.press('Escape')
     await expect(reference.getByRole('button', { name: 'Diff display options', exact: true })).toBeFocused()
+    await reference.getByRole('button', { name: 'File filters and ordering', exact: true }).click()
+    await reference.screenshot({ path: info.outputPath('file-options-light.png') })
+    await reference.keyboard.press('Escape')
+    await expect(reference.getByRole('button', { name: 'File filters and ordering', exact: true })).toBeFocused()
+    await resizeReference(app, 1600)
+    await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()
+            .find((window) => window.webContents.getURL().includes('reference='))!
+            .webContents.setZoomFactor(2)
+    })
+    // Native capture retains the complete window at Electron zoom factors above one.
+    const captureZoom = async (name: string) => {
+        const image = await app.evaluate(async ({ BrowserWindow }) => {
+            const window = BrowserWindow.getAllWindows().find((item) =>
+                item.webContents.getURL().includes('reference=')
+            )!
+            return (await window.capturePage()).toPNG().toString('base64')
+        })
+        writeFileSync(info.outputPath(name), Buffer.from(image, 'base64'))
+    }
+    await reference.getByRole('button', { name: 'Diff display options', exact: true }).click()
+    await reference.getByRole('button', { name: 'Show line counts', exact: true }).focus()
+    await expect(reference.getByRole('button', { name: 'Show line counts', exact: true })).toBeInViewport()
+    await captureZoom('display-options-zoom.png')
+    await reference.keyboard.press('Escape')
+    await reference.getByRole('button', { name: 'File filters and ordering', exact: true }).click()
+    await reference.getByRole('button', { name: 'Sort files', exact: true }).focus()
+    await expect(reference.getByRole('button', { name: 'Sort files', exact: true })).toBeInViewport()
+    await reference.keyboard.press('Enter')
+    await reference.getByRole('menuitem', { name: 'Sort by changes', exact: true }).click()
+    await expect(reference.getByRole('dialog', { name: 'File filters and ordering' })).toBeVisible()
+    await captureZoom('file-options-zoom.png')
+    await reference.keyboard.press('Escape')
     await reference.getByRole('button', { name: 'Dock back to workspace', exact: true }).click()
     await expect(reader).toBeVisible()
 })
@@ -154,10 +254,15 @@ test('diff viewer: compact source copy, virtualized range selection and detached
     const viewport = page.getByRole('region', { name: 'All file changes', exact: true })
     const display = async (choice: string) => {
         await page.getByRole('button', { name: 'Diff display options', exact: true }).click()
-        if (choice === 'Original') await page.getByRole('switch', { name: 'Compact indentation' }).uncheck()
-        else if (choice === 'Scroll') await page.getByRole('switch', { name: 'Wrap lines' }).uncheck()
-        else if (choice === 'Wrap') await page.getByRole('switch', { name: 'Wrap lines' }).check()
-        else await page.getByRole('button', { name: choice, exact: true }).click()
+        if (choice === 'Original' || choice === 'Scroll' || choice === 'Wrap') {
+            const toggle = page.getByRole('button', {
+                name: choice === 'Original' ? 'Compact indentation' : 'Wrap lines',
+                exact: true
+            })
+            const pressed = choice === 'Wrap'
+            if ((await toggle.getAttribute('aria-pressed')) !== String(pressed)) await toggle.click()
+            await expect(toggle).toHaveAttribute('aria-pressed', String(pressed))
+        } else await page.getByRole('button', { name: choice, exact: true }).click()
         await page.keyboard.press('Escape')
     }
     await expect(lines.first()).toContainText('const value0')
@@ -316,7 +421,7 @@ test('diff viewer: compact source copy, virtualized range selection and detached
             .find((item) => item.webContents.getURL().includes('reference='))!
             .webContents.setZoomFactor(2)
     })
-    await expect(reference.locator('diffs-container [data-code] [data-line]').first()).toBeInViewport()
+    await expect(file('view.ts').locator('[data-code] [data-line]').first()).toBeInViewport()
     await reference.screenshot({ path: info.outputPath('detached-light-zoom.png') })
     await reference.getByRole('button', { name: 'Dock back to workspace', exact: true }).click()
     await expect(main.getByRole('region', { name: 'All file changes', exact: true })).toBeVisible()

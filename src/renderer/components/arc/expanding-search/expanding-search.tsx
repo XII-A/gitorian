@@ -34,6 +34,8 @@ export interface ExpandingSearchProps {
     items?: ExpandingSearchItem[]
     /** Filter an existing list in place without opening a results panel. */
     variant?: 'results' | 'filter'
+    /** A borderless collapsed toolbar button; the expanded field keeps its border. */
+    appearance?: 'surface' | 'ghost'
     value?: string
     onValueChange?: (value: string) => void
     size?: 'sm' | 'md'
@@ -316,6 +318,7 @@ export function ExpandingSearch({
     label,
     items = [],
     variant = 'results',
+    appearance = 'surface',
     value,
     onValueChange,
     size: controlSize = 'md',
@@ -490,6 +493,7 @@ export function ExpandingSearch({
             className={[styles.root, className].filter(Boolean).join(' ')}
             data-anchor={anchor}
             data-size={controlSize}
+            data-appearance={appearance}
         >
             <motion.div ref={shellRef} className={styles.shell} data-expanded={expanded || undefined} style={{ width }}>
                 <button
@@ -500,7 +504,13 @@ export function ExpandingSearch({
                     hidden={expanded}
                     onClick={expand}
                 />
-                <Search className={styles.icon} width={18} height={18} weight="bold" aria-hidden="true" />
+                <Search
+                    className={styles.icon}
+                    width={18}
+                    height={18}
+                    weight={appearance === 'ghost' ? 'regular' : 'bold'}
+                    aria-hidden="true"
+                />
                 {/* The placeholder waits for the shape to start moving, then fades in; on close it leaves first. */}
                 <motion.input
                     ref={inputRef}
