@@ -2,6 +2,8 @@ export interface DiagnosticState {
     recovery: boolean
     available: boolean
     liveRecovery: boolean
+    /** New incident to announce, independent of the retained refresh pause. */
+    recoveryNoticeId?: string
     startupFailed?: boolean
     restartRequired?: boolean
 }

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -15,6 +15,7 @@ export class DesktopDiagnostics implements DiagnosticObserver {
     readonly recovery: RecoveryAdmission
     private readonly timer: ReturnType<typeof setInterval>
     private available: boolean
+    private recoveryNoticeId?: string
     private observationPending = false
     private dropped = 0
     private shutdown = () => app.quit()
@@ -25,9 +26,10 @@ export class DesktopDiagnostics implements DiagnosticObserver {
         private readonly directory: string,
         private readonly worker: ChildProcess | undefined,
         private readonly local: IncidentReports | undefined,
-        state: { recovery: boolean; available: boolean }
+        state: { recovery: boolean; available: boolean; recoveryNoticeId?: string }
     ) {
         this.available = state.available
+        this.recoveryNoticeId = state.recoveryNoticeId
         this.recovery = new RecoveryAdmission(state.recovery || process.env.GITORIAN_RECOVERY_START === '1')
         delete process.env.GITORIAN_RECOVERY_START
         this.timer = setInterval(() => this.send({ type: 'pulse' }), 1000)
@@ -76,7 +78,9 @@ export class DesktopDiagnostics implements DiagnosticObserver {
                     })
                 }
             })
-            const state = await new Promise<{ recovery: boolean; available: boolean } | undefined>((resolve) => {
+            const state = await new Promise<
+                { recovery: boolean; available: boolean; recoveryNoticeId?: string } | undefined
+            >((resolve) => {
                 const timeout = setTimeout(() => resolve(undefined), 5000)
                 worker.once('error', () => {
                     clearTimeout(timeout)
@@ -98,7 +102,14 @@ export class DesktopDiagnostics implements DiagnosticObserver {
                         typeof message.available === 'boolean'
                     ) {
                         clearTimeout(timeout)
-                        resolve({ recovery: message.recovery, available: message.available })
+                        resolve({
+                            recovery: message.recovery,
+                            available: message.available,
+                            recoveryNoticeId:
+                                'recoveryNoticeId' in message && typeof message.recoveryNoticeId === 'string'
+                                    ? message.recoveryNoticeId
+                                    : undefined
+                        })
                     }
                 })
             })
@@ -111,11 +122,17 @@ export class DesktopDiagnostics implements DiagnosticObserver {
         const local = new IncidentReports(destination, identity, process.env.GITORIAN_RECOVERY_START === '1')
         return new DesktopDiagnostics(destination, undefined, local, {
             recovery: local.recoveryPending,
-            available: local.available
+            available: local.available,
+            recoveryNoticeId: local.recoveryNoticeId
         })
     }
     state(): DiagnosticState {
-        return { recovery: !this.recovery.normal, available: this.available, liveRecovery: !!this.worker?.connected }
+        return {
+            recovery: !this.recovery.normal,
+            available: this.available,
+            liveRecovery: !!this.worker?.connected,
+            recoveryNoticeId: this.recoveryNoticeId
+        }
     }
     prepareShutdown(handler: () => void) {
         this.shutdown = handler
@@ -189,6 +206,7 @@ export class DesktopDiagnostics implements DiagnosticObserver {
         this.send({ type: 'continue' })
     }
     pause() {
+        this.recoveryNoticeId = randomUUID()
         this.recovery.pause()
         this.local?.pause()
         this.send({ type: 'pause' })

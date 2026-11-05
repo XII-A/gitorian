@@ -76,6 +76,7 @@ type Record = z.infer<typeof record>
 /** A fixed privacy projection, bounded persistence and one copy/export representation. */
 export class IncidentReports {
     readonly previousUnexpected: boolean
+    readonly recoveryNoticeId?: string
     available = true
     private readonly current: Record
     private previous?: Record
@@ -112,6 +113,7 @@ export class IncidentReports {
                 /* A missing archive never prevents journal startup. */
             }
         }
+        this.recoveryNoticeId = this.previousUnexpected ? (prior?.id ?? randomUUID()) : undefined
         if (this.previousUnexpected && prior) {
             prior.incident ??= 'unexpected-exit'
             prior.detectedAt ??= new Date().toISOString()

@@ -41,6 +41,8 @@ export interface ToastOptions {
     title: string
     description?: string
     action?: ToastAction
+    /** Keep longer explanations readable by placing their action below the copy. */
+    actionPlacement?: 'inline' | 'below'
     /** Milliseconds before the toast closes itself. Defaults by type; loading toasts wait for an update. Pass Infinity to keep it until closed. */
     duration?: number
 }
@@ -86,6 +88,7 @@ interface ToastRecord {
     title: string
     description?: string
     action?: ToastAction
+    actionPlacement?: 'inline' | 'below'
     duration: number
     seq: number
     version: number
@@ -579,7 +582,12 @@ function ToastItem({
                 onPointerCancel={(event) => onPointerEnd(event, true)}
                 onClick={onCardClick}
             >
-                <motion.div ref={contentRef} className={styles.content} style={{ opacity: contentOpacity }}>
+                <motion.div
+                    ref={contentRef}
+                    className={styles.content}
+                    data-action-placement={toast.actionPlacement}
+                    style={{ opacity: contentOpacity }}
+                >
                     {/* A new type morphs its icon in place: the old glyph shrinks into a blur while the new one grows out of it. */}
                     <span className={styles.icon} data-type={toast.type} aria-hidden="true">
                         <AnimatePresence mode="popLayout" initial={false}>
