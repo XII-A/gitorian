@@ -1,10 +1,14 @@
-import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { MouseEvent } from 'react'
+import { ChevronRight } from 'lucide-react'
+import { useState, type MouseEvent } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
+import { motionTokens } from './components/arc/motion-tokens'
 import { Button } from './components/arc/button/button'
 import { ChangeCounts } from './ChangeStatistics'
 import { changeLabels } from './activity-details'
 import { diffFileKind, FileChangeIcon } from './diff-file-presentation'
 import { diffStats, type DiffFile } from './diff-model'
+
+const DisclosureChevron = motion.create(ChevronRight)
 
 export function DiffFileHeader({
     file,
@@ -17,7 +21,8 @@ export function DiffFileHeader({
     onToggle: (event: MouseEvent<HTMLButtonElement>) => void
     showLineCounts: boolean
 }) {
-    const Chevron = collapsed ? ChevronRight : ChevronDown
+    const reduced = useReducedMotion()
+    const [pointerToggle, setPointerToggle] = useState(false)
     const kind = diffFileKind(file)
     return (
         <div className="diff-stream-heading" data-file={file.name}>
@@ -28,13 +33,26 @@ export function DiffFileHeader({
                     className="diff-file-disclosure"
                     contentLayout="stack"
                     animateContent={false}
-                    onClick={onToggle}
+                    onClick={(event) => {
+                        setPointerToggle(event.detail > 0)
+                        onToggle(event)
+                    }}
                     aria-expanded={!collapsed}
                     aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${file.name}. ${changeLabels[kind]} file${file.prevName ? `. Previously ${file.prevName}` : ''}`}
                     title={file.prevName ? `${file.prevName} → ${file.name}` : file.name}
                 >
                     <span className="diff-file-disclosure-content">
-                        <Chevron size={14} strokeWidth={1.75} aria-hidden="true" />
+                        <DisclosureChevron
+                            size={14}
+                            strokeWidth={1.75}
+                            aria-hidden="true"
+                            initial={false}
+                            animate={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}
+                            transition={{
+                                duration: reduced || !pointerToggle ? 0 : motionTokens.duration.instant,
+                                ease: [...motionTokens.ease.enter]
+                            }}
+                        />
                         <FileChangeIcon kind={kind} />
                         <code>{file.name}</code>
                     </span>

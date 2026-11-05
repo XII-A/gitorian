@@ -129,7 +129,12 @@ export function DiffFileTree(props: DiffFileTreeProps) {
         if (!root || !selected) return
         const item = selected.getBoundingClientRect()
         const frame = root.getBoundingClientRect()
-        if (item.top < frame.top) root.scrollTop += item.top - frame.top
+        const treeRoot = selected.closest('[role="tree"]')
+        const rowHeight = treeRoot
+            ? parseFloat(getComputedStyle(treeRoot).getPropertyValue('--tree-row-height')) || 0
+            : 0
+        const pinnedHeight = (Number(selected.getAttribute('aria-level')) - 1) * rowHeight
+        if (item.top < frame.top + pinnedHeight) root.scrollTop += item.top - frame.top - pinnedHeight
         else if (item.bottom > frame.bottom) root.scrollTop += item.bottom - frame.bottom
     }, [activeFile, expanded, query, fileList])
     const expandedIds = query.trim() ? tree.directories : (expanded ?? tree.directories)
@@ -204,6 +209,7 @@ export function DiffFileTree(props: DiffFileTreeProps) {
                     variant="plain"
                     density="compact"
                     animateExpansion={false}
+                    stickyFolders={fileList === 'tree'}
                     selectedId={`file:${activeFile}`}
                     expandedIds={expandedIds}
                     onExpandedChange={setExpanded}

@@ -5,6 +5,7 @@ import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { codeLimits, codeTheme } from './code-highlighting'
 import { compactDiffIndents, selectedDiffLines, type DiffFile } from './diff-model'
 import { DiffFileHeader } from './DiffFileHeader'
+import { motionTokens } from './components/arc/motion-tokens'
 import { sourceSelection } from './diff-selection'
 
 const surfaceCSS = `
@@ -23,6 +24,14 @@ const surfaceCSS = `
 [data-separator-content] { color:var(--text-muted); font-size:var(--text-xs); }
 [data-separator-wrapper], [data-separator-content], [data-separator] { background:var(--surface-muted); border:0; }
 [data-error-wrapper] { display:none; }
+[data-code][data-disclosure-reveal] {
+ transition:opacity ${motionTokens.duration.instant}s cubic-bezier(${motionTokens.ease.enter.join(',')});
+ @starting-style { opacity:0.65; }
+}
+@media (prefers-reduced-motion:reduce) {
+ [data-code][data-disclosure-reveal] { @starting-style { opacity:0.9; } }
+}
+
 `
 
 export interface DiffNavigation {
@@ -67,6 +76,7 @@ export function DiffSurface({
     const latestCollapsed = useRef(collapsed)
     latestCollapsed.current = collapsed
     const versions = useRef(new Map<string, { collapsed: boolean; version: number }>())
+    const revealFile = useRef<string | undefined>(undefined)
     const disclosureAnchor = useRef<{ id: string; offset: number } | undefined>(undefined)
     const fileMap = useMemo(() => new Map(files.map((file) => [file.name, file])), [files])
     const indents = useMemo(() => new Map(files.map((file) => [file.name, compactDiffIndents(file)])), [files])
@@ -102,6 +112,11 @@ export function DiffSurface({
                 if (shadow?.querySelector('[data-error-message]')) {
                     queueMicrotask(onFailure)
                     return
+                }
+                if (revealFile.current === context.item.id && !context.item.collapsed) {
+                    revealFile.current = undefined
+                    for (const code of shadow?.querySelectorAll<HTMLElement>('[data-code]') ?? [])
+                        code.dataset.disclosureReveal = ''
                 }
                 const hunks = indents.get(context.item.id) ?? []
                 for (const line of shadow?.querySelectorAll<HTMLElement>('[data-code] [data-line]') ?? []) {
@@ -289,6 +304,8 @@ export function DiffSurface({
                                               offset:
                                                   heading.getBoundingClientRect().top - root.getBoundingClientRect().top
                                           }
+                                      revealFile.current =
+                                          event.detail > 0 && item.item.collapsed ? file.name : undefined
                                       onToggleFile(file.name)
                                   }}
                                   showLineCounts={showLineCounts}

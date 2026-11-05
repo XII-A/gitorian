@@ -45,6 +45,8 @@ export interface TreeViewProps {
     density?: 'comfortable' | 'compact'
     /** Keep branch selection independent from its disclosure button. */
     selectBranches?: boolean
+    /** Pins expanded folder ancestry inside the enclosing scroll viewport. Uses immediate disclosure. */
+    stickyFolders?: boolean
     /** Closes an enclosing picker and restores its trigger focus. */
     onEscape?: () => void
 }
@@ -136,10 +138,11 @@ export function TreeView({
     animateExpansion = true,
     density = 'comfortable',
     selectBranches = false,
+    stickyFolders = false,
     onEscape
 }: TreeViewProps) {
     const reduced = useReducedMotion() ?? false
-    const rowReduced = reduced || !animateExpansion
+    const rowReduced = reduced || !animateExpansion || stickyFolders
     const selectionLayoutId = `tree-selection-${useId()}`
     const [internalExpanded, setInternalExpanded] = useState(() => new Set(defaultExpandedIds))
     const [focusedId, setFocusedId] = useState<string | null>(nodes[0]?.id ?? null)
@@ -237,183 +240,192 @@ export function TreeView({
         }
     }
 
+    // Preserve the flat keyboard index and explicit ARIA levels while giving sticky rows
+    // a containing block that ends with their own descendants.
+    const rows = visible.map((item, index) => {
+        const hasChildren = expandable(item.node)
+        const isExpanded = hasChildren && expanded.has(item.node.id)
+        const isSelected = selectedId === item.node.id
+        // Only rows that mount use this delay: the space opens in one motion and the new children follow in order.
+        const delay =
+            openedIndex >= 0 && index > openedIndex
+                ? Math.min(index - openedIndex - 1, 7) * motionTokens.stagger.item
+                : 0
+        return (
+            <motion.div
+                key={item.node.id}
+                className={styles.row}
+                data-sticky-folder={(stickyFolders && isExpanded) || undefined}
+                layout={rowReduced ? false : 'position'}
+                initial={rowReduced ? false : { height: 0, opacity: 0, x: -6, overflow: 'hidden' }}
+                animate={{
+                    height:
+                        wrapLabels || branchEnds.has(item.node.id) ? 'auto' : density === 'compact' ? 30 : rowHeight,
+                    opacity: 1,
+                    x: 0,
+                    pointerEvents: 'auto',
+                    transitionEnd: { overflow: 'visible' },
+                    transition: rowReduced
+                        ? still
+                        : {
+                              height: motionTokens.spring.smooth,
+                              opacity: { ...fadeIn, delay },
+                              x: { ...motionTokens.spring.smooth, delay }
+                          }
+                }}
+                exit={
+                    rowReduced
+                        ? {
+                              opacity: 0,
+                              height: 0,
+                              overflow: 'hidden',
+                              pointerEvents: 'none',
+                              transition: still
+                          }
+                        : {
+                              height: 0,
+                              opacity: 0,
+                              x: -4,
+                              overflow: 'hidden',
+                              pointerEvents: 'none',
+                              transition: {
+                                  height: motionTokens.spring.smooth,
+                                  opacity: fadeOut,
+                                  x: fadeOut
+                              }
+                          }
+                }
+                transition={rowReduced ? still : { layout: motionTokens.spring.smooth }}
+            >
+                <div
+                    ref={(element) => {
+                        if (element) refs.current.set(item.node.id, element)
+                        else refs.current.delete(item.node.id)
+                    }}
+                    className={styles.item}
+                    role="treeitem"
+                    title={item.node.title ?? item.node.label}
+                    aria-label={item.node.ariaLabel}
+                    aria-level={item.depth}
+                    aria-posinset={item.position}
+                    aria-setsize={item.setSize}
+                    aria-expanded={hasChildren ? isExpanded : undefined}
+                    aria-busy={item.node.loadingPlaceholder ? true : undefined}
+                    aria-selected={item.node.selectable === false ? undefined : isSelected}
+                    tabIndex={focusableId === item.node.id ? 0 : -1}
+                    style={{ '--tree-depth': item.depth } as CSSProperties}
+                    onFocus={() => setFocusedId(item.node.id)}
+                    onKeyDown={(event) => onKeyDown(event, item, index)}
+                    onClick={() => {
+                        setFocusedId(item.node.id)
+                        select(item.node)
+                        if (hasChildren && (!selectBranches || item.node.selectable === false)) toggle(item.node)
+                    }}
+                >
+                    {isSelected && <Selection layoutId={selectionLayoutId} reduced={rowReduced} />}
+                    {item.depth > 1 && (
+                        <motion.span
+                            aria-hidden="true"
+                            className={styles.branch}
+                            initial={rowReduced ? false : { opacity: 0, scaleY: 0 }}
+                            animate={{ opacity: 1, scaleY: 1 }}
+                            transition={
+                                rowReduced
+                                    ? still
+                                    : {
+                                          duration: motionTokens.duration.standard,
+                                          ease: [...motionTokens.ease.enter],
+                                          delay
+                                      }
+                            }
+                        />
+                    )}
+                    {selectBranches && hasChildren ? (
+                        <button
+                            type="button"
+                            className={styles.disclosureButton}
+                            tabIndex={-1}
+                            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.node.label}`}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') event.stopPropagation()
+                            }}
+                            onClick={(event) => {
+                                event.stopPropagation()
+                                toggle(item.node)
+                                setFocusedId(item.node.id)
+                            }}
+                        >
+                            <ChevronRight
+                                size={14}
+                                strokeWidth={1.5}
+                                style={{ transform: isExpanded ? 'rotate(90deg)' : undefined }}
+                            />
+                        </button>
+                    ) : (
+                        <motion.span
+                            className={styles.disclosure}
+                            aria-hidden="true"
+                            initial={false}
+                            animate={{ rotate: isExpanded ? 90 : 0 }}
+                            transition={rowReduced ? still : motionTokens.spring.snappy}
+                        >
+                            {hasChildren ? <ChevronRight size={14} strokeWidth={1.9} /> : null}
+                        </motion.span>
+                    )}
+                    <span
+                        className={[styles.icon, hasChildren ? styles.folder : fileTone(item.node.label, styles)].join(
+                            ' '
+                        )}
+                        aria-hidden="true"
+                    >
+                        {item.node.icon ??
+                            (hasChildren ? (
+                                <FolderIcon open={isExpanded} reduced={rowReduced} />
+                            ) : (
+                                <File size={16} strokeWidth={1.7} />
+                            ))}
+                    </span>
+                    <span className={styles.label}>{item.node.label}</span>
+                    {item.node.status && <span className={styles.status}>{item.node.status}</span>}
+                </div>
+                {branchEnds.get(item.node.id)?.map((branch) => (
+                    <div
+                        key={branch.node.id}
+                        className={styles.placeholder}
+                        data-loading-branch={branch.node.id}
+                        style={{ '--tree-depth': branch.depth + 1 } as CSSProperties}
+                        aria-hidden="true"
+                    >
+                        {branch.node.loadingPlaceholder}
+                    </div>
+                ))}
+            </motion.div>
+        )
+    })
+    const rowsById = new Map(visible.map((item, index) => [item.node.id, rows[index]]))
+    function stickyRows(branches: TreeNode[], depth = 1): ReactNode {
+        return branches.map((node) => (
+            <div key={node.id} className={styles.branchGroup} style={{ '--tree-depth': depth } as CSSProperties}>
+                {rowsById.get(node.id)}
+                {node.children && expanded.has(node.id) ? stickyRows(node.children, depth + 1) : null}
+            </div>
+        ))
+    }
+
     return (
         <div
             id={id}
             className={styles.tree}
             data-variant={variant}
             data-density={density}
+            data-sticky-folders={stickyFolders || undefined}
             data-wrap-labels={wrapLabels || undefined}
             role="tree"
             aria-label={ariaLabel}
             aria-multiselectable="false"
         >
             <AnimatePresence initial={false} mode="sync">
-                {visible.map((item, index) => {
-                    const hasChildren = expandable(item.node)
-                    const isExpanded = hasChildren && expanded.has(item.node.id)
-                    const isSelected = selectedId === item.node.id
-                    // Only rows that mount use this delay: the space opens in one motion and the new children follow in order.
-                    const delay =
-                        openedIndex >= 0 && index > openedIndex
-                            ? Math.min(index - openedIndex - 1, 7) * motionTokens.stagger.item
-                            : 0
-                    return (
-                        <motion.div
-                            key={item.node.id}
-                            className={styles.row}
-                            layout={rowReduced ? false : 'position'}
-                            initial={rowReduced ? false : { height: 0, opacity: 0, x: -6, overflow: 'hidden' }}
-                            animate={{
-                                height:
-                                    wrapLabels || branchEnds.has(item.node.id)
-                                        ? 'auto'
-                                        : density === 'compact'
-                                          ? 30
-                                          : rowHeight,
-                                opacity: 1,
-                                x: 0,
-                                pointerEvents: 'auto',
-                                transitionEnd: { overflow: 'visible' },
-                                transition: rowReduced
-                                    ? still
-                                    : {
-                                          height: motionTokens.spring.smooth,
-                                          opacity: { ...fadeIn, delay },
-                                          x: { ...motionTokens.spring.smooth, delay }
-                                      }
-                            }}
-                            exit={
-                                rowReduced
-                                    ? {
-                                          opacity: 0,
-                                          height: 0,
-                                          overflow: 'hidden',
-                                          pointerEvents: 'none',
-                                          transition: still
-                                      }
-                                    : {
-                                          height: 0,
-                                          opacity: 0,
-                                          x: -4,
-                                          overflow: 'hidden',
-                                          pointerEvents: 'none',
-                                          transition: {
-                                              height: motionTokens.spring.smooth,
-                                              opacity: fadeOut,
-                                              x: fadeOut
-                                          }
-                                      }
-                            }
-                            transition={rowReduced ? still : { layout: motionTokens.spring.smooth }}
-                        >
-                            <div
-                                ref={(element) => {
-                                    if (element) refs.current.set(item.node.id, element)
-                                    else refs.current.delete(item.node.id)
-                                }}
-                                className={styles.item}
-                                role="treeitem"
-                                title={item.node.title ?? item.node.label}
-                                aria-label={item.node.ariaLabel}
-                                aria-level={item.depth}
-                                aria-posinset={item.position}
-                                aria-setsize={item.setSize}
-                                aria-expanded={hasChildren ? isExpanded : undefined}
-                                aria-busy={item.node.loadingPlaceholder ? true : undefined}
-                                aria-selected={item.node.selectable === false ? undefined : isSelected}
-                                tabIndex={focusableId === item.node.id ? 0 : -1}
-                                style={{ '--tree-depth': item.depth } as CSSProperties}
-                                onFocus={() => setFocusedId(item.node.id)}
-                                onKeyDown={(event) => onKeyDown(event, item, index)}
-                                onClick={() => {
-                                    setFocusedId(item.node.id)
-                                    select(item.node)
-                                    if (hasChildren && (!selectBranches || item.node.selectable === false))
-                                        toggle(item.node)
-                                }}
-                            >
-                                {isSelected && <Selection layoutId={selectionLayoutId} reduced={rowReduced} />}
-                                {item.depth > 1 && (
-                                    <motion.span
-                                        aria-hidden="true"
-                                        className={styles.branch}
-                                        initial={rowReduced ? false : { opacity: 0, scaleY: 0 }}
-                                        animate={{ opacity: 1, scaleY: 1 }}
-                                        transition={
-                                            rowReduced
-                                                ? still
-                                                : {
-                                                      duration: motionTokens.duration.standard,
-                                                      ease: [...motionTokens.ease.enter],
-                                                      delay
-                                                  }
-                                        }
-                                    />
-                                )}
-                                {selectBranches && hasChildren ? (
-                                    <button
-                                        type="button"
-                                        className={styles.disclosureButton}
-                                        tabIndex={-1}
-                                        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${item.node.label}`}
-                                        onKeyDown={(event) => {
-                                            if (event.key === 'Enter' || event.key === ' ') event.stopPropagation()
-                                        }}
-                                        onClick={(event) => {
-                                            event.stopPropagation()
-                                            toggle(item.node)
-                                            setFocusedId(item.node.id)
-                                        }}
-                                    >
-                                        <ChevronRight
-                                            size={14}
-                                            strokeWidth={1.5}
-                                            style={{ transform: isExpanded ? 'rotate(90deg)' : undefined }}
-                                        />
-                                    </button>
-                                ) : (
-                                    <motion.span
-                                        className={styles.disclosure}
-                                        aria-hidden="true"
-                                        initial={false}
-                                        animate={{ rotate: isExpanded ? 90 : 0 }}
-                                        transition={rowReduced ? still : motionTokens.spring.snappy}
-                                    >
-                                        {hasChildren ? <ChevronRight size={14} strokeWidth={1.9} /> : null}
-                                    </motion.span>
-                                )}
-                                <span
-                                    className={[
-                                        styles.icon,
-                                        hasChildren ? styles.folder : fileTone(item.node.label, styles)
-                                    ].join(' ')}
-                                    aria-hidden="true"
-                                >
-                                    {item.node.icon ??
-                                        (hasChildren ? (
-                                            <FolderIcon open={isExpanded} reduced={rowReduced} />
-                                        ) : (
-                                            <File size={16} strokeWidth={1.7} />
-                                        ))}
-                                </span>
-                                <span className={styles.label}>{item.node.label}</span>
-                                {item.node.status && <span className={styles.status}>{item.node.status}</span>}
-                            </div>
-                            {branchEnds.get(item.node.id)?.map((branch) => (
-                                <div
-                                    key={branch.node.id}
-                                    className={styles.placeholder}
-                                    data-loading-branch={branch.node.id}
-                                    style={{ '--tree-depth': branch.depth + 1 } as CSSProperties}
-                                    aria-hidden="true"
-                                >
-                                    {branch.node.loadingPlaceholder}
-                                </div>
-                            ))}
-                        </motion.div>
-                    )
-                })}
+                {stickyFolders ? stickyRows(nodes) : rows}
             </AnimatePresence>
         </div>
     )

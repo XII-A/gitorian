@@ -231,6 +231,73 @@ test('Atlas: continuous file disclosure, explorer filters and a focused detached
     await expect(reference.getByRole('button', { name: 'Find a file', exact: true })).toBeVisible()
     const sourceFolder = tree.getByRole('treeitem', { name: /^src / })
     await expect(sourceFolder).toContainText('+12')
+    await test.step('Folder ancestry stays visible and usable while the explorer scrolls', async () => {
+        const navigation = reference.getByRole('region', { name: 'Changed file navigation', exact: true })
+        const original = await navigation.getAttribute('style')
+        await navigation.evaluate((node) => {
+            node.style.height = '100px'
+            node.style.flex = 'none'
+        })
+        await tree.getByRole('treeitem', { name: /theme.css/ }).focus()
+        const frame = await navigation.boundingBox()
+        await expect.poll(() => navigation.evaluate((node) => node.scrollTop)).toBeGreaterThan(0)
+        await expect.poll(async () => (await sourceFolder.boundingBox())!.y - frame!.y).toBeGreaterThanOrEqual(0)
+        await expect.poll(async () => (await sourceFolder.boundingBox())!.y - frame!.y).toBeLessThanOrEqual(4)
+        await expect(sourceFolder).toBeInViewport()
+        // Nested headings must pass behind the pinned ancestor, including near a branch's end.
+        await expect
+            .poll(() =>
+                sourceFolder.evaluate((node) => {
+                    const bounds = node.getBoundingClientRect()
+                    return [4, bounds.height / 2, bounds.height - 4].every((offset) =>
+                        node.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + offset))
+                    )
+                })
+            )
+            .toBe(true)
+
+        await reference.screenshot({ path: info.outputPath('explorer-sticky-folders.png') })
+        await test.step('Nested headings remain clickable through branch boundaries in both scroll directions', async () => {
+            const max = await navigation.evaluate((node) => node.scrollHeight - node.clientHeight)
+            const offsets = Array.from({ length: Math.ceil(max / 7) + 1 }, (_, index) => Math.min(index * 7, max))
+            for (const top of [...offsets, ...offsets.toReversed()]) {
+                await navigation.evaluate((node, value) => {
+                    node.scrollTop = value
+                }, top)
+                await reference.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
+                const covered = await tree.getByRole('treeitem', { expanded: true }).evaluateAll((nodes) => {
+                    const viewport = document.querySelector('[aria-label="Changed file navigation"]')!
+                    const frame = viewport.getBoundingClientRect()
+                    return nodes
+                        .filter((node) => {
+                            const bounds = node.getBoundingClientRect()
+                            // A departing child is allowed to slide behind its pinned parent.
+                            const slot = frame.top + (Number(node.getAttribute('aria-level')) - 1) * bounds.height
+                            if (bounds.top < slot - 0.5 || bounds.bottom > frame.bottom) return false
+                            return [4, bounds.height / 2, bounds.height - 4].some(
+                                (offset) =>
+                                    !node.contains(
+                                        document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + offset)
+                                    )
+                            )
+                        })
+                        .map((node) => node.getAttribute('title'))
+                })
+                expect(covered, `Covered folder headings at scroll offset ${top}`).toEqual([])
+            }
+        })
+
+        await sourceFolder.click()
+        await expect(tree.getByRole('treeitem', { name: /theme.css/ })).toHaveCount(0)
+        await sourceFolder.press('ArrowRight')
+        await expect(tree.getByRole('treeitem', { name: /theme.css/ })).toHaveCount(1)
+        await navigation.evaluate((node, style) => {
+            if (style === null) node.removeAttribute('style')
+            else node.setAttribute('style', style)
+            node.scrollTop = 0
+        }, original)
+    })
+
     await expect(sourceFolder).toContainText('−7')
     await reference.getByRole('button', { name: 'Find a file', exact: true }).click()
     await reference.getByRole('searchbox', { name: 'Find a file', exact: true }).fill('theme')
