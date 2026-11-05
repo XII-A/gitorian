@@ -1,21 +1,22 @@
 ## New
 
-- Copy a diagnostic report after a crash without including your writing, credentials, or repository paths.
-- On Windows, use independent recovery controls to wait, share diagnostics, or restart a frozen app.
+- Review changes in a dedicated diff workspace with a file tree, filters, and display controls.
 
 ## Updates
 
-- Recovery keeps saved writing available and pauses automatic refresh until you choose to resume.
+- Code blocks and diffs share improved syntax highlighting, with smoother navigation through large changes.
+- Diff display preferences stay saved between sessions, and Details panels retain your selected tab.
+- Smaller Windows downloads include fewer unused dependencies.
 
 ## Fixes
 
-- Fixed a freeze after importing repositories or reopening previously loaded history.
-- Stalled journal operations now ask you to reopen and verify the last save instead of waiting indefinitely.
+- Copying selected diff lines preserves the exact source text.
+- Recovery notifications announce each crash once and show clearer feedback.
 
 ## Supported machines and installation
 
 Windows 10 or 11, 64-bit Intel or AMD (x64).
 
-Download and run `gitorian-0.1.10-windows-x64-setup.exe` from **Assets** below to install Gitorian. Existing installations can download this update in the background and restart when ready.
+Download and run `gitorian-0.1.11-windows-x64-setup.exe` from **Assets** below to install Gitorian. Existing installations can download this update in the background and restart when ready.
 
 See the [installation details](https://github.com/XII-A/gitorian#downloads) for unsigned installer warnings and checksums.
