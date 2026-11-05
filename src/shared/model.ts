@@ -3,6 +3,7 @@ import type { DiagnosticsBridge } from './diagnostics'
 import type { AppUpdateState } from './app-updates'
 import type { StateCursor, UpdateReply } from './state-updates'
 import { providerAccountSchema, providerSchema } from './provider-accounts'
+import { defaultDiffPreferences, diffPreferencesSchema } from './diff-preferences'
 
 export const documentSchema: z.ZodType<JournalNode> = z.lazy(() =>
     z.object({
@@ -180,6 +181,7 @@ export const stateSchema = z.object({
         })
     ),
     settings: z.object({
+        diff: diffPreferencesSchema.default(() => ({ ...defaultDiffPreferences })),
         weekStart: z.number().int().min(0).max(6),
         timezone: z.string(),
         refreshMinutes: z.number().min(0).max(1440),
@@ -276,6 +278,7 @@ export function initialState(): State {
         diffs: {},
         saves: [],
         settings: {
+            diff: { ...defaultDiffPreferences },
             weekStart: 1,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             refreshMinutes: 10,
@@ -403,7 +406,11 @@ export const commandSchema = z.discriminatedUnion('type', [
         until: z.string().optional(),
         reason: z.string().optional()
     }),
-    z.object({ type: z.literal('settings'), settings: stateSchema.shape.settings.omit({ destination: true }) }),
+    z.object({
+        type: z.literal('settings'),
+        settings: stateSchema.shape.settings.omit({ destination: true, diff: true })
+    }),
+    z.object({ type: z.literal('diffPreferences'), preferences: diffPreferencesSchema.partial() }),
     z.object({ type: z.literal('publish'), draftId: z.string() }),
     z.object({ type: z.literal('reconcile'), saveId: z.string() }),
     z.object({ type: z.literal('coverage'), activityId: z.string(), entryId: z.string(), linked: z.boolean() }),

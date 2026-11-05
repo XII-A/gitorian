@@ -1,9 +1,146 @@
 import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { test, expect } from './support/desktop'
 import { ordinary } from './support/diff-viewer-fixture'
 import type { ElectronApplication, Page } from '@playwright/test'
 
 test.use({ desktopEntry: 'tests/e2e/support/diff-viewer-main.mjs', desktopRepositoryIds: ['fixture'] })
+
+test('diff preferences survive activities and restart while filters stay local and reset remains combined', async ({
+    desktop
+}, info) => {
+    let { page, app } = desktop
+    const openReview = async () => {
+        await page.locator('.hub-activity').filter({ hasText: 'Review continuous changes' }).click()
+        await page.getByRole('button', { name: 'Open in workspace', exact: true }).click()
+        await page.getByRole('tab', { name: 'Diff', exact: true }).click()
+    }
+    const openDisplay = (target: Page) =>
+        target.getByRole('button', { name: 'Diff display options', exact: true }).click()
+    const savedReadingChoices = async (target: Page, layout: 'Split' | 'Unified') => {
+        await expect(target.getByRole('button', { name: layout, exact: true })).toHaveAttribute('aria-pressed', 'true')
+        for (const name of ['Wrap lines', 'Compact indentation', 'Show line counts']) {
+            await expect(target.getByRole('button', { name, exact: true })).toHaveAttribute('aria-pressed', 'false')
+        }
+    }
+    const popOut = async () => {
+        const opened = app.waitForEvent('window')
+        await page.getByRole('button', { name: 'Pop out diff', exact: true }).click()
+        const target = await opened
+        await resizeReference(app, 1440)
+        return target
+    }
+
+    await openReview()
+    await openDisplay(page)
+    await page.getByRole('button', { name: 'Split', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Split', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    for (const name of ['Wrap lines', 'Compact indentation', 'Show line counts']) {
+        await page.getByRole('button', { name, exact: true }).click()
+        await expect(page.getByRole('button', { name, exact: true })).toHaveAttribute('aria-pressed', 'false')
+    }
+    await page.keyboard.press('Escape')
+    await page.locator('.ws-activity-row').filter({ hasText: 'Review highlighted changes' }).click()
+    await page.getByRole('tab', { name: 'Diff', exact: true }).click()
+    await openDisplay(page)
+    await savedReadingChoices(page, 'Split')
+    await page.keyboard.press('Escape')
+    await page.locator('.ws-activity-row').filter({ hasText: 'Review continuous changes' }).click()
+    await page.getByRole('tab', { name: 'Diff', exact: true }).click()
+
+    let reference = await popOut()
+    await expect(
+        reference.evaluate(async () => {
+            const reply = await window.journal.invoke({ type: 'state' })
+            return window.journal.invoke({ type: 'settings', settings: reply.state.settings })
+        })
+    ).rejects.toThrow('Reference windows are read-only')
+    await openDisplay(reference)
+    await savedReadingChoices(reference, 'Split')
+    await reference.getByRole('button', { name: 'Unified', exact: true }).click()
+    await expect(reference.getByRole('button', { name: 'Unified', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+    )
+    await reference.keyboard.press('Escape')
+    await reference.getByRole('button', { name: 'File filters and ordering', exact: true }).click()
+    await reference.getByRole('radio', { name: 'List view', exact: true }).click()
+    await expect(reference.getByRole('radio', { name: 'List view', exact: true })).toHaveAttribute(
+        'aria-checked',
+        'true'
+    )
+    await reference.getByRole('button', { name: 'Sort files', exact: true }).click()
+    await reference.getByRole('menuitem', { name: 'Sort by changes', exact: true }).click()
+    await expect(reference.getByRole('button', { name: 'Sort files', exact: true })).toContainText('Changes')
+    await reference.getByRole('combobox', { name: 'Change type', exact: true }).click()
+    await reference.getByRole('option', { name: /^Modified/ }).click()
+    await reference.keyboard.press('Escape')
+    await reference.getByRole('button', { name: 'Hide tests', exact: true }).click()
+    await reference.getByRole('button', { name: 'Hide docs', exact: true }).click()
+    await expect(reference.getByText('3 files of 5', { exact: true })).toBeVisible()
+    await reference.screenshot({ path: info.outputPath('preferences-before-restart.png') })
+
+    ;({ page, app } = await desktop.restart())
+    await openReview()
+    await openDisplay(page)
+    await savedReadingChoices(page, 'Split')
+    await page.keyboard.press('Escape')
+    reference = await popOut()
+    await openDisplay(reference)
+    await savedReadingChoices(reference, 'Unified')
+    await reference.keyboard.press('Escape')
+    const tree = reference.getByRole('tree', { name: 'Changed files', exact: true })
+    await expect(tree.getByRole('treeitem')).toHaveCount(5)
+    await expect(tree.getByRole('treeitem').first()).toContainText('src/components/Toolbar.tsx')
+    for (const name of ['Hide tests', 'Hide docs']) {
+        await expect(reference.getByRole('button', { name, exact: true })).toHaveAttribute('aria-pressed', 'false')
+    }
+    await reference.getByRole('button', { name: 'File filters and ordering', exact: true }).click()
+    await expect(reference.getByRole('combobox', { name: 'Change type', exact: true })).toContainText('All files')
+    await expect(reference.getByRole('radio', { name: 'List view', exact: true })).toHaveAttribute(
+        'aria-checked',
+        'true'
+    )
+    await expect(reference.getByRole('button', { name: 'Sort files', exact: true })).toContainText('Changes')
+    await reference.keyboard.press('Escape')
+    await reference.getByRole('button', { name: 'Hide tests', exact: true }).click()
+    await reference.getByRole('button', { name: 'Hide docs', exact: true }).click()
+    await reference.getByRole('button', { name: 'File filters and ordering', exact: true }).click()
+    await reference.getByRole('combobox', { name: 'Change type', exact: true }).click()
+    await reference.getByRole('option', { name: /^Modified/ }).click()
+    await reference.getByRole('button', { name: 'Reset file options', exact: true }).click()
+    await expect(reference.getByRole('radio', { name: 'Tree view', exact: true })).toHaveAttribute(
+        'aria-checked',
+        'true'
+    )
+    await expect(reference.getByRole('button', { name: 'Sort files', exact: true })).toContainText('Path')
+    await expect(reference.getByRole('combobox', { name: 'Change type', exact: true })).toContainText('All files')
+    await expect(reference.getByRole('button', { name: 'Reset file options', exact: true })).toBeDisabled()
+    await reference.keyboard.press('Escape')
+    await expect(tree.getByRole('treeitem', { name: /navigation.test.ts/ })).toBeVisible()
+    await expect(tree.getByRole('treeitem', { name: /review.md/ })).toBeVisible()
+    await reference.screenshot({ path: info.outputPath('preferences-after-reset.png') })
+    await desktop.close()
+    const database = new DatabaseSync(join(desktop.profile, 'journal.sqlite'), { readOnly: true })
+    try {
+        const settings = database.prepare('SELECT settings FROM journal WHERE id = 1').get()?.settings
+        if (typeof settings !== 'string') throw new Error('Missing persisted settings')
+        const preferences = JSON.parse(settings).diff
+        expect(preferences).toEqual({
+            dockedSplit: true,
+            detachedSplit: false,
+            wrapLines: false,
+            originalIndentation: true,
+            showLineCounts: false,
+            fileList: 'tree',
+            order: 'path'
+        })
+        writeFileSync(info.outputPath('persisted-diff-preferences.json'), JSON.stringify(preferences, null, 2))
+    } finally {
+        database.close()
+    }
+})
 
 async function resizeReference(app: ElectronApplication, width: number) {
     await app.evaluate(({ BrowserWindow }, width) => {

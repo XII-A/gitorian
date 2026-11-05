@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
+import { diffPreferencesSchema, type DiffPreferences } from '../../shared/diff-preferences'
 import { createHash, randomUUID } from 'node:crypto'
 import { and, asc, desc, eq, gt, gte, inArray, lt, or, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/node-sqlite'
@@ -480,10 +481,22 @@ export class JournalEngine {
             const current = this.config().settings
             const parsed = parseSettings({
                 ...settings,
-                destination: current.destination
+                destination: current.destination,
+                diff: current.diff
             })
             this.setImageReferences('template', parsed.template)
             this.db.update(t.journal).set({ settings: parsed }).where(eq(t.journal.id, 1)).run()
+        }, generation)
+    }
+    saveDiffPreferences(preferences: Partial<DiffPreferences>, generation: string) {
+        this.write(() => {
+            const settings = this.config().settings
+            const diff = diffPreferencesSchema.parse({ ...settings.diff, ...preferences })
+            this.db
+                .update(t.journal)
+                .set({ settings: { ...settings, diff } })
+                .where(eq(t.journal.id, 1))
+                .run()
         }, generation)
     }
     setDestination(destination: Destination | undefined, generation: string) {

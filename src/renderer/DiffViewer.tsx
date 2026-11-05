@@ -6,18 +6,13 @@ import { EmptyState } from './components/arc/empty-state/empty-state'
 import { cachedDiff, loadDiff } from './diff-loader'
 import { DiffSkeleton } from './DiffSkeleton'
 import { providerName, type Provider } from '../shared/provider-accounts'
+import type { DiffPreferences } from '../shared/diff-preferences'
 import { codeLimits, loadCodeHighlighting } from './code-highlighting'
 import { diffStats, type DiffFile } from './diff-model'
 import { DiffSurface, type DiffNavigation } from './DiffSurface'
 import { DiffWorkspace } from './DiffWorkspace'
 import { DiffFileHeader } from './DiffFileHeader'
-import {
-    matchesDiffFilter,
-    type DiffFileExclusions,
-    type DiffFileFilter,
-    type DiffFileList,
-    type DiffFileOrder
-} from './diff-file-presentation'
+import { matchesDiffFilter, type DiffFileExclusions, type DiffFileFilter } from './diff-file-presentation'
 import './diff-viewer.css'
 
 function DiffEmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
@@ -123,28 +118,29 @@ function RawDiffStream({
 
 export function DiffViewer({
     text,
-    initialSplit = false,
+    preferences,
+    onPreferencesChange,
     detached = false,
     provider,
     onOpenSource
 }: {
     text: string
-    initialSplit?: boolean
+    preferences: DiffPreferences
+    onPreferencesChange: (preferences: Partial<DiffPreferences>) => void
     detached?: boolean
     provider?: Provider
     onOpenSource?: () => void
 }) {
-    const [split, setSplit] = useState(initialSplit)
+    const { wrapLines, originalIndentation, showLineCounts, fileList, order } = preferences
+    const split = detached ? preferences.detachedSplit : preferences.dockedSplit
+    function setPreference<Key extends keyof DiffPreferences>(key: Key, value: DiffPreferences[Key]) {
+        if (preferences[key] !== value) onPreferencesChange({ [key]: value })
+    }
     const [selected, setSelected] = useState('')
     const [navigation, setNavigation] = useState<DiffNavigation>()
-    const [wrapLines, setWrapLines] = useState(true)
-    const [originalIndentation, setOriginalIndentation] = useState(false)
-    const [showLineCounts, setShowLineCounts] = useState(true)
     const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
     const [filter, setFilter] = useState<DiffFileFilter>('all')
     const [exclusions, setExclusions] = useState<DiffFileExclusions>({ tests: false, docs: false })
-    const [fileList, setFileList] = useState<DiffFileList>('tree')
-    const [order, setOrder] = useState<DiffFileOrder>('path')
     const [parsed, setParsed] = useState<{ text: string; files: DiffFile[] }>()
     const [runtime, setRuntime] = useState<'ready' | 'unavailable'>()
     const [failed, setFailed] = useState<string>()
@@ -256,22 +252,22 @@ export function DiffViewer({
                 activeFile={active?.name ?? ''}
                 onSelectFile={selectFile}
                 split={split}
-                onSplitChange={setSplit}
+                onSplitChange={(value) => setPreference(detached ? 'detachedSplit' : 'dockedSplit', value)}
                 wrapLines={wrapLines}
-                onWrapLinesChange={setWrapLines}
+                onWrapLinesChange={(value) => setPreference('wrapLines', value)}
                 originalIndentation={originalIndentation}
-                onOriginalIndentationChange={setOriginalIndentation}
+                onOriginalIndentationChange={(value) => setPreference('originalIndentation', value)}
                 showLineCounts={showLineCounts}
-                onShowLineCountsChange={setShowLineCounts}
+                onShowLineCountsChange={(value) => setPreference('showLineCounts', value)}
                 filter={filter}
                 onFilterChange={setFilter}
                 exclusions={exclusions}
                 onExclusionsChange={setExclusions}
                 onClearFilters={clearFilters}
                 fileList={fileList}
-                onFileListChange={setFileList}
+                onFileListChange={(value) => setPreference('fileList', value)}
                 order={order}
-                onOrderChange={setOrder}
+                onOrderChange={(value) => setPreference('order', value)}
                 allCollapsed={allCollapsed}
                 onToggleAll={() =>
                     setCollapsed((previous) => {

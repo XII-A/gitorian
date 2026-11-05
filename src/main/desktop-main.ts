@@ -427,6 +427,7 @@ void app
                     ![
                         'state',
                         'view',
+                        'diffPreferences',
                         'loadWeek',
                         'details',
                         'entryHistory',
@@ -450,7 +451,9 @@ void app
                     return yield* Effect.fail(new Error('Unknown desktop window'))
                 if (
                     referenceWindows.has(event.sender.id) &&
-                    !['state', 'view', 'entryHistory', 'entry', 'details', 'open'].includes(command.type)
+                    !['state', 'view', 'entryHistory', 'entry', 'details', 'open', 'diffPreferences'].includes(
+                        command.type
+                    )
                 )
                     return yield* Effect.fail(new Error('Reference windows are read-only'))
                 if (!diagnostics.recovery.normal && command.type === 'refresh') {

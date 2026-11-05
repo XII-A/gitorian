@@ -433,11 +433,11 @@ function makeJournal() {
                         break
                     case 'settings':
                         yield* local(() =>
-                            store.saveSettings(
-                                { ...command.settings, destination: store.config.settings.destination },
-                                generation
-                            )
+                            store.saveSettings({ ...store.config.settings, ...command.settings }, generation)
                         )
+                        break
+                    case 'diffPreferences':
+                        yield* local(() => store.saveDiffPreferences(command.preferences, generation))
                         break
                     case 'publish':
                         yield* publishing.publish(command.draftId)

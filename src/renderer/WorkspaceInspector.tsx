@@ -250,7 +250,10 @@ export function WorkspaceInspector({
                                           }
                                         : undefined
                                 }
-                                initialSplit={reference}
+                                preferences={state.settings.diff}
+                                onPreferencesChange={(preferences) => {
+                                    void run({ type: 'diffPreferences', preferences })
+                                }}
                                 detached={reference}
                             />
                         </>
