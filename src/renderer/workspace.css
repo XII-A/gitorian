@@ -211,7 +211,7 @@
     justify-content: space-between;
     flex-wrap: wrap;
     padding: var(--space-3) var(--space-6);
-    border-top: 1px solid var(--border-subtle);
+    border-top: 1px solid var(--border);
     color: var(--text-secondary);
     font-size: var(--text-xs);
     flex: none;

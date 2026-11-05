@@ -337,23 +337,42 @@ app.on('browser-window-created', (_, window) => {
                 await pause(100)
             }
             popout.webContents.debugger.attach('1.3')
+            await popout.webContents.debugger.sendCommand('Input.dispatchKeyEvent', {
+                type: 'keyDown',
+                key: 'Tab',
+                code: 'Tab',
+                windowsVirtualKeyCode: 9
+            })
+            await popout.webContents.debugger.sendCommand('Input.dispatchKeyEvent', {
+                type: 'keyUp',
+                key: 'Tab',
+                code: 'Tab',
+                windowsVirtualKeyCode: 9
+            })
+            await popout.webContents.executeJavaScript(
+                `document.querySelector('[aria-label="Minimize window"]').focus()`
+            )
             for (const theme of ['dark', 'light']) {
                 record(`Inspect detached outer frame contrast in ${theme} theme`)
                 await popout.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
                     features: [{ name: 'prefers-color-scheme', value: theme }]
                 })
+                await popout.webContents.executeJavaScript(`document.documentElement.dataset.theme = '${theme}'`)
                 await pause(200)
                 assert.ok(
                     await popout.webContents.executeJavaScript(`(() => {
                     const header = document.querySelector('.ws-reference .ws-inspector-header')
                     const frame = document.querySelector('.window-frame-cap')
                     const root = document.getElementById('root')
-                    const color = getComputedStyle(frame).backgroundColor
-                    return header && frame && getComputedStyle(header).backgroundColor !== color &&
-                        getComputedStyle(document.body).backgroundColor === color &&
-                        getComputedStyle(root).backgroundColor === color
+                    const caption = document.querySelector('.window-title-bar')
+                    const outerColor = getComputedStyle(document.body).backgroundColor
+                    const captionColor = getComputedStyle(frame).backgroundColor
+                    return header && frame && caption && captionColor !== outerColor &&
+                        getComputedStyle(caption).backgroundColor === captionColor &&
+                        getComputedStyle(header).backgroundColor === outerColor &&
+                        getComputedStyle(root).backgroundColor === outerColor
                 })()`),
-                    `Detached outer frame must contrast with the unchanged header in ${theme} theme`
+                    `Detached caption must retain its own color above the shared outer frame in ${theme} theme`
                 )
                 if (output)
                     writeFileSync(
@@ -385,6 +404,23 @@ app.on('browser-window-created', (_, window) => {
                         await pause(100)
                     }
                     await pause(250)
+                    if (width === 1560 && zoom === 1) {
+                        await evaluate(`document.querySelector('.ws-activity-row')?.click()`)
+                        await pause(250)
+                        await shot('05-workspace-borders')
+                        if (output)
+                            writeFileSync(
+                                join(output, 'workspace-border-colors.json'),
+                                JSON.stringify(
+                                    await evaluate(`['.ws-writing-footer', '.ws-inspector-footer'].map(selector => {
+                                const element = document.querySelector(selector)
+                                return { selector, border: element ? getComputedStyle(element).borderTopColor : null }
+                            })`),
+                                    null,
+                                    2
+                                )
+                            )
+                    }
                     const crumb = await evaluate(`(() => {
                         const r = document.querySelector('[aria-label="Journal breadcrumb"] button').getBoundingClientRect()
                         return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
@@ -444,7 +480,8 @@ app.on('browser-window-created', (_, window) => {
                 'Window chrome smoke passed: hover, keyboard, drag region, maximize/restore, minimize, pop-out close, reduced motion, no menu'
             )
             if (output) writeFileSync(join(output, 'journey.json'), JSON.stringify({ passed: true }))
-            app.exit(0)
+            // Use the normal quit path so the journal worker and runtime shut down too.
+            app.quit()
         } catch (error) {
             console.error(error)
             await shot('failure')
