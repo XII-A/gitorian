@@ -284,7 +284,9 @@ try {
     await screenshot('01-imported-activity')
     await button('Open in workspace')
     await tab('Diff')
-    await wait(`document.body.innerText.includes('Exact draft asset diff marker')`)
+    await wait(
+        `Array.from(document.querySelectorAll('.diff-viewer diffs-container')).some(host=>host.shadowRoot?.querySelector('[data-code]')?.textContent.includes('Exact draft asset diff marker'))`
+    )
     await screenshot('02-real-diff')
     const writing = 'Exact draft asset verification: writing survives a complete restart.'
     await button('Start this week’s entry')
