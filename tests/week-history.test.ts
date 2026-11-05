@@ -11,7 +11,7 @@ import { workspace } from './fixtures'
 import * as gitModule from '../src/main/git'
 import { JournalDatabase } from '../src/main/journal-database'
 import { join } from 'node:path'
-import { rangeActivities } from '../src/renderer/hub-model'
+import { rangeActivities } from '../src/renderer/activity-projection'
 it('keeps automatic week loading cache-only in recovery until that Git source is resumed', async () => {
     const recovery = new RecoveryAdmission(true)
     const app = await workspace(recovery)

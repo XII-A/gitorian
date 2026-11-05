@@ -12,7 +12,7 @@ import { remoteConfiguration } from '../src/shared/provider-accounts'
 import type { State } from '../src/shared/model'
 import { workspace } from './fixtures'
 import * as gitModule from '../src/main/git'
-import { rangeActivities } from '../src/renderer/hub-model'
+import { rangeActivities } from '../src/renderer/activity-projection'
 import { Button } from '../src/renderer/components/arc/button/button'
 Object.defineProperty(Element.prototype, 'animate', { value: undefined, configurable: true })
 it('scopes the button to unfinished sources needed for the selected week across four repositories', async () => {

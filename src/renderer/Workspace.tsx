@@ -6,7 +6,8 @@ import { Alert } from './components/arc/alert/alert'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Activity, Command, Reply, State, InspectorTab } from '../shared/model'
 import { localDate, shiftWeek, weekOf } from '../shared/model'
-import { offsetDay, journalWeek, rangeActivities } from './hub-model'
+import { offsetDay, journalWeek } from './hub-model'
+import { useActivityProjection } from './use-activity-projection'
 import { Button } from './components/arc/button/button'
 import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
 import { Combobox } from './components/arc/combobox/combobox'
@@ -17,7 +18,7 @@ import { WorkspaceIcon } from './components/WorkspaceIcon'
 import { WorkspaceDraft } from './WorkspaceDraft'
 import type { Citation } from './WorkspaceDraft'
 import { WorkspaceInspector } from './WorkspaceInspector'
-import { activityLink, dateKey, dateValue, filterWorkspaceActivity, formatDay } from './workspace-model'
+import { activityLink, dateKey, dateValue, formatDay } from './workspace-model'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
 import { ActivityChart } from './ActivityChart'
@@ -133,19 +134,8 @@ export function Workspace({
         }
     }, [initialActivity, state.activities, inspect, dayFilter, state.settings.timezone])
     const selected = state.activities.find((item) => item.id === selectedId)
-    const activityState = useMemo(
-        () => ({
-            activities: state.activities,
-            repositories: state.repositories,
-            settings: { timezone: state.settings.timezone }
-        }),
-        [state.activities, state.repositories, state.settings.timezone]
-    )
-    const items = useMemo(() => rangeActivities(activityState, week, offsetDay(week, 6)), [activityState, week])
-    const allItems = useMemo(
-        () => rangeActivities(activityState, week, offsetDay(week, 6), true),
-        [activityState, week]
-    )
+    const projection = useActivityProjection(state, week, offsetDay(week, 6))
+    const items = projection.items
     const searchItems = useMemo(
         () =>
             searchExpanded
@@ -160,9 +150,9 @@ export function Workspace({
                 : [],
         [searchExpanded, items, state.repositories, state.settings.timezone]
     )
-    const visible = useMemo(
-        () => filterWorkspaceActivity(activityState, week, { project, branch, kind, authors, search: '' }),
-        [activityState, week, project, branch, kind, authors]
+    const selection = useMemo(
+        () => projection.select({ project, day: dayFilter.day, branch, kind, authors }),
+        [projection, project, dayFilter.day, branch, kind, authors]
     )
     const currentWeek = weekOf(new Date(), state.settings)
     const cite = useCallback(
@@ -189,8 +179,7 @@ export function Workspace({
             const activity = state.activities.find((item) => item.id === data.activityId)
             if (!activity || !('type' in data)) return
             if (data.type === 'cite') {
-                const accepted =
-                    canCite && rangeActivities(state, week, offsetDay(week, 6)).some((item) => item.id === activity.id)
+                const accepted = canCite && items.some((item) => item.id === activity.id)
                 if (accepted) cite(activity)
                 bus.postMessage({ type: 'citation-result', activityId: activity.id, accepted })
             }
@@ -203,7 +192,7 @@ export function Workspace({
             bus.close()
             channel.current = undefined
         }
-    }, [state, week, cite, canCite])
+    }, [state, items, cite, canCite])
     const changeWeek = (value: string) => {
         setWeek(value)
         setSelectedId(undefined)
@@ -409,22 +398,7 @@ export function Workspace({
                                     onClick={() => setKind(value)}
                                 >
                                     {value === 'all' ? 'All' : value === 'commit' ? 'Commits' : 'Requests & reviews'}
-                                    <span>
-                                        {
-                                            allItems.filter(
-                                                (item) =>
-                                                    (project === 'all' || item.repositoryId === project) &&
-                                                    (dayFilter.day === 'all' ||
-                                                        localDate(new Date(item.date), state.settings.timezone) ===
-                                                            dayFilter.day) &&
-                                                    !item.previousSource &&
-                                                    (value === 'all' ||
-                                                        (value === 'commit'
-                                                            ? item.kind === 'commit'
-                                                            : item.kind !== 'commit'))
-                                            ).length
-                                        }
-                                    </span>
+                                    <span>{selection.counts[value]}</span>
                                 </Button>
                             ))}
                             <ActivityDayFilter week={week} value={dayFilter.day} onValueChange={dayFilter.setDay} />
@@ -495,10 +469,10 @@ export function Workspace({
                             fade={16}
                         >
                             <WorkspaceActivityList
-                                activities={visible}
+                                groups={selection.groups}
+                                activityCount={selection.matchingCount}
                                 dayFilter={dayFilter}
                                 repositories={state.repositories}
-                                timezone={state.settings.timezone}
                                 selectedId={selectedId}
                                 canCite={canCite}
                                 onInspect={inspect}
