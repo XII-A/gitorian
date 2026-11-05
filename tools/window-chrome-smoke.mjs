@@ -358,6 +358,9 @@ app.on('browser-window-created', (_, window) => {
                     features: [{ name: 'prefers-color-scheme', value: theme }]
                 })
                 await popout.webContents.executeJavaScript(`document.documentElement.dataset.theme = '${theme}'`)
+                await popout.webContents.executeJavaScript(
+                    `document.querySelector('[aria-label="Minimize window"]').focus()`
+                )
                 await pause(200)
                 assert.ok(
                     await popout.webContents.executeJavaScript(`(() => {
@@ -377,6 +380,18 @@ app.on('browser-window-created', (_, window) => {
                 if (output)
                     writeFileSync(
                         join(output, `04-reference-frame-${theme}.png`),
+                        (await popout.webContents.capturePage()).toPNG()
+                    )
+                if (output)
+                    writeFileSync(
+                        join(output, `04-reference-corner-${theme}.png`),
+                        (await popout.webContents.capturePage({ x: 0, y: 24, width: 80, height: 60 })).toPNG()
+                    )
+                await popout.webContents.executeJavaScript(`document.activeElement.blur()`)
+                await pause(250)
+                if (output)
+                    writeFileSync(
+                        join(output, `04-reference-frame-${theme}-hidden.png`),
                         (await popout.webContents.capturePage()).toPNG()
                     )
             }

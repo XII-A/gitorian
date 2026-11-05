@@ -25,7 +25,7 @@ body:has(.window-chrome) [data-arc-dialog-overlay] {
     clip-path: inset(6px round var(--radius-inset));
 }
 /* Only this small mask moves; the page keeps its static rounded clip.
-   The circular cutouts continue the content corners below the growing frame. */
+   The circular cutouts round the bottom of the caption into the outer frame. */
 .window-frame-cap {
     position: fixed;
     inset: 6px 6px auto;
@@ -58,6 +58,11 @@ body:has(.window-chrome) [data-arc-dialog-overlay] {
         transparent calc(var(--radius-inset) - 0.5px),
         var(--window-caption-background) var(--radius-inset)
     );
+}
+/* A contrasting detached caption rounds from the window edge, not from the
+   content's 6px inset. The gray side frame continues below the curve. */
+body:has(.ws-reference .ws-inspector-header) .window-frame-cap {
+    inset-inline: 0;
 }
 .window-chrome[data-revealed='true'] .window-frame-cap {
     transform: translateY(0);
