@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Command, Reply } from '../shared/model'
 import { actionableSources } from './background-work'
-import { rangeActivities } from './hub-model'
+import { rangeActivities } from './activity-projection'
 import { useToastStack } from './components/arc/toast-stack/toast-stack'
 import { useRecovery } from './Diagnostics'
 

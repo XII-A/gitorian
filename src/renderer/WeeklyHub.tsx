@@ -24,11 +24,12 @@ import { ProjectFilter } from './ProjectFilter'
 import { ActivityChart } from './ActivityChart'
 import { ActivityRow } from './ActivityRow'
 import { ActivityHover } from './ActivityHover'
-import { ActivityDayFilter, ActivityDayRows, groupActivityDays, useActivityDays } from './ActivityDays'
+import { ActivityDayFilter, ActivityDayRows, useActivityDays } from './ActivityDays'
 import { HubActivityDialog, type HubActivityDialogHandle } from './HubActivityDialog'
 import { HeaderAtmosphere } from './HeaderAtmosphere'
 import './hub.css'
-import { offsetDay, rangeActivities, journalWeek } from './hub-model'
+import { offsetDay, journalWeek } from './hub-model'
+import { useActivityProjection } from './use-activity-projection'
 import { Tooltip } from './components/arc/tooltip/tooltip'
 import { EntryHistory } from './EntryHistory'
 import { useActivityRefresh } from './use-activity-refresh'
@@ -180,7 +181,8 @@ export function WeeklyHub({
     const { refresh, refreshLabel, refreshing: busy } = useActivityRefresh(run, start, end, state.settings.timezone)
     const loadingWeek = useWeekHistory(state, run, start)
     const repositories = state.repositories
-    const items = useMemo(() => rangeActivities(state, start, end), [state, start, end])
+    const projection = useActivityProjection(state, start, end)
+    const items = projection.items
     const highlightRules = useRef<HTMLStyleElement>(null)
     const highlightRepository = useCallback((key: string | null) => {
         if (!highlightRules.current) return
@@ -201,15 +203,11 @@ export function WeeklyHub({
         return { commits, prs, days: [...days] }
     }, [items, state.settings.timezone])
     const repositoryCount = repositorySummary.entries.length
-    const projectItems = items.filter(
-        (item) =>
-            (project === 'all' || item.repositoryId === project) &&
-            (dayFilter.day === 'all' || localDate(new Date(item.date), state.settings.timezone) === dayFilter.day)
+    const selection = useMemo(
+        () => projection.select({ project, day: dayFilter.day, kind: tab }),
+        [projection, project, dayFilter.day, tab]
     )
-    const visible = projectItems.filter(
-        (item) => tab === 'all' || (tab === 'commit' ? item.kind === 'commit' : item.kind !== 'commit')
-    )
-    const dayGroups = groupActivityDays(visible, state.settings.timezone, dayFilter.day)
+    const dayGroups = selection.groups
     const period = `${formatDate(start)} – ${formatDate(end, { month: 'short', day: 'numeric', year: 'numeric' })}`
     const row = (item: Activity, connected: boolean) => (
         <ActivityRow
@@ -237,16 +235,7 @@ export function WeeklyHub({
                         onClick={() => setTab(value)}
                     >
                         {value === 'all' ? 'All activity' : value === 'commit' ? 'Commits' : 'Requests & reviews'}
-                        <AnimatedCounter
-                            variant="inline"
-                            value={
-                                projectItems.filter(
-                                    (item) =>
-                                        value === 'all' ||
-                                        (value === 'commit' ? item.kind === 'commit' : item.kind !== 'commit')
-                                ).length
-                            }
-                        />
+                        <AnimatedCounter variant="inline" value={selection.counts[value]} />
                     </Button>
                 ))}
                 <ActivityDayFilter week={start} value={dayFilter.day} onValueChange={dayFilter.setDay} />
@@ -571,7 +560,7 @@ export function WeeklyHub({
                     </div>
                 </div>
                 <div className="hub-sr-only" role="status">
-                    {visible.length} activities from {period}
+                    {selection.items.length} activities from {period}
                 </div>
                 <div className="hub-sr-only" role="status">
                     {onboarding.visibility === 'complete' && !showSetup

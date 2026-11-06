@@ -86,6 +86,9 @@ test.describe('workspace aggregate activity', () => {
         await page.getByRole('button', { name: 'Open in workspace', exact: true }).click()
         await page.getByRole('button', { name: 'Start this week’s entry', exact: true }).click()
         await expect(page.locator('.tiptap[contenteditable="true"]')).toBeFocused()
+        // Opening a moderate day first must still use the busy week's aggregate virtualization rule.
+        await expect(page.locator('.ws-day-group [data-virtual-count="150"]')).toHaveCount(1)
+        await expect.poll(() => page.locator('.ws-activity-row').count()).toBeLessThan(80)
         const dayFilter = page.getByRole('combobox', { name: 'Activity day', exact: true })
         // Focus reveals the control in the horizontal strip before activating it.
         await dayFilter.focus()
