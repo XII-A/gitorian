@@ -167,125 +167,135 @@ export function WorkspaceInspector({
                         </TabsTrigger>
                     </TabsList>
                 </header>
-                <TabsContent
-                    value="diff"
-                    className="ws-inspector-diff"
-                    forceMount={diffActivity === activity.id ? true : undefined}
-                    inert={tab !== 'diff'}
-                    aria-hidden={tab !== 'diff'}
-                >
-                    {state.diffs[activity.id] === undefined && (loading || error) ? (
-                        loading ? (
-                            <DiffSkeleton />
-                        ) : (
-                            <ScrollArea
-                                className="ws-diff-state"
-                                viewportClassName="ws-diff-state-viewport"
-                                label="Diff status"
-                                fade={0}
-                            >
-                                <div role="status">
-                                    <EmptyState
-                                        iconVariant="plain"
-                                        icon={
-                                            <WarningCircleIcon size={32} weight="bold" className="ws-diff-error-icon" />
-                                        }
-                                        title="Changes couldn't be loaded"
-                                        description={readableError(error!)}
-                                        action={
-                                            <>
-                                                <Button
-                                                    variant="secondary"
-                                                    size="sm"
-                                                    onClick={() => onInspect?.(activity, 'diff')}
-                                                >
-                                                    Retry
-                                                </Button>
-                                                {url && (
+                <div className="ws-inspector-panels">
+                    <TabsContent
+                        value="diff"
+                        className="ws-inspector-diff"
+                        forceMount={diffActivity === activity.id ? true : undefined}
+                        inert={tab !== 'diff'}
+                        aria-hidden={tab !== 'diff'}
+                    >
+                        {state.diffs[activity.id] === undefined && (loading || error) ? (
+                            loading ? (
+                                <DiffSkeleton />
+                            ) : (
+                                <ScrollArea
+                                    className="ws-diff-state"
+                                    viewportClassName="ws-diff-state-viewport"
+                                    label="Diff status"
+                                    fade={0}
+                                >
+                                    <div role="status">
+                                        <EmptyState
+                                            iconVariant="plain"
+                                            icon={
+                                                <WarningCircleIcon
+                                                    size={32}
+                                                    weight="bold"
+                                                    className="ws-diff-error-icon"
+                                                />
+                                            }
+                                            title="Changes couldn't be loaded"
+                                            description={readableError(error!)}
+                                            action={
+                                                <>
                                                     <Button
-                                                        variant="ghost"
+                                                        variant="secondary"
                                                         size="sm"
-                                                        onClick={() => run({ type: 'open', url })}
+                                                        onClick={() => onInspect?.(activity, 'diff')}
                                                     >
-                                                        Open on{' '}
-                                                        {activityProvider(activity) === 'gitlab' ? 'GitLab' : 'GitHub'}
+                                                        Retry
                                                     </Button>
-                                                )}
-                                            </>
-                                        }
-                                    />
-                                </div>
-                            </ScrollArea>
-                        )
-                    ) : state.diffs[activity.id] === undefined ? (
-                        <div className="ws-diff-loading" role="status">
-                            Changes have not been loaded.
-                        </div>
-                    ) : (
-                        <>
-                            {loading && (
-                                <p className="ws-diff-notice" role="status">
-                                    Refreshing changes...
-                                </p>
-                            )}
-                            {error && !loading && (
-                                <div className="ws-diff-notice" role="status">
-                                    <p>Changes could not be refreshed. Showing cached changes.</p>
-                                    <Button variant="ghost" size="sm" onClick={() => onInspect?.(activity, 'diff')}>
-                                        Retry
+                                                    {url && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => run({ type: 'open', url })}
+                                                        >
+                                                            Open on{' '}
+                                                            {activityProvider(activity) === 'gitlab'
+                                                                ? 'GitLab'
+                                                                : 'GitHub'}
+                                                        </Button>
+                                                    )}
+                                                </>
+                                            }
+                                        />
+                                    </div>
+                                </ScrollArea>
+                            )
+                        ) : state.diffs[activity.id] === undefined ? (
+                            <div className="ws-diff-loading" role="status">
+                                Changes have not been loaded.
+                            </div>
+                        ) : (
+                            <>
+                                {loading && (
+                                    <p className="ws-diff-notice" role="status">
+                                        Refreshing changes...
+                                    </p>
+                                )}
+                                {error && !loading && (
+                                    <div className="ws-diff-notice" role="status">
+                                        <p>Changes could not be refreshed. Showing cached changes.</p>
+                                        <Button variant="ghost" size="sm" onClick={() => onInspect?.(activity, 'diff')}>
+                                            Retry
+                                        </Button>
+                                    </div>
+                                )}
+                                {activity.kind === 'change-request' &&
+                                    activity.diffRevision !== activity.revision &&
+                                    !error && (
+                                        <p className="ws-diff-notice">Showing changes from an earlier revision.</p>
+                                    )}
+                                <DiffViewer
+                                    provider={activityProvider(activity)}
+                                    key={activity.id}
+                                    text={state.diffs[activity.id]}
+                                    onOpenSource={
+                                        url
+                                            ? () => {
+                                                  void run({ type: 'open', url })
+                                              }
+                                            : undefined
+                                    }
+                                    preferences={state.settings.diff}
+                                    onPreferencesChange={(preferences) => {
+                                        void run({ type: 'diffPreferences', preferences })
+                                    }}
+                                    detached={reference}
+                                />
+                            </>
+                        )}
+                    </TabsContent>
+                    <TabsContent value="details">
+                        <ScrollArea className="ws-inspector-scroll" label="Activity details" fade={16}>
+                            <div className="ws-details-content">
+                                <ActivityDetails
+                                    activity={activity}
+                                    state={state}
+                                    loading={loading}
+                                    error={!hasFileStatistics(activity) ? error : undefined}
+                                    onRetry={() => onInspect?.(activity, 'details')}
+                                />
+                                {url && (
+                                    <Button variant="secondary" size="sm" onClick={() => run({ type: 'open', url })}>
+                                        Open in {activityProvider(activity) === 'gitlab' ? 'GitLab' : 'GitHub'}
+                                        <WorkspaceIcon name="popout" />
                                     </Button>
-                                </div>
-                            )}
-                            {activity.kind === 'change-request' &&
-                                activity.diffRevision !== activity.revision &&
-                                !error && <p className="ws-diff-notice">Showing changes from an earlier revision.</p>}
-                            <DiffViewer
-                                provider={activityProvider(activity)}
-                                key={activity.id}
-                                text={state.diffs[activity.id]}
-                                onOpenSource={
-                                    url
-                                        ? () => {
-                                              void run({ type: 'open', url })
-                                          }
-                                        : undefined
-                                }
-                                preferences={state.settings.diff}
-                                onPreferencesChange={(preferences) => {
-                                    void run({ type: 'diffPreferences', preferences })
-                                }}
-                                detached={reference}
-                            />
-                        </>
-                    )}
-                </TabsContent>
-                <TabsContent value="details">
-                    <ScrollArea className="ws-inspector-scroll" label="Activity details" fade={16}>
-                        <div className="ws-details-content">
-                            <ActivityDetails
-                                activity={activity}
-                                state={state}
-                                loading={loading}
-                                error={!hasFileStatistics(activity) ? error : undefined}
-                                onRetry={() => onInspect?.(activity, 'details')}
-                            />
-                            {url && (
-                                <Button variant="secondary" size="sm" onClick={() => run({ type: 'open', url })}>
-                                    Open in {activityProvider(activity) === 'gitlab' ? 'GitLab' : 'GitHub'}
-                                    <WorkspaceIcon name="popout" />
-                                </Button>
-                            )}
-                        </div>
-                    </ScrollArea>
-                </TabsContent>
-                <TabsContent value="related">
-                    <RelatedActivities
-                        key={activity.id}
-                        activities={related}
-                        repositoryName={repository?.name ?? 'Repository'}
-                        onInspect={onInspect}
-                    />
-                </TabsContent>
+                                )}
+                            </div>
+                        </ScrollArea>
+                    </TabsContent>
+                    <TabsContent value="related">
+                        <RelatedActivities
+                            key={activity.id}
+                            activities={related}
+                            repositoryName={repository?.name ?? 'Repository'}
+                            onInspect={onInspect}
+                        />
+                    </TabsContent>
+                </div>
             </Tabs>
             {!reference && (
                 <footer className="ws-inspector-footer">

@@ -120,7 +120,7 @@
 }
 .underlineShell {
     border: 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--tabs-divider-color, var(--border));
     border-radius: 0;
     background: transparent;
 }
