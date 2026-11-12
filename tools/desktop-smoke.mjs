@@ -151,7 +151,7 @@ app.on('browser-window-created', (_, window) => {
                     candidate.webContents.getURL().includes('reference=activity')
                 )
                 if (!reference) throw new Error('The native diff window did not open')
-                await waitForElement(reference, '.ws-inspector-footer button')
+                await waitForElement(reference, '[aria-label="Dock back to workspace"]')
                 const referenceDefaultsToDetails = await detailsFirst(reference)
                 writeFileSync(
                     join(tabEvidence, 'reference-initial-details.png'),
