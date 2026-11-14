@@ -563,6 +563,12 @@
     text-align: center;
     color: var(--text-secondary);
 }
+.ws-block-shortcut {
+    margin-inline-start: auto;
+    font-family: inherit;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
 .ws-block-menu [role='option'] {
     display: flex;
     align-items: center;

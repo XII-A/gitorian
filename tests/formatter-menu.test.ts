@@ -100,7 +100,7 @@ it.each(['Text', 'todo'])('reuses an empty block for %s and supports undo and re
     })
 })
 
-it.each([1, 13])('creates and converts consistently at text position %s', async (position) => {
+it.each([1, 8])('creates and converts consistently at text position %s', async (position) => {
     await withFormatter(async (writing, element) => {
         await settle(() => writing.commands.setContent('<p>Before after</p>'))
         await chooseFormat(writing, element, 'h1', position)
@@ -211,6 +211,104 @@ it('dismisses formatting without changing writing on Escape', async () => {
         })
         expect(document.querySelector('.ws-block-menu')).toBeNull()
         expect(writing.state.doc.textContent).toBe('Before /turnh1')
+        await settle(() => writing.commands.insertContent(' more writing'))
+        expect(document.querySelector('.ws-block-menu')).toBeNull()
+        expect(writing.state.doc.textContent).toBe('Before /turnh1 more writing')
+    })
+})
+
+it.each(['word/', 'https://', 'path/to/', 'שלום/', '🙂/', 'word/heading'])('keeps %s literal', async (text) => {
+    await withFormatter(async (writing) => {
+        await settle(() => writing.commands.insertContent(text))
+        expect(document.querySelector('.ws-block-menu')).toBeNull()
+        expect(writing.state.doc.textContent).toBe(text)
+    })
+})
+
+it('checks the character before a slash across marks and inline atoms', async () => {
+    await withFormatter(async (writing) => {
+        await settle(() => writing.commands.setContent('<p><strong>Before</strong>/</p>'))
+        await settle(() => writing.commands.setTextSelection(8))
+        expect(document.querySelector('.ws-block-menu')).toBeNull()
+        await settle(() => writing.commands.setContent('<p>Before<br>/</p>'))
+        await settle(() => writing.commands.setTextSelection(9))
+        expect(document.querySelector('.ws-block-menu')).toBeNull()
+    })
+})
+
+it.each(['/ ', '/zzzz ', 'Before /zzzz '])('dismisses %s on space while preserving writing', async (text) => {
+    await withFormatter(async (writing) => {
+        await settle(() => writing.commands.insertContent(text.slice(0, -1)))
+        expect(document.querySelector('.ws-block-menu')).not.toBeNull()
+        await settle(() => writing.commands.insertContent(' '))
+        expect(document.querySelector('.ws-block-menu')).toBeNull()
+        await settle(() => writing.commands.insertContent('continued'))
+        expect(document.querySelector('.ws-block-menu')).toBeNull()
+        expect(writing.state.doc.textContent).toBe(`${text}continued`)
+    })
+})
+
+it.each(['Enter', 'Tab', 'pointer'])('closes an unmatched query with %s and leaves literal text', async (key) => {
+    await withFormatter(async (writing, element) => {
+        await settle(() => writing.commands.insertContent('/zzzz'))
+        const close = document.querySelector<HTMLButtonElement>('.ws-block-menu [role="option"]')!
+        expect(close.textContent).toBe('Close menuEsc')
+        await settle(() => {
+            if (key === 'pointer') close.click()
+            else element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+        })
+        expect(document.querySelector('.ws-block-menu')).toBeNull()
+        expect(writing.state.doc.textContent).toBe('/zzzz')
+        await settle(() => writing.commands.insertContent('still literal'))
+        expect(document.querySelector('.ws-block-menu')).toBeNull()
+    })
+})
+
+it('maps a dismissed slash through earlier edits and permits a fresh trigger after deletion', async () => {
+    await withFormatter(async (writing, element) => {
+        await settle(() => writing.commands.insertContent('Before /'))
+        await settle(() => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+        await settle(() => writing.commands.insertContentAt(1, 'More '))
+        await settle(() => writing.commands.setTextSelection(writing.state.doc.content.size - 1))
+        expect(document.querySelector('.ws-block-menu')).toBeNull()
+        await settle(() => writing.commands.deleteRange({ from: 13, to: 14 }))
+        await settle(() => writing.commands.insertContent('/'))
+        expect(document.querySelector('.ws-block-menu')).not.toBeNull()
+    })
+})
+
+it('remembers separate dismissed triggers when returning to earlier writing', async () => {
+    await withFormatter(async (writing, element) => {
+        await settle(() => writing.commands.insertContent('/one'))
+        await settle(() => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+        await settle(() => writing.commands.insertContent(' /two'))
+        expect(document.querySelector('.ws-block-menu')).not.toBeNull()
+        await settle(() => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+        await settle(() => writing.commands.setTextSelection(5))
+        expect(document.querySelector('.ws-block-menu')).toBeNull()
+        await settle(() => writing.commands.setTextSelection(10))
+        expect(document.querySelector('.ws-block-menu')).toBeNull()
+    })
+})
+
+it('treats replacement of a dismissed slash as a fresh trigger at the same position', async () => {
+    await withFormatter(async (writing, element) => {
+        await settle(() => writing.commands.insertContent('/'))
+        await settle(() => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+        await settle(() => writing.commands.insertContentAt({ from: 1, to: 2 }, '/heading 1'))
+        expect(document.querySelector('.ws-block-menu [role="option"]')?.textContent).toBe('Heading 1')
+    })
+})
+
+it('recovers matches after backspacing an unknown query without dismissing multiword commands', async () => {
+    await withFormatter(async (writing, element) => {
+        await settle(() => writing.commands.insertContent('/code z'))
+        expect(document.querySelector('.ws-block-menu [role="option"]')?.textContent).toBe('Close menuEsc')
+        await settle(() => writing.commands.deleteRange({ from: 7, to: 8 }))
+        expect(document.querySelector('.ws-block-menu [role="option"]')?.textContent).toBe('Code block')
+        await settle(() => writing.commands.insertContent('block'))
+        await settle(() => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+        expect(writing.getJSON().content?.[0].type).toBe('codeBlock')
     })
 })
 
@@ -283,9 +381,9 @@ it('offers icon-and-label commands, scrolls the active keyboard option, and inse
             writing.commands.setTextSelection(writing.state.doc.content.size - 1)
             await Promise.resolve()
         })
-        const empty = document.querySelector('.ws-block-menu .ws-block-empty')
-        expect(empty?.textContent).toBe('No matching formats')
-        expect(document.querySelectorAll('.ws-block-menu [role="option"]')).toHaveLength(0)
+        const close = document.querySelector('.ws-block-menu [role="option"]')
+        expect(close?.textContent).toBe('Close menuEsc')
+        expect(close?.getAttribute('aria-selected')).toBe('true')
     } finally {
         await act(async () => {
             root.unmount()
