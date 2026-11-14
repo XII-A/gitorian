@@ -22,10 +22,10 @@ it.each([true, false])(
             await act(async () => {
                 root.render(
                     createElement(WorkspaceActivityList, {
-                        activities: [],
+                        groups: [],
+                        activityCount: 0,
                         dayFilter: { day: 'all', setDay: vi.fn(), expanded: new Set<string>(), toggle: vi.fn() },
                         repositories: [],
-                        timezone: 'UTC',
                         canCite: false,
                         onInspect: vi.fn(),
                         onEmptyAction,

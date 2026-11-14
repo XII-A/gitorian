@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react'
 import type { Activity, Repository } from '../shared/model'
-import { ActivityDayRows, groupActivityDays } from './ActivityDays'
+import { ActivityDayRows } from './ActivityDays'
+import type { ActivityDayGroup } from './activity-projection'
 import type { useActivityDays } from './ActivityDays'
 import { formatDay } from './workspace-model'
 import { ActivityRow } from './ActivityRow'
@@ -40,10 +41,10 @@ const WorkspaceActivityRow = memo(function WorkspaceActivityRow({
 })
 
 export const WorkspaceActivityList = memo(function WorkspaceActivityList({
-    activities,
+    groups,
+    activityCount,
     dayFilter,
     repositories,
-    timezone,
     selectedId,
     canCite,
     onInspect,
@@ -52,10 +53,10 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
     refreshing = false,
     refreshLabel = 'Refresh activity'
 }: {
-    activities: Activity[]
+    groups: ActivityDayGroup[]
+    activityCount: number
     dayFilter: ReturnType<typeof useActivityDays>
     repositories: Repository[]
-    timezone: string
     selectedId?: string
     canCite: boolean
     onInspect: (activity: Activity) => void
@@ -64,10 +65,6 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
     refreshing?: boolean
     refreshLabel?: string
 }) {
-    const groups = useMemo(
-        () => groupActivityDays(activities, timezone, dayFilter.day),
-        [activities, timezone, dayFilter.day]
-    )
     const names = useMemo(
         () => new Map(repositories.map((repository) => [repository.id, repository.name])),
         [repositories]
@@ -83,7 +80,7 @@ export const WorkspaceActivityList = memo(function WorkspaceActivityList({
                         </header>
                         <ActivityDayRows
                             day={day}
-                            virtualize={activities.length > 500}
+                            virtualize={activityCount > 500}
                             items={items}
                             focused={dayFilter.day !== 'all'}
                             expanded={dayFilter.expanded.has(day)}

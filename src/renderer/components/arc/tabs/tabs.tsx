@@ -48,7 +48,9 @@ export function Tabs({
     function handleChange(next: string) {
         const frame = root.current
         leavingRectRef.current =
-            frame?.querySelector(':scope > [role="tabpanel"][data-state="active"]')?.getBoundingClientRect() ?? null
+            Array.from(frame?.querySelectorAll('[role="tabpanel"][data-state="active"]') ?? [])
+                .find((panel) => panel.closest(`.${styles.root}`) === frame)
+                ?.getBoundingClientRect() ?? null
         const order = frame
             ? Array.from(frame.querySelectorAll<HTMLElement>('[role="tab"][data-value]'))
                   .filter((tab) => tab.closest(`.${styles.root}`) === frame)

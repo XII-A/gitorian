@@ -38,6 +38,8 @@ For line statistics, run `pnpm build` then `pnpm verify line-statistics`. The ru
 
 After `pnpm build`, run `pnpm verify inspector-tabs` for the focused tab regression journey. It uses a disposable journal-only sample profile, real Electron mouse/arrow-key input, and visible native windows so Motion can settle. It checks the 2px indicator geometry and transparent trigger background for all three tabs in the docked dark workspace and detached dark/light reference, then docks back. An opaque focus background hides the indicator because it paints behind the trigger. Screenshots, input observations, build/source details, logs, exit status, and cleanup results survive under `.ai-docs/verification/inspector-tabs-*/`; require `run.json.passed`, `cleanup.removed`, and `evidenceRetained` to be true. Sample data proves tab rendering and docking, not real activity loading or publishing.
 
+Review the captured content corners across Details, Diff and Related: detached panels have two upper inset-radius corners; docked panels have one rounded upper-right corner and a square shared left edge. Both omit the full-width tab divider and retain the active-tab underline. The muted header surface fills the cutouts, and scrolling content and scrollbar thumbs stay inside the panel clip. Use Dock back to workspace as the detached readiness control; that window has no citation footer.
+
 Hidden Electron windows can pause animation; the existing diagnostic measures the vertical escape rather than claiming smooth horizontal motion. Reference windows are read-only. Preserve existing failure/loading/cached/confirmed-empty behavior tests until those distinct states are covered by real desktop journeys. The diagnostic currently emits console results without the import runner's complete retained proof contract.
 
 Light-theme captures use an explicit renderer theme fixture because the app stays dark when OS appearance changes. The repository-import journey owns the production startup and OS-change assertions.
@@ -45,6 +47,8 @@ Light-theme captures use an explicit renderer theme fixture because the app stay
 The acquisition diagnostic dismisses setup before opening real hub activity, opens workspace Details, then uses native mouse input on the Diff tab. It independently checks that metadata-only hub loading created no patch rows in `journal.sqlite`. Patch IDs are content hashes, so count all patches rather than a historical ID prefix.
 
 - **Provider emoji:** run `pnpm test:e2e provider-emoji` after a build. A disposable synthetic PR imported through the existing seed boundary checks shortcode titles and Markdown in the hub, workspace and detached reference, while preserving code. The owning DOM test checks unknown aliases, native Unicode and link destinations. This proves shared local rendering for provider metadata, not live acquisition. Retain `pr-emoji-support.png` and the runner evidence.
+
+- **Description images:** run `pnpm test:e2e description-images` after a build. A disposable seeded PR checks that an HTML `<img>` attachment decodes in the hub, workspace and detached Details. Image responses are simulated at the HTTP boundary; this proves local rendering, not authenticated provider access. `tests/activity-details.test.ts` owns HTML/Markdown coexistence, relative and raw URL resolution, metadata/dimensions, literal code, and rejection of unsafe schemes and other HTML. Retain the three image screenshots and runner evidence.
 
 ## Diff rendering and syntax highlighting
 

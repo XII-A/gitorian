@@ -3,6 +3,7 @@ import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Activity, Repository } from '../shared/model'
 import { markdownUrl } from './activity-details'
+import { rehypeDescriptionImages } from './description-html-images'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { MermaidBlock } from './MermaidBlock'
 import { CodeBlock } from './CodeBlock'
@@ -44,6 +45,7 @@ export function ActivityDescription({ activity, repository }: { activity: Activi
             <Markdown
                 key={activity.id}
                 remarkPlugins={[remarkGfm, remarkEmoji]}
+                rehypePlugins={[rehypeDescriptionImages]}
                 skipHtml
                 urlTransform={(url, key) => {
                     const resolved = markdownUrl(url, activity, repository)
@@ -65,9 +67,17 @@ export function ActivityDescription({ activity, repository }: { activity: Activi
                         ) : (
                             <span>{children}</span>
                         ),
-                    img: ({ src, alt, title }) =>
+                    img: ({ src, alt, title, width, height }) =>
                         src ? (
-                            <img src={src} alt={alt ?? ''} title={title} loading="lazy" referrerPolicy="no-referrer" />
+                            <img
+                                src={src}
+                                alt={alt ?? ''}
+                                title={title}
+                                width={width}
+                                height={height}
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                            />
                         ) : (
                             <span>{alt}</span>
                         ),

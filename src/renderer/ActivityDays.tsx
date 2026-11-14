@@ -6,7 +6,6 @@ import { Ellipsis } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
 import { motionTokens } from './components/arc/motion-tokens'
 import type { Activity } from '../shared/model'
-import { localDate } from '../shared/model'
 import { offsetDay } from './hub-model'
 import { formatDay } from './workspace-model'
 import { Accordion } from './components/arc/accordion/accordion'
@@ -72,18 +71,6 @@ export function ActivityDayFilter({
             />
         </div>
     )
-}
-
-export function groupActivityDays(activities: Activity[], timezone: string, selectedDay: string) {
-    const days = new Map<string, Activity[]>()
-    for (const item of activities) {
-        const day = localDate(new Date(item.date), timezone)
-        if (selectedDay !== 'all' && day !== selectedDay) continue
-        const group = days.get(day) ?? []
-        group.push(item)
-        days.set(day, group)
-    }
-    return [...days]
 }
 
 /** The same five-row preview and final timeline node in both activity surfaces. */

@@ -183,11 +183,40 @@ describe('activity descriptions', () => {
         expect(container.querySelector('pre code')?.textContent).toContain('const safe = true')
         expect(container.querySelector('a')?.getAttribute('target')).toBe('_blank')
     })
-    it('does not execute raw HTML or unsafe link and image schemes', () => {
+    it('renders HTML images alongside Markdown, resolves paths and preserves image metadata', () => {
+        const description = [
+            'Before <img src="docs/preview.png" alt="Preview &amp; status" title="Full preview" width="320" height="180" onerror="alert(1)" style="position:fixed"> after.',
+            '<p align="center"><img src="https://github.com/example/project/blob/main/screen.png" alt="Screenshot" /></p>',
+            '![Markdown](https://example.com/markdown.png)',
+            '`<img src="https://example.com/literal.png">`',
+            '```html\n<img src="https://example.com/code.png">\n```'
+        ].join('\n\n')
+        const container = render(
+            createElement(ActivityDescription, { activity: { ...activity, description }, repository })
+        )
+        const images = container.querySelectorAll('img')
+        expect([...images].map((image) => image.getAttribute('src'))).toEqual([
+            'https://github.com/example/project/blob/main/docs/preview.png?raw=true',
+            'https://github.com/example/project/blob/main/screen.png?raw=true',
+            'https://example.com/markdown.png'
+        ])
+        expect(images[0].getAttribute('alt')).toBe('Preview & status')
+        expect(images[0].getAttribute('title')).toBe('Full preview')
+        expect(images[0].getAttribute('width')).toBe('320')
+        expect(images[0].getAttribute('height')).toBe('180')
+        expect(images[0].getAttribute('onerror')).toBeNull()
+        expect(images[0].getAttribute('style')).toBeNull()
+        expect(images[0].getAttribute('loading')).toBe('lazy')
+        expect(container.textContent).toContain('Before  after.')
+        expect(container.querySelector('code')?.textContent).toBe('<img src="https://example.com/literal.png">')
+        expect(container.querySelector('pre code')?.textContent).toContain('<img src="https://example.com/code.png">')
+    })
+    it('does not execute other HTML or unsafe link and image schemes', () => {
         const description =
-            '<script>alert(1)</script>\n\n[unsafe](javascript:alert(1))\n\n![unsafe image](data:text/html,bad)'
+            '<script>alert(1)</script>\n\n<iframe src="https://example.com"></iframe>\n\n<img src="javascript:alert(1)" alt="Unsafe HTML">\n\n<img src="data:image/png,bad">\n\n<img src="file:///private.png">\n\n<img src="https://user:pass@example.com/private.png">\n\n[unsafe](javascript:alert(1))\n\n![unsafe image](data:text/html,bad)'
         const container = render(createElement(ActivityDescription, { activity: { ...activity, description } }))
         expect(container.querySelector('script')).toBeNull()
+        expect(container.querySelector('iframe')).toBeNull()
         expect(container.querySelector('a')).toBeNull()
         expect(container.querySelector('img')).toBeNull()
         expect(container.textContent).toContain('unsafe')

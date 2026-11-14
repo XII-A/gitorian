@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { initialState } from '../src/shared/model'
 import type { Activity } from '../src/shared/model'
-import { journalWeek, offsetDay, rangeActivities } from '../src/renderer/hub-model'
+import { journalWeek, offsetDay } from '../src/renderer/hub-model'
+import { projectActivityRange, rangeActivities } from '../src/renderer/activity-projection'
 import { sampleState } from './workspace-fixture'
 
 describe('weekly hub calendar ranges', () => {
@@ -187,5 +188,15 @@ describe('weekly hub pull request grouping', () => {
         expect(rangeActivities(state, '2026-10-05', '2026-10-11')[0].date).toBe('2026-10-12T03:59:59Z')
         state.repositories.find((repo) => repo.id === pull.repositoryId)!.removed = true
         expect(rangeActivities(state, '2026-10-05', '2026-10-11')).toEqual([])
+    })
+
+    it('keeps current PR rows and counts independent of previous-source canonical grouping', () => {
+        const { state, pull } = stateWithPull()
+        state.activities.unshift({ ...pull, id: 'previous-pr', previousSource: true, title: 'Previous source PR' })
+        const projection = projectActivityRange(state, '2026-10-05', '2026-10-11')
+        expect(projection.select().items.map((item) => item.id)).toEqual([pull.id])
+        expect(projection.select().counts).toEqual({ all: 1, commit: 0, 'change-request': 1 })
+        expect(projection.select({ kind: 'previous' }).items.map((item) => item.id)).toEqual(['previous-pr'])
+        expect(projection.select().items.map((item) => item.id)).toEqual([pull.id])
     })
 })
