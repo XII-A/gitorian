@@ -137,6 +137,8 @@ test('code blocks: language, exact copy, real wrapping and saved edits', async (
     await test.step('pasted unknown fence retains its language and code paste remains literal', async () => {
         await pre.click()
         await body.press('Control+End')
+        // Leave code explicitly; native document-end movement can retain the code-local caret.
+        await body.press('Control+Enter')
         await app.evaluate(({ clipboard }) => clipboard.writeText('```custom-language\n  <raw>\n```'))
         await body.press('Control+V')
         const unknown = page.locator('.journal-code-block').nth(1)
@@ -196,6 +198,7 @@ test('code blocks: language, exact copy, real wrapping and saved edits', async (
         await page.keyboard.press('Escape')
         await pre.click()
         await body.press('Control+End')
+        await body.press('Control+Enter')
         await app.evaluate(({ clipboard }) =>
             clipboard.writeText(
                 [

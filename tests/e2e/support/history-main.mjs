@@ -17,6 +17,10 @@ app.on('history-release-search', () => releaseSearch())
 let entryGate = Promise.resolve()
 let releaseEntry = () => {}
 let entryReads = 0
+let markRefreshedEntry = false
+app.on('history-mark-refreshed-entry', () => {
+    markRefreshedEntry = true
+})
 const opened = []
 app.on('history-hold-entry', () => {
     entryGate = new Promise((resolve) => {
@@ -37,7 +41,11 @@ ipcMain.handle = (channel, listener) =>
             entryReads++
             await entryGate
         }
-        return listener(event, payload)
+        const reply = await listener(event, payload)
+        // Simulate an updated title while retaining the exact archived body.
+        if (channel === 'journal:entry' && markRefreshedEntry && reply?.id === 'notion:entry-00')
+            return { ...reply, title: 'Archive entry 0 (refreshed)' }
+        return reply
     })
 
 const profile = process.env.GITORIAN_E2E_PROFILE
@@ -61,7 +69,11 @@ state.entries = Array.from({ length: 55 }, (_, index) => ({
                 content: [
                     { type: 'text', text: index === 0 ? 'A unique archived lesson.' : 'Earlier published writing.' }
                 ]
-            }
+            },
+            ...Array.from({ length: index === 0 ? 80 : 0 }, (_, paragraph) => ({
+                type: 'paragraph',
+                content: [{ type: 'text', text: `Archived paragraph ${paragraph}: earlier writing worth reading.` }]
+            }))
         ]
     }
 }))

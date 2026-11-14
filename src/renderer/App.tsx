@@ -21,6 +21,7 @@ import { useOnboarding } from './use-onboarding'
 import type { SetupSection } from './GettingStarted'
 import { AppUpdateNotifications } from './AppUpdates'
 import { RecoveryProvider, useRecovery, WindowRecovery } from './Diagnostics'
+import { useActivityDiffIntents } from './diff-preparation'
 
 export function App() {
     return (
@@ -128,6 +129,7 @@ function JournalApp() {
         },
         [toast, update, dismiss]
     )
+    useActivityDiffIntents(reply?.state)
     useEffect(() => {
         const parameters = new URLSearchParams(window.location.search)
         const referenceKind = parameters.get('reference')

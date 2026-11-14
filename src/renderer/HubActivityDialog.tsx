@@ -12,6 +12,7 @@ import { isPullRequest } from './pull-request'
 import './activity-details.css'
 import { hasFileStatistics } from '../shared/change-statistics'
 import { activityProvider } from './activity-details'
+import { scheduleDiffPreparation } from './diff-preparation'
 
 export interface HubActivityDialogHandle {
     open: (activity: Activity) => void
@@ -35,6 +36,13 @@ export function HubActivityDialog({
     const [attempt, setAttempt] = useState(0)
     const loadedDetails = useRef(new Map<string, Activity>())
     const returnFocus = useRef<HTMLElement | null>(null)
+    const preparation = useRef({ state, selected })
+    preparation.current = { state, selected }
+    useEffect(() => {
+        const { state, selected } = preparation.current
+        if (isOpen && selected)
+            return scheduleDiffPreparation(state, selected, (command) => window.journal.invoke(command))
+    }, [isOpen, selected?.id, selected?.revision, state.restoreId])
     useImperativeHandle(
         ref,
         () => ({

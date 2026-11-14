@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { createCSSVariablesTheme, registerCustomTheme, getSharedHighlighter } from '@pierre/diffs'
 import { codeLanguage } from '../shared/code-languages'
 import { codeLexers } from './code-highlight-languages'
 export { codeLanguageChoices } from './code-highlight-languages'
@@ -20,14 +21,17 @@ export function codeLexer(language: string | null | undefined): string | undefin
 }
 
 let loading: Promise<CodeHighlighting> | undefined
+let loaded: CodeHighlighting | undefined
+export function cachedCodeHighlighting(): CodeHighlighting | undefined {
+    return loaded
+}
 /** One lazy runtime per window; callers can always show the original source. */
 export function loadCodeHighlighting(): Promise<CodeHighlighting> {
-    return (loading ??= initialize())
+    return (loading ??= initialize().then((result) => (loaded = result)))
 }
 
 async function initialize(): Promise<CodeHighlighting> {
     try {
-        const { createCSSVariablesTheme, registerCustomTheme, getSharedHighlighter } = await import('@pierre/diffs')
         registerCustomTheme(
             codeTheme,
             () =>

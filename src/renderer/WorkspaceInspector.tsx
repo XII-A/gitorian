@@ -2,7 +2,7 @@ import { renderEmoji } from './provider-emoji'
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
 import { readableError } from './background-work'
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { Activity, Command, Reply, State, InspectorTab } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/arc/tabs/tabs'
@@ -19,6 +19,7 @@ import { activityLink } from './workspace-model'
 import { activityProvider } from './activity-details'
 import { hasCachedDetails } from './activity-cache'
 import { hasFileStatistics } from '../shared/change-statistics'
+import { scheduleDiffPreparation } from './diff-preparation'
 
 interface Props {
     state: State
@@ -52,6 +53,12 @@ export function WorkspaceInspector({
 }: Props) {
     const [tab, setTab] = useState<InspectorTab>(initialTab)
     const [diffActivity, setDiffActivity] = useState(initialTab === 'diff' ? activity.id : undefined)
+    const preparationRef = useRef({ state, activity, run })
+    preparationRef.current = { state, activity, run }
+    useEffect(() => {
+        const { state, activity, run } = preparationRef.current
+        return scheduleDiffPreparation(state, activity, run, true)
+    }, [activity.id, activity.revision, activity.sourceVersion, state.restoreId])
     const titleId = useId()
     useEffect(() => {
         setTab(initialTab)
@@ -148,6 +155,7 @@ export function WorkspaceInspector({
                                     variant="ghost"
                                     size="sm"
                                     onClick={onClose}
+                                    className={reference ? undefined : 'ws-inspector-close'}
                                     aria-label={reference ? 'Dock back to workspace' : 'Close inspector'}
                                 >
                                     <WorkspaceIcon name={reference ? 'back' : 'close'} />

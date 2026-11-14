@@ -55,6 +55,9 @@ it('loads first-parent merge changes and replaces cached combined patches', asyn
         await app.store.applyAcquisitionBatch({ activities: [activity] })
         ;(await journalState(app.store)).diffs[activity.id] = combined
         expect(hasCachedDetails(await journalState(app.store), activity)).toBe(false)
+        const cacheMiss = await run(app.service.handle({ type: 'details', activityId: activity.id, cachedOnly: true }))
+        expect(cacheMiss.diff).toBeUndefined()
+        expect(await app.store.patch(activity.id)).toBeUndefined()
         const reply = await run(app.service.handle({ type: 'details', activityId: activity.id }))
         expect(reply.diff).toMatch(/^diff --git /)
         expect(
@@ -72,6 +75,8 @@ it('loads first-parent merge changes and replaces cached combined patches', asyn
         expect(reply.diff).toContain('-development')
         expect(reply.diff).toContain('+resolved')
         expect(hasCachedDetails(await journalState(app.store), activity)).toBe(true)
+        const cached = await run(app.service.handle({ type: 'details', activityId: activity.id, cachedOnly: true }))
+        expect(cached.diff).toBe(reply.diff)
         expect((await commitDetails(app.repository, sha, false)).files).toEqual(
             (await app.store.activity(activity.id))!.files
         )
