@@ -89,6 +89,15 @@ function blockQuery(query: string) {
     return { convert: !!turn, search: aliases[search] ?? search }
 }
 
+function matchingBlocks(available: typeof blocks, query: string) {
+    const { convert, search } = blockQuery(query)
+    return available.filter(
+        (block) =>
+            (!convert || !['template', 'image', 'emoji'].includes(block.id)) &&
+            block.label.toLowerCase().includes(search)
+    )
+}
+
 interface Menu {
     emoji?: boolean
     from: number
@@ -160,6 +169,13 @@ export const Editor = memo(function Editor({
     const validLink = !linkURL || /^(https?:|mailto:|tel:|\/|#)/i.test(linkURL)
     const [menu, setMenu] = useState<Menu>()
     const menuRef = useRef<Menu | undefined>(undefined)
+    // Dismissal belongs to the literal trigger, not to the currently rendered popup.
+    const dismissedMenus = useRef(new Map<number, string>())
+    const dismissMenu = (current = menuRef.current) => {
+        if (current) dismissedMenus.current.set(current.from, current.emoji ? ':' : '/')
+        menuRef.current = undefined
+        setMenu(undefined)
+    }
     const [emojiCategory, setEmojiCategory] = useState<EmojiCategory>('all')
     const emojiCategoryRef = useRef<EmojiCategory>('all')
     const [emojiHistory, setEmojiHistory] = useState<EmojiUse[]>([])
@@ -236,9 +252,10 @@ export const Editor = memo(function Editor({
                 y: coords.top - (rect?.top ?? 0) - 44
             })
         } else setBar(undefined)
-        const prefix = $from.parent.textBetween(0, $from.parentOffset, '\n')
+        const prefix = $from.parent.textBetween(0, $from.parentOffset, '\n', '\uFFFC')
         const colon = /(?:^|\s):([\p{L}\p{N}_+-]*)$/u.exec(prefix)
-        const match = empty && !readOnly && !$from.parent.type.spec.code ? (colon ?? /\/([^/]*)$/.exec(prefix)) : null
+        const match =
+            empty && !readOnly && !$from.parent.type.spec.code ? (colon ?? /(?:^|\s)\/([^/]*)$/.exec(prefix)) : null
         if (!match) {
             menuRef.current = undefined
             setMenu(undefined)
@@ -258,6 +275,19 @@ export const Editor = memo(function Editor({
             query: match[1],
             x: coords.left - (rect?.left ?? 0),
             y: coords.top - (rect?.top ?? 0)
+        }
+        if (dismissedMenus.current.has(next.from)) {
+            menuRef.current = undefined
+            setMenu(undefined)
+            return
+        }
+        if (
+            !next.emoji &&
+            next.query.endsWith(' ') &&
+            (!next.query.trim() || !matchingBlocks(availableBlocks, next.query).length)
+        ) {
+            dismissMenu(next)
+            return
         }
         menuRef.current = next
         setMenu(next)
@@ -365,11 +395,7 @@ export const Editor = memo(function Editor({
                 if (event.isComposing || _view.composing) return false
                 const current = menuRef.current
                 if (!current || !editorRef.current) return false
-                const filtered = availableBlocks.filter(
-                    (block) =>
-                        (!blockQuery(current.query).convert || !['template', 'image', 'emoji'].includes(block.id)) &&
-                        block.label.toLowerCase().includes(blockQuery(current.query).search)
-                )
+                const filtered = matchingBlocks(availableBlocks, current.query)
                 if (current.emoji && event.key !== 'Escape') {
                     const results = findEmoji(current.query, emojiCategoryRef.current, emojiHistoryRef.current)
                     const movement: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 8, ArrowUp: -8 }
@@ -385,18 +411,18 @@ export const Editor = memo(function Editor({
                     return false
                 }
                 if (event.key === 'Escape') {
-                    setMenu(undefined)
-                    menuRef.current = undefined
+                    dismissMenu()
                     return true
                 }
-                if (['ArrowDown', 'ArrowUp'].includes(event.key) && filtered.length) {
-                    activeRef.current =
-                        (activeRef.current + (event.key === 'ArrowDown' ? 1 : filtered.length - 1)) % filtered.length
+                if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+                    const count = Math.max(1, filtered.length)
+                    activeRef.current = (activeRef.current + (event.key === 'ArrowDown' ? 1 : count - 1)) % count
                     setActive(activeRef.current)
                     return true
                 }
-                if (['Enter', 'Tab'].includes(event.key) && filtered[activeRef.current]) {
-                    apply(editorRef.current, filtered[activeRef.current].id)
+                if (['Enter', 'Tab'].includes(event.key)) {
+                    if (filtered[activeRef.current]) apply(editorRef.current, filtered[activeRef.current].id)
+                    else dismissMenu()
                     return true
                 }
                 return false
@@ -412,7 +438,19 @@ export const Editor = memo(function Editor({
             }
             updateMenu(updated)
         },
-        onTransaction: ({ editor: updated }) => {
+        onTransaction: ({ editor: updated, transaction, appendedTransactions }) => {
+            for (const change of [transaction, ...appendedTransactions]) {
+                if (!change.docChanged) continue
+                const mapped = new Map<number, string>()
+                for (const [from, trigger] of dismissedMenus.current) {
+                    const position = change.mapping.mapResult(from, 1)
+                    if (!position.deleted) mapped.set(position.pos, trigger)
+                }
+                dismissedMenus.current = mapped
+            }
+            for (const [from, trigger] of dismissedMenus.current) {
+                if (updated.state.doc.textBetween(from, from + 1) !== trigger) dismissedMenus.current.delete(from)
+            }
             imports.current?.sync()
             onHistoryChange?.({ canUndo: updated.can().undo(), canRedo: updated.can().redo() })
         },
@@ -534,11 +572,7 @@ export const Editor = memo(function Editor({
         else if (rect.bottom > bounds.bottom) viewport.scrollTop += rect.bottom - bounds.bottom
     }, [menu, active])
     if (!editor) return null
-    const filtered = availableBlocks.filter(
-        (block) =>
-            (!blockQuery(menu?.query ?? '').convert || !['template', 'image', 'emoji'].includes(block.id)) &&
-            block.label.toLowerCase().includes(blockQuery(menu?.query ?? '').search)
-    )
+    const filtered = matchingBlocks(availableBlocks, menu?.query ?? '')
     return (
         <div className="journal-editor" ref={host}>
             {dropGuide !== undefined && (
@@ -617,10 +651,7 @@ export const Editor = memo(function Editor({
                     key={menu.emoji ? 'emoji' : 'blocks'}
                     open
                     onOpenChange={(open) => {
-                        if (!open) {
-                            menuRef.current = undefined
-                            setMenu(undefined)
-                        }
+                        if (!open) dismissMenu()
                     }}
                 >
                     <PopoverAnchor asChild>
@@ -697,7 +728,20 @@ export const Editor = memo(function Editor({
                                         </button>
                                     ))
                                 ) : (
-                                    <p className="ws-block-empty">No matching formats</p>
+                                    <button
+                                        type="button"
+                                        role="option"
+                                        id={`${id}-block-0`}
+                                        aria-selected="true"
+                                        onMouseDown={(event) => event.preventDefault()}
+                                        onClick={() => {
+                                            dismissMenu()
+                                            editor.view.focus()
+                                        }}
+                                    >
+                                        <span>Close menu</span>
+                                        <kbd className="ws-block-shortcut">Esc</kbd>
+                                    </button>
                                 )}
                             </ScrollArea>
                         )}
