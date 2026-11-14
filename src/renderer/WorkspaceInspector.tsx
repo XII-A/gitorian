@@ -148,6 +148,7 @@ export function WorkspaceInspector({
                                     variant="ghost"
                                     size="sm"
                                     onClick={onClose}
+                                    className={reference ? undefined : 'ws-inspector-close'}
                                     aria-label={reference ? 'Dock back to workspace' : 'Close inspector'}
                                 >
                                     <WorkspaceIcon name={reference ? 'back' : 'close'} />
