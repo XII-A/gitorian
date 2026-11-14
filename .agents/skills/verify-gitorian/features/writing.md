@@ -21,6 +21,7 @@ Start or resume a weekly entry, edit structured writing, cite work, and recover 
 - `writing.citation`: selected activity is inserted without losing surrounding writing; undo removes the insertion.
 - `writing.clipboard`: workspace right-click and Shift+F10 expose Arc Cut, Copy and Paste for the title, body and selected read-only text.
 - `writing.checklist`: formatter and task shortcut insertion, editable text beside checkboxes, Enter continuation/exit, Backspace/undo and saved checked state. Run `pnpm verify writing-checklist`.
+- `writing.slash`: literal slashes, lasting dismissal, Close menu, multiword commands and saved text. Run `pnpm test:e2e slash-menu`.
 - `writing.update`: background update download preserves input, focus and autosave; explicit installation checkpoints the final revision. Owned by the [app updates journey](app-updates.md).
 
 ## How to get to it (user POV)
@@ -28,6 +29,10 @@ Start or resume a weekly entry, edit structured writing, cite work, and recover 
 From the hub use `Write this week’s entry` or `Open journal` to create or resume the current week's draft. An empty week reached inside the workspace offers `Start this week’s entry`. In the workspace, edit Entry title and Journal body; inspect activity and use its citation action.
 
 ## Driving it with Electron
+
+### Slash menu journey
+
+`tests/e2e/slash-menu.spec.ts` owns native slash-menu input in a journal-only profile. Require embedded slashes to stay literal; Escape, outside press, Close menu (pointer/Enter/Tab), and Space after bare or unmatched queries must stay dismissed during continued input. Close menu retains the query and editor focus; outside dismissal retains the outside target's focus. A fresh matching multiword command must still execute. Retain the Close menu detail, literal-writing and reload screenshots, saved-body.json and independent post-exit persisted-drafts.json; require successful run.json and cleanup.removed. The formatter-menu tests own inexpensive matching, marked/atom prefix handling, mapped dismissal positions, query recovery and create/convert semantics.
 
 ### Checklist journey
 
