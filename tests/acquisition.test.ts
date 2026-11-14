@@ -14,6 +14,85 @@ import { journal, workspace, transport } from './fixtures'
 import { JournalDatabase } from '../src/main/journal-database'
 import { join } from 'node:path'
 import * as gitModule from '../src/main/git'
+it('pauses a missing local folder without repeated Git failures and resumes when it returns', async () => {
+    const app = await workspace()
+    const original = app.repository.path
+    try {
+        app.remote.github = true
+        const remoteRead = vi.spyOn(app.github, 'activities').mockReturnValue(Effect.succeed([]))
+        await app.store.updateRepositoryLocation({ ...app.repository, path: join(original, 'missing-folder') })
+        const read = vi.spyOn(gitModule, 'indexCommits')
+        await run(app.service.refresh())
+        expect(remoteRead).toHaveBeenCalled()
+        const missing = (await journalState(app.store)).acquisition?.[`git:${app.repository.id}`]
+        expect(missing?.pauseReason).toBe('folder')
+        expect(missing?.error).toBeUndefined()
+        expect(app.store.config.repositories[0].available).toBe(false)
+        await run(app.service.refresh({ source: 'git' }))
+        expect(read).not.toHaveBeenCalled()
+        expect((await journalState(app.store)).refreshError).toBeUndefined()
+        await app.store.updateRepositoryLocation({ ...app.repository, path: original, available: false })
+        await run(app.service.refresh({ source: 'git' }))
+        expect((await journalState(app.store)).acquisition?.[`git:${app.repository.id}`].status).toBe('idle')
+        expect(app.store.config.repositories[0].available).toBe(true)
+    } finally {
+        await app.close()
+    }
+})
+it.each(['spawn git ENOENT', 'Permission denied', 'not a git repository'])(
+    'keeps an existing folder with a Git failure actionable as an error: %s',
+    async (message) => {
+        const app = await workspace()
+        const read = vi.spyOn(gitModule, 'indexCommits').mockRejectedValue(new Error(message))
+        try {
+            await run(app.service.refresh({ source: 'git' }))
+            const status = (await journalState(app.store)).acquisition?.[`git:${app.repository.id}`]
+            expect(status?.status).toBe('error')
+            expect(status?.pauseReason).not.toBe('folder')
+            expect(app.store.config.repositories[0].available).toBe(true)
+        } finally {
+            read.mockRestore()
+            await app.close()
+        }
+    }
+)
+it.each(['Settings', 'folder import', 'disconnected account'])(
+    'resumes both sources when %s re-enables a repository stopped from activity recovery',
+    async (entry) => {
+        const app = await workspace()
+        app.remote.github = true
+        const remoteRead = vi.spyOn(app.github, 'activities').mockReturnValue(Effect.succeed([]))
+        try {
+            await run(app.service.refresh())
+            const previousReads = remoteRead.mock.calls.length
+            await run(app.service.handle({ type: 'repositoryTracking', id: app.repository.id, tracked: false }))
+            const stopped = (await journalState(app.store)).acquisition
+            expect(stopped?.[`git:${app.repository.id}`].status).toBe('cancelled')
+            expect(stopped?.[`remote:${app.repository.id}`].status).toBe('cancelled')
+            if (entry === 'disconnected account') app.remote.github = false
+            if (entry !== 'folder import') {
+                await run(app.service.handle({ type: 'repository', repository: { ...app.repository, removed: false } }))
+            } else {
+                const scan = await run(app.service.scanRepositories(app.directory))
+                await run(app.service.importRepositories(scan.repositoryScan!.id, [app.repository.path]))
+            }
+            if (entry === 'disconnected account') {
+                expect((await journalState(app.store)).acquisition?.[`remote:${app.repository.id}`].status).toBe('idle')
+                app.remote.github = true
+                await run(app.service.refresh())
+            }
+            await vi.waitFor(async () => {
+                const resumed = (await journalState(app.store)).acquisition
+                expect(resumed?.[`git:${app.repository.id}`].status).toBe('idle')
+                expect(resumed?.[`remote:${app.repository.id}`].status).toBe('idle')
+            })
+            expect(remoteRead.mock.calls.length).toBeGreaterThan(previousReads)
+        } finally {
+            remoteRead.mockRestore()
+            await app.close()
+        }
+    }
+)
 const repository: Repository = {
     id: 'repo',
     name: 'Project',
@@ -737,7 +816,7 @@ it.each([
     ['lost acknowledgment', 'membership']
 ] as const)('keeps the durable Git cursor after %s on a later %s page', async (failure, phase) => {
     const app = await journal()
-    const repo: Repository = { ...repository, id: 'git-rollback', remote: '', remotes: [] }
+    const repo: Repository = { ...repository, id: 'git-rollback', path: app.directory, remote: '', remotes: [] }
     const commit = (number: number): Activity => ({
         id: `${repo.id}:commit:${number}`,
         repositoryId: repo.id,

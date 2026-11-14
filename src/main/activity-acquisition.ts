@@ -3,7 +3,7 @@ import type { JournalFailure } from './journal-errors'
 import { ApplicationWork } from './application-work'
 import { makeSharedRequests } from './shared-requests'
 import { Context, Deferred, Effect, Exit, Layer, Queue, type Scope } from 'effect'
-import { indexCommits, inspectRepository } from './git'
+import { indexCommits, inspectRepository, repositoryFolderMissing } from './git'
 import { Http, HttpError, TransportError } from './http'
 import { gitConfiguration, contributionConfiguration } from '../shared/activity-history'
 import { localDate } from '../shared/model'
@@ -163,6 +163,21 @@ function makeAcquisition() {
                 const repositories = config.repositories.filter(
                     (r) => !r.removed && (!options.repositoryId || r.id === options.repositoryId)
                 )
+                // Explicit resumption also rearms sources whose account is currently disconnected.
+                // Admission below still prevents any remote work until that account is available.
+                if (options.resume) {
+                    for (const repository of repositories) {
+                        for (const provider of ['git', 'remote'] as const) {
+                            if (options.source && options.source !== provider) continue
+                            const key = `${provider}:${repository.id}`
+                            const persisted = config.acquisition[key]
+                            if (persisted?.status !== 'cancelled') continue
+                            const status = statusFor(key)
+                            Object.assign(status, persisted, { status: 'idle' })
+                            yield* checkpoint(key, status, generation)
+                        }
+                    }
+                }
                 const identity = { settings: config.settings, restoreId: generation }
                 const keys = repositories.flatMap((r) => [
                     ...((!options.source || options.source === 'git') && recovery.permits('git', r.id)
@@ -247,6 +262,29 @@ function makeAcquisition() {
                                     provider === 'git'
                                         ? gitConfiguration(repository, identity)
                                         : contributionConfiguration(repository, identity)
+                                if (provider === 'git') {
+                                    const missing = yield* local(() => repositoryFolderMissing(repository.path)).pipe(
+                                        Effect.catchAll(() => Effect.succeed(false))
+                                    )
+                                    if (stopped(key, token, generation)) return
+                                    if (missing) {
+                                        Object.assign(status, {
+                                            status: 'paused',
+                                            error: undefined,
+                                            retryAt: undefined,
+                                            pauseReason: 'folder'
+                                        })
+                                        yield* local(() =>
+                                            store.repositoryUnavailable(repository.id, configuration, generation)
+                                        )
+                                        yield* checkpoint(key, status, generation)
+                                        return
+                                    }
+                                    if (status.pauseReason === 'folder') {
+                                        status.status = 'idle'
+                                        status.error = undefined
+                                    }
+                                }
                                 const sourceIdentity: NonNullable<AcquisitionBatch['source']> = {
                                     repositoryId: repository.id,
                                     provider: provider,
@@ -254,6 +292,7 @@ function makeAcquisition() {
                                 }
                                 if (
                                     options.missingOnly &&
+                                    repository.available &&
                                     options.since &&
                                     status.historySince &&
                                     status.historySince <= options.since &&
@@ -751,10 +790,16 @@ function makeAcquisition() {
                                                                     status.gitCursor = undefined
                                                                 if (
                                                                     provider === 'git' &&
-                                                                    /not a git repository|ENOENT|cannot change to/i.test(
-                                                                        error.message
-                                                                    )
-                                                                )
+                                                                    (yield* local(() =>
+                                                                        repositoryFolderMissing(repository.path)
+                                                                    ).pipe(
+                                                                        Effect.catchAll(() => Effect.succeed(false))
+                                                                    ))
+                                                                ) {
+                                                                    status.status = 'paused'
+                                                                    status.error = undefined
+                                                                    status.retryAt = undefined
+                                                                    status.pauseReason = 'folder'
                                                                     yield* local(() =>
                                                                         store.repositoryUnavailable(
                                                                             repository.id,
@@ -762,6 +807,7 @@ function makeAcquisition() {
                                                                             generation
                                                                         )
                                                                     )
+                                                                }
                                                             })
                                                     }),
                                                     Effect.ensuring(

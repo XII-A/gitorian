@@ -202,6 +202,9 @@ export class JournalDatabase {
     entryHistory(query: string, cursor?: { date: string; id: string }) {
         return this.request('entryHistory', query, cursor)
     }
+    setRepositoryTracking(id: string, tracked: boolean, generation = this.generation) {
+        return this.request('setRepositoryTracking', id, tracked, generation)
+    }
     repositoryUnavailable(id: string, configuration: string, generation = this.generation) {
         return this.request('repositoryUnavailable', id, configuration, generation)
     }

@@ -101,7 +101,7 @@ it('reprojects cached history in durable bounded pages when the date range expan
     const repo: Repository = {
         id: 'projection',
         name: 'Projection',
-        path: '',
+        path: app.directory,
         remote: '',
         base: 'main',
         trackingStart: '2099-01-01',
