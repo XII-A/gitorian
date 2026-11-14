@@ -3,7 +3,7 @@ import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
-import { realpath } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import type { Activity, Repository, State } from '../shared/model'
 import { localDate } from '../shared/model'
 import { WorkQueue } from './work-queue'
@@ -11,6 +11,18 @@ import { WorkQueue } from './work-queue'
 const execute = promisify(execFile)
 const MAX_DIFF = 2_000_000
 const processes = new WorkQueue(3)
+/** Check the location itself: spawn ENOENT can also mean Git is not installed. */
+export async function repositoryFolderMissing(path: string): Promise<boolean> {
+    if (!path) return true
+    try {
+        await stat(path)
+        return false
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR'))
+            return true
+        throw error
+    }
+}
 export type GitCursor = NonNullable<NonNullable<State['acquisition']>[string]['gitCursor']>
 export interface GitHistory {
     configuration: string

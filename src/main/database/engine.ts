@@ -296,6 +296,13 @@ export class JournalEngine {
             )
         }, generation)
     }
+    setRepositoryTracking(id: string, tracked: boolean, generation: string) {
+        this.write(() => {
+            const current = this.repositories().find((r) => r.id === id)
+            if (!current) throw new DatabaseError('invalid', 'Repository is no longer available.')
+            this.db.update(t.repositories).set({ removed: !tracked }).where(eq(t.repositories.id, id)).run()
+        }, generation)
+    }
     updateRepositorySettings(repository: Repository, generation: string) {
         this.write(() => {
             const current = this.repositories().find((r) => r.id === repository.id)

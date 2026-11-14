@@ -245,6 +245,7 @@ function makeJournal() {
                                 yield* Effect.gen(function* () {
                                     if (tracked) {
                                         if (tracked.removed || !tracked.available) {
+                                            const wasStopped = tracked.removed
                                             const inspected = yield* Effect.tryPromise({
                                                 try: () => inspectRepository(path, importController.signal),
                                                 catch: (error) =>
@@ -258,6 +259,11 @@ function makeJournal() {
                                                 remotes: inspected.remotes
                                             })
                                             yield* local(() => store.updateRepositoryLocation(tracked))
+                                            yield* acquisition.startRefresh({
+                                                repositoryId: tracked.id,
+                                                source: wasStopped ? undefined : 'git',
+                                                resume: true
+                                            })
                                             restored++
                                         } else existing++
                                     } else {
@@ -338,8 +344,27 @@ function makeJournal() {
                         return yield* reply()
                     case 'view':
                         return yield* reply({}, command.view)
-                    case 'repository':
+                    case 'repository': {
+                        const previous = store.config.repositories.find((r) => r.id === command.repository.id)
                         yield* local(() => store.updateRepositorySettings(command.repository, generation))
+                        if (previous?.removed !== command.repository.removed) {
+                            if (command.repository.removed) {
+                                yield* acquisition.stop('git', command.repository.id)
+                                yield* acquisition.stop('remote', command.repository.id)
+                            } else {
+                                yield* acquisition.startRefresh({ repositoryId: command.repository.id, resume: true })
+                            }
+                        }
+                        break
+                    }
+                    case 'repositoryTracking':
+                        yield* local(() => store.setRepositoryTracking(command.id, command.tracked, generation))
+                        if (command.tracked) {
+                            yield* acquisition.startRefresh({ repositoryId: command.id, resume: true })
+                        } else {
+                            yield* acquisition.stop('git', command.id)
+                            yield* acquisition.stop('remote', command.id)
+                        }
                         break
                     case 'loadWeek':
                         yield* refresh({ since: command.since, missingOnly: true })

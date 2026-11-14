@@ -20,7 +20,7 @@ export function actionableSources(state: State) {
 }
 
 export function sourceProblems(state: State) {
-    return activitySources(state).filter(([, status]) => status.status === 'error')
+    return activitySources(state).filter(([, status]) => status.status === 'error' || status.pauseReason === 'folder')
 }
 
 export function readableError(error: string) {

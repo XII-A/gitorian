@@ -567,12 +567,18 @@ void app
                             const inspected = yield* native(() => inspectRepository(path))
                             const repository = store.config.repositories.find((item) => item.id === command.id)
                             if (!repository) return yield* Effect.fail(new Error('Repository not found'))
+                            const wasStopped = repository.removed
                             repository.path = inspected.path
                             repository.branches = inspected.branches
                             repository.remotes = inspected.remotes
                             repository.available = true
                             repository.removed = false
                             yield* native(() => store.updateRepositoryLocation(repository))
+                            yield* service.startRefresh({
+                                repositoryId: repository.id,
+                                source: wasStopped ? undefined : 'git',
+                                resume: true
+                            })
                         }
                         break
                     }

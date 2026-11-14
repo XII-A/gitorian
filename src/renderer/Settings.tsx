@@ -18,6 +18,7 @@ import { Download, Upload, Folder, RefreshCw } from 'lucide-react'
 import { NotionSignIn } from './NotionSignIn'
 import { Switch } from './components/arc/switch/switch'
 import { ExpandableCard } from './components/arc/expandable-card/expandable-card'
+import { Accordion } from './components/arc/accordion/accordion'
 import { NumberField } from './components/arc/number-field/number-field'
 import { SearchField } from './components/arc/search-field/search-field'
 import type { EditorHandle } from './Editor'
@@ -288,6 +289,16 @@ export function Settings({
             />
         </div>
     )
+    const repositoryCard = (repository: Repository) => (
+        <ExpandableCard
+            key={repository.id}
+            title={repository.name}
+            description={repository.path || 'Folder not located'}
+            descriptionClassName={repository.path ? 'repository-path' : undefined}
+        >
+            {() => repositoryFields(repository)}
+        </ExpandableCard>
+    )
     return (
         <Dialog
             open
@@ -416,18 +427,27 @@ export function Settings({
                                     )}
                                     {!!matchingRepositories.length && (
                                         <div className="settings-repositories">
-                                            {matchingRepositories.map((repository) => (
-                                                <ExpandableCard
-                                                    key={repository.id}
-                                                    title={repository.name}
-                                                    description={repository.path || 'Folder not located'}
-                                                    descriptionClassName={
-                                                        repository.path ? 'repository-path' : undefined
-                                                    }
-                                                >
-                                                    {() => repositoryFields(repository)}
-                                                </ExpandableCard>
-                                            ))}
+                                            {matchingRepositories
+                                                .filter((repository) => !repository.removed)
+                                                .map(repositoryCard)}
+                                            {matchingRepositories.some((repository) => repository.removed) && (
+                                                <Accordion
+                                                    variant="plain"
+                                                    defaultOpen={-1}
+                                                    items={[
+                                                        {
+                                                            title: 'Stopped repositories',
+                                                            content: (
+                                                                <div className="settings-repositories">
+                                                                    {matchingRepositories
+                                                                        .filter((repository) => repository.removed)
+                                                                        .map(repositoryCard)}
+                                                                </div>
+                                                            )
+                                                        }
+                                                    ]}
+                                                />
+                                            )}
                                         </div>
                                     )}
                                 </TabsContent>

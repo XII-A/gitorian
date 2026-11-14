@@ -214,7 +214,7 @@ export const stateSchema = z.object({
                 lastProgressAt: z.number().optional(),
                 error: z.string().optional(),
                 retryAt: z.string().optional(),
-                pauseReason: z.enum(['queue', 'allowance', 'provider', 'connection']).optional(),
+                pauseReason: z.enum(['queue', 'allowance', 'provider', 'connection', 'folder']).optional(),
                 since: z.string().optional(),
                 historySince: z.string().optional(),
                 historyTimezone: z.string().optional(),
@@ -375,6 +375,7 @@ export const commandSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('importRepositories'), scanId: z.string(), paths: z.array(z.string()).min(1) }),
     z.object({ type: z.literal('repository'), repository: repositorySchema }),
     z.object({ type: z.literal('relocate'), id: z.string() }),
+    z.object({ type: z.literal('repositoryTracking'), id: z.string(), tracked: z.boolean() }),
     z.object({
         type: z.literal('refresh'),
         since: z.iso.date().optional(),

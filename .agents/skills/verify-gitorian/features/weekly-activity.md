@@ -2,6 +2,17 @@
 
 Review the selected week's work, load older history, and recover failed sources without hiding healthy repositories.
 
+## Missing local repositories
+
+Run `pnpm test:e2e missing-repository` after building. Its disposable real Git folder is moved within the fixture; Git, IPC and SQLite remain real. Only the native folder picker is controlled.
+
+- Refresh from Workspace with the saved location missing. Activity sources shows Folder not found, the saved path, Locate folder and Stop tracking. Dismiss the warning and refresh again: the badge remains, without another toast or refresh error.
+- Cancel Locate folder without changing tracking. Restore the original location and refresh: local collection resumes. Move it again and choose its new location: require that canonical path, available=true and a completed Git checkpoint.
+- Stop tracking opens Arc ConfirmMorph in hold mode. Cancel and Escape preserve tracking; releasing a partial keyboard hold also preserves tracking, including with reduced motion. A completed hold clears source notices and leaves a compact green repository row with no path or action buttons. Focus moves to the resolved row. Tracking remains stopped after desktop restart and an independent SQLite read, while collected activity remains stored. Settings can restore tracking.
+- Settings keeps stopped repositories in its collapsed Stopped repositories disclosure. Screenshots cover desktop, 390px, located, stopped/Undo and Settings states; require run.json passed, exit zero and cleanup.removed.
+
+`tests/acquisition.test.ts` owns remote collection continuing while the local folder is missing, existing-folder Git/permission errors staying errors, and both sources resuming when a stopped repository is re-enabled through Settings or folder import. A missing Git executable must never be classified as a missing repository folder.
+
 ## Acquisition ownership
 
 `ActivityAcquisition` owns Effect coalescing, source serialization and FIFO batch admission. Preserve the existing acquisition and week-history behavior tests: five projects must each receive a first batch before a large project continues; an explicit retry queues behind active acquisition and duplicate retries share work. Run `pnpm verify github-import` and `pnpm verify repository-import` for desktop source failure/retry, import-triggered refresh and durable state. User pause remains a persisted checkpoint decision; it does not discard completed batches. Native Git stop aborts queued/running owned work; shared HTTP readers retain their independent cancellation ownership.
@@ -23,7 +34,7 @@ Preconditions: `pnpm build`; for the existing diagnostic journey use `pnpm smoke
 - **Current hub:** click `[aria-label="Refresh activity"]`; require the notification viewport to show `No activity found` and no healthy `Activity sources` control.
 - **Earlier week:** click `[aria-label^="Week:"]`, choose `2 weeks ago` within `[aria-label="Presets"]`, then `Apply`; require five `.hub-activity` rows.
 - **Range appearance (manual):** in the Week picker compare Oct 26–Nov 1, 2026 with Nov 2–8. The soft highlight must keep circular caps even on November's one-day first row, with an uninterrupted fill between dates. Review short slices at row/month boundaries, rapid selection changes, keyboard selection/cancellation and reduced motion. `tests/date-range-picker.test.ts` owns inexpensive selection/apply and keyboard/cancel checks; screenshots own cap appearance. The shared Arc range picker uses fixed-radius clipping so narrowing a segment does not compress its corners.
-- **Failure/recovery:** the harness renames one fixture folder, refreshes, opens `[aria-label="Activity sources"]`, requires exactly that failed project, restores the folder, and clicks `Retry`. Require the source to move to Up to date, the warning notification to clear, and the dialog to remain open for review.
+- **Failure/recovery:** use `pnpm test:e2e missing-repository` for missing-folder recovery, as described above. The legacy week-history diagnostic is not recovery evidence.
 - **Evidence:** retain the command, transcript, measured history-load time, screenshots before/after navigation and recovery, and a read-only stored-state check. Add the capture calls to this existing harness before claiming artifact-backed proof.
 - **Workspace entry:** repeat date navigation from the writing workspace and verify its visible activity matches the selected week. The existing week-history diagnostic drives only the hub; report the workspace path as uncovered until exercised.
 
@@ -103,7 +114,7 @@ Review regressions: acquisition must retry rolled-back body/membership pages and
 
 Run `pnpm test:e2e source-activity` after `pnpm build`. The Hub and workspace scenarios seed five synthetic repositories and persisted source checkpoints through JournalDatabase. No personal data, provider credentials, live provider requests, or Git history scans are used. These scenarios prove the compiled renderer, preload, stop command and SQLite persistence; provider recovery belongs to `tests/acquisition.test.ts`.
 
-- The `Activity sources` button is the first action from the left in both header utility groups and carries a 6px warning dot. It appears only while a tracked source has status error. Open it from each header. Only the unresolved account assignment produces a warning. The queue groups completed Local Git sources into one row; collecting and automatic waits use named status icons. The progress track counts individual completed sources.
+- The `Activity sources` button is the first action from the left in both header utility groups and carries a 6px warning dot. It appears while a tracked source has an error or a confirmed missing folder. Open it from each header. In the source-activity fixture, only the unresolved account assignment produces a warning. The queue groups completed Local Git sources into one row; collecting and automatic waits use named status icons. The progress track counts individual completed sources.
 - Activate a clock icon with the keyboard to inspect its automatic-wait reason. Stop refresh moves only the selected source to a stopped icon with Resume. Reload retains the stopped state; an independent read-only SQLite query after Electron closes confirms `cancelled` with no retry timer.
 - Escape closes the dialog and restores the source trigger. Choose account closes it and opens Workspace settings at Repositories.
 - Check 390px and 320px layouts and 200% Electron zoom under reduced motion. Preserve full readable text and reachable controls without horizontal overflow. `contrast.json` records measured text pairs against their opaque rendered surfaces.
