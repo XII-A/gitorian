@@ -72,3 +72,43 @@ it('retries a failed read when the reader is reopened', async () => {
     await waitFor(() => expect(result.current.entry?.title).toBe('Recovered writing'))
     expect(result.current.error).toBeUndefined()
 })
+
+it('keeps the current document readable while a new snapshot is loading', async () => {
+    let finishRefresh!: (entry: HistoryEntry) => void
+    readEntry.mockResolvedValueOnce(entry('Current writing')).mockImplementationOnce(
+        () =>
+            new Promise((resolve) => {
+                finishRefresh = resolve
+            })
+    )
+    const { result, rerender } = renderHook(({ version }) => useHistoryEntry('local:week', true, 'journal', version), {
+        initialProps: { version: 1 }
+    })
+    await waitFor(() => expect(result.current.entry?.title).toBe('Current writing'))
+    rerender({ version: 2 })
+    expect(result.current.entry?.title).toBe('Current writing')
+    expect(result.current.loading).toBe(false)
+    act(() => {
+        finishRefresh(entry('Updated writing'))
+    })
+    await waitFor(() => expect(result.current.entry?.title).toBe('Updated writing'))
+})
+
+it.each(['generation', 'selection'])('hides a displayed document after a %s change', async (change) => {
+    readEntry.mockResolvedValueOnce(entry('Old journal')).mockImplementation(
+        () =>
+            new Promise(() => {
+                /* Keep the replacement read pending. */
+            })
+    )
+    const { result, rerender } = renderHook(({ id, generation }) => useHistoryEntry(id, true, generation, 1), {
+        initialProps: { id: 'local:week', generation: 'before' }
+    })
+    await waitFor(() => expect(result.current.entry?.title).toBe('Old journal'))
+    rerender({
+        id: change === 'selection' ? 'local:other' : 'local:week',
+        generation: change === 'generation' ? 'after' : 'before'
+    })
+    expect(result.current.entry).toBeUndefined()
+    expect(result.current.loading).toBe(true)
+})

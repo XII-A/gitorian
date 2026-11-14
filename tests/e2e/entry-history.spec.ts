@@ -58,6 +58,28 @@ test('local and published history: pagination, search, exact-week editing and pe
     await app.evaluate(({ app }) => app.emit('history-release-entry'))
     await expect(page.locator('.history-article')).toContainText('A unique archived lesson.')
     await desktop.shot('02-archived-document')
+    await test.step('background snapshots preserve the document and reading position', async () => {
+        const viewport = page.getByRole('region', { name: 'Read journal entry', exact: true })
+        await viewport.hover()
+        await page.mouse.wheel(0, 700)
+        await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(300)
+        const position = await viewport.evaluate((node) => node.scrollTop)
+        const beforeRefresh = await getReadCount()
+        await app.evaluate(({ app }) => app.emit('history-hold-entry'))
+        // Change unrelated persisted state; the normal Hub poll delivers the new snapshot.
+        await page.evaluate(() => window.journal.invoke({ type: 'diffPreferences', preferences: { wrapLines: false } }))
+        await expect.poll(getReadCount, { timeout: 20000 }).toBeGreaterThan(beforeRefresh)
+        await expect(page.getByRole('status', { name: 'Loading entry', exact: true })).toHaveCount(0)
+        await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(position)
+        // Mark the refreshed reply so visible UI proves React consumed it.
+        await app.evaluate(({ app }) => app.emit('history-mark-refreshed-entry'))
+        await app.evaluate(({ app }) => app.emit('history-release-entry'))
+        await expect(page.locator('.history-article h2')).toHaveText('Archive entry 0 (refreshed)')
+        await expect(page.locator('.history-article')).toContainText('Archived paragraph 79')
+        await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(position)
+        await desktop.shot('02-background-refresh-reading-position')
+    })
+
     await page.getByRole('button', { name: 'Close entry', exact: true }).click()
     await expect(page.locator('.history-row')).toHaveAttribute('aria-pressed', 'false')
     await expect(page.locator('.history-row')).toBeFocused()
