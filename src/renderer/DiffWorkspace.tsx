@@ -16,6 +16,7 @@ interface DiffWorkspaceProps extends DiffDisplayPreferences, DiffFileFilterContr
     onToggleAll: () => void
     detached: boolean
     structured: boolean
+    preparing?: number
     children: ReactNode
 }
 
@@ -70,9 +71,13 @@ export function DiffWorkspace(props: DiffWorkspaceProps) {
             <div className="diff-workspace-reader">
                 <div className="diff-workspace-toolbar">
                     <div className="diff-workspace-summary">
-                        <span>
+                        <span role={props.preparing ? 'status' : undefined}>
                             {visibleFiles.length} {visibleFiles.length === 1 ? 'file' : 'files'}
-                            {filtered ? ` of ${files.length}` : ' changed'}
+                            {props.preparing
+                                ? ` ready of ${props.preparing}`
+                                : filtered
+                                  ? ` of ${files.length}`
+                                  : ' changed'}
                         </span>
                         {props.showLineCounts && visibleFiles.some((file) => !file.binary) && (
                             <ChangeCounts stats={totals} />
@@ -97,7 +102,7 @@ export function DiffWorkspace(props: DiffWorkspaceProps) {
                             size="sm"
                             aria-label={toggleLabel}
                             title={toggleLabel}
-                            disabled={!visibleFiles.length}
+                            disabled={!visibleFiles.length || props.preparing !== undefined}
                             animateContent={false}
                             onClick={props.onToggleAll}
                         >

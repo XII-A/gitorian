@@ -348,25 +348,34 @@ export function makeGitHub(providerRequest: GitHubRequest) {
             if (!remote || !/^[a-f0-9]{40,64}$/.test(sha))
                 return yield* Effect.fail(new GitHubFailure('GitHub commit source is unavailable'))
             const path = `repos/${remote}/commits/${sha}`
-            const files: File[] = []
-            for (let page = 1; page <= 30; page++) {
-                const metadata = yield* request<{
-                    files: File[]
-                }>(`${path}?per_page=100&page=${page}`)
-                files.push(...metadata.files)
-                if (metadata.files.length < 100) break
-                if (page === 30)
-                    return yield* Effect.fail(
-                        new GitHubFailure(
-                            'This commit has too many changed files. Open it in GitHub for the complete source.'
+            const metadata = Effect.gen(function* () {
+                const files: File[] = []
+                for (let page = 1; page <= 30; page++) {
+                    const metadata = yield* request<{
+                        files: File[]
+                    }>(`${path}?per_page=100&page=${page}`)
+                    files.push(...metadata.files)
+                    if (metadata.files.length < 100) break
+                    if (page === 30)
+                        return yield* Effect.fail(
+                            new GitHubFailure(
+                                'This commit has too many changed files. Open it in GitHub for the complete source.'
+                            )
                         )
-                    )
-            }
-            const diff = includeDiff
-                ? yield* fetchDiff(`https://api.github.com/${path}`, {
-                      headers: { Accept: 'application/vnd.github.diff' }
-                  })
-                : ''
+                }
+                return files
+            })
+            const [files, diff] = yield* Effect.all(
+                [
+                    metadata,
+                    includeDiff
+                        ? fetchDiff(`https://api.github.com/${path}`, {
+                              headers: { Accept: 'application/vnd.github.diff' }
+                          })
+                        : Effect.succeed('')
+                ],
+                { concurrency: 2 }
+            )
             return {
                 diff: diff.length <= 2000000 ? diff : 'Diff is too large. Open in GitHub.',
                 files: files.map(activityFile)

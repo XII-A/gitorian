@@ -49,7 +49,16 @@ export function indentColumns(prefix: string): number {
     return prefix.split('').reduce((column, character) => column + (character === '\t' ? 4 - (column % 4) : 1), 0)
 }
 
+const indentCache = new WeakMap<FileDiffMetadata, ReturnType<typeof computeDiffIndents>>()
 export function compactDiffIndents(file: FileDiffMetadata) {
+    let known = indentCache.get(file)
+    if (!known) {
+        known = computeDiffIndents(file)
+        indentCache.set(file, known)
+    }
+    return known
+}
+function computeDiffIndents(file: FileDiffMetadata) {
     return file.hunks.map((hunk) => {
         const prefix = sharedIndent([
             ...file.additionLines.slice(hunk.additionLineIndex, hunk.additionLineIndex + hunk.additionCount),
