@@ -906,7 +906,7 @@ void app
                 const { cursor: _cursor, ...view } = command.view
                 views.set(event.sender.id, view)
             }
-            if (command.type === 'details') {
+            if (command.type === 'details' && !command.cachedOnly) {
                 const week = weekOf(new Date(), store.config.settings)
                 const view = views.get(event.sender.id) ?? {
                     since: week,

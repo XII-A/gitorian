@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Copy, FileDiff } from 'lucide-react'
 import { Button } from './components/arc/button/button'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { EmptyState } from './components/arc/empty-state/empty-state'
-import { cachedDiff, loadDiff } from './diff-loader'
+import { diffSnapshot, subscribeDiff } from './diff-loader'
 import { DiffSkeleton } from './DiffSkeleton'
 import { providerName, type Provider } from '../shared/provider-accounts'
 import type { DiffPreferences } from '../shared/diff-preferences'
-import { codeLimits, loadCodeHighlighting } from './code-highlighting'
+import { cachedCodeHighlighting, codeLimits, loadCodeHighlighting } from './code-highlighting'
 import { diffStats, type DiffFile } from './diff-model'
 import { DiffSurface, type DiffNavigation } from './DiffSurface'
 import { DiffWorkspace } from './DiffWorkspace'
@@ -156,11 +156,22 @@ export function DiffViewer({
     const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
     const [filter, setFilter] = useState<DiffFileFilter>('all')
     const [exclusions, setExclusions] = useState<DiffFileExclusions>({ tests: false, docs: false })
-    const [parsed, setParsed] = useState<{ text: string; files: DiffFile[] }>()
-    const [runtime, setRuntime] = useState<'ready' | 'unavailable'>()
+    const [runtime, setRuntime] = useState(() => cachedCodeHighlighting()?.status)
     const [failed, setFailed] = useState<string>()
     const needsParsing = text.startsWith('diff --git') && text.length <= codeLimits.patch
-    const files = useMemo(() => cachedDiff(text) ?? (parsed?.text === text ? parsed.files : []), [text, parsed])
+    const subscribe = useCallback(
+        (listener: () => void) =>
+            needsParsing
+                ? subscribeDiff(text, listener)
+                : () => {
+                      /* No structured patch to observe. */
+                  },
+        [text, needsParsing]
+    )
+    const getSnapshot = useCallback(() => (needsParsing ? diffSnapshot(text) : undefined), [text, needsParsing])
+    const prepared = useSyncExternalStore(subscribe, getSnapshot, () => undefined)
+    const files = useMemo(() => prepared?.files ?? [], [prepared])
+    const preparing = needsParsing && !prepared?.complete
     const visibleFiles = useMemo(
         () =>
             files
@@ -184,16 +195,6 @@ export function DiffViewer({
         setFilter('all')
         setExclusions({ tests: false, docs: false })
     }
-    useEffect(() => {
-        if (!needsParsing) return
-        let current = true
-        void loadDiff(text).then((files) => {
-            if (current) setParsed({ text, files })
-        })
-        return () => {
-            current = false
-        }
-    }, [text, needsParsing])
     useEffect(() => {
         let current = true
         void loadCodeHighlighting().then((result) => {
@@ -225,7 +226,7 @@ export function DiffViewer({
         setNavigation((previous) => ({ name, revision: (previous?.revision ?? 0) + 1 }))
     }, [])
     const active = visibleFiles.find((file) => file.name === selected) ?? visibleFiles[0]
-    const ready = runtime === 'ready' && failed !== text
+    const ready = runtime !== 'unavailable' && failed !== text
     const allCollapsed = visibleFiles.length > 0 && visibleFiles.every((file) => collapsed.has(file.name))
     const sourceAction = onOpenSource && (
         <Button variant="secondary" size="sm" onClick={onOpenSource}>
@@ -252,7 +253,7 @@ export function DiffViewer({
                 action={sourceAction}
             />
         )
-    if (needsParsing && !cachedDiff(text) && parsed?.text !== text) return <DiffSkeleton label="Preparing changes" />
+    if (preparing && !files.length) return <DiffSkeleton label="Preparing changes" />
     if (!files.length)
         return (
             <div className="diff-raw-reader">
@@ -299,8 +300,13 @@ export function DiffViewer({
                 }
                 detached={detached}
                 structured={ready}
+                preparing={preparing ? prepared?.total : undefined}
             >
-                {!visibleFiles.length ? (
+                {!visibleFiles.length && preparing ? (
+                    <p className="ws-diff-notice" role="status">
+                        Preparing matching files...
+                    </p>
+                ) : !visibleFiles.length ? (
                     <DiffEmptyState
                         title="No matching files"
                         description="Choose another file filter or show all changes."
@@ -324,8 +330,6 @@ export function DiffViewer({
                         onActiveFileChange={setSelected}
                         onFailure={onFailure}
                     />
-                ) : runtime === undefined ? (
-                    <DiffSkeleton label="Preparing syntax highlighting" />
                 ) : (
                     <div className="diff-raw-reader">
                         <PatchViewNotice />

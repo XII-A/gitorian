@@ -257,9 +257,26 @@ export async function commitDetails(
         sha,
         '--'
     ]
-    const [names, numstat] = await Promise.all([
+    const patch = async () => {
+        if (!includeDiff) return ''
+        try {
+            const diff = await git(
+                repository.path,
+                ['show', '--format=', '--diff-merges=first-parent', '--no-ext-diff', '--no-textconv', sha, '--'],
+                false,
+                MAX_DIFF
+            )
+            return diff.length > MAX_DIFF ? 'Diff is too large to display. View the source externally.' : diff
+        } catch (error) {
+            if (error instanceof Error && 'code' in error && error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER')
+                return 'Diff is too large to display. View the source externally.'
+            throw error
+        }
+    }
+    const [names, numstat, diff] = await Promise.all([
         git(repository.path, [...comparison.slice(0, -1), '--name-status', '--']),
-        git(repository.path, [...comparison.slice(0, -1), '--numstat', '--no-ext-diff', '--no-textconv', '--'])
+        git(repository.path, [...comparison.slice(0, -1), '--numstat', '--no-ext-diff', '--no-textconv', '--']),
+        patch()
     ])
     const statistics = new Map<string, Activity['files'][number]['lineStats']>()
     const records = numstat.split('\0')
@@ -292,22 +309,7 @@ export async function commitDetails(
         } else files.push({ status, name: firstPath })
     }
     for (const file of files) file.lineStats = statistics.get(file.name)
-    let diff = ''
-    if (includeDiff) {
-        try {
-            diff = await git(
-                repository.path,
-                ['show', '--format=', '--diff-merges=first-parent', '--no-ext-diff', '--no-textconv', sha, '--'],
-                false,
-                MAX_DIFF
-            )
-        } catch (error) {
-            if (error instanceof Error && 'code' in error && error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER')
-                diff = 'Diff is too large to display. View the source externally.'
-            else throw error
-        }
-    }
-    return { diff: diff.length > MAX_DIFF ? 'Diff is too large to display. View the source externally.' : diff, files }
+    return { diff, files }
 }
 
 /** Read shared commit bodies once; branch membership uses compact SHA-only walks. */

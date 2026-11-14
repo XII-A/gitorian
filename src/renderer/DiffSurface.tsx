@@ -73,13 +73,16 @@ export function DiffSurface({
     initial.current = initialFile
     const activeCallback = useRef(onActiveFileChange)
     activeCallback.current = onActiveFileChange
-    const latestCollapsed = useRef(collapsed)
-    latestCollapsed.current = collapsed
+    const positioned = useRef(false)
+    const appliedNavigation = useRef<DiffNavigation | undefined>(undefined)
     const versions = useRef(new Map<string, { collapsed: boolean; version: number }>())
     const revealFile = useRef<string | undefined>(undefined)
     const disclosureAnchor = useRef<{ id: string; offset: number } | undefined>(undefined)
     const fileMap = useMemo(() => new Map(files.map((file) => [file.name, file])), [files])
-    const indents = useMemo(() => new Map(files.map((file) => [file.name, compactDiffIndents(file)])), [files])
+    const latestFiles = useRef(files)
+    latestFiles.current = files
+    const latestFileMap = useRef(fileMap)
+    latestFileMap.current = fileMap
     const options = useMemo<CodeViewOptions<undefined, undefined>>(
         () => ({
             preferredHighlighter: 'highlights',
@@ -118,7 +121,8 @@ export function DiffSurface({
                     for (const code of shadow?.querySelectorAll<HTMLElement>('[data-code]') ?? [])
                         code.dataset.disclosureReveal = ''
                 }
-                const hunks = indents.get(context.item.id) ?? []
+                const file = latestFileMap.current.get(context.item.id)
+                const hunks = !originalIndentation && file ? compactDiffIndents(file) : []
                 for (const line of shadow?.querySelectorAll<HTMLElement>('[data-code] [data-line]') ?? []) {
                     const index = Number(line.dataset.lineIndex?.split(',')[0])
                     const indent = originalIndentation
@@ -129,7 +133,7 @@ export function DiffSurface({
                 }
             }
         }),
-        [split, wrap, originalIndentation, indents, onFailure]
+        [split, wrap, originalIndentation, onFailure]
     )
     const latestOptions = useRef(options)
     latestOptions.current = options
@@ -151,7 +155,7 @@ export function DiffSurface({
                 (!selection || selection.isCollapsed) && root.contains(document.activeElement)
                     ? viewer.getSelectedLines()
                     : null
-            const file = selected ? files.find((file) => file.name === selected.id) : undefined
+            const file = selected ? latestFileMap.current.get(selected.id) : undefined
             const source =
                 native ??
                 (selected && file
@@ -178,19 +182,11 @@ export function DiffSurface({
                 }
             })
             versions.current.clear()
-            viewer.setItems(
-                files.map((file) => ({
-                    type: 'diff',
-                    id: file.name,
-                    fileDiff: file,
-                    collapsed: latestCollapsed.current.has(file.name),
-                    version: 0
-                }))
-            )
+            positioned.current = false
+            appliedNavigation.current = undefined
             viewerRef.current = viewer
-            if (files.some((file) => file.name === initial.current))
-                viewer.scrollTo({ type: 'item', id: initial.current, align: 'start', behavior: 'instant' })
             unsubscribe = viewer.subscribeToScroll((top) => {
+                const files = latestFiles.current
                 let low = 0,
                     high = files.length - 1
                 while (low < high) {
@@ -217,7 +213,7 @@ export function DiffSurface({
             viewer.cleanUp()
             viewerRef.current = undefined
         }
-    }, [files, onFailure])
+    }, [onFailure])
     useLayoutEffect(() => {
         inEffect.current = true
         try {
@@ -245,6 +241,10 @@ export function DiffSurface({
                     return { type: 'diff', id: file.name, fileDiff: file, collapsed: isCollapsed, version }
                 })
             )
+            if (!positioned.current && fileMap.has(initial.current)) {
+                positioned.current = true
+                viewer.scrollTo({ type: 'item', id: initial.current, align: 'start', behavior: 'instant' })
+            }
             // Keep the disclosure under the pointer while CodeView measures the newly opened source.
             const anchor = disclosureAnchor.current
             disclosureAnchor.current = undefined
@@ -264,13 +264,14 @@ export function DiffSurface({
         }
     }, [files, fileMap, collapsed, onFailure])
     useLayoutEffect(() => {
-        if (!navigation || !fileMap.has(navigation.name)) return
+        if (!navigation || appliedNavigation.current === navigation || !fileMap.has(navigation.name)) return
         const viewer = viewerRef.current
         inEffect.current = true
         try {
             viewer?.clearSelectedLines()
             window.getSelection()?.removeAllRanges()
             viewer?.scrollTo({ type: 'item', id: navigation.name, align: 'start', behavior: 'instant' })
+            appliedNavigation.current = navigation
         } catch {
             onFailure()
         } finally {

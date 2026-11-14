@@ -397,7 +397,9 @@ function makeJournal() {
                         })
                     }
                     case 'details':
-                        return yield* reply(yield* records.details(command.activityId, command.content !== 'files'))
+                        return yield* reply(
+                            yield* records.details(command.activityId, command.content !== 'files', command.cachedOnly)
+                        )
                     case 'newDraft':
                         yield* local(() => store.createDraft(command.week, generation))
                         break

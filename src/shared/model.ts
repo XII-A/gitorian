@@ -395,7 +395,12 @@ export const commandSchema = z.discriminatedUnion('type', [
         author: z.union([z.string(), z.array(z.string())]),
         since: z.string()
     }),
-    z.object({ type: z.literal('details'), activityId: z.string(), content: z.enum(['files', 'diff']).optional() }),
+    z.object({
+        type: z.literal('details'),
+        activityId: z.string(),
+        content: z.enum(['files', 'diff']).optional(),
+        cachedOnly: z.boolean().optional()
+    }),
     z.object({ type: z.literal('newDraft'), week: z.string() }),
     z.object({ type: z.literal('draft'), draft: draftSchema }),
     z.object({ type: z.literal('select'), draftId: z.string(), activityId: z.string(), included: z.boolean() }),

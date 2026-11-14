@@ -7,6 +7,126 @@ import type { ElectronApplication, Page } from '@playwright/test'
 
 test.use({ desktopEntry: 'tests/e2e/support/diff-viewer-main.mjs', desktopRepositoryIds: ['fixture'] })
 
+test('large diff opening latency', async ({ desktop }, info) => {
+    const { page } = desktop
+    await page.locator('.hub-activity').filter({ hasText: 'Review highlighted changes' }).click()
+    await page.getByRole('button', { name: 'Open in workspace', exact: true }).click()
+    const samples: { scenario: string; milliseconds: number; skeletonFrames: number }[] = []
+    for (let index = 0; index < 7; index++) {
+        if (index) {
+            await page.locator('.ws-activity-row').filter({ hasText: 'Review continuous changes' }).click()
+            await page.getByRole('tab', { name: 'Diff', exact: true }).click()
+            await expect(page.locator('diffs-container').first()).toBeVisible()
+            await page.locator('.ws-activity-row').filter({ hasText: 'Review highlighted changes' }).click()
+        }
+        // A normal reading pause in Details gives intent preparation a chance to finish.
+        if (index !== 0) await page.waitForTimeout(750)
+        await page.evaluate(() => {
+            const tab = [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+                (node) => node.textContent === 'Diff'
+            )!
+            tab.addEventListener(
+                'click',
+                () => {
+                    const start = performance.now()
+                    let skeletonFrames = 0
+                    const sample = () => {
+                        const skeleton = document.querySelector('.ws-diff-skeleton')
+                        if (skeleton?.getClientRects().length) skeletonFrames++
+                        const readable = [
+                            ...document.querySelectorAll('diffs-container[data-diff-file="copy.ts"]')
+                        ].some(
+                            (node) =>
+                                node.getClientRects().length &&
+                                node.shadowRoot?.querySelector('[data-code] [data-line]')
+                        )
+                        if (readable) {
+                            requestAnimationFrame(() => {
+                                document.documentElement.dataset.diffTiming = JSON.stringify({
+                                    milliseconds: performance.now() - start,
+                                    skeletonFrames
+                                })
+                            })
+                        } else requestAnimationFrame(sample)
+                    }
+                    delete document.documentElement.dataset.diffTiming
+                    requestAnimationFrame(sample)
+                },
+                { once: true }
+            )
+        })
+        await page.getByRole('tab', { name: 'Diff', exact: true }).click()
+        await expect.poll(() => page.evaluate(() => document.documentElement.dataset.diffTiming)).toBeTruthy()
+        const timing = await page.evaluate(() => JSON.parse(document.documentElement.dataset.diffTiming!))
+        samples.push({ scenario: index === 0 ? 'first-open' : 'prepared-reopen', ...timing })
+    }
+    writeFileSync(info.outputPath('diff-timings.json'), JSON.stringify(samples, null, 2))
+    console.info('Diff timings:', JSON.stringify(samples))
+    for (const sample of samples.filter((sample) => sample.scenario === 'prepared-reopen')) {
+        expect(sample.skeletonFrames, 'Prepared changes must not flash a skeleton').toBe(0)
+        expect(sample.milliseconds, 'Prepared first viewport must remain responsive').toBeLessThan(250)
+    }
+    await desktop.shot('large-diff-readable')
+})
+
+test('progressive diff arrival preserves navigation and the source reading position', async ({ desktop }, info) => {
+    const { page, app } = desktop
+    await app.context().addInitScript(() => {
+        const NativeWorker = window.Worker
+        window.Worker = class extends NativeWorker {
+            constructor(url: string | URL, options?: WorkerOptions) {
+                super(url, options)
+                if (!String(url).includes('diff-worker')) return
+                let first = true
+                let released = false
+                const held: MessageEvent[] = []
+                this.addEventListener('message', (event) => {
+                    if (released) return
+                    if (first) {
+                        first = false
+                        return
+                    }
+                    event.stopImmediatePropagation()
+                    held.push(event)
+                })
+                window.addEventListener('release-diff-batches', () => {
+                    released = true
+                    for (const event of held) this.dispatchEvent(new MessageEvent('message', { data: event.data }))
+                })
+            }
+        }
+    })
+    await page.reload()
+    await page.locator('.hub-activity').filter({ hasText: 'Review highlighted changes' }).click()
+    await page.getByRole('button', { name: 'Open in workspace', exact: true }).click()
+    await page.getByRole('tab', { name: 'Diff', exact: true }).click()
+    await expect(page.getByText('1 file ready of 4', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Collapse all files', exact: true })).toBeDisabled()
+    const opened = app.waitForEvent('window')
+    await page.getByRole('button', { name: 'Pop out diff', exact: true }).click()
+    const reference = await opened
+    await resizeReference(app, 1440)
+    const item = reference.getByRole('treeitem', { name: /view.ts/ })
+    await item.click()
+    const viewport = reference.getByRole('region', { name: 'All file changes', exact: true })
+    await viewport.evaluate((node) => {
+        node.scrollTop = 240
+    })
+    const line = reference
+        .locator('diffs-container[data-diff-file="view.ts"]')
+        .locator('[data-code] [data-line]')
+        .filter({ hasText: 'value20 ' })
+        .first()
+    await expect(line).toBeVisible()
+    const top = (await line.boundingBox())!.y
+    await reference.evaluate(() => window.dispatchEvent(new Event('release-diff-batches')))
+    await expect(reference.getByText('4 files changed', { exact: true })).toBeVisible()
+    await expect(reference.getByRole('button', { name: 'Collapse all files', exact: true })).toBeEnabled()
+    await expect.poll(async () => Math.abs((await line.boundingBox())!.y - top)).toBeLessThan(2)
+    await reference.screenshot({ path: info.outputPath('progressive-source-preserved.png') })
+    await reference.close()
+})
+
 test('diff preferences survive activities and restart while filters stay local and reset remains combined', async ({
     desktop
 }, info) => {

@@ -22,7 +22,8 @@ export interface ActivityRecords {
     ) => Effect.Effect<string, JournalFailure>
     readonly details: (
         activityId: string,
-        includeDiff: boolean
+        includeDiff: boolean,
+        cachedOnly?: boolean
     ) => Effect.Effect<
         {
             diff?: string
@@ -176,7 +177,11 @@ export const ActivityRecordsLive = Layer.scoped(
                 activity.filesLoaded = true
                 yield* local(() => store.recordActivityDetails(activity, diff, undefined, generation))
             })
-        const details = (activityId: string, includeDiff: boolean): Effect.Effect<{ diff?: string }, Error> =>
+        const details = (
+            activityId: string,
+            includeDiff: boolean,
+            cachedOnly = false
+        ): Effect.Effect<{ diff?: string }, Error> =>
             Effect.gen(function* () {
                 const stored = yield* local(() => store.activity(activityId))
                 const activity = stored && lease(stored)
@@ -185,22 +190,24 @@ export const ActivityRecordsLive = Layer.scoped(
                 const cached = includeDiff
                     ? patch !== undefined &&
                       !isCombinedDiff(patch) &&
-                      (activity.kind !== 'change-request' || activity.diffRevision === activity.revision)
+                      (activity.kind !== 'change-request' ||
+                          (!!activity.revision && activity.diffRevision === activity.revision))
                     : hasFileStatistics(activity)
-                if (!cached)
-                    yield* sharedDetails(
-                        JSON.stringify([
-                            store.generation,
-                            activity.id,
-                            activity.sourceVersion ?? activity.sha ?? '',
-                            remoteConfiguration(store.config.repositories.find((r) => r.id === activity.repositoryId)!),
-                            activity.remoteSource?.sessionGeneration,
-                            activity.remoteSource?.projectId,
-                            activity.remoteSource?.path,
-                            includeDiff
-                        ]),
-                        Effect.succeed(loadDetails(activity, includeDiff).pipe(Effect.as(undefined)))
-                    )
+                if (cached) return includeDiff ? { diff: patch } : {}
+                if (cachedOnly) return {}
+                yield* sharedDetails(
+                    JSON.stringify([
+                        store.generation,
+                        activity.id,
+                        activity.sourceVersion ?? activity.sha ?? '',
+                        remoteConfiguration(store.config.repositories.find((r) => r.id === activity.repositoryId)!),
+                        activity.remoteSource?.sessionGeneration,
+                        activity.remoteSource?.projectId,
+                        activity.remoteSource?.path,
+                        includeDiff
+                    ]),
+                    Effect.succeed(loadDetails(activity, includeDiff).pipe(Effect.as(undefined)))
+                )
                 return includeDiff ? { diff: (yield* local(() => store.patch(activity.id))) ?? '' } : {}
             })
         return {
