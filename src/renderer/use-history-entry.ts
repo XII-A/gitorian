@@ -42,7 +42,13 @@ export function useHistoryEntry(
     useEffect(() => {
         if (!reading || !id) return
         let active = true
-        setResult({ cache, id })
+        // Snapshot changes include unrelated background work. Revalidate without
+        // replacing the document with a skeleton and collapsing its scroll range.
+        setResult((previous) =>
+            previous && previous.cache.restoreId === cache.restoreId && previous.id === id && previous.entry
+                ? previous
+                : { cache, id }
+        )
         void load(id).then(
             (entry) => {
                 if (active)
@@ -72,7 +78,7 @@ export function useHistoryEntry(
     )
     const entry =
         (id ? cache.entries.get(id) : undefined) ??
-        (result?.cache === cache && result.id === id ? result.entry : undefined)
+        (result && result.cache.restoreId === cache.restoreId && result.id === id ? result.entry : undefined)
     const error = !entry && result?.cache === cache && result.id === id ? result.error : undefined
     return { entry, error, loading: !entry && !error, prefetch }
 }
