@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, join, dirname, basename } from 'node:path'
-import { _electron as electron } from '@playwright/test'
+import { _electron as electron } from 'playwright'
 import { gemoji } from 'gemoji'
 import sharp from 'sharp'
 

@@ -1,29 +1,37 @@
+import { DatabaseSync } from 'node:sqlite'
+import { http as route } from 'msw'
+import { setupServer } from 'msw/node'
+import { deferred } from './deferred'
 import { nextAcquisition } from '../src/shared/acquisition'
 import { sourceProblems } from '../src/renderer/background-work'
 import { remoteConfiguration } from '../src/shared/provider-accounts'
 import type { ActivityScan } from '../src/main/contribution-reader'
 import type { Activity } from '../src/shared/model'
 import { journalState } from './database-fixtures'
-import { GitHubFailure, makeGitHub } from '../src/main/github'
+import { makeGitHub } from '../src/main/github'
 import { Effect } from 'effect'
 import { run, journalClient, githubClient, transportClient } from './effect-fixtures'
-import { expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import type { Repository } from '../src/shared/model'
 import { WorkQueue } from '../src/main/work-queue'
 import { journal, workspace, transport } from './fixtures'
 import { JournalDatabase } from '../src/main/journal-database'
 import { join } from 'node:path'
 import * as gitModule from '../src/main/git'
+const server = setupServer()
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+afterEach(() => server.resetHandlers())
+afterAll(() => server.close())
 it('pauses a missing local folder without repeated Git failures and resumes when it returns', async () => {
     const app = await workspace()
     const original = app.repository.path
     try {
         app.remote.github = true
-        const remoteRead = vi.spyOn(app.github, 'activities').mockReturnValue(Effect.succeed([]))
+        const remoteReads = () => app.remote.requests.filter((request) => request.url.includes('/pulls?')).length
         await app.store.updateRepositoryLocation({ ...app.repository, path: join(original, 'missing-folder') })
         const read = vi.spyOn(gitModule, 'indexCommits')
         await run(app.service.refresh())
-        expect(remoteRead).toHaveBeenCalled()
+        expect(remoteReads()).toBeGreaterThan(0)
         const missing = (await journalState(app.store)).acquisition?.[`git:${app.repository.id}`]
         expect(missing?.pauseReason).toBe('folder')
         expect(missing?.error).toBeUndefined()
@@ -39,32 +47,29 @@ it('pauses a missing local folder without repeated Git failures and resumes when
         await app.close()
     }
 })
-it.each(['spawn git ENOENT', 'Permission denied', 'not a git repository'])(
-    'keeps an existing folder with a Git failure actionable as an error: %s',
-    async (message) => {
-        const app = await workspace()
-        const read = vi.spyOn(gitModule, 'indexCommits').mockRejectedValue(new Error(message))
-        try {
-            await run(app.service.refresh({ source: 'git' }))
-            const status = (await journalState(app.store)).acquisition?.[`git:${app.repository.id}`]
-            expect(status?.status).toBe('error')
-            expect(status?.pauseReason).not.toBe('folder')
-            expect(app.store.config.repositories[0].available).toBe(true)
-        } finally {
-            read.mockRestore()
-            await app.close()
-        }
+it('keeps an existing folder with a Git failure actionable as an error', async () => {
+    const app = await workspace()
+    const nonRepository = await journal()
+    try {
+        await app.store.updateRepositoryLocation({ ...app.repository, path: nonRepository.directory })
+        await run(app.service.refresh({ source: 'git' }))
+        const status = (await journalState(app.store)).acquisition?.['git:' + app.repository.id]
+        expect(status?.status).toBe('error')
+        expect(status?.pauseReason).not.toBe('folder')
+        expect(app.store.config.repositories[0].available).toBe(true)
+    } finally {
+        await Promise.all([app.close(), nonRepository.close()])
     }
-)
+})
 it.each(['Settings', 'folder import', 'disconnected account'])(
     'resumes both sources when %s re-enables a repository stopped from activity recovery',
     async (entry) => {
         const app = await workspace()
         app.remote.github = true
-        const remoteRead = vi.spyOn(app.github, 'activities').mockReturnValue(Effect.succeed([]))
+        const remoteReads = () => app.remote.requests.filter((request) => request.url.includes('/pulls?')).length
         try {
             await run(app.service.refresh())
-            const previousReads = remoteRead.mock.calls.length
+            const previousReads = remoteReads()
             await run(app.service.handle({ type: 'repositoryTracking', id: app.repository.id, tracked: false }))
             const stopped = (await journalState(app.store)).acquisition
             expect(stopped?.[`git:${app.repository.id}`].status).toBe('cancelled')
@@ -86,9 +91,8 @@ it.each(['Settings', 'folder import', 'disconnected account'])(
                 expect(resumed?.[`git:${app.repository.id}`].status).toBe('idle')
                 expect(resumed?.[`remote:${app.repository.id}`].status).toBe('idle')
             })
-            expect(remoteRead.mock.calls.length).toBeGreaterThan(previousReads)
+            expect(remoteReads()).toBeGreaterThan(previousReads)
         } finally {
-            remoteRead.mockRestore()
             await app.close()
         }
     }
@@ -106,32 +110,49 @@ const repository: Repository = {
     branchBases: {},
     branches: []
 }
+function holdPulls(app: Awaited<ReturnType<typeof journal>>, shouldHold: (url: string) => boolean) {
+    const gate = deferred<undefined>()
+    const reads: string[] = []
+    app.remote.beforeRequest = (url) => {
+        if (!url.includes('/pulls?')) return Promise.resolve()
+        reads.push(url)
+        return shouldHold(url) ? gate.promise : Promise.resolve()
+    }
+    app.remote.responseFor = (url) => (url.includes('/pulls?') ? Response.json([]) : undefined)
+    return { reads, release: () => gate.resolve(undefined) }
+}
 it('settles an accepted source when its repository is removed before batch admission', async () => {
     const app = await journal()
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => {
-        release = resolve
-    })
+    const admitted = deferred<undefined>()
     app.remote.github = true
-    for (const fixtureRepository of [0, 1, 2].map((id) => ({ ...repository, id: `repo-${id}` })))
-        await app.store.saveRepository(fixtureRepository)
-    const read = vi.spyOn(app.github, 'activities').mockImplementation((_repository, _login, _tracked, scan) =>
-        Effect.gen(function* () {
-            yield* Effect.promise(() => gate)
-            yield* scan?.checkpoint?.(1, true) ?? Effect.void
-            return []
-        }).pipe(Effect.mapError((error) => new GitHubFailure(error.message, { cause: error })))
-    )
+    const account = app.store.config.accounts[0]
+    for (const id of ['repo-0', 'repo-1', 'repo-2'])
+        await app.store.saveRepository({
+            ...repository,
+            id,
+            remote: 'https://github.com/example/' + id,
+            accountId: account.id,
+            accountGeneration: account.generation
+        })
+    const { reads, release } = holdPulls(app, () => {
+        admitted.resolve(undefined)
+        return true
+    })
     let pending: Promise<void> | undefined
     try {
         pending = run(app.service.refresh({ source: 'remote' }))
-        await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+        await Promise.race([
+            admitted.promise,
+            pending.then(() => {
+                throw new Error('Refresh completed before a source was admitted')
+            })
+        ])
         await app.store.saveRepository({ ...app.store.config.repositories[2], removed: true })
         release()
         await pending
         await app.store.saveRepository({ ...app.store.config.repositories[2], removed: false })
         expect((await journalState(app.store)).acquisition?.['remote:repo-2'].status).toBe('idle')
-        expect(read).toHaveBeenCalledTimes(2)
+        expect(reads.filter((url) => url.includes('/repo-2/'))).toEqual([])
     } finally {
         release()
         await pending
@@ -142,25 +163,25 @@ it.each([false, true])(
     'honors pause then explicit resume while older requests are pending: %s',
     async (resumeWhilePending) => {
         const app = await journal()
-        let release!: () => void
-        const gate = new Promise<void>((resolve) => {
-            release = resolve
-        })
+        const admitted = deferred<undefined>()
         app.remote.github = true
-        for (const fixtureRepository of [{ ...repository }]) await app.store.saveRepository(fixtureRepository)
-        const read = vi.spyOn(app.github, 'activities').mockImplementation((_repository, _login, _tracked, scan) =>
-            Effect.gen(function* () {
-                yield* Effect.promise(() => gate)
-                yield* scan?.checkpoint?.(1, true) ?? Effect.void
-                return []
-            }).pipe(Effect.mapError((error) => new GitHubFailure(error.message, { cause: error })))
-        )
+        const account = app.store.config.accounts[0]
+        await app.store.saveRepository({ ...repository, accountId: account.id, accountGeneration: account.generation })
+        const { reads, release } = holdPulls(app, () => {
+            admitted.resolve(undefined)
+            return true
+        })
         let active: Promise<void> | undefined
         let retry: Promise<void> | undefined
         let resumed: Promise<void> | undefined
         try {
             active = run(app.service.refresh({ source: 'remote' }))
-            await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1))
+            await Promise.race([
+                admitted.promise,
+                active.then(() => {
+                    throw new Error('Refresh finished before the provider was reached')
+                })
+            ])
             retry = run(app.service.refresh({ repositoryId: repository.id, source: 'remote', resume: true }))
             await run(app.service.stopWork('remote', repository.id))
             if (resumeWhilePending)
@@ -168,11 +189,11 @@ it.each([false, true])(
             release()
             await Promise.all([active, retry, resumed])
             if (!resumeWhilePending) {
-                expect(read).toHaveBeenCalledTimes(1)
+                expect(reads).toHaveLength(1)
                 expect((await journalState(app.store)).acquisition?.['remote:repo'].status).toBe('cancelled')
                 await run(app.service.refresh({ repositoryId: repository.id, source: 'remote', resume: true }))
             }
-            expect(read).toHaveBeenCalledTimes(2)
+            expect(reads).toHaveLength(2)
             expect((await journalState(app.store)).acquisition?.['remote:repo'].status).toBe('idle')
         } finally {
             release()
@@ -183,20 +204,17 @@ it.each([false, true])(
 )
 it('retains pause identity for a completed source while another source keeps the refresh pending', async () => {
     const app = await journal()
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => {
-        release = resolve
-    })
     app.remote.github = true
-    for (const fixtureRepository of ['fast', 'held'].map((id) => ({ ...repository, id })))
-        await app.store.saveRepository(fixtureRepository)
-    const read = vi.spyOn(app.github, 'activities').mockImplementation((repository, _login, _tracked, scan) =>
-        Effect.gen(function* () {
-            if (repository.id === 'held') yield* Effect.promise(() => gate)
-            yield* scan?.checkpoint?.(1, true) ?? Effect.void
-            return []
-        }).pipe(Effect.mapError((error) => new GitHubFailure(error.message, { cause: error })))
-    )
+    const account = app.store.config.accounts[0]
+    for (const id of ['fast', 'held'])
+        await app.store.saveRepository({
+            ...repository,
+            id,
+            remote: 'https://github.com/example/' + id,
+            accountId: account.id,
+            accountGeneration: account.generation
+        })
+    const { reads, release } = holdPulls(app, (url) => url.includes('/held/'))
     let first: Promise<void> | undefined
     let resumed: Promise<void> | undefined
     try {
@@ -208,7 +226,7 @@ it('retains pause identity for a completed source while another source keeps the
         resumed = run(app.service.refresh({ source: 'remote', resume: true }))
         release()
         await Promise.all([first, resumed])
-        expect(read.mock.calls.filter(([repository]) => repository.id === 'fast')).toHaveLength(2)
+        expect(reads.filter((url) => url.includes('/fast/'))).toHaveLength(2)
         expect((await journalState(app.store)).acquisition?.['remote:fast'].status).toBe('idle')
     } finally {
         release()
@@ -217,33 +235,37 @@ it('retains pause identity for a completed source while another source keeps the
     }
 })
 it('stops before enriching old unrelated PR history', async () => {
-    const fetcher = vi.fn<typeof fetch>((input) => {
-        const url = input instanceof Request ? input.url : String(input)
-        const pulls = Array.from({ length: 100 }, (_, index) => ({
-            number: index + 1,
-            title: 'Old work',
-            body: '',
-            html_url: '',
-            created_at: '2020-01-01T00:00:00Z',
-            updated_at: '2020-01-01T00:00:00Z',
-            merged_at: null,
-            merge_commit_sha: null,
-            user: { login: 'other' },
-            base: { ref: 'main', sha: 'b'.repeat(40) },
-            head: { ref: 'feature', sha: 'a'.repeat(40) }
-        }))
-        const value = url.includes('/pulls?')
-            ? url.includes('page=1&') || url.endsWith('page=1')
-                ? pulls
-                : []
-            : /\/(commits|reviews|files)\?/.test(url)
-              ? []
-              : pulls[0]
-        return Promise.resolve(new Response(JSON.stringify(value)))
-    })
-    const github = await githubClient(await transportClient(fetcher), () => 'test')
+    const requests: string[] = []
+    server.use(
+        route.get('https://api.github.com/repos/example/project/pulls', ({ request }) => {
+            const url = request.url
+            requests.push(url)
+            const pulls = Array.from({ length: 100 }, (_, index) => ({
+                number: index + 1,
+                title: 'Old work',
+                body: '',
+                html_url: '',
+                created_at: '2020-01-01T00:00:00Z',
+                updated_at: '2020-01-01T00:00:00Z',
+                merged_at: null,
+                merge_commit_sha: null,
+                user: { login: 'other' },
+                base: { ref: 'main', sha: 'b'.repeat(40) },
+                head: { ref: 'feature', sha: 'a'.repeat(40) }
+            }))
+            const value = url.includes('/pulls?')
+                ? url.includes('page=1&') || url.endsWith('page=1')
+                    ? pulls
+                    : []
+                : /\/(commits|reviews|files)\?/.test(url)
+                  ? []
+                  : pulls[0]
+            return Response.json(value)
+        })
+    )
+    const github = await githubClient(await transportClient(), () => 'test')
     expect(await run(github.activities(repository, 'me', []))).toEqual([])
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(requests).toHaveLength(1)
 })
 it('reconsiders completed GitHub coverage when the journal timezone changes', async () => {
     const app = await workspace()
@@ -291,18 +313,24 @@ it('reconsiders completed GitHub coverage when the journal timezone changes', as
     }
 })
 it('recognizes secondary throttling even with primary quota remaining', async () => {
-    const fetcher = vi.fn<typeof fetch>(() =>
-        Promise.resolve(
-            new Response(JSON.stringify({ message: 'You have exceeded a secondary rate limit.' }), {
-                status: 403,
-                headers: { 'retry-after': '60', 'x-ratelimit-remaining': '4000' }
-            })
-        )
+    const url = 'https://api.github.com/repos/example/project'
+    let requests = 0
+    server.use(
+        route.get(url, () => {
+            requests++
+            return Response.json(
+                { message: 'You have exceeded a secondary rate limit.' },
+                {
+                    status: 403,
+                    headers: { 'retry-after': '60', 'x-ratelimit-remaining': '4000' }
+                }
+            )
+        })
     )
-    const http = await transportClient(fetcher)
-    await expect(run(http.request('https://api.github.com/repos/example/project', 'test'))).rejects.toThrow()
-    await expect(run(http.request('https://api.github.com/repos/example/project', 'test'))).rejects.toThrow()
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    const http = await transportClient()
+    await expect(run(http.request(url, 'test'))).rejects.toThrow()
+    await expect(run(http.request(url, 'test'))).rejects.toThrow()
+    expect(requests).toBe(1)
 })
 it('uses conditional reads and shares simultaneous readers without mixing credentials', async () => {
     const attempts: {
@@ -350,21 +378,25 @@ it('admits foreground work ahead of queued backfill and bounds concurrency', asy
 })
 it('preserves credential-scoped throttle pauses across transport restart', async () => {
     const pauses = {}
-    const fetcher = vi.fn<typeof fetch>(() =>
-        Promise.resolve(new Response('{}', { status: 429, headers: { 'retry-after': '60' } }))
+    let requests = 0
+    server.use(
+        route.get('https://api.github.com/user', () => {
+            requests++
+            return Response.json({}, { status: 429, headers: { 'retry-after': '60' } })
+        })
     )
     const store = { pauses: () => pauses, changed: vi.fn() }
     await expect(
-        run((await transportClient(fetcher, store)).request('https://api.github.com/user', 'one'))
+        run((await transportClient(undefined, store)).request('https://api.github.com/user', 'one'))
     ).rejects.toThrow('429')
     await expect(
-        run((await transportClient(fetcher, store)).request('https://api.github.com/user', 'one'))
+        run((await transportClient(undefined, store)).request('https://api.github.com/user', 'one'))
     ).rejects.toThrow('paused')
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(requests).toBe(1)
     await expect(
-        run((await transportClient(fetcher, store)).request('https://api.github.com/user', 'two'))
+        run((await transportClient(undefined, store)).request('https://api.github.com/user', 'two'))
     ).rejects.toThrow('429')
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(requests).toBe(2)
 })
 it('repeated refresh skips unchanged PR enrichment and unchanged Git histories', async () => {
     const app = await workspace()
@@ -600,27 +632,28 @@ it('indexes only new commit bodies after ref changes and updates known branch me
 })
 it('queues and coalesces an explicit source retry behind active acquisition', async () => {
     const app = await workspace()
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => {
-        release = resolve
-    })
-    const original = gitModule.indexCommits
-    const indexing = vi.spyOn(gitModule, 'indexCommits').mockImplementationOnce(async (...args) => {
-        await gate
-        return original(...args)
+    const admitted = deferred<undefined>()
+    const { reads, release } = holdPulls(app, () => {
+        admitted.resolve(undefined)
+        return true
     })
     try {
         app.remote.github = true
-        const active = run(app.service.refresh({ source: 'git' }))
-        const retry = run(app.service.refresh({ repositoryId: app.repository.id, source: 'git', resume: true }))
-        const duplicate = run(app.service.refresh({ repositoryId: app.repository.id, source: 'git', resume: true }))
-        expect(app.remote.requests).toHaveLength(0)
+        const active = run(app.service.refresh({ source: 'remote' }))
+        await Promise.race([
+            admitted.promise,
+            active.then(() => {
+                throw new Error('Refresh finished before the provider was reached')
+            })
+        ])
+        const retry = run(app.service.refresh({ repositoryId: app.repository.id, source: 'remote', resume: true }))
+        const duplicate = run(app.service.refresh({ repositoryId: app.repository.id, source: 'remote', resume: true }))
+        expect(reads).toHaveLength(1)
         release()
         await Promise.all([active, retry, duplicate])
-        expect(indexing).toHaveBeenCalledTimes(2)
+        expect(reads).toHaveLength(2)
     } finally {
         release()
-        indexing.mockRestore()
         await app.close()
     }
 })
@@ -726,12 +759,13 @@ it.each(['stop', 'remove'] as const)('reclaims staged contribution slots after %
                 ...app.store.config.repositories.find((item) => item.id === 'pending-a')!,
                 removed: true
             })
-        const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 2000)
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(Date.now() + 2000)
         try {
             await run(app.service.refresh({ source: 'remote', repositoryId: app.repository.id }))
             expect(reader).toHaveBeenCalledTimes(1)
         } finally {
-            clock.mockRestore()
+            vi.useRealTimers()
         }
     } finally {
         reader.mockRestore()
@@ -809,134 +843,88 @@ it('retains incomplete evidence at the GitHub commit cap and advances other PRs'
     expect(calls - before).toBe(1)
 })
 
-it.each([
-    ['rollback', 'body'],
-    ['lost acknowledgment', 'body'],
-    ['rollback', 'membership'],
-    ['lost acknowledgment', 'membership']
-] as const)('keeps the durable Git cursor after %s on a later %s page', async (failure, phase) => {
-    const app = await journal()
-    const repo: Repository = { ...repository, id: 'git-rollback', path: app.directory, remote: '', remotes: [] }
-    const commit = (number: number): Activity => ({
-        id: `${repo.id}:commit:${number}`,
-        repositoryId: repo.id,
-        kind: 'commit',
-        sha: String(number).padStart(40, '0'),
-        title: `Page ${number}`,
-        author: 'me@example.com',
-        date: '2026-10-06T00:00:00Z',
-        description: '',
-        branches: ['main'],
-        deletedBranches: [],
-        files: [],
-        disposition: 'inbox',
-        explicit: false
-    })
-    const index = vi
-        .spyOn(gitModule, 'indexCommits')
-        .mockImplementation((_repo, _refs, _since, _offset, _tips, _zone, _signal, cursor) => {
-            if (phase === 'membership') {
-                const next = !cursor
-                    ? { phase: 'membership' as const, offset: 0, group: 0, alias: 0 }
-                    : cursor.offset === 0
-                      ? { ...cursor, offset: 1000 }
-                      : undefined
-                return Promise.resolve({
-                    refs: { main: 'f'.repeat(40), side: 'f'.repeat(40) },
-                    items: !cursor ? [{ ...commit(1), branches: [] }] : [],
-                    history: !cursor ? [{ ...commit(1), branches: [] }] : [],
-                    memberships: cursor
-                        ? [{ branches: [cursor.offset === 0 ? 'main' : 'side'], shas: [commit(1).sha!] }]
-                        : [],
-                    cursor: next,
-                    nextOffset: next ? -1 : undefined
-                })
-            }
-            const page = (cursor?.offset ?? 0) / 2000 + 1
-            const next = page < 3 ? { phase: 'body' as const, offset: page * 2000, group: 0, alias: 0 } : undefined
-            return Promise.resolve({
-                refs: { main: 'f'.repeat(40) },
-                items: [commit(page)],
-                history: [commit(page)],
-                cursor: next,
-                nextOffset: next?.offset
-            })
+it.each(['body', 'membership'] as const)(
+    'commits the Git %s page and cursor together across recovery',
+    async (phase) => {
+        const app = await journal()
+        const repo: Repository = { ...repository, id: 'git-rollback', path: app.directory, remote: '', remotes: [] }
+        const commit = (number: number): Activity => ({
+            id: `${repo.id}:commit:${number}`,
+            repositoryId: repo.id,
+            kind: 'commit',
+            sha: String(number).padStart(40, '0'),
+            title: `Page ${number}`,
+            author: 'me@example.com',
+            date: '2026-10-06T00:00:00Z',
+            description: '',
+            branches: ['main'],
+            deletedBranches: [],
+            files: [],
+            disposition: 'inbox',
+            explicit: false
         })
-    const apply = app.store.applyAcquisitionBatch.bind(app.store)
-    let corrupt = true
-    const save = vi.spyOn(app.store, 'applyAcquisitionBatch').mockImplementation(async (batch, generation) => {
-        if (
-            corrupt &&
-            (phase === 'body'
-                ? batch.historyDelta?.items[0]?.title === 'Page 2'
-                : batch.historyDelta?.memberships?.[0]?.branches[0] === 'main')
-        ) {
-            corrupt = false
-            if (failure === 'lost acknowledgment') {
-                await apply(batch, generation)
-                throw new Error('Commit acknowledgment lost')
-            }
-            return apply(
-                {
-                    ...batch,
-                    activities: [...(batch.activities ?? []), { ...commit(2), id: 'invalid', repositoryId: 'missing' }]
-                },
-                generation
-            )
+        const path = join(app.directory, 'tracking.sqlite')
+        const database = new DatabaseSync(path)
+        const key = 'git:' + repo.id
+        const firstCursor = { phase, offset: 0, group: 0, alias: 0 }
+        const nextCursor = { ...firstCursor, offset: phase === 'body' ? 2000 : 1000 }
+        const refs = { main: 'f'.repeat(40) }
+        const first = { ...commit(1), branches: [] }
+        const second = commit(2)
+        const next = {
+            repository: repo,
+            historyDelta: {
+                configuration: 'fixture',
+                refs,
+                items: phase === 'body' ? [second] : [],
+                memberships: phase === 'membership' ? [{ branches: ['main'], shas: [first.sha!] }] : undefined
+            },
+            checkpoint: { key, value: { status: 'running' as const, gitCursor: nextCursor } }
         }
-        return apply(batch, generation)
-    })
-    try {
-        await app.store.saveRepository(repo)
-        await run(app.service.refresh({ source: 'git', since: '2026-10-05' }))
-        if (phase === 'body') {
-            expect((await app.store.history(repo.id))?.items.map((item) => item.title).sort()).toEqual(
-                failure === 'rollback' ? ['Page 1'] : ['Page 1', 'Page 2']
+        try {
+            await app.store.saveRepository(repo)
+            await app.store.applyAcquisitionBatch({
+                repository: repo,
+                historyDelta: { configuration: 'fixture', refs, items: [first] },
+                checkpoint: { key, value: { status: 'running', gitCursor: firstCursor } }
+            })
+            database.exec(
+                "CREATE TRIGGER reject_cursor BEFORE UPDATE ON acquisition_checkpoints BEGIN SELECT RAISE(ABORT, 'cursor write failed'); END"
             )
-            expect((await app.store.acquisitionCheckpoint(`git:${repo.id}`))?.gitCursor?.offset).toBe(
-                failure === 'rollback' ? 2000 : 4000
-            )
-        } else {
-            expect((await app.store.history(repo.id))?.items[0].branches).toEqual(
-                failure === 'rollback' ? [] : ['main']
-            )
-            expect((await app.store.acquisitionCheckpoint(`git:${repo.id}`))?.gitCursor?.offset).toBe(
-                failure === 'rollback' ? 0 : 1000
-            )
-        }
-        await run(app.service.refresh({ source: 'git', since: '2026-10-05', resume: true }))
-        if (phase === 'body') {
-            expect((await app.store.history(repo.id))?.items.map((item) => item.title).sort()).toEqual([
-                'Page 1',
-                'Page 2',
-                'Page 3'
+            await expect(app.store.applyAcquisitionBatch(next)).rejects.toThrow('could not be saved')
+            expect((await app.store.acquisitionCheckpoint(key))?.gitCursor).toEqual(firstCursor)
+            expect((await app.store.history(repo.id))?.items.map(({ id, branches }) => ({ id, branches }))).toEqual([
+                { id: first.id, branches: [] }
             ])
-            expect(index.mock.calls.map((args) => args[7]?.offset ?? 0)).toEqual(
-                failure === 'rollback' ? [0, 2000, 2000, 4000] : [0, 2000, 4000]
-            )
-        } else expect((await app.store.history(repo.id))?.items[0].branches).toEqual(['main', 'side'])
-    } finally {
-        save.mockRestore()
-        index.mockRestore()
-        await app.close()
+            database.exec('DROP TRIGGER reject_cursor')
+            await app.store.applyAcquisitionBatch(next)
+            const reopened = await JournalDatabase.open(path)
+            try {
+                expect((await reopened.acquisitionCheckpoint(key))?.gitCursor).toEqual(nextCursor)
+                const items = (await reopened.history(repo.id))!.items
+                if (phase === 'body') expect(items.map((item) => item.id).sort()).toEqual([first.id, second.id])
+                else expect(items[0].branches).toEqual(['main'])
+            } finally {
+                await reopened.close()
+            }
+        } finally {
+            database.close()
+            await app.close()
+        }
     }
-})
+)
 
 it('retains account access-check cooldowns instead of requesting reconnection and retries assignment', async () => {
     const app = await journal()
     app.remote.github = true
     await app.store.saveRepository(repository)
-    const original = app.remote.fetch
     let limited = true
-    const fetch = vi.spyOn(app.remote, 'fetch').mockImplementation((url, init) => {
-        if ((url instanceof Request ? url.url : url.toString()) === 'https://api.github.com/repos/example/project')
-            return Promise.resolve(
-                limited
-                    ? new Response('{}', { status: 429, headers: { 'Retry-After': '1' } })
-                    : new Response(JSON.stringify({ id: 42, owner: { login: 'me', type: 'User' } }))
-            )
-        return original(url, init)
-    })
+    app.remote.responseFor = (url) => {
+        if (url !== 'https://api.github.com/repos/example/project') return undefined
+        return limited
+            ? Response.json({}, { status: 429, headers: { 'Retry-After': '1' } })
+            : Response.json({ id: 42, owner: { login: 'me', type: 'User' } })
+    }
     try {
         await run(app.service.refresh({ source: 'remote', repositoryId: repository.id }))
         const paused = await app.store.acquisitionCheckpoint('remote:repo')
@@ -944,16 +932,16 @@ it('retains account access-check cooldowns instead of requesting reconnection an
         expect(paused?.error).toContain('rate limit')
         expect(app.store.config.repositories[0].accountId).toBeUndefined()
         limited = false
-        const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.parse(paused!.retryAt!) + 2000)
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(Date.parse(paused!.retryAt!) + 2000)
         try {
             await run(app.service.refresh({ source: 'remote', repositoryId: repository.id }))
             expect(app.store.config.repositories[0].accountId).toBeDefined()
             expect((await app.store.acquisitionCheckpoint('remote:repo'))?.status).toBe('idle')
         } finally {
-            clock.mockRestore()
+            vi.useRealTimers()
         }
     } finally {
-        fetch.mockRestore()
         await app.close()
     }
 })
@@ -969,10 +957,10 @@ it.each(['network', 'unavailable'] as const)(
         app.remote.github = true
         const account = app.store.config.accounts[0]
         await app.store.saveRepository({ ...repository, accountId: account.id, accountGeneration: account.generation })
-        const fetch = vi.spyOn(app.remote, 'fetch').mockImplementation(() => {
-            if (failure === 'network') return Promise.reject(new Error('Connection lost during token renewal'))
-            return Promise.resolve(new Response('{}', { status: 503 }))
-        })
+        app.remote.responseFor = () => {
+            if (failure === 'network') throw new Error('Connection lost during token renewal')
+            return Response.json({}, { status: 503 })
+        }
         try {
             await run(app.service.refresh({ source: 'remote', repositoryId: repository.id }))
             const state = { ...(await journalState(app.store)), accounts: app.store.config.accounts }
@@ -991,7 +979,6 @@ it.each(['network', 'unavailable'] as const)(
                 expect(nextAcquisition(state, Date.parse(status.retryAt!) + 1000)?.[0]).toBe('remote:repo')
             }
         } finally {
-            fetch.mockRestore()
             await app.close()
         }
     }

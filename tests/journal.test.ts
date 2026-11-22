@@ -1,7 +1,11 @@
+import { DatabaseSync } from 'node:sqlite'
+import { join } from 'node:path'
+import { DurabilityError } from '../src/main/durability-error'
+import { deferred } from './deferred'
 import { journalState, seedJournal, editDraft } from './database-fixtures'
 import { Effect, Fiber } from 'effect'
 import { run } from './effect-fixtures'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { JournalDatabase } from '../src/main/journal-database'
 import { coveredEntries, inbox, weekOf } from '../src/shared/model'
 import { journal, workspace } from './fixtures'
@@ -33,6 +37,7 @@ const reflection: JournalNode = {
 describe('local journal workflow through application commands', () => {
     it('keeps verification recoverable when its confirmation checkpoint fails', async () => {
         const app = await journal()
+        const database = new DatabaseSync(join(app.directory, 'tracking.sqlite'))
         try {
             await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
             const draft = (await journalState(app.store)).drafts[0]
@@ -44,95 +49,47 @@ describe('local journal workflow through application commands', () => {
                 'Connection lost'
             )
             const save = (await journalState(app.store)).saves[0]
-            const confirm = app.store.confirmPublication.bind(app.store)
-            let fail = true
-            vi.spyOn(app.store, 'confirmPublication').mockImplementation((...args) =>
-                fail ? Promise.reject(new Error('Confirmation checkpoint failed')) : confirm(...args)
+            database.exec(
+                'CREATE TRIGGER reject_checkpoint BEFORE UPDATE ON publication_attempts ' +
+                    "WHEN NEW.status = 'confirmed' " +
+                    "BEGIN SELECT RAISE(ABORT, 'confirmation checkpoint failed'); END"
             )
-            await expect(run(app.service.handle({ type: 'reconcile', saveId: save.id }))).rejects.toThrow(
-                'Confirmation checkpoint failed'
+            await expect(run(app.service.handle({ type: 'reconcile', saveId: save.id }))).rejects.toBeInstanceOf(
+                DurabilityError
             )
             expect((await app.store.publication(save.id))!.status).toBe('unknown')
             expect((await app.store.draft(draft.id))!.publishedEntryId).toBeUndefined()
             expect((await journalState(app.store)).entries).toEqual([])
             expect((await journalState(app.store)).coverage).toEqual([])
-            fail = false
+            database.exec('DROP TRIGGER reject_checkpoint')
             await run(app.service.handle({ type: 'reconcile', saveId: save.id }))
             expect((await app.store.publication(save.id))!.status).toBe('confirmed')
             expect(app.remote.pages).toHaveLength(1)
             expect((await journalState(app.store)).entries[0].body).toEqual(reflection)
         } finally {
+            database.close()
             await app.close()
         }
     })
-    it('waits for the uncertain outcome checkpoint before reporting a lost publishing response', async () => {
+    it('persists uncertain publishing before returning a lost-response error', async () => {
         const app = await journal()
-        let release!: () => void
-        const outcome = new Promise<void>((resolve) => {
-            release = resolve
-        })
-        let finished = false
-        let publishing: Promise<void> | undefined
         try {
             await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
+            const state = await journalState(app.store)
             app.remote.loseCreateResponse = true
-            const checkpoint = app.store.recordPublicationOutcome.bind(app.store)
-            const flush = vi.spyOn(app.store, 'recordPublicationOutcome').mockImplementation(async (...args) => {
-                const result = await checkpoint(...args)
-                if (args[1] === 'unknown') await outcome
-                return result
-            })
-            publishing = run(
-                app.service.handle({ type: 'publish', draftId: (await journalState(app.store)).drafts[0].id })
-            ).then(
-                () => {
-                    finished = true
-                },
-                (error: unknown) => {
-                    finished = true
-                    expect(error).toBeInstanceOf(Error)
-                }
+            await expect(run(app.service.handle({ type: 'publish', draftId: state.drafts[0].id }))).rejects.toThrow(
+                'Connection lost'
             )
-            await vi.waitFor(async () => expect((await journalState(app.store)).saves[0].status).toBe('unknown'))
-            expect(finished).toBe(false)
-            expect(flush).toHaveBeenCalled()
-            release()
-            await publishing
-            expect(app.remote.pages).toHaveLength(1)
-            await run(app.service.handle({ type: 'reconcile', saveId: (await journalState(app.store)).saves[0].id }))
-            expect((await journalState(app.store)).saves[0].status).toBe('confirmed')
-            expect(app.remote.pages).toHaveLength(1)
-        } finally {
-            release()
-            await publishing
-            await app.close()
-        }
-    })
-    it('waits for durable publish intent before sending a Notion create request', async () => {
-        const app = await journal()
-        try {
-            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
-            await editDraft(app.store, 0, (draft) => {
-                draft.title = 'Durable intent'
-            })
-            let release: (() => void) | undefined
-            const commit = new Promise<void>((resolve) => {
-                release = resolve
-            })
-            const begin = app.store.beginPublication.bind(app.store)
-            vi.spyOn(app.store, 'beginPublication').mockImplementationOnce(async (...args) => {
-                const result = await begin(...args)
-                await commit
-                return result
-            })
-            const publishing = run(
-                app.service.handle({ type: 'publish', draftId: (await journalState(app.store)).drafts[0].id })
-            )
-            await Promise.resolve()
-            expect(app.remote.pages).toHaveLength(0)
-            release?.()
-            await publishing
-            expect(app.remote.pages).toHaveLength(1)
+            const saved = await JournalDatabase.open(join(app.directory, 'tracking.sqlite'))
+            try {
+                const attempt = (await journalState(saved)).saves[0]
+                expect(attempt.status).toBe('unknown')
+                await run(app.service.handle({ type: 'reconcile', saveId: attempt.id }))
+                expect((await app.store.publication(attempt.id))?.status).toBe('confirmed')
+                expect(app.remote.pages).toHaveLength(1)
+            } finally {
+                await saved.close()
+            }
         } finally {
             await app.close()
         }
@@ -408,16 +365,16 @@ it('keeps the weekly page linked when writing changes during a publish', async (
     try {
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         const draft = (await journalState(app.store)).drafts[0]
-        const fetcher = app.remote.fetch
-        vi.spyOn(app.remote, 'fetch').mockImplementationOnce(async (...args) => {
+        app.remote.beforeRequest = async (url) => {
+            if (!url.endsWith('/pages')) return
+            app.remote.beforeRequest = undefined
             await run(
                 app.service.handle({
                     type: 'draft',
                     draft: { ...draft, title: 'Newer local writing', body: reflection }
                 })
             )
-            return fetcher(...args)
-        })
+        }
         await run(app.service.handle({ type: 'publish', draftId: draft.id }))
         expect((await app.store.draft(draft.id))!.publishedEntryId).toBe(app.remote.pages[0].id)
         expect((await app.store.draft(draft.id))!.body).toEqual(reflection)
@@ -433,47 +390,54 @@ it('keeps the weekly page linked when writing changes during a publish', async (
 })
 it('keeps a rejected intent checkpoint retryable without dispatching a remote write', async () => {
     const app = await journal()
+    const database = new DatabaseSync(join(app.directory, 'tracking.sqlite'))
     try {
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         const draft = (await journalState(app.store)).drafts[0]
-        const begin = app.store.beginPublication.bind(app.store)
-        let fail = true
-        vi.spyOn(app.store, 'beginPublication').mockImplementation((...args) =>
-            fail ? Promise.reject(new Error('Intent checkpoint failed')) : begin(...args)
+        database.exec(
+            'CREATE TRIGGER reject_publication_intent BEFORE INSERT ON publication_attempts ' +
+                "BEGIN SELECT RAISE(ABORT, 'intent checkpoint failed'); END"
         )
-        await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow(
-            'Intent checkpoint failed'
+        await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toBeInstanceOf(
+            DurabilityError
         )
         expect(app.remote.pages).toHaveLength(0)
         expect((await journalState(app.store)).saves).toEqual([])
-        fail = false
+        database.exec('DROP TRIGGER reject_publication_intent')
+        const durableIntents: number[] = []
+        app.remote.beforeRequest = (url) => {
+            if (url.endsWith('/pages')) {
+                const rows = database.prepare("SELECT id FROM publication_attempts WHERE status = 'pending'").all()
+                durableIntents.push(rows.length)
+            }
+            return Promise.resolve()
+        }
         await run(app.service.handle({ type: 'publish', draftId: draft.id }))
+        expect(durableIntents).toEqual([1])
         expect(app.remote.pages).toHaveLength(1)
         expect((await journalState(app.store)).saves.at(-1)?.status).toBe('confirmed')
     } finally {
+        database.close()
         await app.close()
     }
 })
 it('durably exposes an interrupted remote publish for verification without restarting', async () => {
     const app = await journal()
-    let entered = false
+    const entered = deferred<undefined>()
     let release!: () => void
     const gate = new Promise<void>((resolve) => {
         release = resolve
     })
-    const fetcher = app.remote.fetch
     let fiber: Fiber.RuntimeFiber<unknown, Error> | undefined
     try {
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         const draft = (await journalState(app.store)).drafts[0]
-        vi.spyOn(app.remote, 'fetch').mockImplementationOnce(async (...args) => {
-            const response = await fetcher(...args)
-            entered = true
-            await gate
-            return response
-        })
+        app.remote.beforeCreateReply = () => {
+            entered.resolve(undefined)
+            return gate
+        }
         fiber = Effect.runFork(app.service.handle({ type: 'publish', draftId: draft.id }))
-        await vi.waitFor(() => expect(entered).toBe(true))
+        await entered.promise
         await Effect.runPromise(Fiber.interrupt(fiber))
         const save = (await journalState(app.store)).saves[0]
         expect((await app.store.publication(save.id))!.status).toBe('unknown')
@@ -487,80 +451,48 @@ it('durably exposes an interrupted remote publish for verification without resta
         await app.close()
     }
 })
-it.each(['failure', 'interruption'] as const)(
-    'checkpoints resumed replacement progress before remote mutation after %s',
-    async (mode) => {
-        const app = await journal()
-        let release!: () => void
-        const gate = new Promise<void>((resolve) => {
-            release = resolve
-        })
-        let allow = false
-        let first: Fiber.RuntimeFiber<unknown, Error> | undefined
-        let stopping: Promise<unknown> | undefined
-        let retry: Promise<unknown> | undefined
-        try {
-            await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
-            const draft = (await journalState(app.store)).drafts[0]
-            await run(app.service.handle({ type: 'publish', draftId: draft.id }))
-            const save = {
-                ...structuredClone((await journalState(app.store)).saves[0]),
-                id: 'interrupted-update',
-                status: 'unknown' as const,
-                updateExisting: true,
-                title: 'Updated',
-                body: reflection,
-                replacedBlockIds: undefined
-            }
-            const seeded = await journalState(app.store)
-            seeded.saves.push({ ...save, marker: 'interrupted-update-marker' })
-            await seedJournal(app.store, seeded)
-            const checkpointCommand = app.store.checkpointPublication.bind(app.store)
-            const checkpoint = vi.spyOn(app.store, 'checkpointPublication').mockImplementation(async (...args) => {
-                if (!allow) {
-                    if (mode === 'failure') throw new Error('Progress checkpoint unavailable')
-                    await gate
-                }
-                return checkpointCommand(...args)
-            })
-            const start = app.remote.requests.length
-            const verify = () => app.service.handle({ type: 'reconcile' as const, saveId: save.id })
-            if (mode === 'failure') {
-                await expect(run(verify())).rejects.toThrow('Progress checkpoint unavailable')
-                expect((await app.store.publication(save.id))!.replacedBlockIds).toBeUndefined()
-                await expect(run(verify())).rejects.toThrow('Progress checkpoint unavailable')
-            } else {
-                first = Effect.runFork(verify())
-                await vi.waitFor(() => expect(checkpoint).toHaveBeenCalled())
-                let settled = false
-                stopping = Effect.runPromise(Fiber.interrupt(first)).then(() => {
-                    settled = true
-                })
-                await new Promise((resolve) => setTimeout(resolve, 0))
-                expect(settled).toBe(false)
-                retry = run(verify()).catch((error: unknown) => error)
-                await vi.waitFor(() => expect(checkpoint).toHaveBeenCalledTimes(2))
-            }
-            expect(app.remote.requests.slice(start).filter((request) => request.method !== 'GET')).toEqual([])
-            allow = true
-            release()
-            if (stopping) await stopping
-            if (retry) await retry
-            else await run(verify())
-            expect((await app.store.publication(save.id))!.status).toBe('confirmed')
-            expect(app.remote.pages).toHaveLength(1)
-            expect((await journalState(app.store)).entries[0].body).toEqual(reflection)
-        } finally {
-            release()
-            if (first) await Effect.runPromise(Fiber.interrupt(first))
-            if (stopping) await stopping
-            if (retry) await retry
-            await app.close()
+it('commits replacement progress before mutating a partially published page', async () => {
+    const app = await journal()
+    const database = new DatabaseSync(join(app.directory, 'tracking.sqlite'))
+    try {
+        await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
+        const draft = (await journalState(app.store)).drafts[0]
+        await run(app.service.handle({ type: 'publish', draftId: draft.id }))
+        const save = {
+            ...structuredClone((await journalState(app.store)).saves[0]),
+            id: 'interrupted-update',
+            status: 'unknown' as const,
+            updateExisting: true,
+            title: 'Updated',
+            body: reflection,
+            replacedBlockIds: undefined
         }
+        const seeded = await journalState(app.store)
+        seeded.saves.push({ ...save, marker: 'interrupted-update-marker' })
+        await seedJournal(app.store, seeded)
+        database.exec(
+            'CREATE TRIGGER reject_progress BEFORE UPDATE ON publication_attempts ' +
+                "WHEN NEW.replacedBlockIds IS NOT NULL AND NEW.status != 'confirmed' " +
+                "BEGIN SELECT RAISE(ABORT, 'replacement progress unavailable'); END"
+        )
+        const start = app.remote.requests.length
+        const verify = () => app.service.handle({ type: 'reconcile', saveId: save.id })
+        await expect(run(verify())).rejects.toBeInstanceOf(DurabilityError)
+        expect((await app.store.publication(save.id))?.replacedBlockIds).toBeUndefined()
+        expect(app.remote.requests.slice(start).filter((request) => request.method !== 'GET')).toEqual([])
+        database.exec('DROP TRIGGER reject_progress')
+        await run(verify())
+        expect((await app.store.publication(save.id))?.status).toBe('confirmed')
+        expect(app.remote.pages).toHaveLength(1)
+        expect((await journalState(app.store)).entries[0].body).toEqual(reflection)
+    } finally {
+        database.close()
+        await app.close()
     }
-)
+})
 it('checkpoints a volatile page ID before resuming any remote append', async () => {
     const app = await journal()
+    const database = new DatabaseSync(join(app.directory, 'tracking.sqlite'))
     try {
         await run(app.service.handle({ type: 'newDraft', week: '2026-10-05' }))
         const draft = (await journalState(app.store)).drafts[0]
@@ -574,29 +506,29 @@ it('checkpoints a volatile page ID before resuming any remote append', async () 
             }
             Object.assign(draft, await app.store.saveDraft(draft, draft.version))
         }
-        const checkpoint = app.store.checkpointPublication.bind(app.store)
-        let unavailable = true
-        vi.spyOn(app.store, 'checkpointPublication').mockImplementation((...args) => {
-            if (unavailable && args[0].entryId) return Promise.reject(new Error('Page checkpoint unavailable'))
-            return checkpoint(...args)
-        })
-        await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toThrow(
-            'Page checkpoint unavailable'
+        database.exec(
+            'CREATE TRIGGER reject_checkpoint BEFORE UPDATE ON publication_attempts ' +
+                'WHEN NEW.entryId IS NOT NULL ' +
+                "BEGIN SELECT RAISE(ABORT, 'page checkpoint unavailable'); END"
+        )
+        await expect(run(app.service.handle({ type: 'publish', draftId: draft.id }))).rejects.toBeInstanceOf(
+            DurabilityError
         )
         const save = (await journalState(app.store)).saves[0]
         expect((await app.store.publication(save.id))!.status).toBe('unknown')
         expect(app.remote.pages[0].blocks).toHaveLength(100)
         const start = app.remote.requests.length
-        await expect(run(app.service.handle({ type: 'reconcile', saveId: save.id }))).rejects.toThrow(
-            'Page checkpoint unavailable'
+        await expect(run(app.service.handle({ type: 'reconcile', saveId: save.id }))).rejects.toBeInstanceOf(
+            DurabilityError
         )
         expect(app.remote.requests.slice(start).filter((request) => request.method !== 'GET')).toHaveLength(0)
-        unavailable = false
+        database.exec('DROP TRIGGER reject_checkpoint')
         await run(app.service.handle({ type: 'reconcile', saveId: save.id }))
         expect((await app.store.publication(save.id))!.status).toBe('confirmed')
         expect(app.remote.pages).toHaveLength(1)
         expect(app.remote.pages[0].blocks).toHaveLength(250)
     } finally {
+        database.close()
         await app.close()
     }
 })

@@ -21,26 +21,6 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const electron = require('electron')
 const mode = process.argv[2]
-// Migrated journeys have one owner; keep the existing verification entry point discoverable.
-if (
-    ['repository-import', 'writing-checklist', 'provider-accounts', 'github-import'].includes(mode) &&
-    process.argv.length === 3
-) {
-    const child = spawn(
-        process.execPath,
-        ['tools/verification.mjs', 'desktop', mode === 'github-import' ? 'provider-accounts' : mode],
-        {
-            cwd: root,
-            stdio: 'inherit',
-            windowsHide: true
-        }
-    )
-    const code = await new Promise((done, reject) => {
-        child.once('error', reject)
-        child.once('close', done)
-    })
-    process.exit(code ?? 1)
-}
 const runner =
     mode === 'activity-filters'
         ? 'activity-filter'
@@ -51,25 +31,10 @@ const runner =
             : mode
 const disclosureMode = mode === 'onboarding-disclosure'
 const onboardingMode = mode === 'onboarding' || disclosureMode
-if (mode === 'connections' && process.argv.length === 3) {
-    for (const args of [
-        ['tools/verification.mjs', 'desktop', 'provider-accounts'],
-        ['tools/verify.mjs', 'notion']
-    ]) {
-        const child = spawn(process.execPath, args, { cwd: root, stdio: 'inherit', windowsHide: true })
-        const code = await new Promise((done, reject) => {
-            child.once('error', reject)
-            child.once('close', done)
-        })
-        if (code !== 0) process.exit(code ?? 1)
-    }
-    process.exit(0)
-}
-const connectionMode = mode === 'connections' || mode === 'notion'
+const connectionMode = mode === 'notion'
 if (
     ![
         'doctor',
-        'connections',
         'notion',
         'onboarding',
         'onboarding-disclosure',
@@ -86,7 +51,7 @@ if (
     process.argv.length !== 3
 ) {
     console.error(
-        'Usage: pnpm verify doctor | repository-import | writing-checklist | connections | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | app-updates | provider-accounts | activity-filters | activity-days (run pnpm build first)'
+        'Usage: pnpm verify doctor | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | app-updates | activity-filters | activity-days (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -227,20 +192,17 @@ if (mode === 'doctor') {
             writeFileSync(join(output, 'run.json'), JSON.stringify(report, null, 2))
             child.stdout.on('data', (data) => appendFileSync(join(output, 'stdout.log'), data))
             child.stderr.on('data', (data) => appendFileSync(join(output, 'stderr.log'), data))
-            const timer = setTimeout(
-                () => {
-                    report.timedOut = true
-                    try {
-                        if (process.platform === 'win32')
-                            execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
-                        else child.kill('SIGKILL')
-                    } catch (error) {
-                        report.terminationError = String(error)
-                        child.kill('SIGKILL')
-                    }
-                },
-                mode === 'connections' ? 150000 : 90000
-            )
+            const timer = setTimeout(() => {
+                report.timedOut = true
+                try {
+                    if (process.platform === 'win32')
+                        execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true })
+                    else child.kill('SIGKILL')
+                } catch (error) {
+                    report.terminationError = String(error)
+                    child.kill('SIGKILL')
+                }
+            }, 90000)
             child.once('error', (error) => {
                 clearTimeout(timer)
                 reject(new Error(String(error)))
@@ -508,25 +470,7 @@ if (mode === 'doctor') {
                                         'notion-provisioned.json',
                                         'captures.json'
                                     ]
-                                  : mode === 'connections'
-                                    ? [
-                                          'doctor.json',
-                                          'actions.jsonl',
-                                          '01-idle.png',
-                                          '05-narrow-dark-code.png',
-                                          '08-disconnected.png',
-                                          'http-requests.json',
-                                          'persisted-settings.json',
-                                          'notion-04-failed.png',
-                                          'notion-immediate-search.png',
-                                          'notion-remote-title-result.png',
-                                          'notion-page-link-result.png',
-                                          'notion-07-connected.png',
-                                          'notion-09-disconnected.png',
-                                          'notion-provisioned.json',
-                                          'captures.json'
-                                      ]
-                                    : []
+                                  : []
         ).every((file) => existsSync(join(output, file)))
         report.passed &&= report.cleanup.removed && report.evidenceRetained
         report.finishedAt = new Date().toISOString()

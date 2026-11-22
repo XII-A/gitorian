@@ -25,7 +25,7 @@ const nativeFetch = globalThis.fetch
 // Real renderer, preload, IPC, vault, profile cache and store. Provider HTTP, avatar transport and explicit failures are fixtures.
 const directory = process.env.GITORIAN_VERIFY_STATE
 const output = process.env.GITORIAN_VERIFY_OUTPUT
-if (!directory || !output) throw new Error('Use pnpm verify connections for managed isolation and cleanup')
+if (!directory || !output) throw new Error('Use pnpm verify notion for managed isolation and cleanup')
 app.setPath('userData', join(directory, 'profile'))
 nativeTheme.themeSource = 'dark'
 mkdirSync(output, { recursive: true })

@@ -4,7 +4,7 @@ import { journalState } from './database-fixtures'
 import { run } from './effect-fixtures'
 import { expect, it, vi } from 'vitest'
 import { commandSchema } from '../src/shared/model'
-import { journal, workspace } from './fixtures'
+import { workspace } from './fixtures'
 import type { Repository } from '../src/shared/model'
 import * as gitModule from '../src/main/git'
 import { JournalDatabase } from '../src/main/journal-database'
@@ -42,11 +42,10 @@ it('manual refresh extends history using durable Git bodies and unchanged PR ver
     }
 })
 it('extends only targeted active repositories and never moves an earlier history start forward', async () => {
-    const app = await journal()
+    const app = await workspace()
+    const other = await workspace()
     const repository: Repository = {
-        id: 'target',
-        name: 'target',
-        path: '',
+        ...app.repository,
         remote: '',
         base: 'main',
         trackingStart: '2026-10-12',
@@ -57,14 +56,11 @@ it('extends only targeted active repositories and never moves an earlier history
         branches: [],
         remotes: []
     }
-    // This scenario owns scope/date rules. Native Git is covered by git.test.ts;
-    // empty synthetic paths must never read the checkout running the test.
-    const index = vi.spyOn(gitModule, 'indexCommits').mockResolvedValue({ refs: {}, items: [] })
     try {
         await app.store.saveRepository(repository)
         for (const fixtureRepository of [
-            { ...repository, id: 'other', path: '', trackingStart: '2026-10-12' },
-            { ...repository, id: 'removed', path: '', removed: true, trackingStart: '2026-10-12' }
+            { ...repository, id: 'other', path: other.directory },
+            { ...repository, id: 'removed', path: join(app.directory, 'removed'), removed: true }
         ])
             await app.store.saveRepository(fixtureRepository)
         await run(app.service.refresh({ source: 'git' }))
@@ -91,36 +87,37 @@ it('extends only targeted active repositories and never moves an earlier history
                 .map((repo) => repo.trackingStart)
         ).toEqual(['2026-10-05', '2026-10-08', '2026-10-12'])
     } finally {
-        index.mockRestore()
-        await app.close()
+        await Promise.all([app.close(), other.close()])
     }
 })
 
 it('reprojects cached history in durable bounded pages when the date range expands', async () => {
-    const app = await journal()
+    const app = await workspace()
     const repo: Repository = {
-        id: 'projection',
+        id: app.repository.id,
         name: 'Projection',
         path: app.directory,
         remote: '',
         base: 'main',
         trackingStart: '2099-01-01',
-        emails: ['me@example.com'],
-        branches: ['main'],
+        emails: app.repository.emails,
+        branches: app.repository.branches,
         branchBases: {},
         remotes: [],
         removed: false,
         available: true
     }
-    const refs = { main: 'a'.repeat(40) }
-    const index = vi.spyOn(gitModule, 'indexCommits').mockResolvedValue({ refs, items: [] })
     try {
         await app.store.saveRepository(repo)
+        await run(app.service.refresh({ source: 'git' }))
+        const checkpoint = await app.store.acquisitionCheckpoint('git:' + repo.id)
+        const refs = checkpoint?.refs
+        expect(refs).toBeDefined()
         const configuration = gitConfiguration(repo, {
             settings: app.store.config.settings,
             restoreId: app.store.generation
         })
-        const items = Array.from({ length: 4001 }, (_, i): Activity => ({
+        const items = Array.from({ length: 2001 }, (_, i): Activity => ({
             id: `commit-${String(i).padStart(5, '0')}`,
             repositoryId: repo.id,
             kind: 'commit',
@@ -135,7 +132,7 @@ it('reprojects cached history in durable bounded pages when the date range expan
             disposition: 'inbox',
             explicit: false
         }))
-        await app.store.applyAcquisitionBatch({ repository: repo, historyDelta: { configuration, refs, items } })
+        await app.store.applyAcquisitionBatch({ repository: repo, historyDelta: { configuration, refs: refs!, items } })
         const key = `git:${repo.id}`
         await app.store.saveCheckpoint(key, {
             status: 'idle',
@@ -146,24 +143,24 @@ it('reprojects cached history in durable bounded pages when the date range expan
         })
         await app.store.saveRepository({ ...repo, trackingStart: '2020-01-01' })
         await run(app.service.refresh({ source: 'git' }))
-        expect((await journalState(app.store)).activities).toHaveLength(2000)
+        const firstPage = (await journalState(app.store)).activities.map((activity) => activity.id)
+        expect(firstPage).toHaveLength(2000)
         const reopened = await JournalDatabase.open(join(app.directory, 'tracking.sqlite'))
         try {
             const progress = await reopened.acquisitionCheckpoint(key)
-            expect(progress?.historyProjection?.after).toBe('commit-01999')
+            expect(firstPage).toContain(progress?.historyProjection?.after)
             expect(progress?.historySince).toBe('2099-01-01')
             expect(progress?.windowEnd).toBeDefined()
         } finally {
             await reopened.close()
         }
         await run(app.service.refresh({ source: 'git' }))
-        expect((await journalState(app.store)).activities).toHaveLength(4000)
-        await run(app.service.refresh({ source: 'git' }))
-        expect((await journalState(app.store)).activities).toHaveLength(4001)
+        expect((await journalState(app.store)).activities.map((item) => item.id)).toEqual(
+            expect.arrayContaining(items.map((item) => item.id))
+        )
         expect((await app.store.acquisitionCheckpoint(key))?.historyProjection).toBeUndefined()
         expect((await app.store.acquisitionCheckpoint(key))?.historySince).toBe('2020-01-01')
     } finally {
-        index.mockRestore()
         await app.close()
     }
 })

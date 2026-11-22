@@ -1,6 +1,6 @@
 # Crash recovery
 
-Use `pnpm build`, then `pnpm test:e2e crash-recovery startup-recovery settings-refresh`. The shared fixture owns disposable profiles, native process cleanup, screenshots, traces and source identity. No personal journal or provider credentials are used.
+Build and review the affected recovery path in an isolated Electron profile.
 
 ## User entry points
 
@@ -12,8 +12,8 @@ Use `pnpm build`, then `pnpm test:e2e crash-recovery startup-recovery settings-r
 
 ## Owning scenarios
 
-`tests/e2e/crash-recovery.spec.ts` owns contextual report copy, native clipboard failure/retry, 320px toast action geometry, keyboard refresh resumption, dismissal across reload and clean relaunch while refresh remains paused, independent controls while the main event loop is blocked, and product restart/persistence. Its native helper fixture uses a bounded forty-second loop solely for guaranteed cleanup. The restart scenario explicitly prepares a trace and declares the expected process termination; ordinary journeys still require zero exit. The replacement fixture records its own persisted state and exits cleanly before profile removal.
+Review contextual report copy, retry after clipboard failure, narrow toast layout, keyboard refresh resumption and dismissal across reopening. Use a disposable profile for process-restart checks.
 
-`tests/e2e/startup-recovery.spec.ts` owns failure/retry, keyboard/focus and safe diagnostic sharing only after expanding Technical details for Hub/workspace. `tests/e2e/settings-refresh.spec.ts` confirms the absent Settings support section. `tests/activity-refresh.test.ts` owns once-per-incident notification across remounts, a fresh notification for a new crash, and the UI's late-stall/native-reopen admission decision. `tests/e2e/draft-recovery.spec.ts` retains the existing recovery-copy/conflict interaction. `tests/recovery-termination.test.ts` owns actual Windows process identity, descendant cleanup and watchdog-branch survival. `tests/incident-reports.test.ts` owns report projection/caps/retention and unresolved recovery disposition. Existing acquisition/history, records, ApplicationWork and database-worker scenarios own their module contracts; storage timeout must not silently reopen or replay.
+Review startup retry and keyboard focus on both Hub and workspace. Diagnostic sharing starts inside Technical details. `pnpm smoke:recovery-termination` covers actual Windows process identity, descendant cleanup and watchdog-branch survival. `tests/incident-reports.test.ts` covers report projection, caps, retention and unresolved recovery disposition.
 
 Require passed run records, preserved commands/source patches/screenshots/traces, and removed owned profiles. Live recovery is Windows-specific until Linux/macOS native lifetime and packaging journeys have been verified. Native memory dumps and automatic hang profiling are deliberately not collected by this update.

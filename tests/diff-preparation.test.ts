@@ -1,12 +1,19 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { initialState } from '../src/shared/model'
-import { state as fixture } from './e2e/support/diff-viewer-fixture'
+import { initialState, type Command } from '../src/shared/model'
+import { state as fixture } from './diff-viewer-fixture'
+import { journal } from './fixtures'
+import { run } from './effect-fixtures'
 
-vi.mock('../src/renderer/code-highlighting', () => ({
-    codeLimits: { patch: 2_000_000 },
-    loadCodeHighlighting: () => Promise.resolve({ status: 'ready' })
-}))
-vi.mock('../src/renderer/diff-loader', () => ({ loadDiff: vi.fn(() => Promise.resolve([])) }))
+async function observeDetails() {
+    const app = await journal()
+    const commands: Command[] = []
+    const read = (command: Command) => {
+        commands.push(command)
+        return run(app.service.handle(command))
+    }
+    return { commands, read, close: app.close }
+}
+
 beforeEach(() => {
     vi.resetModules()
     vi.useFakeTimers()
@@ -24,15 +31,21 @@ it.each([
         const state = initialState()
         const activity = { ...fixture.activities[0], revision, diffRevision }
         state.diffs[activity.id] = patch
-        const read = vi.fn(() => Promise.resolve(undefined))
-        scheduleDiffPreparation(state, activity, read, true)
-        await vi.advanceTimersByTimeAsync(120)
-        expect(read).toHaveBeenCalledWith({
-            type: 'details',
-            activityId: activity.id,
-            content: 'diff',
-            cachedOnly: false
-        })
+        const { commands, read, close } = await observeDetails()
+        try {
+            scheduleDiffPreparation(state, activity, read, true)
+            await vi.advanceTimersByTimeAsync(120)
+            expect(commands).toEqual([
+                {
+                    type: 'details',
+                    activityId: activity.id,
+                    content: 'diff',
+                    cachedOnly: false
+                }
+            ])
+        } finally {
+            await close()
+        }
     }
 )
 
@@ -40,12 +53,16 @@ it('cancels abandoned intent and limits speculative reads to local evidence', as
     const { scheduleDiffPreparation } = await import('../src/renderer/diff-preparation')
     const state = initialState()
     const activity = fixture.activities[0]
-    const read = vi.fn(() => Promise.resolve(undefined))
-    const cancel = scheduleDiffPreparation(state, activity, read)
-    cancel()
-    await vi.advanceTimersByTimeAsync(200)
-    expect(read).not.toHaveBeenCalled()
-    scheduleDiffPreparation(state, activity, read)
-    await vi.advanceTimersByTimeAsync(100)
-    expect(read).toHaveBeenCalledWith({ type: 'details', activityId: activity.id, content: 'diff', cachedOnly: true })
+    const { commands, read, close } = await observeDetails()
+    try {
+        const cancel = scheduleDiffPreparation(state, activity, read)
+        cancel()
+        await vi.advanceTimersByTimeAsync(200)
+        expect(commands).toEqual([])
+        scheduleDiffPreparation(state, activity, read)
+        await vi.advanceTimersByTimeAsync(100)
+        expect(commands).toEqual([{ type: 'details', activityId: activity.id, content: 'diff', cachedOnly: true }])
+    } finally {
+        await close()
+    }
 })

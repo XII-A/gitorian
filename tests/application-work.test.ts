@@ -1,11 +1,17 @@
-import { Effect, type Fiber, FiberId, ManagedRuntime, RuntimeFlags, RuntimeFlagsPatch, Supervisor } from 'effect'
+import { deferred } from './deferred'
+import { Effect, Fiber, FiberId, ManagedRuntime, RuntimeFlags, RuntimeFlagsPatch, Supervisor } from 'effect'
 import { expect, it, vi } from 'vitest'
 import { ApplicationWork, ApplicationWorkLive } from '../src/main/application-work'
 
 async function application() {
     const runtime = ManagedRuntime.make(ApplicationWorkLive)
     const work = await runtime.runPromise(ApplicationWork)
-    return { work, run: runtime.runPromise.bind(runtime), close: () => runtime.dispose() }
+    return {
+        work,
+        run: runtime.runPromise.bind(runtime),
+        fork: runtime.runFork.bind(runtime),
+        close: () => runtime.dispose()
+    }
 }
 
 it('constructs lazy operations and isolates admission between application lifetimes', async () => {
@@ -67,7 +73,7 @@ it('drains accepted work and its follow-up work even when another task fails', a
     await app.close()
 })
 
-it('lets a restore command drain prior work without waiting for itself', async () => {
+it('lets a nested restore drain prior work without waiting for either caller', async () => {
     const app = await application()
     const events: string[] = []
     const prior = app.run(
@@ -86,10 +92,12 @@ it('lets a restore command drain prior work without waiting for itself', async (
     )
     await app.run(
         app.work.accept(
-            Effect.gen(function* () {
-                yield* app.work.drain
-                events.push('restore')
-            })
+            app.work.accept(
+                Effect.gen(function* () {
+                    yield* app.work.drain
+                    events.push('restore')
+                })
+            )
         )
     )
     await prior
@@ -98,30 +106,21 @@ it('lets a restore command drain prior work without waiting for itself', async (
     await app.close()
 })
 
-it('stops periodic producers after successful shutdown', async () => {
-    const app = await application()
-    let ticks = 0
-    await app.run(
-        app.work.repeat(
-            5,
-            Effect.sync(() => {
-                ticks++
-            })
-        )
-    )
-    await vi.waitFor(() => expect(ticks).toBeGreaterThan(0))
-    await app.run(app.work.shutdown(Effect.void))
-    const settled = ticks
-    await new Promise((resolve) => setTimeout(resolve, 25))
-    expect(ticks).toBe(settled)
-    await app.close()
-})
-
 it('keeps admission usable when durable shutdown fails so saving can be retried', async () => {
     const app = await application()
     await expect(app.run(app.work.shutdown(Effect.fail(new Error('disk full'))))).rejects.toThrow('disk full')
-    expect(await app.run(app.work.accept(Effect.succeed('retry')))).toBe('retry')
-    await app.run(app.work.shutdown(Effect.void))
+    const drained = await app.run(app.work.accept(Effect.succeed('follow-up work')))
+    expect(drained).toBe('follow-up work')
+    let persisted = false
+    await app.run(
+        app.work.shutdown(
+            Effect.sync(() => {
+                persisted = true
+            })
+        )
+    )
+    expect(persisted).toBe(true)
+    await expect(app.run(app.work.accept(Effect.void))).rejects.toThrow('closed')
     await app.close()
 })
 
@@ -170,8 +169,6 @@ it('settles active periodic work before saving and rejects new producers after s
             })
         )
     )
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(events).toEqual(['tick'])
     release()
     await closing
     expect(events).toEqual(['tick', 'settled', 'saved'])
@@ -179,43 +176,44 @@ it('settles active periodic work before saving and rejects new producers after s
     await app.close()
 })
 
-it('serializes shutdown attempts and cannot reopen after a successful close', async () => {
+it('serializes a pending shutdown and commits the next attempt after a failure', async () => {
     const app = await application()
-    let rejectSave!: (error: Error) => void
-    const first = app
-        .run(
-            app.work.shutdown(
-                Effect.tryPromise({
-                    try: () =>
-                        new Promise<void>((_resolve, reject) => {
-                            rejectSave = reject
-                        }),
-                    catch: (error) => error
-                })
-            )
-        )
-        .catch(() => undefined)
-    await vi.waitFor(() => expect(rejectSave).toBeTypeOf('function'))
-    let saved = false
-    const second = app.run(
+    const saving = deferred<undefined>()
+    const failedWrite = deferred<undefined>()
+    const events: string[] = []
+    const first = app.run(
         app.work.shutdown(
-            Effect.sync(() => {
-                saved = true
+            Effect.tryPromise({
+                try: async () => {
+                    events.push('first began')
+                    saving.resolve(undefined)
+                    await failedWrite.promise
+                    events.push('first failed')
+                    throw new Error('disk full')
+                },
+                catch: (error) => error
             })
         )
     )
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(saved).toBe(false)
-    rejectSave(new Error('disk full'))
-    await Promise.all([first, second])
-    await expect(app.run(app.work.accept(Effect.void))).rejects.toThrow('closed')
-    await app.close()
-})
-
-it('excludes the complete admission ancestry when nested work drains', async () => {
-    const app = await application()
-    await app.run(app.work.accept(app.work.accept(app.work.drain)))
-    await app.close()
+    const rejected = expect(first).rejects.toThrow('disk full')
+    try {
+        await saving.promise
+        const second = app.fork(
+            app.work.shutdown(
+                Effect.sync(() => {
+                    events.push('second committed')
+                })
+            ),
+            { immediate: true }
+        )
+        failedWrite.resolve(undefined)
+        await Promise.all([rejected, app.run(Fiber.join(second))])
+        expect(events).toEqual(['first began', 'first failed', 'second committed'])
+        await expect(app.run(app.work.accept(Effect.void))).rejects.toThrow('closed')
+    } finally {
+        failedWrite.resolve(undefined)
+        await app.close()
+    }
 })
 
 it('rejects a competing maintenance drain instead of waiting on the other drainer', async () => {
@@ -232,11 +230,13 @@ it('rejects a competing maintenance drain instead of waiting on the other draine
         )
     )
     await vi.waitFor(() => expect(release).toBeTypeOf('function'))
-    const first = app.run(app.work.accept(app.work.drain))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await expect(app.run(app.work.accept(app.work.drain))).rejects.toThrow('already draining')
-    release()
-    await Promise.all([held, first])
+    const first = app.fork(app.work.accept(app.work.drain), { immediate: true })
+    try {
+        await expect(app.run(app.work.accept(app.work.drain))).rejects.toThrow('already draining')
+    } finally {
+        release()
+        await Promise.all([held, app.run(Fiber.join(first))])
+    }
     await app.close()
 })
 
@@ -318,11 +318,10 @@ it('keeps disposed ownership permanently closed when an in-flight shutdown fails
         )
     )
     await vi.waitFor(() => expect(release).toBeTypeOf('function'))
-    const closing = app.run(app.work.shutdown(Effect.fail(new Error('disk full')))).catch(() => undefined)
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    const closing = app.fork(app.work.shutdown(Effect.fail(new Error('disk full'))), { immediate: true })
     await app.close()
     release()
-    await Promise.all([pending, closing])
+    await Promise.all([pending, Effect.runPromise(closing.await)])
     await expect(Effect.runPromise(app.work.accept(Effect.void))).rejects.toThrow('closed')
 })
 

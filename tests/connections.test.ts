@@ -1,9 +1,12 @@
+import { deferred } from './deferred'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Effect, Fiber, Layer, ManagedRuntime } from 'effect'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { http } from 'msw'
+import { setupServer } from 'msw/node'
 import { ProviderAccounts, ProviderAccountsLive } from '../src/main/provider-accounts'
 import { JournalStore } from '../src/main/journal-context'
 import { JournalDatabase } from '../src/main/journal-database'
@@ -13,10 +16,18 @@ import type { Provider } from '../src/shared/provider-accounts'
 
 // Migrate the retired authenticator's outcomes to the actual account interface:
 // restart, renewal, rejection, cancellation, late disconnect and owned shutdown.
+const server = setupServer()
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+afterAll(() => server.close())
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
     vi.useRealTimers()
-    for (const close of cleanups.splice(0).reverse()) await close()
+    try {
+        for (const close of cleanups.splice(0).reverse()) await close()
+    } finally {
+        server.resetHandlers()
+        server.events.removeAllListeners()
+    }
 })
 async function fixture() {
     const directory = await mkdtemp(join(tmpdir(), 'gitorian-accounts-'))
@@ -32,18 +43,17 @@ async function fixture() {
         renewal: undefined as (() => Promise<void>) | undefined,
         device: undefined as ((signal: AbortSignal) => Promise<void>) | undefined
     }
-    const fetcher: typeof fetch = async (input, init = {}) => {
-        const url = input instanceof Request ? input.url : input.toString()
-        const body =
-            typeof init.body === 'string'
-                ? new Headers(init.headers).get('content-type') === 'application/x-www-form-urlencoded'
-                    ? Object.fromEntries(new URLSearchParams(init.body))
-                    : (JSON.parse(init.body) as Record<string, string>)
-                : undefined
-        const token = new Headers(init.headers).get('Authorization') ?? ''
+    const respond = async ({ request }: { request: Request }) => {
+        const url = request.url
+        const body = !request.body
+            ? undefined
+            : request.headers.get('content-type')?.startsWith('application/x-www-form-urlencoded')
+              ? Object.fromEntries(new URLSearchParams(await request.text()))
+              : ((await request.json()) as Record<string, string>)
+        const token = request.headers.get('Authorization') ?? ''
         calls.push({ url, body, token })
         if (url.endsWith('/device/code') || url.endsWith('/authorize_device')) {
-            await control.device?.(init.signal!)
+            await control.device?.(request.signal)
             if (control.oauthError === 'device_flow_disabled') return Response.json({ error: control.oauthError })
             return Response.json({
                 device_code: 'synthetic-device',
@@ -75,10 +85,22 @@ async function fixture() {
             ])
         if (url.endsWith('/user')) return Response.json({ id: control.user, login: 'work', username: 'work' })
         if (control.rejectOld && token === 'Bearer old') return Response.json({}, { status: 401 })
-        return new Headers(init.headers).get('Accept') === 'application/vnd.github.diff'
+        return request.headers.get('Accept') === 'application/vnd.github.diff'
             ? new Response('diff --git a/a b/a')
             : Response.json({ ok: true })
     }
+    server.use(
+        http.post('https://github.com/login/device/code', respond),
+        http.post('https://github.com/login/oauth/access_token', respond),
+        http.post('https://gitlab.com/oauth/authorize_device', respond),
+        http.post('https://gitlab.com/oauth/token', respond),
+        http.get('https://api.github.com/user', respond),
+        http.get('https://api.github.com/user/emails', respond),
+        http.get('https://gitlab.com/api/v4/user', respond),
+        http.get('https://gitlab.com/api/v4/user/emails', respond),
+        http.get('https://api.github.com/repos/team/work', respond),
+        http.get('https://api.github.com/repos/team/work/pulls/1', respond)
+    )
     const vault = {
         get: (key: string) => secrets.get(key) ?? '',
         set: (key: string, value: string) => {
@@ -89,13 +111,13 @@ async function fixture() {
     }
     const native = Layer.merge(
         Layer.succeed(JournalStore, store),
-        HttpLive(fetcher, {
+        HttpLive(undefined, {
             pauses: () => store.config.transportPauses,
             changed: (key, until) => store.savePause(key, until).then(() => undefined)
         })
     )
     const boot = async () => {
-        const runtime = ManagedRuntime.make(ProviderAccountsLive({ vault, fetcher }).pipe(Layer.provide(native)))
+        const runtime = ManagedRuntime.make(ProviderAccountsLive({ vault }).pipe(Layer.provide(native)))
         return { runtime, accounts: await runtime.runPromise(ProviderAccounts) }
     }
     let installed = await boot()
@@ -221,16 +243,21 @@ it('keeps the prior pair on a declared temporary renewal failure and permits exp
 it('does not reinstall credentials after disconnect wins an in-flight rotation', async () => {
     const f = await fixture(),
         id = await f.seed()
-    let release!: () => void
-    f.control.renewal = () =>
-        new Promise<void>((done) => {
-            release = done
-        })
+    const renewal = deferred<undefined>()
+    const release = deferred<undefined>()
+    cleanups.push(() => {
+        release.resolve(undefined)
+        return Promise.resolve()
+    })
+    f.control.renewal = () => {
+        renewal.resolve(undefined)
+        return release.promise
+    }
     const pending = run(f.accounts.token(id))
     const rejected = expect(pending).rejects.toThrow()
-    await vi.waitFor(() => expect(f.control.rotations).toBe(1))
+    await renewal.promise
     await run(f.accounts.disconnect(id))
-    release()
+    release.resolve(undefined)
     await rejected
     expect(f.accounts.accounts()[0]?.status).toBe('disconnected')
     expect(f.secrets.size).toBe(0)
@@ -239,16 +266,21 @@ it('keeps a rotation alive after its reader cancels and does not block another a
     const f = await fixture(),
         first = await f.seed(),
         other = await f.seed(false)
-    let release!: () => void
-    f.control.renewal = () =>
-        new Promise<void>((done) => {
-            release = done
-        })
+    const renewal = deferred<undefined>()
+    const release = deferred<undefined>()
+    cleanups.push(() => {
+        release.resolve(undefined)
+        return Promise.resolve()
+    })
+    f.control.renewal = () => {
+        renewal.resolve(undefined)
+        return release.promise
+    }
     const fiber = Effect.runFork(f.accounts.token(first))
-    await vi.waitFor(() => expect(f.control.rotations).toBe(1))
+    await renewal.promise
     const interrupted = Effect.runPromise(Fiber.interrupt(fiber))
     expect(await run(f.accounts.token(other))).toBe('old')
-    release()
+    release.resolve(undefined)
     await interrupted
     expect(await run(f.accounts.token(first))).toBe('renewed')
     expect(f.control.rotations).toBe(1)
@@ -256,34 +288,41 @@ it('keeps a rotation alive after its reader cancels and does not block another a
 it('settles accepted rotation before disposal and aborts ordinary owned device reads', async () => {
     const f = await fixture(),
         id = await f.seed()
-    let release!: () => void
-    f.control.renewal = () =>
-        new Promise<void>((done) => {
-            release = done
-        })
+    const renewal = deferred<undefined>()
+    const release = deferred<undefined>()
+    cleanups.push(() => {
+        release.resolve(undefined)
+        return Promise.resolve()
+    })
+    f.control.renewal = () => {
+        renewal.resolve(undefined)
+        return release.promise
+    }
     const pending = Effect.runPromiseExit(f.accounts.token(id))
-    await vi.waitFor(() => expect(f.control.rotations).toBe(1))
+    await renewal.promise
     let disposed = false
     const closing = f.runtime.dispose().then(() => {
         disposed = true
     })
     await Promise.resolve()
     expect(disposed).toBe(false)
-    release()
+    release.resolve(undefined)
     await closing
     await pending
     expect([...f.secrets.values()].some((s) => s.includes('renewed'))).toBe(true)
     await f.restart()
+    const device = deferred<undefined>()
     f.control.device = (signal) =>
-        new Promise<void>((_, reject) =>
+        new Promise<void>((_, reject) => {
+            device.resolve(undefined)
             signal.addEventListener(
                 'abort',
                 () => reject(new Error('Device request aborted', { cause: signal.reason })),
                 { once: true }
             )
-        )
+        })
     const begin = Effect.runPromiseExit(f.accounts.begin('github'))
-    await vi.waitFor(() => expect(f.calls.some((c) => c.url.endsWith('/device/code'))).toBe(true))
+    await device.promise
     await f.runtime.dispose()
     await begin
     await expect(run(f.accounts.begin('github'))).rejects.toThrow(/closed/i)
@@ -315,18 +354,27 @@ it('settles a live token rotation before installing a reconnect without orphanin
     const f = await fixture(),
         id = await f.seed()
     f.control.user = 42
-    let release!: () => void
-    f.control.renewal = () =>
-        new Promise<void>((done) => {
-            release = done
-        })
+    const renewal = deferred<undefined>()
+    const release = deferred<undefined>()
+    cleanups.push(() => {
+        release.resolve(undefined)
+        return Promise.resolve()
+    })
+    f.control.renewal = () => {
+        renewal.resolve(undefined)
+        return release.promise
+    }
     const rotation = run(f.accounts.token(id))
-    await vi.waitFor(() => expect(f.control.rotations).toBe(1))
+    await renewal.promise
     const start = await run(f.accounts.begin('github', id))
     vi.setSystemTime(Date.now() + 5000)
+    const identityRead = deferred<undefined>()
+    server.events.on('response:mocked', ({ request }) => {
+        if (request.url.endsWith('/user/emails')) identityRead.resolve(undefined)
+    })
     const reconnect = run(f.accounts.complete(start.id))
-    await vi.waitFor(() => expect(f.calls.some((c) => c.url.endsWith('/user/emails'))).toBe(true))
-    release()
+    await identityRead.promise
+    release.resolve(undefined)
     await Promise.all([rotation, reconnect])
     expect(f.accounts.accounts()).toHaveLength(1)
     expect(f.accounts.accounts()[0]?.generation).toBe(2)

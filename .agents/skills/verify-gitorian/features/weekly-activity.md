@@ -4,7 +4,7 @@ Review the selected week's work, load older history, and recover failed sources 
 
 ## Missing local repositories
 
-Run `pnpm test:e2e missing-repository` after building. Its disposable real Git folder is moved within the fixture; Git, IPC and SQLite remain real. Only the native folder picker is controlled.
+Build, import a disposable Git repository and move its folder to simulate an unavailable source.
 
 - Refresh from Workspace with the saved location missing. Activity sources shows Folder not found, the saved path, Locate folder and Stop tracking. Dismiss the warning and refresh again: the badge remains, without another toast or refresh error.
 - Cancel Locate folder without changing tracking. Restore the original location and refresh: local collection resumes. Move it again and choose its new location: require that canonical path, available=true and a completed Git checkpoint.
@@ -15,7 +15,7 @@ Run `pnpm test:e2e missing-repository` after building. Its disposable real Git f
 
 ## Acquisition ownership
 
-`ActivityAcquisition` owns Effect coalescing, source serialization and FIFO batch admission. Preserve the existing acquisition and week-history behavior tests: five projects must each receive a first batch before a large project continues; an explicit retry queues behind active acquisition and duplicate retries share work. Run `pnpm verify github-import` and `pnpm verify repository-import` for desktop source failure/retry, import-triggered refresh and durable state. User pause remains a persisted checkpoint decision; it does not discard completed batches. Native Git stop aborts queued/running owned work; shared HTTP readers retain their independent cancellation ownership.
+`ActivityAcquisition` owns Effect coalescing, source serialization and FIFO batch admission. Acquisition and week-history tests cover first-batch fairness, retry sharing and durable checkpoints.
 
 ## Sub-features
 
@@ -33,8 +33,8 @@ Preconditions: `pnpm build`; for the existing diagnostic journey use `pnpm smoke
 
 - **Current hub:** click `[aria-label="Refresh activity"]`; require the notification viewport to show `No activity found` and no healthy `Activity sources` control.
 - **Earlier week:** click `[aria-label^="Week:"]`, choose `2 weeks ago` within `[aria-label="Presets"]`, then `Apply`; require five `.hub-activity` rows.
-- **Range appearance (manual):** in the Week picker compare Oct 26–Nov 1, 2026 with Nov 2–8. The soft highlight must keep circular caps even on November's one-day first row, with an uninterrupted fill between dates. Review short slices at row/month boundaries, rapid selection changes, keyboard selection/cancellation and reduced motion. `tests/date-range-picker.test.ts` owns inexpensive selection/apply and keyboard/cancel checks; screenshots own cap appearance. The shared Arc range picker uses fixed-radius clipping so narrowing a segment does not compress its corners.
-- **Failure/recovery:** use `pnpm test:e2e missing-repository` for missing-folder recovery, as described above. The legacy week-history diagnostic is not recovery evidence.
+- **Range appearance (manual):** in the Week picker compare Oct 26–Nov 1, 2026 with Nov 2–8. The soft highlight must keep circular caps even on November's one-day first row, with an uninterrupted fill between dates. Review short slices at row/month boundaries, rapid selection changes, keyboard selection/cancellation and reduced motion. The shared Arc range picker uses fixed-radius clipping so narrowing a segment does not compress its corners.
+- **Failure/recovery:** review the missing-folder recovery above.
 - **Evidence:** retain the command, transcript, measured history-load time, screenshots before/after navigation and recovery, and a read-only stored-state check. Add the capture calls to this existing harness before claiming artifact-backed proof.
 - **Workspace entry:** repeat date navigation from the writing workspace and verify its visible activity matches the selected week. The existing week-history diagnostic drives only the hub; report the workspace path as uncovered until exercised.
 
@@ -80,16 +80,15 @@ Workspace navigation requests a bounded `view` for the selected week and follows
 
 ## Hub and workspace command rejection
 
-Run `pnpm test:e2e workspace-errors` after `pnpm build`. The owning journey imports a disposable real Git repository, opens both the Hub and workspace and rejects refresh at Electron IPC handler registration. Refresh activity must show one Arc toast, ?Could not refresh activity?, with Retry refresh and no header Alert. The persistent toast remains during a delayed retry with a loading label and no retry action. Repeated failure updates the same toast; removing the rejection and selecting Retry refresh recovers and dismisses it. Inspector diff rejection must remain inline without a command toast. Git, SQLite, preload and renderer stay real; only command rejection is injected. No accounts or publishing are used. Retain numbered PNGs, fixture.json, source.patch, trace, actions and run.json with passed/cleanup success.
+When reviewing refresh failure and retry, check Hub and workspace for one toast, a pending state, a repeated failure and recovery. Diff load errors remain inside the inspector.
 
 Command-boundary notifications share one policy for loaded Hub and workspace foreground failures. Loaded-state polling is silent, successful acquisition source warnings stay with BackgroundNotifications, and draft, history-dialog and inspector recovery stay with their surfaces. Other foreground rejections offer Retry action for the original command rather than retrying refresh.
 
-The Hub case also crosses the production polling interval with rejected state reads and requires no banner or command toast. A rejected view offers Retry action and recovers the original request. The workspace case retains inspector diff ownership; run `pnpm test:e2e workspace-save-errors draft-recovery` for draft save/conflict ownership.
+Background polling remains quiet. A rejected foreground view offers a Retry action that recovers the original request.
 
 ## Startup recovery
 
-Run `pnpm test:e2e startup-recovery` after `pnpm build`. The journal-only Electron journey rejects initial state loading after the isolated-profile doctor, then reloads the Hub and workspace entry points. Require a persistent borderless recovery state, compact Retry action, hidden optional diagnostics, visible retry progress, repeated failure feedback, and successful keyboard retry to the intended screen. Background polling waits until a usable snapshot exists; startup requests cannot overlap. Verify narrow layout and reduced motion. Expanded diagnostics must fit within the disclosure without clipping; Copy details must write the full displayed error to the native clipboard. IPC rejection/delay is simulated; renderer, preload and local journal remain real. Retain numbered PNGs, trace, actions and run.json with passed and cleanup success. Startup failure is an explicit exception to foreground command toasts because no usable journal is available.
-
+Review startup failure in Hub and workspace. Check keyboard retry, optional diagnostics, pending feedback and exact clipboard copy.
 
 ## Repository activity waffle
 
@@ -99,9 +98,9 @@ The waffle shares the day chart's 260px width and right edge. Its natural-height
 
 ## Large-list performance and identity regressions
 
-`pnpm test:e2e hub-repositories` owns the compiled Electron journey with 1,024 stored activities across 256 repositories in a disposable journal. It checks six individually named tiny shares plus Other (250), legend hover/focus/selection dimming, bounded virtual rendering, sequential Tab focus across 30 rows, focus through resizing, and expansion/collapse. No preview controls, URL override, or sample records exist in the app. Test-only records are created through `seedJournal` at the normal restore boundary; no real repository or provider is needed.
+With a busy disposable journal, check the repository summary, linked highlighting, bounded row rendering, keyboard focus and focus retention during resize.
 
-`tests/repository-summary.test.ts` owns exact aggregate totals, bounded categories, and duplicate-name disambiguation. `tests/waffle-allocation.test.ts` owns positive tiny-category visibility (999:1 and a million-to-one skew) and nonzero percentage formatting. `tests/activity-row-labels.test.ts` owns empty-title fallback. Ordinary disclosure animation remains covered by `pnpm verify activity-days` on its existing 120-record real-Git fixture. Historical development-mode stress measurements, focus-promotion/reorder probes, width/zoom captures and source patches remain under `.ai-docs/verification/hub-stress-*`; the preview harness and its app controls were retired for release.
+`tests/repository-summary.test.ts` owns exact aggregate totals, bounded categories, and duplicate-name disambiguation. `tests/waffle-allocation.test.ts` owns positive tiny-category visibility (999:1 and a million-to-one skew) and nonzero percentage formatting. Check the empty-title fallback when reviewing activity rows. Ordinary disclosure animation remains covered by `pnpm verify activity-days` on its existing 120-record real-Git fixture. Historical development-mode stress measurements, focus-promotion/reorder probes, width/zoom captures and source patches remain under `.ai-docs/verification/hub-stress-*`; the preview harness and its app controls were retired for release.
 
 The same journey also seeds a 600-activity week across four 150-record days and opens the workspace. Expanding all days must keep fewer than 100 activity rows mounted; Tab reaches offscreen rows, Enter selects the inspector activity, resizing retains focus, and project filtering leaves four keyboard-selectable records. Ordinary small-week disclosure motion remains owned by activity-days. Run both hub-repositories scenarios; their profiles and evidence are isolated.
 
@@ -111,10 +110,9 @@ The same journey also seeds a 600-activity week across four 150-record days and 
 
 Review regressions: acquisition must retry rolled-back body/membership pages and recover acknowledged-lost commits from the durable cursor; removed repositories must not consume account staging slots. Date-range expansion advances a 2,000-row metadata cursor atomically with projected evidence. GitLab reconciliation advances past restored incomplete markers. These outcomes belong to the existing acquisition, refresh-history and GitLab tests.
 
-
 ## Source activity states and recovery
 
-Run `pnpm test:e2e source-activity` after `pnpm build`. The Hub and workspace scenarios seed five synthetic repositories and persisted source checkpoints through JournalDatabase. No personal data, provider credentials, live provider requests, or Git history scans are used. These scenarios prove the compiled renderer, preload, stop command and SQLite persistence; provider recovery belongs to `tests/acquisition.test.ts`.
+Review source status and stop tracking from Hub and workspace using isolated repository fixtures.
 
 - The `Activity sources` button is the first action from the left in both header utility groups and carries a 6px warning dot. It appears while a tracked source has an error or a confirmed missing folder. Open it from each header. In the source-activity fixture, only the unresolved account assignment produces a warning. The queue groups completed Local Git sources into one row; collecting and automatic waits use named status icons. The progress track counts individual completed sources.
 - Activate a clock icon with the keyboard to inspect its automatic-wait reason. Stop refresh moves only the selected source to a stopped icon with Resume. Reload retains the stopped state; an independent read-only SQLite query after Electron closes confirms `cancelled` with no retry timer.
@@ -122,9 +120,8 @@ Run `pnpm test:e2e source-activity` after `pnpm build`. The Hub and workspace sc
 - Check 390px and 320px layouts and 200% Electron zoom under reduced motion. Preserve full readable text and reachable controls without horizontal overflow. `contrast.json` records measured text pairs against their opaque rendered surfaces.
 - After clearing the fixture's only error, reload with paused and stopped sources still present; require no source button or warning toast. Retain header screenshots before/after recovery and cropped utility groups alongside desktop, automatic waits, stopped, wait-reason, narrow and zoom PNGs, cropped dialog images, contrast measurements, persisted-source.json, trace and run.json. Require passed/exit-zero/cleanup success.
 
-`tests/background-notifications.test.ts` owns quiet scheduling waits and one notification per unresolved error across running/retry transitions. A completed refresh clears that notification identity. `tests/week-history.test.ts` owns due pauses without windowEnd, unassigned-account retries, disconnected-account exclusion, and staged-page priority. `tests/acquisition.test.ts` owns saved queue reasons, slot recovery and account-check cooldowns followed by successful assignment. Existing quota/foreground allowance coverage remains in `tests/http.test.ts`.
+Check that scheduling waits stay quiet and each unresolved error produces one notification across running/retry transitions. A completed refresh clears that notification identity. `tests/week-history.test.ts` owns due pauses without windowEnd, unassigned-account retries, disconnected-account exclusion, and staged-page priority. `tests/acquisition.test.ts` owns saved queue reasons, slot recovery and account-check cooldowns followed by successful assignment. Existing quota/foreground allowance coverage remains in `tests/http.test.ts`.
 
 The production queue replaces the design preview. No sample data, preview launchers or sample controls remain in the renderer. Both header entry points use the same real state and command runner.
 
-
-Token-renewal regression: `tests/acquisition.test.ts` runs expired synthetic credentials through the real journal Layer. A lost renewal response that deactivates the account must persist an actionable reconnect error, count as a source problem, and have no automatic retry timer. A declared temporary 503 must leave the account connected and source quietly paused, eligible for continuation after retryAt. `tests/activity-feedback.test.ts` verifies Reconnect goes to Settings while Stop, Resume and Retry execute their source commands. Action types, rather than their visible copy, select those commands.
+Token-renewal regression: `tests/acquisition.test.ts` runs expired synthetic credentials through the real journal Layer. A lost renewal response that deactivates the account must persist an actionable reconnect error, count as a source problem, and have no automatic retry timer. A declared temporary 503 must leave the account connected and source quietly paused, eligible for continuation after retryAt. In Electron, verify that Reconnect opens Settings and Stop, Resume and Retry execute their source actions. Action types, rather than their visible copy, select those commands.

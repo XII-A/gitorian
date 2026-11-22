@@ -1,19 +1,19 @@
 # Gitorian verification map
 
-- [Crash recovery](crash-recovery.md): once-per-incident notification, contextual report copy, explicit refresh resumption, independent Windows hang controls, restart and persistence. `pnpm test:e2e crash-recovery startup-recovery settings-refresh` owns the desktop paths; Windows native process ownership is tested by `tests/recovery-termination.test.ts`.
+- [Crash recovery](crash-recovery.md) covers notification, diagnostic sharing, refresh resumption and restart. Windows process ownership is tested by `pnpm smoke:recovery-termination`.
 
 - [Onboarding](onboarding.md): first-time checklist, direct Settings actions, writing access, dismissal and header popover, real completion truth, reload persistence, existing-profile migration, themes, narrow widths and zoom. Run `pnpm verify onboarding`; use `GITORIAN_VERIFY_ONBOARDING_INLINE=1` for completion from the inline card.
 - [Checklist motion](onboarding.md#disclosure-text-stability): `pnpm verify onboarding-disclosure` isolates step/body expansion and native text raster stability with no repositories or account setup.
 
 Read the matching feature recipe before changing or verifying behavior. Each recipe lists user entry points; report coverage per entry point, including failures or missing preconditions.
 
-The artifact-backed baseline is `pnpm build`, `pnpm verify doctor`, then `pnpm verify repository-import` (the migrated Playwright journey). It uses an empty temporary profile, real Git folders, no integration credentials, and unique persistent evidence. See [testing](../../../../docs/testing.md) for runner selection, authoring and debugging; follow [the skill](../SKILL.md) for isolation, proof standards, and cleanup.
+Use `pnpm build` and `pnpm verify doctor` before desktop review. Follow [the skill](../SKILL.md) for isolation, evidence and cleanup.
 
-- [Connections](connections.md): `pnpm verify notion` isolates the Notion journey; `pnpm verify connections` runs the multi-account GitHub/GitLab desktop journey and then the Notion journey sequentially. `pnpm test:e2e provider-accounts` is the Git provider owner. heading connect controls, GitHub code morph, Notion browser OAuth, page selection, explicit creation and cancellation, simulated success/failure, retry, persistence, hold-to-disconnect, and measured account handoffs with delayed avatars and reduced motion.
+- [Connections](connections.md) covers provider account controls, device authorization and repository matching. `pnpm verify notion` runs the optional Notion diagnostic.
 - [Window chrome](window-chrome.md): thin Windows frame, hover/focus reveal, native drag bounds, window actions, reduced motion, and workspace navigation.
-- [Repository import](repository-import.md): fully automated real desktop journey, cancellation, search, selection, stopped tracking, single-folder entry, scan failure, and persisted side effects. `pnpm verify github-import` routes to the provider-accounts journey, covering automatic account assignment and GitLab contribution acquisition.
-- [Weekly activity](weekly-activity.md): current and earlier weeks, empty refresh, unavailable sources, and retry. `pnpm test:e2e workspace-errors` owns Hub/workspace command failure toasts, pending/repeated retry and silent Hub polling. `pnpm verify activity-filters` covers single-row filter scrolling, unclipped menus, keyboard focus and clearing workspace history filters. `pnpm verify activity-days` covers both timelines' day selection, five-row previews, animated disclosure, empty-day recovery and keyboard/reduced-motion behavior with real Git activity.
-- [Writing](writing.md): autosave failure/retry toast (`pnpm test:e2e workspace-save-errors`), hub/workspace entry, template, autosave, reload recovery, citation, workspace clipboard actions (`pnpm test:e2e workspace-clipboard`), and code language/copy/wrapping (`pnpm test:e2e code-block`). `pnpm test:e2e draft-recovery` owns the blocking conflict dialog on reopen and stale autosave, explicit choice/submission, failure/retry and persistence. `pnpm verify writing-checklist` owns native checklist insertion, pointer editing, Enter/Backspace, undo and SQLite persistence.
+- [Repository import](repository-import.md) covers discovery, cancellation, selection, resuming tracking and persisted side effects.
+- [Weekly activity](weekly-activity.md) covers refresh, unavailable sources, retry and activity filters.
+- [Writing](writing.md) covers entry creation, editing, autosave, recovery, citations, clipboard and history.
 - [App updates](app-updates.md): `pnpm verify app-updates` covers real background downloads, writing responsiveness, toast/header actions and checkpoint recovery. `node tools/verify-update-install.mjs` proves a real unsigned NSIS installation/restart in a disposable product/profile.
 - [Inspecting changes](inspecting-changes.md): hub details, workspace inspector, file filtering, pop-out, and docking.
 
@@ -21,4 +21,4 @@ Legacy `pnpm smoke` and `pnpm smoke:week-history` are diagnostic harnesses; they
 
 - [Local database](database.md): schema integrity, migrations, draft conflicts, worker restart, acquisition checkpoints, restore fencing and bounded reads; linked desktop journeys own writing, import, publishing and images.
 
-- Settings panels: `pnpm test:e2e settings-refresh` captures all five settings tabs at desktop width and Preferences, Template and Backup at 390px in an isolated journal-only profile. It checks horizontal overflow and saves/reopens the refresh interval through real IPC. Screenshots are retained under `.ai-docs/screenshots/settings-refresh/after`; native backup dialogs and template editing retain their existing owners.
+- Settings panels: open all five tabs and check Preferences, Template and Backup at narrow width. Save and reopen a changed refresh interval.

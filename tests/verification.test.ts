@@ -83,12 +83,12 @@ if (process.env.HOLD_STAGE === args) {
     return { root, start, commands, waiting, release: () => writeFile(join(root, 'release'), '') }
 }
 
-it('excludes a second desktop/build command until the first child exits', async () => {
+it('excludes a second build until the first child exits', async () => {
     const f = await fixture()
     const first = f.start('compile', { HOLD_STAGE: 'exec electron-vite build' })
     try {
         await f.waiting()
-        const second = await f.start('desktop').done
+        const second = await f.start('build').done
         expect(second.code).not.toBe(0)
         expect(second.output).toContain('Verification is already running')
         expect(await f.commands()).toEqual(['exec electron-vite build'])
@@ -97,22 +97,17 @@ it('excludes a second desktop/build command until the first child exits', async 
         const result = await first.done
         expect(result.code, result.output).toBe(0)
     }
-    expect((await f.start('desktop').done).code).toBe(0)
+    expect((await f.start('build').done).code).toBe(0)
 })
 
 it('records a complete successful release sequence and stops immediately on child failure', async () => {
     const f = await fixture()
     const passed = await f.start('release').done
     expect(passed.code, passed.output).toBe(0)
-    expect(await f.commands()).toEqual([
-        'check',
-        'exec electron-vite build',
-        '--filter @gitorian/notion-oauth build',
-        'exec playwright test'
-    ])
-    const failed = await f.start('release', { FAIL_STAGE: 'check' }).done
+    expect(await f.commands()).toEqual(['check', 'exec electron-vite build', '--filter @gitorian/notion-oauth build'])
+    const failed = await f.start('release', { FAIL_STAGE: 'exec electron-vite build' }).done
     expect(failed.code).not.toBe(0)
-    expect((await f.commands()).slice(4)).toEqual(['check'])
+    expect((await f.commands()).slice(3)).toEqual(['check', 'exec electron-vite build'])
     const { readdir } = await import('node:fs/promises')
     const runs = await readdir(join(f.root, '.ai-docs/verification/release'))
     const reports = await Promise.all(
@@ -124,7 +119,7 @@ it('records a complete successful release sequence and stops immediately on chil
     expect(reports.find((report) => report.passed).stages.every((stage: { code: number }) => stage.code === 0)).toBe(
         true
     )
-    expect(reports.find((report) => !report.passed).stages).toHaveLength(1)
+    expect(reports.find((report) => !report.passed).stages).toHaveLength(2)
 })
 
 it.each(['source.txt', 'new-source.ts'])('rejects source changes during verification: %s', async (file) => {
@@ -165,7 +160,7 @@ it('retains actionable ownership after a hard process-tree interruption', async 
         run.child.kill('SIGKILL')
     }
     await run.done
-    const next = await f.start('desktop').done
+    const next = await f.start('build').done
     expect(next.code).not.toBe(0)
     expect(next.output).toContain('Verification is already running')
     expect(next.output).toContain('checkout.lock')

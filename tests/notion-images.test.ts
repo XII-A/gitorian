@@ -6,23 +6,36 @@ import { Effect, ManagedRuntime } from 'effect'
 import { journalLayer } from '../src/main/journal-layer'
 import { Notion } from '../src/main/notion'
 import { JournalPublishing } from '../src/main/journal-publishing'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, expect, it } from 'vitest'
+import { http } from 'msw'
+import { setupServer } from 'msw/node'
+import { DatabaseSync } from 'node:sqlite'
 import sharp from 'sharp'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { JournalDatabase } from '../src/main/journal-database'
-import { validateImage, UnsupportedImageError } from '../src/main/images'
+import { downloadImage } from '../src/main/images'
 import { toNotion } from '../src/shared/notion-format'
 import type { NotionBlock } from '../src/shared/notion-format'
 import type { State } from '../src/shared/model'
+const endpoint = 'https://api.notion.com/v1'
+const filesOrigin = 'https://93.184.216.34'
+const server = setupServer()
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+afterAll(() => server.close())
 const cleanup: (() => void | Promise<void>)[] = []
 afterEach(async () => {
-    for (const close of cleanup.splice(0).reverse()) await close()
+    try {
+        for (const close of cleanup.splice(0).reverse()) await close()
+    } finally {
+        server.resetHandlers()
+    }
 })
 async function setup() {
     const directory = mkdtempSync(join(tmpdir(), 'notion-images-'))
-    const store = await JournalDatabase.open(join(directory, 'journal.sqlite'))
+    const dbPath = join(directory, 'journal.sqlite')
+    const store = await JournalDatabase.open(dbPath)
     cleanup.push(async () => {
         await store.close()
         rmSync(directory, { recursive: true, force: true })
@@ -40,7 +53,14 @@ async function setup() {
         created_time: new Date().toISOString(),
         properties: { title: { title: [{ text: { content: 'Design' } }] } }
     }
-    const remote = { failUpload: false, networkUpload: false, loseCreate: false, wrongImage: false, uploadStatus: 400 }
+    const remote = {
+        failUpload: false,
+        networkUpload: false,
+        loseCreate: false,
+        wrongImage: false,
+        uploadStatus: 400,
+        download: 'available' as 'available' | 'unsupported' | 'unavailable'
+    }
     const attach = (items: NotionBlock[]): NotionBlock[] =>
         items.map((block) => {
             const data = block[block.type] as Record<string, unknown>
@@ -53,7 +73,7 @@ async function setup() {
                         ? {
                               type: 'file',
                               file: {
-                                  url: `https://files.example/temporary/${
+                                  url: `${filesOrigin}/temporary/${
                                       (
                                           data.file_upload as {
                                               id: string
@@ -71,56 +91,66 @@ async function setup() {
                           }
             }
         })
-    const fetcher = vi.fn<typeof fetch>(async (input, init = {}) => {
-        const url = input instanceof Request ? input.url : String(input)
-        const path = new URL(url).pathname.replace('/v1/', '')
-        const json = (value: unknown) => new Response(JSON.stringify(value))
-        const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined
-        if (path === 'file_uploads') return json({ id: `upload-${++counter}` })
-        if (/file_uploads\/.*\/send$/.test(path)) {
-            if (remote.networkUpload) throw new Error('Upload connection lost')
-            if (remote.failUpload) return new Response('{}', { status: remote.uploadStatus })
-            expect(new Headers(init.headers).get('Content-Type')).toBeNull()
-            const file = (init.body as FormData).get('file') as File
-            uploads.set(path.split('/')[1], new Uint8Array(await file.arrayBuffer()))
-            return json({ status: 'uploaded', expiry_time: new Date(Date.now() + 3600000).toISOString() })
-        }
-        if (path.startsWith('file_uploads/')) return json({ status: 'uploaded', expiry_time: null })
-        if (path === 'pages' && init.method === 'POST') {
-            blocks = attach(body.children)
-            if (remote.loseCreate) throw new Error('Lost create response')
-            return json(page)
-        }
-        if (path === 'pages/page') return json(page)
-        if (path === 'blocks/parent/children')
-            return json({
-                results: [{ type: 'child_page', id: 'page', child_page: { title: 'Design' } }],
-                has_more: false
-            })
-        if (init.method === 'DELETE') {
-            blocks = blocks.filter((item) => item.id !== path.split('/')[1])
-            return json({})
-        }
-        if (path === 'blocks/page/children') {
-            if (init.method === 'PATCH') {
-                blocks.push(...attach(body.children))
+    const requests: Request[] = []
+    const downloaded: string[] = []
+    server.use(
+        http.all(endpoint + '/*', async ({ request }) => {
+            requests.push(request)
+            const path = new URL(request.url).pathname.replace('/v1/', '')
+            const json = (value: unknown) => Response.json(value)
+            if (path === 'file_uploads') return json({ id: `upload-${++counter}` })
+            if (/file_uploads\/.*\/send$/.test(path)) {
+                if (remote.networkUpload) return Response.error()
+                if (remote.failUpload) return new Response('{}', { status: remote.uploadStatus })
+                const file = (await request.formData()).get('file')
+                if (!(file instanceof File)) return Response.json({}, { status: 400 })
+                uploads.set(path.split('/')[1], new Uint8Array(await file.arrayBuffer()))
+                return json({ status: 'uploaded', expiry_time: new Date(Date.now() + 3600000).toISOString() })
+            }
+            if (path.startsWith('file_uploads/')) return json({ status: 'uploaded', expiry_time: null })
+            if (path === 'pages' && request.method === 'POST') {
+                const { children } = (await request.json()) as { children: NotionBlock[] }
+                blocks = attach(children)
+                if (remote.loseCreate) return Response.error()
+                return json(page)
+            }
+            if (path === 'pages/page') return json(page)
+            if (path === 'blocks/parent/children')
+                return json({
+                    results: [{ type: 'child_page', id: 'page', child_page: { title: 'Design' } }],
+                    has_more: false
+                })
+            if (request.method === 'DELETE') {
+                blocks = blocks.filter((item) => item.id !== path.split('/')[1])
                 return json({})
             }
-            return json({ results: blocks, has_more: false })
-        }
-        for (const block of blocks) {
-            const data = block[block.type] as {
-                children?: NotionBlock[]
+            if (path === 'blocks/page/children') {
+                if (request.method === 'PATCH') {
+                    const { children } = (await request.json()) as { children: NotionBlock[] }
+                    blocks.push(...attach(children))
+                    return json({})
+                }
+                return json({ results: blocks, has_more: false })
             }
-            if (path === `blocks/${block.id}/children`) return json({ results: data.children, has_more: false })
-        }
-        throw new Error(`Unexpected request ${path}`)
-    })
-    const download = vi.fn(async (url: string) => {
-        if (remote.wrongImage) return validateImage(await sharp(bytes).negate().png().toBuffer())
-        const upload = uploads.get(new URL(url).pathname.split('/').at(-1)!)!
-        return validateImage(upload)
-    })
+            for (const block of blocks) {
+                const data = block[block.type] as {
+                    children?: NotionBlock[]
+                }
+                if (path === `blocks/${block.id}/children`) return json({ results: data.children, has_more: false })
+            }
+            return Response.json({}, { status: 500 })
+        }),
+        http.get(filesOrigin + '/temporary/:id', async ({ request, params }) => {
+            downloaded.push(request.url)
+            if (request.headers.has('Authorization')) return Response.json({}, { status: 400 })
+            if (remote.download === 'unsupported') return new Response('not an image')
+            if (remote.download === 'unavailable') return Response.json({}, { status: 503 })
+            const upload = remote.wrongImage
+                ? await sharp(bytes).negate().png().toBuffer()
+                : uploads.get(String(params.id))
+            return upload ? new Response(new Uint8Array(upload)) : Response.json({}, { status: 404 })
+        })
+    )
     const save: State['saves'][number] = {
         id: 'save',
         draftId: 'draft',
@@ -150,12 +180,19 @@ async function setup() {
         updatedAt: save.createdAt
     })
     await seedJournal(store, seeded)
+    const secrets = new Map<string, string>()
     const runtime = ManagedRuntime.make(
         journalLayer({
             store,
-            fetcher,
-            imageDownload: download,
-            vault: { get: () => '', set: vi.fn(), protected: () => false },
+            imageDownload: (url) => downloadImage(url, fetch),
+            vault: {
+                get: (key) => secrets.get(key) ?? '',
+                set: (key, value) => {
+                    if (value) secrets.set(key, value)
+                    else secrets.delete(key)
+                },
+                protected: () => false
+            },
             notionToken: () => Effect.succeed('private-token'),
             connections: () => ({ remote: false, notion: true, protectedStorage: false })
         })
@@ -170,30 +207,25 @@ async function setup() {
         save: async () => (await journalState(store)).saves.at(-1)!,
         notion,
         publishing,
-        fetcher,
-        download,
+        dbPath,
+        requests,
+        downloaded,
         remote
     }
 }
 it('uploads once for repeated images and round-trips bytes/descriptions through temporary URLs', async () => {
     const app = await setup()
-    const checkpoint = vi.spyOn(app.store, 'checkpointPublication')
     const original = structuredClone((await journalState(app.store)).drafts[0].body)
     await run(app.publishing.publish('draft'))
     const entry = (await journalState(app.store)).entries[0]
     expect(entry.body).toEqual(original)
-    expect(
-        app.fetcher.mock.calls.filter(([url]) => (url instanceof Request ? url.url : String(url)).endsWith('/send'))
-    ).toHaveLength(1)
+    expect(app.requests.filter((request) => request.url.endsWith('/send'))).toHaveLength(1)
     expect((await app.save()).imageUploads?.[app.id]).toBeDefined()
-    expect(checkpoint).toHaveBeenCalled()
     const refreshed = await run(app.notion.refreshEntry('page'))
     expect(toNotion(refreshed.body)).toEqual(toNotion(original))
-    expect(app.download).toHaveBeenCalledTimes(2)
+    expect(app.downloaded).toHaveLength(2)
     expect((await app.save()).body).toEqual(original)
-    expect(
-        app.fetcher.mock.calls.every(([, init]) => new Headers(init?.headers).get('Notion-Version') === '2025-09-03')
-    ).toBe(true)
+    expect(app.requests.every((request) => request.headers.get('Notion-Version') === '2025-09-03')).toBe(true)
     await editPublication(app.store, (save) => {
         save.status = 'unknown'
     })
@@ -216,12 +248,9 @@ it('finds a complete image-bearing page after a lost create response without dup
     })
     await run(app.publishing.reconcile(restoredSave.id))
     expect((await journalState(app.store)).entries[0].id).toBe('page')
-    expect(
-        app.fetcher.mock.calls.filter(
-            ([url, init]) =>
-                (url instanceof Request ? url.url : String(url)).endsWith('/pages') && init?.method === 'POST'
-        )
-    ).toHaveLength(1)
+    expect(app.requests.filter((request) => request.url.endsWith('/pages') && request.method === 'POST')).toHaveLength(
+        1
+    )
 })
 it('preflights expired image uploads before deleting existing writing during an update', async () => {
     const app = await setup()
@@ -236,12 +265,12 @@ it('preflights expired image uploads before deleting existing writing during an 
         save.imageUploads![app.id].expiresAt = new Date(0).toISOString()
     })
     app.remote.failUpload = true
-    app.fetcher.mockClear()
+    app.requests.length = 0
     await expect(run(app.publishing.reconcile((await app.save()).id))).rejects.toThrow()
-    expect(app.fetcher.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false)
+    expect(app.requests.some((request) => request.method === 'DELETE')).toBe(false)
     app.remote.failUpload = false
     await run(app.publishing.reconcile((await app.save()).id))
-    expect(app.fetcher.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(true)
+    expect(app.requests.some((request) => request.method === 'DELETE')).toBe(true)
     expect(toNotion((await run(app.notion.refreshEntry('page'))).body)).toEqual(toNotion((await app.save()).body))
 })
 it('represents unsupported remote media explicitly and never confirms it as the expected image', async () => {
@@ -250,12 +279,12 @@ it('represents unsupported remote media explicitly and never confirms it as the 
     await editPublication(app.store, (save) => {
         save.status = 'unknown'
     })
-    app.download.mockRejectedValue(new UnsupportedImageError('Unsupported image'))
+    app.remote.download = 'unsupported'
     const entry = await run(app.notion.refreshEntry('page'))
     expect(JSON.stringify(entry.body)).toContain('Unsupported content: image')
     await expect(run(app.publishing.reconcile((await app.save()).id))).rejects.toThrow('differs')
-    app.download.mockRejectedValue(new Error('Download unavailable'))
-    await expect(run(app.notion.refreshEntry('page'))).rejects.toThrow('Download unavailable')
+    app.remote.download = 'unavailable'
+    await expect(run(app.notion.refreshEntry('page'))).rejects.toThrow(/retrieve|image/i)
 })
 it.each(['network', 'server'] as const)(
     'preserves preflight %s failure identity and permits a safe retry',
@@ -278,24 +307,21 @@ it.each(['network', 'server'] as const)(
 )
 it('preserves an image checkpoint durability failure before page dispatch', async () => {
     const app = await setup()
-    const cause = new Error('Image progress checkpoint unavailable')
-    const persist = app.store.checkpointPublication.bind(app.store)
-    let unavailable = true
-    vi.spyOn(app.store, 'checkpointPublication').mockImplementation(async (...args) => {
-        if (unavailable && args[0].imageUploads?.[app.id]) {
-            unavailable = false
-            throw cause
-        }
-        return persist(...args)
-    })
-    const failure = await run(app.publishing.publish('draft')).catch((error: unknown) => error)
-    expect(failure).toBeInstanceOf(DurabilityError)
-    if (failure instanceof DurabilityError) expect(failure.cause).toBe(cause)
-    expect((await journalState(app.store)).saves[0].status).toBe('failed')
-    expect(
-        app.fetcher.mock.calls.some(([url]) => (url instanceof Request ? url.url : String(url)).endsWith('/pages'))
-    ).toBe(false)
-    unavailable = false
-    await run(app.publishing.publish('draft'))
-    expect((await journalState(app.store)).saves.at(-1)?.status).toBe('confirmed')
+    const db = new DatabaseSync(app.dbPath)
+    try {
+        db.exec(
+            'CREATE TRIGGER reject_image_checkpoint BEFORE UPDATE ON publication_attempts ' +
+                "WHEN NEW.status = 'pending' AND NEW.imageUploads IS NOT NULL AND NEW.imageUploads != '{}' " +
+                "BEGIN SELECT RAISE(ABORT, 'image progress checkpoint unavailable'); END"
+        )
+        const failure = await run(app.publishing.publish('draft')).catch((error: unknown) => error)
+        expect(failure).toBeInstanceOf(DurabilityError)
+        expect((await journalState(app.store)).saves[0].status).toBe('failed')
+        expect(app.requests.some((request) => request.url.endsWith('/pages'))).toBe(false)
+        db.exec('DROP TRIGGER reject_image_checkpoint')
+        await run(app.publishing.publish('draft'))
+        expect((await journalState(app.store)).saves.at(-1)?.status).toBe('confirmed')
+    } finally {
+        db.close()
+    }
 })

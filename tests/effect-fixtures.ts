@@ -1,6 +1,6 @@
 import { NotionRequests } from '../src/main/notion-request'
 import { afterEach } from 'vitest'
-import { Cause, Effect, Exit, ManagedRuntime } from 'effect'
+import { Effect, ManagedRuntime } from 'effect'
 import { Http, HttpLive } from '../src/main/http'
 
 const lifetimes = new Set<() => Promise<void>>()
@@ -16,12 +16,7 @@ export async function transportClient(...adapters: Parameters<typeof HttpLive>):
     return runtime.runPromise(Http)
 }
 
-export async function run<A, E>(operation: Effect.Effect<A, E>): Promise<A> {
-    const exit = await Effect.runPromiseExit(operation)
-    if (Exit.isSuccess(exit)) return exit.value
-    const error = Cause.squash(exit.cause)
-    throw error
-}
+export { run } from './run-effect'
 import { makeGitHub, type GitHub } from '../src/main/github'
 import { Layer } from 'effect'
 
