@@ -19,7 +19,7 @@ import { WorkspaceDraft } from './WorkspaceDraft'
 import type { EditorHandle } from './Editor'
 import { localCitationHref } from '../shared/citation'
 import { WorkspaceInspector } from './WorkspaceInspector'
-import { activityLink, dateKey, dateValue, formatDay } from './workspace-model'
+import { activityDragType, activityLink, dateKey, dateValue, formatDay } from './workspace-model'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
 import { ActivityChart } from './ActivityChart'
@@ -157,7 +157,7 @@ export function Workspace({
     )
     const currentWeek = weekOf(new Date(), state.settings)
     const cite = useCallback(
-        (activity: Activity) => {
+        (activity: Activity, point?: { left: number; top: number }) => {
             if (!canCite) {
                 setNotice('Open or create an editable draft to add a citation.')
                 return
@@ -165,7 +165,8 @@ export function Workspace({
             const title = activity.title.trim() || 'Untitled activity'
             editor.current?.cite(
                 activity.sha ? `${title} (${activity.sha.slice(0, 7)})` : title,
-                activityLink(activity, state) ?? localCitationHref(activity.id)
+                activityLink(activity, state) ?? localCitationHref(activity.id),
+                point
             )
         },
         [canCite, state]
@@ -501,19 +502,29 @@ export function Workspace({
                     </aside>
                     <div
                         className="ws-draft-host"
-                        onDragOver={(event) => {
-                            if (canCite && event.dataTransfer.types.includes('application/x-gitorian-activity'))
-                                event.preventDefault()
+                        onDragOverCapture={(event) => {
+                            if (!event.dataTransfer.types.includes(activityDragType)) return
+                            event.preventDefault()
+                            event.dataTransfer.dropEffect =
+                                canCite &&
+                                event.target instanceof Element &&
+                                event.target.closest('.tiptap[contenteditable="true"]')
+                                    ? 'copy'
+                                    : 'none'
                         }}
-                        onDrop={(event) => {
-                            const item = state.activities.find(
-                                (activity) =>
-                                    activity.id === event.dataTransfer.getData('application/x-gitorian-activity')
+                        onDropCapture={(event) => {
+                            if (!event.dataTransfer.types.includes(activityDragType)) return
+                            event.preventDefault()
+                            event.stopPropagation()
+                            if (
+                                !canCite ||
+                                !(event.target instanceof Element) ||
+                                !event.target.closest('.tiptap[contenteditable="true"]')
                             )
-                            if (item && canCite) {
-                                event.preventDefault()
-                                cite(item)
-                            }
+                                return
+                            const id = event.dataTransfer.getData(activityDragType)
+                            const activity = items.find((item) => item.id === id)
+                            if (activity) cite(activity, { left: event.clientX, top: event.clientY })
                         }}
                     >
                         <WorkspaceDraft

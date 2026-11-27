@@ -1,5 +1,7 @@
 import type { Activity, State } from '../shared/model'
 
+export const activityDragType = 'application/x-gitorian-activity'
+
 export const dateValue = (value: string) => new Date(`${value}T12:00:00`)
 export const dateKey = (date: Date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`

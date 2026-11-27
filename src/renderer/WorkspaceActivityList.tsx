@@ -3,7 +3,7 @@ import type { Activity, Repository } from '../shared/model'
 import { ActivityDayRows } from './ActivityDays'
 import type { ActivityDayGroup } from './activity-projection'
 import type { useActivityDays } from './ActivityDays'
-import { formatDay } from './workspace-model'
+import { activityDragType, formatDay } from './workspace-model'
 import { ActivityRow } from './ActivityRow'
 import { ActivityHover } from './ActivityHover'
 import { Button } from './components/arc/button/button'
@@ -32,7 +32,7 @@ const WorkspaceActivityRow = memo(function WorkspaceActivityRow({
             aria-pressed={selected}
             draggable={canCite}
             onDragStart={(event) => {
-                event.dataTransfer.setData('application/x-gitorian-activity', activity.id)
+                event.dataTransfer.setData(activityDragType, activity.id)
                 event.dataTransfer.effectAllowed = 'copy'
             }}
             onClick={() => onInspect(activity)}

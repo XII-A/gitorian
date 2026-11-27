@@ -113,7 +113,7 @@ interface Menu {
 export interface EditorHandle {
     undo: () => void
     redo: () => void
-    cite: (title: string, href: string) => void
+    cite: (title: string, href: string, point?: { left: number; top: number }) => void
     focus: () => void
 }
 
@@ -530,11 +530,17 @@ export const Editor = memo(function Editor({
                 editor?.commands.redo()
             },
             focus: () => editor?.view.focus(),
-            cite: (title, href) => {
+            cite: (title, href, point) => {
                 if (!editor?.isEditable) return
                 const { state, view } = editor
                 const mark = state.schema.marks.link.create({ href })
-                const tr = closeHistory(state.tr).replaceSelectionWith(state.schema.text(title, [mark]), false)
+                const tr = closeHistory(state.tr)
+                if (point) {
+                    const target = view.posAtCoords(point)
+                    if (!target) return
+                    tr.setSelection(TextSelection.near(state.doc.resolve(target.pos)))
+                }
+                tr.replaceSelectionWith(state.schema.text(title, [mark]), false)
                 view.dispatch(tr.setStoredMarks([]).scrollIntoView())
                 view.dispatch(closeHistory(view.state.tr))
                 view.focus()

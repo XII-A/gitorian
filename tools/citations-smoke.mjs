@@ -48,6 +48,11 @@ app.once('browser-window-created', (_, win) => {
                 const point = await js(
                     `(() => {const el=document.querySelector(${JSON.stringify(selector)}); el.scrollIntoView({block:'nearest'}); const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`
                 )
+                await until(() => js(`(() => {
+                    if (document.querySelector(${JSON.stringify(selector)}).contains(document.elementFromPoint(${point.x},${point.y}))) return true
+                    for (const toast of document.querySelectorAll('[aria-label="Dismiss notification"]')) toast.click()
+                    return false
+                })()`), 'Cannot reach ' + selector)
                 wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
                 wc.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
                 await pause(100)
@@ -77,7 +82,9 @@ app.once('browser-window-created', (_, win) => {
                 () => js("!!document.querySelector('.ws-inspector-footer button:not(:disabled)')"),
                 'Inspector did not open'
             )
-            await js(`for(const toast of document.querySelectorAll('[aria-label="Dismiss notification"]')) toast.click()`)
+            await js(
+                `for(const toast of document.querySelectorAll('[aria-label="Dismiss notification"]')) toast.click()`
+            )
             await pause(450)
             await click('.ws-inspector-footer button')
             const title = activity.title + ' (' + activity.sha.slice(0, 7) + ')'
@@ -116,11 +123,54 @@ app.once('browser-window-created', (_, win) => {
                     ),
                 'Citation did not save'
             )
+            win.focus()
+            const dropPoint = await js(`(() => {
+                const text = document.querySelector('.tiptap p').firstChild
+                const r = document.createRange()
+                r.setStart(text, 3)
+                r.collapse(true)
+                const rect = r.getBoundingClientRect()
+                return {x: Math.round(rect.x), y: Math.round(rect.y + rect.height / 2)}
+            })()`)
+            const transfer = await js(`(() => {
+                const data = new DataTransfer()
+                document.querySelector('.ws-activity-row').dispatchEvent(new DragEvent('dragstart', {bubbles:true, dataTransfer:data}))
+                return data.types.map(mimeType => ({mimeType, data:data.getData(mimeType)}))
+            })()`)
+            assert.equal(transfer[0].data, activity.id)
+            wc.debugger.attach('1.3')
+            const drag = (type, items) =>
+                wc.debugger.sendCommand('Input.dispatchDragEvent', {
+                    type,
+                    ...dropPoint,
+                    data: { items, dragOperationsMask: 1 }
+                })
+            const beforeDrop = await paragraph()
+            for (const [items, finish] of [
+                [transfer, 'dragCancel'],
+                [[{ ...transfer[0], data: 'missing-activity' }], 'drop'],
+                [transfer, 'drop'],
+                [[{ mimeType: 'text/plain', data: 'plain' }], 'drop']
+            ]) {
+                await drag('dragEnter', items)
+                await drag('dragOver', items)
+                await drag(finish, items)
+                if (finish === 'dragCancel' || items[0].data === 'missing-activity') {
+                    assert.equal(await paragraph(), beforeDrop)
+                } else {
+                    const inserted = items === transfer ? title : 'plain'
+                    assert.equal(await paragraph(), beforeDrop.slice(0, 3) + inserted + beforeDrop.slice(3))
+                    await key('Z', ['control'])
+                    assert.equal(await paragraph(), beforeDrop)
+                }
+            }
+            wc.debugger.detach()
             writeFileSync(join(output, 'journey.json'), JSON.stringify({ passed: true, title, opened }))
-            app.exit(0)
+            win.close()
         } catch (error) {
             console.error(error)
-            app.exit(1)
+            writeFileSync(join(output, 'failure.png'), (await win.webContents.capturePage()).toPNG())
+            win.close()
         }
     })
 })
