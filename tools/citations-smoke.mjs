@@ -11,8 +11,11 @@ const profile = join(process.env.GITORIAN_VERIFY_STATE, 'profile')
 app.setPath('userData', profile)
 const { sampleState } = await tsImport('../tests/workspace-fixture.ts', import.meta.url)
 const week = '2026-10-05'
+/** @type {import('../src/shared/model').State} */
 const fixture = sampleState(week)
 const activity = fixture.activities[0]
+fixture.activities[2].title =
+    'Mirror survey builder toolbar for RTL ' + 'with extended multilingual labels '.repeat(7).trim()
 fixture.repositories[0].remote = ''
 const legacy = 'https://example.org/previous'
 fixture.drafts[0].body = {
@@ -25,10 +28,26 @@ fixture.drafts[0].body = {
         }
     ]
 }
+fixture.entries[0].body = {
+    type: 'doc',
+    content: [
+        {
+            type: 'paragraph',
+            content: [
+                {
+                    type: 'text',
+                    text: 'Local activity',
+                    marks: [{ type: 'link', attrs: { href: '#gitorian-activity=' + encodeURIComponent(activity.id) } }]
+                }
+            ]
+        }
+    ]
+}
 await seedJournal(profile, fixture)
 const opened = []
-shell.openExternal = async (url) => {
+shell.openExternal = (url) => {
     opened.push(url)
+    return Promise.resolve()
 }
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
 async function until(check, message) {
@@ -43,16 +62,22 @@ app.once('browser-window-created', (_, win) => {
         try {
             const wc = win.webContents
             const js = (source) => wc.executeJavaScript(source)
+            /** @param {string} name */
             const capture = async (name) => writeFileSync(join(output, name + '.png'), (await wc.capturePage()).toPNG())
+            /** @param {string} selector */
             const click = async (selector) => {
                 const point = await js(
                     `(() => {const el=document.querySelector(${JSON.stringify(selector)}); el.scrollIntoView({block:'nearest'}); const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`
                 )
-                await until(() => js(`(() => {
+                await until(
+                    () =>
+                        js(`(() => {
                     if (document.querySelector(${JSON.stringify(selector)}).contains(document.elementFromPoint(${point.x},${point.y}))) return true
                     for (const toast of document.querySelectorAll('[aria-label="Dismiss notification"]')) toast.click()
                     return false
-                })()`), 'Cannot reach ' + selector)
+                })()`),
+                    'Cannot reach ' + selector
+                )
                 wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
                 wc.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
                 await pause(100)
@@ -87,8 +112,9 @@ app.once('browser-window-created', (_, win) => {
             )
             await pause(450)
             await click('.ws-inspector-footer button')
+            assert.ok(activity.sha)
             const title = activity.title + ' (' + activity.sha.slice(0, 7) + ')'
-            const paragraph = () => js("document.querySelector('.tiptap p').textContent")
+            const paragraph = async () => String(await js("document.querySelector('.tiptap p').textContent"))
             assert.equal(await paragraph(), 'Before ' + title + ' after.')
             await wc.insertText('!')
             assert.equal(await paragraph(), 'Before ' + title + '! after.')
@@ -165,11 +191,113 @@ app.once('browser-window-created', (_, win) => {
                 }
             }
             wc.debugger.detach()
+            await select(2, 5)
+            const showPicker = async () => {
+                await key('P', [process.platform === 'darwin' ? 'meta' : 'control', 'shift'])
+                await until(
+                    () => js("document.activeElement.matches('[role=dialog] input[role=combobox]')"),
+                    'Picker search did not take focus'
+                )
+            }
+            const activeLabel = () =>
+                js(
+                    "document.getElementById(document.activeElement.getAttribute('aria-activedescendant'))?.querySelector('[title]')?.title"
+                )
+            await showPicker()
+            await wc.insertText('zzzzzzzzzz')
+            await until(
+                () => js("!!document.querySelector('[data-slot=command-empty][data-empty]')"),
+                'No empty result feedback'
+            )
+            await key('Enter')
+            assert.equal(await paragraph(), beforeDrop)
+            await key('Escape')
+            await until(
+                () => js("document.activeElement.matches('.tiptap') && !document.querySelector('[role=dialog]')"),
+                'Escape did not return focus'
+            )
+            assert.equal(await js('getSelection().toString()'), 'for')
+            await showPicker()
+            await wc.insertText('multilingual')
+            await until(
+                () => js("document.querySelectorAll('[role=dialog] [role=option]').length === 1"),
+                'Search did not narrow activities'
+            )
+            assert.equal(await activeLabel(), fixture.activities[2].title)
+            assert.ok(
+                await js(
+                    "document.querySelector('[role=option] [title]').scrollWidth > document.querySelector('[role=option] [title]').clientWidth && document.querySelector('[role=dialog]').scrollWidth <= document.querySelector('[role=dialog]').clientWidth"
+                )
+            )
+            const size = win.getContentSize()
+            win.setMinimumSize(0, 0)
+            for (const width of [390, 768, 1024, 1440]) {
+                win.setContentSize(width, size[1])
+                await pause(100)
+                assert.ok(
+                    await js(`(() => {
+                    const dialog = document.querySelector('[role=dialog]')
+                    const r = dialog.getBoundingClientRect()
+                    return r.left >= 0 && r.right <= innerWidth + 1 && dialog.scrollWidth <= dialog.clientWidth
+                })()`)
+                )
+            }
+            win.setContentSize(...size)
+            await key('A', ['control'])
+            await key('Backspace')
+            const first = await activeLabel()
+            await key('Down')
+            const second = await activeLabel()
+            assert.ok(second && first && second !== first)
+            await key('Up')
+            assert.equal(await activeLabel(), first)
+            await key('Down')
+            await wc.insertText('retry')
+            await key('Down')
+            const chosenLabel = await activeLabel()
+            await pause(300)
+            await capture('picker')
+            await key('Enter')
+            await until(
+                () => js("document.activeElement.matches('.tiptap') && !document.querySelector('[role=dialog]')"),
+                'Selection did not return to writing'
+            )
+            const chosen = fixture.activities.find((item) => item.title === chosenLabel)
+            assert.ok(chosen?.sha)
+            const cited = chosen.title + ' (' + chosen.sha.slice(0, 7) + ')'
+            assert.equal(await paragraph(), beforeDrop.slice(0, 2) + cited + beforeDrop.slice(5))
+            await key('Z', ['control'])
+            assert.equal(await paragraph(), beforeDrop)
+            await js(`(() => {
+                const data = new DataTransfer()
+                data.items.add(new File(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>'], 'fixture.svg', {type:'image/svg+xml'}))
+                document.querySelector('.tiptap').dispatchEvent(new DragEvent('drop', {dataTransfer:data, clientX:${dropPoint.x}, clientY:${dropPoint.y}, bubbles:true,cancelable:true}))
+            })()`)
+            await until(
+                () => js("document.querySelector('.journal-image-preview img')?.naturalWidth === 10"),
+                'Image drop did not reach the image importer'
+            )
+            await js(`window.journal.invoke({type:'popout',kind:'entry',id:${JSON.stringify(fixture.entries[0].id)}})`)
+            const reader = () =>
+                BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('reference=entry'))
+            await until(
+                async () =>
+                    reader() && (await reader().webContents.executeJavaScript("!!document.querySelector('.tiptap a')")),
+                'Saved entry did not open'
+            )
+            await reader().webContents.executeJavaScript("document.querySelector('.tiptap a').click()")
+            await until(
+                () => reference() && new URL(reference().webContents.getURL()).searchParams.get('id') === activity.id,
+                'Saved local citation did not open its activity'
+            )
+            reference().close()
+            reader().close()
             writeFileSync(join(output, 'journey.json'), JSON.stringify({ passed: true, title, opened }))
             win.close()
         } catch (error) {
             console.error(error)
             writeFileSync(join(output, 'failure.png'), (await win.webContents.capturePage()).toPNG())
+            for (const popup of BrowserWindow.getAllWindows()) if (popup !== win) popup.close()
             win.close()
         }
     })

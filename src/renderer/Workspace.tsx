@@ -15,6 +15,8 @@ import { TagInput } from './components/arc/tag-input/tag-input'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
+import { CitationPicker } from './CitationPicker'
+import { Quote } from 'lucide-react'
 import { WorkspaceDraft } from './WorkspaceDraft'
 import type { EditorHandle } from './Editor'
 import { localCitationHref } from '../shared/citation'
@@ -95,6 +97,32 @@ export function Workspace({
     const [historyBusy, setHistoryBusy] = useState(false)
     const [canCite, setCanCite] = useState(false)
     const editor = useRef<EditorHandle>(null)
+    const [pickerOpen, setPickerOpen] = useState(false)
+    useEffect(() => {
+        if (!canCite) return
+        const openPicker = (event: KeyboardEvent) => {
+            const primary = navigator.platform.includes('Mac') ? event.metaKey : event.ctrlKey
+            if (
+                !primary ||
+                !event.shiftKey ||
+                event.altKey ||
+                event.key.toLowerCase() !== 'p' ||
+                event.defaultPrevented ||
+                event.isComposing ||
+                event.repeat ||
+                !(event.target instanceof Element) ||
+                !(
+                    event.target.closest('.writing-workspace') ||
+                    (event.target === document.body && !document.querySelector('[role="dialog"]'))
+                )
+            )
+                return
+            event.preventDefault()
+            setPickerOpen(true)
+        }
+        window.addEventListener('keydown', openPicker)
+        return () => window.removeEventListener('keydown', openPicker)
+    }, [canCite])
     const [notice, setNotice] = useState('')
     const [detached, setDetached] = useState<string>()
     const channel = useRef<BroadcastChannel | undefined>(undefined)
@@ -196,6 +224,7 @@ export function Workspace({
         }
     }, [state, items, cite, canCite])
     const changeWeek = (value: string) => {
+        setPickerOpen(false)
         setWeek(value)
         setSelectedId(undefined)
         setDetached(undefined)
@@ -312,6 +341,17 @@ export function Workspace({
                     <div className="ws-utilities">
                         <ActivitySourcesButton state={state} onClick={onSources} />
                         <AppUpdateButton />
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!canCite}
+                            aria-label="Cite an activity"
+                            aria-keyshortcuts="Control+Shift+P Meta+Shift+P"
+                            title="Cite an activity"
+                            onClick={() => setPickerOpen(true)}
+                        >
+                            <Quote size={16} aria-hidden="true" />
+                        </Button>
 
                         <Button
                             variant="ghost"
@@ -542,6 +582,14 @@ export function Workspace({
                     </div>
                     {inspector}
                 </div>
+                <CitationPicker
+                    activities={items}
+                    repositories={state.repositories}
+                    open={canCite && pickerOpen}
+                    onOpenChange={setPickerOpen}
+                    onChoose={cite}
+                    onReturn={() => editor.current?.focus()}
+                />
                 <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
                     <DialogContent
                         title="Browse branch history"

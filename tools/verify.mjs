@@ -474,7 +474,7 @@ if (mode === 'doctor') {
                                   : []
         ).every((file) => existsSync(join(output, file)))
         if (mode === 'citations')
-            report.evidenceRetained = ['cited.png', 'destination.png', 'journey.json'].every((file) =>
+            report.evidenceRetained = ['picker.png', 'cited.png', 'destination.png', 'journey.json'].every((file) =>
                 existsSync(join(output, file))
             )
         report.passed &&= report.cleanup.removed && report.evidenceRetained
