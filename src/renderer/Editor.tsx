@@ -1,3 +1,5 @@
+import { localCitationId } from '../shared/citation'
+import { closeHistory } from '@tiptap/pm/history'
 import { insertPlainWriting, loadWriting } from './journal-direction'
 import { portableWriting } from '../shared/journal-direction'
 import { EmojiPicker } from './EmojiPicker'
@@ -111,7 +113,8 @@ interface Menu {
 export interface EditorHandle {
     undo: () => void
     redo: () => void
-    insertBlock: (block: JournalNode) => void
+    cite: (title: string, href: string) => void
+    focus: () => void
 }
 
 export const Editor = memo(function Editor({
@@ -120,7 +123,6 @@ export const Editor = memo(function Editor({
     onEdit,
     readOnly = false,
     autoFocus = false,
-    insertLink,
     ref,
     label,
     onHistoryChange,
@@ -134,7 +136,6 @@ export const Editor = memo(function Editor({
     onEdit?: (snapshot: EditorSnapshot) => void
     readOnly?: boolean
     autoFocus?: boolean
-    insertLink?: { url: string; title: string; nonce: number }
     ref?: Ref<EditorHandle>
     label?: string
     template?: JournalNode
@@ -383,13 +384,29 @@ export const Editor = memo(function Editor({
                 insertPlainWriting(editorRef.current, markdownToHtml(text))
                 return true
             },
-            handleClick: (_view, _position, event) => {
-                const anchor = (event.target as HTMLElement).closest('a')
-                if (readOnly && anchor?.href) {
-                    void window.journal.invoke({ type: 'open', url: anchor.href })
+            handleDOMEvents: {
+                click: (_view, event) => {
+                    const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
+                    if (
+                        !(anchor instanceof HTMLAnchorElement) ||
+                        event.button !== 0 ||
+                        event.shiftKey ||
+                        event.detail > 1 ||
+                        !window.getSelection()?.isCollapsed
+                    )
+                        return false
+                    const activityId = localCitationId(anchor.getAttribute('href') ?? '')
+                    if (!activityId && !['http:', 'https:'].includes(anchor.protocol)) return false
+                    event.preventDefault()
+                    void window.journal
+                        .invoke(
+                            activityId
+                                ? { type: 'popout', kind: 'activity', id: activityId }
+                                : { type: 'open', url: anchor.href }
+                        )
+                        .catch(() => toast({ type: 'error', title: 'Could not open this link' }))
                     return true
                 }
-                return false
             },
             handleKeyDown: (_view, event) => {
                 if (event.isComposing || _view.composing) return false
@@ -512,9 +529,15 @@ export const Editor = memo(function Editor({
             redo: () => {
                 editor?.commands.redo()
             },
-            insertBlock: (block) => {
-                if (editor?.isEditable)
-                    editor.commands.insertContentAt(editor.state.doc.content.size, block, { updateSelection: false })
+            focus: () => editor?.view.focus(),
+            cite: (title, href) => {
+                if (!editor?.isEditable) return
+                const { state, view } = editor
+                const mark = state.schema.marks.link.create({ href })
+                const tr = closeHistory(state.tr).replaceSelectionWith(state.schema.text(title, [mark]), false)
+                view.dispatch(tr.setStoredMarks([]).scrollIntoView())
+                view.dispatch(closeHistory(view.state.tr))
+                view.focus()
             }
         }),
         [editor]
@@ -530,18 +553,6 @@ export const Editor = memo(function Editor({
     useEffect(() => {
         editor?.setEditable(!readOnly, false)
     }, [editor, readOnly])
-    useEffect(() => {
-        if (insertLink && editor && !readOnly)
-            editor
-                .chain()
-                .focus()
-                .insertContent({
-                    type: 'text',
-                    text: insertLink.title,
-                    marks: [{ type: 'link', attrs: { href: insertLink.url } }]
-                })
-                .run()
-    }, [insertLink, editor, readOnly])
     useEffect(() => {
         if (!editor) return
         const attrs: Record<string, string> = menu

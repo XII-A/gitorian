@@ -35,6 +35,7 @@ const connectionMode = mode === 'notion'
 if (
     ![
         'doctor',
+        'citations',
         'notion',
         'onboarding',
         'onboarding-disclosure',
@@ -51,7 +52,7 @@ if (
     process.argv.length !== 3
 ) {
     console.error(
-        'Usage: pnpm verify doctor | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | app-updates | activity-filters | activity-days (run pnpm build first)'
+        'Usage: pnpm verify doctor | citations | notion | onboarding | onboarding-disclosure | inspector-tabs | line-statistics | window-chrome | activity-counts | publishing | hub-dialog | app-updates | activity-filters | activity-days (run pnpm build first)'
     )
     process.exit(1)
 }
@@ -472,6 +473,10 @@ if (mode === 'doctor') {
                                     ]
                                   : []
         ).every((file) => existsSync(join(output, file)))
+        if (mode === 'citations')
+            report.evidenceRetained = ['cited.png', 'destination.png', 'journey.json'].every((file) =>
+                existsSync(join(output, file))
+            )
         report.passed &&= report.cleanup.removed && report.evidenceRetained
         report.finishedAt = new Date().toISOString()
         writeFileSync(join(output, 'run.json'), JSON.stringify(report, null, 2))

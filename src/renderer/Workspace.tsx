@@ -16,7 +16,8 @@ import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
 import { WorkspaceDraft } from './WorkspaceDraft'
-import type { Citation } from './WorkspaceDraft'
+import type { EditorHandle } from './Editor'
+import { localCitationHref } from '../shared/citation'
 import { WorkspaceInspector } from './WorkspaceInspector'
 import { activityLink, dateKey, dateValue, formatDay } from './workspace-model'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -93,7 +94,7 @@ export function Workspace({
     const [historyError, setHistoryError] = useState('')
     const [historyBusy, setHistoryBusy] = useState(false)
     const [canCite, setCanCite] = useState(false)
-    const [citation, setCitation] = useState<Citation>()
+    const editor = useRef<EditorHandle>(null)
     const [notice, setNotice] = useState('')
     const [detached, setDetached] = useState<string>()
     const channel = useRef<BroadcastChannel | undefined>(undefined)
@@ -161,11 +162,11 @@ export function Workspace({
                 setNotice('Open or create an editable draft to add a citation.')
                 return
             }
-            setCitation({
-                id: Date.now(),
-                title: activity.sha ? `${activity.title} (${activity.sha.slice(0, 7)})` : activity.title,
-                url: activityLink(activity, state)
-            })
+            const title = activity.title.trim() || 'Untitled activity'
+            editor.current?.cite(
+                activity.sha ? `${title} (${activity.sha.slice(0, 7)})` : title,
+                activityLink(activity, state) ?? localCitationHref(activity.id)
+            )
         },
         [canCite, state]
     )
@@ -199,7 +200,6 @@ export function Workspace({
         setDetached(undefined)
         setDetailError('')
         setNotice('')
-        setCitation(undefined)
         const url = new URL(window.location.href)
         url.searchParams.set('week', value)
         window.history.replaceState({}, '', url)
@@ -523,7 +523,7 @@ export function Workspace({
                             initialWrite={week === writingWeek.current}
                             notionConnected={notionConnected}
                             run={run}
-                            citation={citation}
+                            editor={editor}
                             publishTarget={publishTarget}
                             onReady={setCanCite}
                             onSettings={onSettings}

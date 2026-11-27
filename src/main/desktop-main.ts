@@ -451,6 +451,11 @@ void app
                     return yield* Effect.fail(new Error('Unknown desktop window'))
                 if (
                     referenceWindows.has(event.sender.id) &&
+                    !(
+                        command.type === 'popout' &&
+                        command.kind === 'activity' &&
+                        referencePins.get(event.sender.id)?.kind === 'entry'
+                    ) &&
                     !['state', 'view', 'entryHistory', 'entry', 'details', 'open', 'diffPreferences'].includes(
                         command.type
                     )
