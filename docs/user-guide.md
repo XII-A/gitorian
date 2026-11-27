@@ -67,6 +67,6 @@ Arabic and Turkish text can publish to Notion. Notion chooses remote direction a
 
 Place the caret in the draft, or select text to replace. Choose **Cite in entry** in the activity inspector, or drag an activity row to a word in the draft. Undo restores the previous writing.
 
-Press **Ctrl+Shift+P** on Windows or Linux, or **Cmd+Shift+P** on macOS, to search the week's activities. The quotation-mark button in the workspace header opens the same picker. Search by title, repository, branch or SHA. Use the arrow keys to choose an activity and Enter to cite it. Escape returns to writing.
+Press **Ctrl+Shift+P** on Windows or Linux, or **Cmd+Shift+P** on macOS, to search the week's activities. The quotation-mark button in the workspace header opens the same picker. Search by title, repository, branch or SHA. Use the arrow keys to highlight an activity. Press **Enter** to cite it or **Ctrl+Enter** (**Cmd+Enter** on macOS) to open its Details panel. Escape returns to writing.
 
 Click a citation to open its provider page. Activities with only a local source open in a Gitorian reference window. Local references publish to Notion as plain text.

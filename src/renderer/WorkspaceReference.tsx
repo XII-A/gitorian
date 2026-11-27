@@ -125,7 +125,8 @@ export function WorkspaceReference({
                         activity={activity}
                         run={run}
                         reference
-                        initialTab={inspectionTab}
+                        tab={inspectionTab}
+                        onTabChange={setInspectionTab}
                         loading={loading}
                         error={error}
                         canCite

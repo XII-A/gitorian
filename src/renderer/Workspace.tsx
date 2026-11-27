@@ -99,6 +99,8 @@ export function Workspace({
     const [canCite, setCanCite] = useState(false)
     const editor = useRef<EditorHandle>(null)
     const [pickerOpen, setPickerOpen] = useState(false)
+    const inspectorHeading = useRef<HTMLHeadingElement>(null)
+    const focusInspectorAfterPicker = useRef(false)
     const shortcut = useShortcutHint('mod+shift+p')
     useShortcut(canCite && !pickerOpen ? 'mod+shift+p' : null, () => setPickerOpen(true), {
         description: 'Cite an activity',
@@ -109,6 +111,10 @@ export function Workspace({
     const [notice, setNotice] = useState('')
     const [detached, setDetached] = useState<string>()
     const channel = useRef<BroadcastChannel | undefined>(undefined)
+    const dockActivity = (activityId: string) => {
+        channel.current?.postMessage({ type: 'close', activityId })
+        setDetached(undefined)
+    }
     const requestId = useRef(0)
     const inspectionState = useRef(state)
     inspectionState.current = state
@@ -274,7 +280,9 @@ export function Workspace({
                 loading={detailBusy}
                 error={detailError}
                 canCite={canCite}
-                initialTab={inspectionTab}
+                tab={inspectionTab}
+                onTabChange={setInspectionTab}
+                headingRef={inspectorHeading}
                 onCite={() => cite(selected)}
                 onInspect={(item, tab) => void inspect(item, tab)}
                 onPopout={popout}
@@ -510,14 +518,7 @@ export function Workspace({
                             <div className="ws-detached-status">
                                 <WorkspaceIcon name="popout" />
                                 <span>Diff open in another window.</span>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                        channel.current?.postMessage({ type: 'close', activityId: detached })
-                                        setDetached(undefined)
-                                    }}
-                                >
+                                <Button variant="ghost" size="sm" onClick={() => dockActivity(detached)}>
                                     Dock back
                                 </Button>
                             </div>
@@ -571,7 +572,18 @@ export function Workspace({
                     open={canCite && pickerOpen}
                     onOpenChange={setPickerOpen}
                     onChoose={cite}
-                    onReturn={() => editor.current?.focus()}
+                    onInspect={(activity) => {
+                        focusInspectorAfterPicker.current = true
+                        setFocus(false)
+                        if (activity.id === detached) dockActivity(activity.id)
+                        void inspect(activity)
+                    }}
+                    onReturn={() => {
+                        if (focusInspectorAfterPicker.current && inspectorHeading.current)
+                            inspectorHeading.current.focus()
+                        else editor.current?.focus()
+                        focusInspectorAfterPicker.current = false
+                    }}
                 />
                 <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
                     <DialogContent

@@ -22,6 +22,7 @@ export interface CommandPaletteProps {
     items: CommandItem[]
     placeholder?: string
     onSelect?: (item: CommandItem) => void
+    onModEnter?: (item: CommandItem) => void
     onClose?: () => void
     label?: string
     /** Focus the search field on mount, for a palette that opens on demand. */ autoFocus?: boolean
@@ -127,6 +128,7 @@ export function CommandPalette({
     items,
     placeholder = 'Search commands',
     onSelect,
+    onModEnter,
     onClose,
     label = 'Command palette',
     autoFocus = false,
@@ -232,14 +234,28 @@ export function CommandPalette({
         else if (rect.bottom > bounds.bottom) viewport.scrollTop += rect.bottom - bounds.bottom
     }, [activeId, inputId])
 
-    function choose(item: CommandItem) {
-        onSelect?.(item)
+    function choose(item: CommandItem, action = onSelect) {
+        action?.(item)
         setQuery('')
         setActiveIndex(null)
         inputRef.current?.focus()
     }
-    function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
         if (event.nativeEvent.isComposing) return
+        const target = filtered[safeActiveIndex]
+        if (
+            onModEnter &&
+            event.key === 'Enter' &&
+            (event.ctrlKey || event.metaKey) &&
+            !event.altKey &&
+            !event.shiftKey
+        ) {
+            event.preventDefault()
+            event.stopPropagation()
+            if (target) choose(target, onModEnter)
+            return
+        }
+        if (event.target !== inputRef.current) return
         if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) keyboardMove.current = true
         if (event.key === 'ArrowDown') {
             event.preventDefault()
@@ -258,7 +274,6 @@ export function CommandPalette({
             setActiveIndex(Math.max(filtered.length - 1, 0))
         }
         // Enter runs the highlighted result; after typing, with nothing highlighted yet, it runs the top match.
-        const target = filtered[safeActiveIndex]
         if (event.key === 'Enter' && target) {
             event.preventDefault()
             choose(target)
@@ -268,6 +283,7 @@ export function CommandPalette({
     return (
         <motion.div
             className={styles.palette}
+            onKeyDown={handleKeyDown}
             initial={reduced ? false : { opacity: 0, y: 6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={
@@ -299,7 +315,7 @@ export function CommandPalette({
                         setQuery(event.target.value)
                         setActiveIndex(null)
                     }}
-                    onKeyDown={handleKeyDown}
+                    aria-keyshortcuts={onModEnter ? 'Control+Enter Meta+Enter' : undefined}
                     placeholder={placeholder}
                     autoComplete="off"
                 />

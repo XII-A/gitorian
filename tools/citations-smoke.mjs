@@ -258,6 +258,9 @@ app.once('browser-window-created', (_, win) => {
             await pause(480)
             await capture('palette-empty')
             await key('Enter')
+            const inspectModifier = process.platform === 'darwin' ? 'meta' : 'control'
+            await key('Enter', [inspectModifier])
+            assert.ok(await js("document.activeElement.matches('[role=dialog] input')"))
             assert.equal(await paragraph(), beforeDrop)
             await key('Escape')
             await until(
@@ -265,6 +268,47 @@ app.once('browser-window-created', (_, win) => {
                 'Escape did not return focus'
             )
             assert.equal(await js('getSelection().toString()'), 'for')
+            await click('[aria-label="Close inspector"]')
+            await click('[aria-label="Focus on writing"]')
+            await showPicker()
+            await wc.insertText('retry')
+            await key('Down')
+            const inspectedTitle = await activeLabel()
+            assert.ok(inspectedTitle && inspectedTitle !== activity.title)
+            const inspectHighlighted = async () => {
+                await key('Enter', [inspectModifier])
+                await until(
+                    () =>
+                        js(`document.activeElement.matches('.ws-inspector-title') &&
+                            document.activeElement.textContent === ${JSON.stringify(inspectedTitle)} &&
+                            !!document.querySelector('.ws-inspector [data-value="details"][aria-selected="true"]') &&
+                            document.activeElement.getBoundingClientRect().height > 0 && !document.querySelector('[role=dialog]')`),
+                    'Modified Enter did not open and focus Details for the highlighted activity'
+                )
+                assert.equal(await paragraph(), beforeDrop)
+            }
+            await inspectHighlighted()
+            await capture('picker-details')
+            await click('.ws-inspector [data-value="related"]')
+            await showPicker()
+            await wc.insertText(inspectedTitle)
+            assert.equal(await activeLabel(), inspectedTitle)
+            await inspectHighlighted()
+            await click('[aria-label="Pop out diff"]')
+            await until(
+                async () =>
+                    reference() &&
+                    (await reference().webContents.executeJavaScript(
+                        "!!document.querySelector('.ws-details-content')"
+                    )) &&
+                    (await js("!!document.querySelector('.ws-detached-status')")),
+                'Activity did not detach'
+            )
+            win.focus()
+            await showPicker()
+            await wc.insertText(inspectedTitle)
+            await inspectHighlighted()
+            await until(() => !reference(), 'Activity did not dock back into the workspace')
             await showPicker()
             await wc.insertText('multilingual')
             await until(

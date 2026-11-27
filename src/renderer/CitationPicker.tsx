@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import type { Activity, Repository } from '../shared/model'
-import { CommandPalette } from './components/arc/command-palette/command-palette'
+import { CommandPalette, type CommandItem } from './components/arc/command-palette/command-palette'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
 import styles from './CitationPicker.module.css'
 
@@ -9,6 +9,7 @@ interface ActivityCommandsProps {
     activities: Activity[]
     repositories: Repository[]
     onChoose: (activity: Activity) => void
+    onInspect: (activity: Activity) => void
 }
 
 export function CitationPicker({
@@ -17,6 +18,7 @@ export function CitationPicker({
     open,
     onOpenChange,
     onChoose,
+    onInspect,
     onReturn
 }: ActivityCommandsProps & {
     open: boolean
@@ -42,6 +44,7 @@ export function CitationPicker({
                         repositories={repositories}
                         onClose={() => onOpenChange(false)}
                         onChoose={onChoose}
+                        onInspect={onInspect}
                     />
                 </Dialog.Content>
             </Dialog.Portal>
@@ -53,7 +56,8 @@ function ActivityCommands({
     activities,
     repositories,
     onClose,
-    onChoose
+    onChoose,
+    onInspect
 }: ActivityCommandsProps & { onClose: () => void }) {
     const items = useMemo(() => {
         const names = new Map(repositories.map((repo) => [repo.id, repo.name]))
@@ -66,6 +70,12 @@ function ActivityCommands({
             icon: <WorkspaceIcon name={activity.kind === 'commit' ? 'commit' : 'change-request'} />
         }))
     }, [activities, repositories])
+    function choose(item: CommandItem, action: (activity: Activity) => void) {
+        const activity = activities.find((activity) => activity.id === item.id)
+        if (!activity) return
+        onClose()
+        action(activity)
+    }
     return (
         <CommandPalette
             items={items}
@@ -73,13 +83,8 @@ function ActivityCommands({
             label="Search activities"
             placeholder="Search activities to cite…"
             onClose={onClose}
-            onSelect={(item) => {
-                const activity = activities.find((activity) => activity.id === item.id)
-                if (activity) {
-                    onClose()
-                    onChoose(activity)
-                }
-            }}
+            onSelect={(item) => choose(item, onChoose)}
+            onModEnter={(item) => choose(item, onInspect)}
         />
     )
 }
