@@ -25,7 +25,6 @@ export interface CommandPaletteProps {
     label?: string
     /** Focus the search field on mount, for a palette that opens on demand. */ autoFocus?: boolean
     emptyLabel?: string
-    shortcutHint?: string
 }
 
 const enter: Transition = { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }
@@ -130,8 +129,7 @@ export function CommandPalette({
     onClose,
     label = 'Command palette',
     autoFocus = false,
-    emptyLabel = 'No commands available',
-    shortcutHint
+    emptyLabel = 'No commands available'
 }: CommandPaletteProps) {
     const inputId = useId()
     const [query, setQuery] = useState('')
@@ -345,7 +343,6 @@ export function CommandPalette({
                         Esc
                     </button>
                 ) : null}
-                {shortcutHint && <kbd className={styles.commandKey}>{shortcutHint}</kbd>}
             </div>
             <motion.div
                 className={styles.resultsFrame}

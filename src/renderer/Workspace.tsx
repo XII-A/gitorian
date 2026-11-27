@@ -566,7 +566,6 @@ export function Workspace({
                     {inspector}
                 </div>
                 <CitationPicker
-                    shortcut={shortcut.text}
                     activities={items}
                     repositories={state.repositories}
                     open={canCite && pickerOpen}

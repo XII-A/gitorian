@@ -8,7 +8,6 @@ import styles from './CitationPicker.module.css'
 interface ActivityCommandsProps {
     activities: Activity[]
     repositories: Repository[]
-    shortcut: string
     onChoose: (activity: Activity) => void
 }
 
@@ -16,7 +15,6 @@ export function CitationPicker({
     activities,
     repositories,
     open,
-    shortcut,
     onOpenChange,
     onChoose,
     onReturn
@@ -42,7 +40,6 @@ export function CitationPicker({
                     <ActivityCommands
                         activities={activities}
                         repositories={repositories}
-                        shortcut={shortcut}
                         onClose={() => onOpenChange(false)}
                         onChoose={onChoose}
                     />
@@ -55,7 +52,6 @@ export function CitationPicker({
 function ActivityCommands({
     activities,
     repositories,
-    shortcut,
     onClose,
     onChoose
 }: ActivityCommandsProps & { onClose: () => void }) {
@@ -76,7 +72,6 @@ function ActivityCommands({
             emptyLabel="No activities this week"
             label="Search activities"
             placeholder="Search activities to cite…"
-            shortcutHint={shortcut}
             onClose={onClose}
             onSelect={(item) => {
                 const activity = activities.find((activity) => activity.id === item.id)
