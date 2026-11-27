@@ -110,10 +110,6 @@
 }
 .results {
     position: relative;
-    max-height: min(342px, 62dvh);
-    scrollbar-width: thin;
-    scrollbar-color: var(--border-strong) transparent;
-    overflow: auto;
     padding: 6px 8px;
 }
 .highlight {

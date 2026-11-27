@@ -6,6 +6,7 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import type { Transition, ValueAnimationTransition, Variants } from 'motion/react'
 import { Command as CommandIcon, Search, X } from 'lucide-react'
 import { motionTokens } from '../motion-tokens'
+import { ScrollArea } from '../scroll-area/scroll-area'
 import styles from './command-palette.module.css'
 
 export interface CommandItem {
@@ -137,6 +138,7 @@ export function CommandPalette({
     const [listHeight, setListHeight] = useState<number | 'auto'>('auto')
     const reduced = useReducedMotion()
     const inputRef = useRef<HTMLInputElement>(null)
+    const viewportRef = useRef<HTMLDivElement>(null)
     const listRef = useRef<HTMLDivElement>(null)
     const lastPointer = useRef({ x: -1, y: -1 })
     const highlightShown = useRef(false)
@@ -183,7 +185,7 @@ export function CommandPalette({
 
     // The results frame follows the list height, so filtering closes or opens the gap instead of snapping.
     useLayoutEffect(() => {
-        const list = listRef.current
+        const list = viewportRef.current
         if (!list) return
         const observer = new ResizeObserver(([entry]) =>
             setListHeight(Math.round(entry?.borderBoxSize?.[0]?.blockSize ?? list.offsetHeight))
@@ -216,9 +218,18 @@ export function CommandPalette({
         highlightShown.current = true
     }, [activeId, filtered, inputId, reduced, highlightY, highlightHeight, highlightOpacity])
 
-    useEffect(() => {
-        if (!activeId) return
-        document.getElementById(`${inputId}-${activeId}`)?.scrollIntoView({ block: 'nearest' })
+    useLayoutEffect(() => {
+        viewportRef.current?.scrollTo({ top: 0, behavior: 'instant' })
+    }, [query])
+
+    useLayoutEffect(() => {
+        const viewport = viewportRef.current
+        const row = activeId && document.getElementById(`${inputId}-${activeId}`)
+        if (!keyboardMove.current || !viewport || !row) return
+        const bounds = viewport.getBoundingClientRect()
+        const rect = row.getBoundingClientRect()
+        if (rect.top < bounds.top) viewport.scrollTop -= bounds.top - rect.top
+        else if (rect.bottom > bounds.bottom) viewport.scrollTop += rect.bottom - bounds.bottom
     }, [activeId, inputId])
 
     function choose(item: CommandItem) {
@@ -350,144 +361,158 @@ export function CommandPalette({
                 animate={{ height: listHeight }}
                 transition={reduced ? { duration: 0 } : motionTokens.spring.smooth}
             >
-                <motion.div
-                    ref={listRef}
+                <ScrollArea
+                    label="Activity results"
                     layoutScroll
-                    id={`${inputId}-results`}
-                    className={styles.results}
-                    role="listbox"
-                    aria-label="Command results"
+                    viewportRef={viewportRef}
+                    maxHeight="min(342px, 62dvh)"
+                    fade={8}
+                    viewportStyle={{ overscrollBehaviorY: 'contain' }}
                 >
-                    <motion.span
-                        className={styles.highlight}
-                        style={{ y: highlightY, height: highlightHeight, opacity: highlightOpacity }}
-                        aria-hidden="true"
-                    />
-                    {/* Results leave before the empty state arrives, so the frame makes one height change instead of two. */}
-                    <AnimatePresence mode="wait" initial={false}>
-                        {filtered.length ? (
-                            <motion.div
-                                key="results"
-                                initial={reduced ? false : { opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={
-                                    reduced
-                                        ? { opacity: 0, transition: { duration: 0 } }
-                                        : { opacity: 0, transition: leave }
-                                }
-                                transition={enter}
-                            >
-                                {/* Filtered-out rows pop out of the flow as they fade, so the rest glide up and the frame starts closing on the same keystroke. */}
-                                <AnimatePresence mode="popLayout" initial={false} custom={glide}>
-                                    {groupedItems.map(([group, entries]) => (
-                                        <motion.div
-                                            layout={glide ? 'position' : false}
-                                            className={styles.group}
-                                            role="group"
-                                            aria-label={group}
-                                            key={group}
-                                            variants={rowExit}
-                                            initial={reduced ? false : { opacity: 0 }}
-                                            animate={{ opacity: 1 }}
-                                            exit="exit"
-                                            transition={
-                                                reduced
-                                                    ? { duration: 0 }
-                                                    : { default: enter, layout: motionTokens.spring.smooth }
-                                            }
-                                        >
-                                            <span className={styles.groupHeading} aria-hidden="true">
-                                                {group}
-                                            </span>
-                                            <AnimatePresence mode="popLayout" initial={false} custom={glide}>
-                                                {entries.map(({ item, index }) => (
-                                                    <motion.button
-                                                        layout={glide ? 'position' : false}
-                                                        key={item.id}
-                                                        id={`${inputId}-${item.id}`}
-                                                        className={`${styles.result} ${index === safeActiveIndex ? styles.activeResult : ''}`}
-                                                        type="button"
-                                                        tabIndex={-1}
-                                                        role="option"
-                                                        aria-selected={index === safeActiveIndex}
-                                                        onClick={() => choose(item)}
-                                                        onPointerMove={(event) => {
-                                                            // Ignore the synthetic moves browsers send while the list scrolls under a still pointer.
-                                                            if (
-                                                                event.clientX === lastPointer.current.x &&
-                                                                event.clientY === lastPointer.current.y
-                                                            )
-                                                                return
-                                                            lastPointer.current = { x: event.clientX, y: event.clientY }
-                                                            keyboardMove.current = false
-                                                            if (index !== safeActiveIndex) setActiveIndex(index)
-                                                        }}
-                                                        variants={rowExit}
-                                                        initial={reduced ? false : { opacity: 0 }}
-                                                        animate={{ opacity: 1 }}
-                                                        exit="exit"
-                                                        transition={
-                                                            reduced
-                                                                ? { duration: 0 }
-                                                                : { default: enter, layout: motionTokens.spring.smooth }
-                                                        }
-                                                    >
-                                                        <span className={styles.itemIcon} aria-hidden="true">
-                                                            {item.icon ?? <CommandIcon width={16} height={16} />}
-                                                        </span>
-                                                        <span className={styles.resultCopy}>
-                                                            <span className={styles.resultLabel} title={item.label}>
-                                                                <Highlighted
-                                                                    text={item.label}
-                                                                    ranges={rangesById.get(item.id) ?? []}
-                                                                />
+                    <div
+                        ref={listRef}
+                        id={`${inputId}-results`}
+                        className={styles.results}
+                        role="listbox"
+                        aria-label="Command results"
+                    >
+                        <motion.span
+                            className={styles.highlight}
+                            style={{ y: highlightY, height: highlightHeight, opacity: highlightOpacity }}
+                            aria-hidden="true"
+                        />
+                        {/* Results leave before the empty state arrives, so the frame makes one height change instead of two. */}
+                        <AnimatePresence mode="wait" initial={false}>
+                            {filtered.length ? (
+                                <motion.div
+                                    key="results"
+                                    initial={reduced ? false : { opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={
+                                        reduced
+                                            ? { opacity: 0, transition: { duration: 0 } }
+                                            : { opacity: 0, transition: leave }
+                                    }
+                                    transition={enter}
+                                >
+                                    {/* Filtered-out rows pop out of the flow as they fade, so the rest glide up and the frame starts closing on the same keystroke. */}
+                                    <AnimatePresence mode="popLayout" initial={false} custom={glide}>
+                                        {groupedItems.map(([group, entries]) => (
+                                            <motion.div
+                                                layout={glide ? 'position' : false}
+                                                className={styles.group}
+                                                role="group"
+                                                aria-label={group}
+                                                key={group}
+                                                variants={rowExit}
+                                                initial={reduced ? false : { opacity: 0 }}
+                                                animate={{ opacity: 1 }}
+                                                exit="exit"
+                                                transition={
+                                                    reduced
+                                                        ? { duration: 0 }
+                                                        : { default: enter, layout: motionTokens.spring.smooth }
+                                                }
+                                            >
+                                                <span className={styles.groupHeading} aria-hidden="true">
+                                                    {group}
+                                                </span>
+                                                <AnimatePresence mode="popLayout" initial={false} custom={glide}>
+                                                    {entries.map(({ item, index }) => (
+                                                        <motion.button
+                                                            layout={glide ? 'position' : false}
+                                                            key={item.id}
+                                                            id={`${inputId}-${item.id}`}
+                                                            className={`${styles.result} ${index === safeActiveIndex ? styles.activeResult : ''}`}
+                                                            type="button"
+                                                            tabIndex={-1}
+                                                            role="option"
+                                                            aria-selected={index === safeActiveIndex}
+                                                            onClick={() => choose(item)}
+                                                            onPointerMove={(event) => {
+                                                                // Ignore the synthetic moves browsers send while the list scrolls under a still pointer.
+                                                                if (
+                                                                    event.clientX === lastPointer.current.x &&
+                                                                    event.clientY === lastPointer.current.y
+                                                                )
+                                                                    return
+                                                                lastPointer.current = {
+                                                                    x: event.clientX,
+                                                                    y: event.clientY
+                                                                }
+                                                                keyboardMove.current = false
+                                                                if (index !== safeActiveIndex) setActiveIndex(index)
+                                                            }}
+                                                            variants={rowExit}
+                                                            initial={reduced ? false : { opacity: 0 }}
+                                                            animate={{ opacity: 1 }}
+                                                            exit="exit"
+                                                            transition={
+                                                                reduced
+                                                                    ? { duration: 0 }
+                                                                    : {
+                                                                          default: enter,
+                                                                          layout: motionTokens.spring.smooth
+                                                                      }
+                                                            }
+                                                        >
+                                                            <span className={styles.itemIcon} aria-hidden="true">
+                                                                {item.icon ?? <CommandIcon width={16} height={16} />}
                                                             </span>
-                                                            {item.description && (
-                                                                <span className={styles.resultDescription}>
-                                                                    {item.description}
+                                                            <span className={styles.resultCopy}>
+                                                                <span className={styles.resultLabel} title={item.label}>
+                                                                    <Highlighted
+                                                                        text={item.label}
+                                                                        ranges={rangesById.get(item.id) ?? []}
+                                                                    />
+                                                                </span>
+                                                                {item.description && (
+                                                                    <span className={styles.resultDescription}>
+                                                                        {item.description}
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                            {item.shortcut && (
+                                                                <span className={styles.shortcut}>
+                                                                    {keysOf(item.shortcut).map((key, i) => (
+                                                                        <kbd key={i}>{key}</kbd>
+                                                                    ))}
                                                                 </span>
                                                             )}
-                                                        </span>
-                                                        {item.shortcut && (
-                                                            <span className={styles.shortcut}>
-                                                                {keysOf(item.shortcut).map((key, i) => (
-                                                                    <kbd key={i}>{key}</kbd>
-                                                                ))}
-                                                            </span>
-                                                        )}
-                                                    </motion.button>
-                                                ))}
-                                            </AnimatePresence>
-                                        </motion.div>
-                                    ))}
-                                </AnimatePresence>
-                            </motion.div>
-                        ) : (
-                            <motion.div
-                                key="empty"
-                                className={styles.empty}
-                                initial={
-                                    reduced
-                                        ? false
-                                        : { opacity: 0, y: 6, filter: `blur(${motionTokens.blur.subtle}px)` }
-                                }
-                                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                                exit={
-                                    reduced
-                                        ? { opacity: 0, transition: { duration: 0 } }
-                                        : { opacity: 0, y: -4, transition: leave }
-                                }
-                                transition={enter}
-                            >
-                                <span>
-                                    <Search width={20} height={20} aria-hidden="true" />
-                                </span>
-                                <strong>{query.trim() ? `No results for “${query.trim()}”` : emptyLabel}</strong>
-                                {query.trim() && <small>Try a different word or clear the search.</small>}
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </motion.div>
+                                                        </motion.button>
+                                                    ))}
+                                                </AnimatePresence>
+                                            </motion.div>
+                                        ))}
+                                    </AnimatePresence>
+                                </motion.div>
+                            ) : (
+                                <motion.div
+                                    key="empty"
+                                    className={styles.empty}
+                                    initial={
+                                        reduced
+                                            ? false
+                                            : { opacity: 0, y: 6, filter: `blur(${motionTokens.blur.subtle}px)` }
+                                    }
+                                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                                    exit={
+                                        reduced
+                                            ? { opacity: 0, transition: { duration: 0 } }
+                                            : { opacity: 0, y: -4, transition: leave }
+                                    }
+                                    transition={enter}
+                                >
+                                    <span>
+                                        <Search width={20} height={20} aria-hidden="true" />
+                                    </span>
+                                    <strong>{query.trim() ? `No results for “${query.trim()}”` : emptyLabel}</strong>
+                                    {query.trim() && <small>Try a different word or clear the search.</small>}
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+                </ScrollArea>
             </motion.div>
             <span className={styles.visuallyHidden} role="status" aria-live="polite">
                 {query.trim()

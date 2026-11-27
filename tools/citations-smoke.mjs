@@ -207,6 +207,46 @@ app.once('browser-window-created', (_, win) => {
             await showPicker()
             await pause(400)
             await capture('palette-open')
+            const results = `document.querySelector('[aria-label="Activity results"]')`
+            const searchTop = () => js("document.querySelector('[role=dialog] input').getBoundingClientRect().top")
+            const fixedTop = await searchTop()
+            const wheelPoint = await js(
+                `(() => {const r=${results}.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`
+            )
+            wc.sendInputEvent({ type: 'mouseMove', ...wheelPoint })
+            wc.sendInputEvent({ type: 'mouseWheel', ...wheelPoint, deltaX: 0, deltaY: -160 })
+            await until(() => js(`${results}.scrollTop > 0`), 'Wheel did not scroll the activity results')
+            await capture('palette-scrolled')
+            /** @type {{x:number, y:number}} */
+            const thumbPoint = await js(`(() => {
+                const r=${results}.parentElement.querySelector('[data-axis=y] > div').getBoundingClientRect()
+                return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}
+            })()`)
+            const beforeDrag = await js(`${results}.scrollTop`)
+            wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...thumbPoint })
+            wc.sendInputEvent({
+                type: 'mouseMove',
+                x: thumbPoint.x,
+                y: thumbPoint.y + 35,
+                modifiers: ['leftButtonDown']
+            })
+            wc.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, x: thumbPoint.x, y: thumbPoint.y + 35 })
+            await until(
+                async () => (await js(`${results}.scrollTop`)) > beforeDrag,
+                'Dragging the overlay thumb did not move results'
+            )
+            await key('End')
+            const visibleActive = () =>
+                js(`(() => {
+                const input=document.querySelector('[role=dialog] input')
+                const rect=document.getElementById(input.getAttribute('aria-activedescendant')).getBoundingClientRect()
+                const bounds=${results}.getBoundingClientRect()
+                return input === document.activeElement && rect.top >= bounds.top-1 && rect.bottom <= bounds.bottom+1
+            })()`)
+            assert.ok(await visibleActive())
+            await key('Home')
+            assert.ok(await visibleActive())
+            assert.equal(await searchTop(), fixedTop)
             await wc.insertText('zzzzzzzzzz')
             await until(
                 () =>
