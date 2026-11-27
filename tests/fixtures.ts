@@ -5,7 +5,7 @@ import { journalLayer } from '../src/main/journal-layer'
 import { JournalService } from '../src/main/service'
 import { RemoteContributions } from '../src/main/remote-contributions'
 import { Notion } from '../src/main/notion'
-import { run } from './effect-fixtures'
+import { run } from './run-effect'
 import { randomUUID } from 'node:crypto'
 import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
@@ -14,7 +14,6 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { JournalDatabase } from '../src/main/journal-database'
 import type { NotionBlock } from '../src/shared/notion-format'
-import { afterAll } from 'vitest'
 const execute = promisify(execFile)
 const gitAt =
     (directory: string) =>
@@ -40,9 +39,12 @@ async function createGitTemplate() {
     await git('branch', 'main')
     return templateDirectory
 }
-afterAll(async () => {
-    if (templateDirectory) await removeFixture(templateDirectory)
-})
+if (process.env.VITEST) {
+    const { afterAll } = await import('vitest')
+    afterAll(async () => {
+        if (templateDirectory) await removeFixture(templateDirectory)
+    })
+}
 export const patch =
     'diff --git a/a.ts b/a.ts\nindex 1111111..2222222 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n'
 export async function journal(
@@ -166,13 +168,19 @@ export function transport() {
         loseAppendResponse: false,
         failDiff: false,
         diffStatus: 200,
+        beforeCreateReply: undefined as (() => Promise<unknown>) | undefined,
+        responseFor: undefined as ((url: string, init: RequestInit) => Response | undefined) | undefined,
+        beforeRequest: undefined as ((url: string) => Promise<unknown>) | undefined,
         fetch: (input: string | URL | Request, init: RequestInit = {}): Promise<Response> =>
-            Promise.resolve().then(() => {
+            Promise.resolve().then(async () => {
                 const url = input instanceof Request ? input.url : String(input)
+                if (remote.beforeRequest) await remote.beforeRequest(url)
                 const method = init.method ?? 'GET'
                 const body =
                     typeof init.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : undefined
                 requests.push({ url, method, body })
+                const response = remote.responseFor?.(url, init)
+                if (response) return response
                 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 })
                 const list = (results: unknown[]) => json({ results, has_more: false, next_cursor: null })
                 if (url.includes('api.github.com')) {
@@ -259,6 +267,7 @@ export function transport() {
                         }))
                     }
                     pages.push(page)
+                    if (remote.beforeCreateReply) await remote.beforeCreateReply()
                     if (remote.loseCreateResponse) {
                         remote.loseCreateResponse = false
                         throw new Error('Connection lost after server commit')

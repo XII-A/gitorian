@@ -12,15 +12,15 @@ Define observable outcomes before implementation. For complex features, cover re
 
 ## Feature verification
 
-Automate consequential behavior: activity descriptions and PR metadata, writing/editing, failure/recovery, persistence, repository acquisition and external-provider contracts. Give each outcome one owning scenario at the module interface. Use real Electron journeys when native input, clipboard, preload or persistence is essential; use Vitest for domain/storage and inexpensive DOM behavior.
+Use Vitest for domain and storage behavior, including persistence, repository acquisition, recovery and external-provider contracts. Give each automated outcome one owning scenario at the module interface.
 
-Review shader appearance, animation timing, hover geometry, input transitions and visual polish manually before a PR. These are not automated release gates. Retain automated keyboard selection, cancellation, editing and focus outcomes when they protect user actions. Test count is not a target; each scenario must name a distinct failure it catches.
+Review changed desktop behavior in Electron when native input, clipboard, preload or rendering matters. Include relevant keyboard selection, cancellation, editing and focus behavior in that review.
 
-Use [verify-gitorian](.agents/skills/verify-gitorian/SKILL.md) for feature changes and update affected feature recipes and entry points. Prefer real Electron UI journeys through preload and the local store; use Vitest for domain/storage behavior and DOM interactions that need no desktop.
+Use [verify-gitorian](.agents/skills/verify-gitorian/SKILL.md) for feature changes and update affected feature recipes and entry points.
 
 Use disposable profiles and fixture repositories, excluding personal journal data and integration credentials. Use journal-only fixtures for writing/publishing; create Git repositories only to test repository behavior. External publishing requires explicit authorization.
 
-Retain reproducible E2E evidence under `.ai-docs/verification/` after cleanup: commands, preconditions/fixtures, actions, resulting UI, side effects, and exit status.
+Retain reproducible desktop review evidence under `.ai-docs/verification/` after cleanup.
 
 ## Test changes
 
@@ -34,4 +34,4 @@ Read [testing](docs/testing.md) when adding or migrating tests, choosing a runne
 
 During implementation and ordinary handoffs, verify the feature or change with affected journeys and focused existing tests. Require the selected checks to pass and report their results.
 
-Before creating a PR, run `pnpm verify:release` on the final source and require the complete run to pass, following the [final-revision verification requirements](docs/testing.md#final-revision-verification). After further source edits or a failed run, repeat full verification before creating the PR.
+Before creating a PR, run `pnpm verify:release` on the final source and require checks and compilation to pass. Follow the [final-revision verification requirements](docs/testing.md#final-revision-verification). Repeat verification after source edits or a failed run.

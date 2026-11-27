@@ -1,4 +1,4 @@
-import { initialState, type Activity } from '../../../src/shared/model'
+import { initialState, type Activity } from '../src/shared/model'
 
 export function fixturePatch(path: string, lines: number) {
     const before = Array.from({ length: lines }, (_, index) => `    const value${index} = "before ${index}";`)

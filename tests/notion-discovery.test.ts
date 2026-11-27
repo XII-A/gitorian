@@ -1,135 +1,143 @@
-import { Effect } from 'effect'
+import { deferred } from './deferred'
 import { run, notionClient, transportClient } from './effect-fixtures'
-import { expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, expect, it } from 'vitest'
+import { http } from 'msw'
+import { setupServer } from 'msw/node'
 import type { NotionDiscoveryProgress } from '../src/shared/model'
-import { HttpError } from '../src/main/http'
-import { discoverNotionPages } from '../src/main/notion-discovery'
-const urlOf = (input: Parameters<typeof fetch>[0]) => (input instanceof Request ? input.url : input.toString())
-const page = (id: string, parent: object = { workspace: true }) => ({
+const endpoint = 'https://api.notion.com/v1'
+const server = setupServer()
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+afterEach(() => server.resetHandlers())
+afterAll(() => server.close())
+
+async function discovery(respond: (path: string, request: Request) => Response | Promise<Response>) {
+    const requests: string[] = []
+    server.use(
+        http.all(endpoint + '/*', ({ request }) => {
+            const path = request.url.slice(endpoint.length + 1)
+            requests.push(path)
+            return respond(path, request)
+        })
+    )
+    return { notion: notionClient(await transportClient(), () => 'fixture-token'), requests }
+}
+const page = (id: string, parent: object = { workspace: true }, title = id) => ({
     id,
     url: `https://www.notion.so/${id}`,
     parent,
-    properties: { Name: { title: [{ plain_text: id }] } }
+    properties: { Name: { title: [{ plain_text: title }] } }
 })
 it('opens a large indexed tree without reading page contents', async () => {
-    const requests: string[] = []
-    const transport = vi.fn<typeof fetch>((input, init) => {
-        const path = urlOf(input).replace('https://api.notion.com/v1/', '')
-        requests.push(path)
-        if (path !== 'search') throw new Error(`Initial discovery crawled content: ${path}`)
-        if (typeof init?.body !== 'string') throw new Error('Expected JSON request body')
-        const offset = JSON.parse(init.body).start_cursor ? 100 : 0
-        return Promise.resolve(
-            Response.json({
-                results: Array.from({ length: 100 }, (_, i) => page(`p${offset + i}`)),
-                has_more: offset === 0,
-                next_cursor: offset === 0 ? 'next' : null
-            })
-        )
+    const { notion, requests } = await discovery(async (path, request) => {
+        if (path !== 'search') return Response.json({}, { status: 500 })
+        const offset = ((await request.json()) as { start_cursor?: string }).start_cursor ? 100 : 0
+        return Response.json({
+            results: Array.from({ length: 100 }, (_, index) => page('p' + String(offset + index))),
+            has_more: offset === 0,
+            next_cursor: offset === 0 ? 'next' : null
+        })
     })
-    const nodes = await run(notionClient(await transportClient(transport), () => 'fixture-token').accessiblePages())
-    expect(nodes).toHaveLength(200)
+    expect(await run(notion.accessiblePages())).toHaveLength(200)
     expect(requests).toEqual(['search', 'search'])
 })
 it('searches a specific page by title without enumerating unrelated content', async () => {
-    const transport = vi.fn<typeof fetch>((input, init) => {
-        const path = urlOf(input).replace('https://api.notion.com/v1/', '')
-        if (path === 'search') {
-            if (typeof init?.body !== 'string') throw new Error('Expected JSON request body')
-            expect(JSON.parse(init.body).query).toBe('Decisions')
-            return Promise.resolve(Response.json({ results: [page('result', { page_id: 'parent' })], has_more: false }))
-        }
-        if (path === 'pages/parent') return Promise.resolve(Response.json(page('parent')))
-        throw new Error(`Search crawled unrelated content: ${path}`)
+    const { notion, requests } = await discovery(async (path, request) => {
+        if (path === 'search' && ((await request.json()) as { query?: string }).query === 'Decisions')
+            return Response.json({ results: [page('result', { page_id: 'parent' })], has_more: false })
+        if (path === 'pages/parent') return Response.json(page('parent'))
+        return Response.json({}, { status: 500 })
     })
-    const nodes = await run(
-        notionClient(await transportClient(transport), () => 'fixture-token').accessiblePages(undefined, undefined, {
-            query: 'Decisions'
-        })
-    )
+    const nodes = await run(notion.accessiblePages(undefined, undefined, { query: 'Decisions' }))
     expect(nodes.find((node) => node.id === 'result')).toMatchObject({ parentId: 'parent' })
     expect(nodes.find((node) => node.id === 'parent')).toBeDefined()
-    expect(transport).toHaveBeenCalledTimes(2)
+    expect(requests).toEqual(['search', 'pages/parent'])
 })
 it('looks up a pasted Notion page link directly when title search has not indexed it', async () => {
     const id = '12345678-1234-1234-1234-123456789abc'
-    const transport = vi.fn<typeof fetch>((input) => {
-        expect(urlOf(input)).toBe(`https://api.notion.com/v1/pages/${id}`)
-        return Promise.resolve(Response.json(page(id)))
-    })
+    const { notion, requests } = await discovery((path) =>
+        path === 'pages/' + id ? Response.json(page(id)) : Response.json({}, { status: 500 })
+    )
     const nodes = await run(
-        notionClient(await transportClient(transport), () => 'fixture-token').accessiblePages(undefined, undefined, {
+        notion.accessiblePages(undefined, undefined, {
             query: 'https://www.notion.so/Decisions-12345678123412341234123456789abc?source=copy_link'
         })
     )
     expect(nodes.map((node) => node.id)).toEqual([id])
-    expect(transport).toHaveBeenCalledOnce()
+    expect(requests).toEqual(['pages/' + id])
 })
 it('resumes the same branch after throttling without redoing search', async () => {
+    const branch = 'blocks/parent/children?page_size=100'
     let throttled = false
-    const transport = vi.fn<typeof fetch>((input) => {
-        const path = urlOf(input).replace('https://api.notion.com/v1/', '')
-        if (path !== 'blocks/parent/children?page_size=100') throw new Error(`Unexpected read: ${path}`)
+    const { notion, requests } = await discovery((path) => {
+        if (path !== branch) return Response.json({}, { status: 500 })
         if (!throttled) {
             throttled = true
-            return Promise.resolve(new Response('{}', { status: 429, headers: { 'Retry-After': '1' } }))
+            return Response.json({}, { status: 429, headers: { 'Retry-After': '1' } })
         }
-        return Promise.resolve(Response.json({ results: [], has_more: false }))
+        return Response.json({ results: [], has_more: false })
     })
     const updates: NotionDiscoveryProgress[] = []
     const nodes = await run(
-        notionClient(await transportClient(transport), () => 'fixture-token').accessiblePages(
-            (update) => updates.push(update),
-            undefined,
-            { parent: { kind: 'page', id: 'parent', title: 'Parent', url: '' } }
-        )
+        notion.accessiblePages((update) => updates.push(update), undefined, {
+            parent: { kind: 'page', id: 'parent', title: 'Parent', url: '' }
+        })
     )
     expect(nodes.map((node) => node.id)).toEqual(['parent'])
-    expect(transport).toHaveBeenCalledTimes(2)
+    expect(requests).toEqual([branch, branch])
     expect(updates).toContainEqual(expect.objectContaining({ stage: 'waiting' }))
 })
 it('cancels discovery while waiting for a search rate-limit reset', async () => {
     const controller = new AbortController()
-    const request = vi.fn(() => Promise.reject(new HttpError(429, 'Wait', Date.now() + 60000)))
+    const waiting = deferred<undefined>()
+    const { notion, requests } = await discovery(() =>
+        Response.json({}, { status: 429, headers: { 'Retry-After': '60' } })
+    )
     const result = run(
-        discoverNotionPages(
-            () => Effect.tryPromise({ try: request, catch: (error) => error as Error }),
-            undefined,
-            controller.signal
-        )
+        notion.accessiblePages((update) => {
+            if (update.stage === 'waiting') waiting.resolve(undefined)
+        }, controller.signal)
     ).catch((error: unknown) => error)
-    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce())
-    controller.abort(new Error('Discovery cancelled'))
-    expect(await result).toMatchObject({ name: 'AbortError' })
-    expect(request).toHaveBeenCalledOnce()
+    try {
+        await Promise.race([
+            waiting.promise,
+            result.then(() => {
+                throw new Error('Discovery ended before reporting a rate-limit wait')
+            })
+        ])
+        controller.abort(new Error('Discovery cancelled'))
+        expect(await result).toMatchObject({ name: 'AbortError' })
+        expect(requests).toEqual(['search'])
+    } finally {
+        controller.abort()
+        await result
+    }
 })
 it('stops after bounded rate-limit retries instead of waiting forever', async () => {
-    const request = vi.fn(() => Promise.reject(new HttpError(429, 'Still limited', Date.now())))
-    const result = run(
-        discoverNotionPages(() => Effect.tryPromise({ try: request, catch: (error) => error as Error }))
-    ).catch((error: unknown) => error)
-    expect(await result).toMatchObject({ status: 429 })
-    expect(request).toHaveBeenCalledTimes(4)
+    const { notion, requests } = await discovery(() =>
+        Response.json({}, { status: 429, headers: { 'Retry-After': '1' } })
+    )
+    await expect(run(notion.accessiblePages())).rejects.toMatchObject({ status: 429 })
+    expect(requests).toEqual(['search', 'search', 'search', 'search'])
 })
 async function fixture(pages: object[], ancestors: Record<string, object | number>) {
-    const transport = vi.fn<typeof fetch>((input, init) => {
-        let path = urlOf(input).replace('https://api.notion.com/v1/', '')
-        if (path.endsWith('/query') && typeof init?.body === 'string') {
-            const cursor = JSON.parse(init.body).start_cursor
-            if (cursor) path += `?start_cursor=${cursor}`
+    return discovery(async (path, request) => {
+        if (path.endsWith('/query')) {
+            const cursor = (await request.json()).start_cursor
+            if (typeof cursor === 'string') path += '?start_cursor=' + cursor
         }
-        if (path === 'search') return Promise.resolve(new Response(JSON.stringify({ results: pages, has_more: false })))
+        if (path === 'search') return Response.json({ results: pages, has_more: false })
         const result = ancestors[path] ?? (path.includes('/children?') ? { results: [], has_more: false } : undefined)
-        if (result === undefined) throw new Error(`Unexpected request: ${path}`)
-        return Promise.resolve(
-            typeof result === 'number' ? new Response('{}', { status: result }) : new Response(JSON.stringify(result))
-        )
+        if (result === undefined) return Response.json({}, { status: 500 })
+        return typeof result === 'number' ? Response.json({}, { status: result }) : Response.json(result)
     })
-    return { notion: notionClient(await transportClient(transport), () => 'fixture-token'), transport }
 }
-it('places pages through shared nested blocks beneath their enclosing page with one read per ancestor', async () => {
-    const { notion, transport } = await fixture(
-        [page('journal'), page('first', { block_id: 'inner' }), page('second', { block_id: 'inner' })],
+it('keeps separate pages with the same title under their shared ancestor', async () => {
+    const { notion, requests } = await fixture(
+        [
+            page('journal'),
+            page('first', { block_id: 'inner' }, 'Notes'),
+            page('second', { block_id: 'inner' }, 'Notes')
+        ],
         {
             'blocks/inner': { parent: { block_id: 'outer' } },
             'blocks/outer': { parent: { page_id: 'journal' } }
@@ -137,17 +145,13 @@ it('places pages through shared nested blocks beneath their enclosing page with 
     )
     const progress: NotionDiscoveryProgress[] = []
     const nodes = await run(notion.accessiblePages((update) => progress.push(update)))
-    expect(progress).toEqual([
-        { stage: 'discovering', found: 0 },
-        { stage: 'discovering', found: 3 },
-        { stage: 'grouping', completed: 0, total: 3 },
-        { stage: 'grouping', completed: 1, total: 3 },
-        { stage: 'grouping', completed: 2, total: 3 },
-        { stage: 'grouping', completed: 3, total: 3 }
+    expect(progress.at(-1)).toEqual({ stage: 'grouping', completed: 3, total: 3 })
+    expect(nodes.filter((n) => n.parentId === 'journal')).toMatchObject([
+        { id: 'first', title: 'Notes' },
+        { id: 'second', title: 'Notes' }
     ])
-    expect(nodes.filter((n) => n.parentId === 'journal').map((n) => n.id)).toEqual(['first', 'second'])
     expect(nodes.every((n) => n.kind === 'page')).toBe(true)
-    expect(transport.mock.calls.filter(([url]) => /\/blocks\/(inner|outer)$/.test(urlOf(url)))).toHaveLength(2)
+    expect(requests.filter((path) => /^blocks\/(inner|outer)$/.test(path))).toEqual(['blocks/inner', 'blocks/outer'])
 })
 it('finds unindexed descendants through paginated children and nested blocks on the first connection', async () => {
     const { notion } = await fixture([page('parent')], {
@@ -266,7 +270,7 @@ it('keeps readable pages when a child is inaccessible but rejects incomplete dis
     ).rejects.toThrow()
 })
 it('groups database entries by named data source and resolves a database inside a toggle', async () => {
-    const { notion, transport } = await fixture(
+    const { notion, requests } = await fixture(
         [
             page('work'),
             page('entry', { data_source_id: 'notes', database_id: 'db' }),
@@ -291,14 +295,14 @@ it('groups database entries by named data source and resolves a database inside 
         ['Tasks', 'work']
     ])
     expect(nodes.some((n) => n.id === 'db')).toBe(false)
-    expect(transport.mock.calls.filter(([url]) => urlOf(url).endsWith('/databases/db'))).toHaveLength(1)
+    expect(requests.filter((path) => path === 'databases/db')).toHaveLength(1)
 })
-it.each([403, 404])('keeps accessible pages visible when an ancestor returns %s', async (status) => {
+it('keeps accessible pages visible when an ancestor is inaccessible', async () => {
     const { notion } = await fixture(
         [page('entry', { block_id: 'private' }), page('card', { data_source_id: 'private' })],
         {
-            'blocks/private': status,
-            'data_sources/private': status
+            'blocks/private': 403,
+            'data_sources/private': 404
         }
     )
     expect((await run(notion.accessiblePages())).map((n) => [n.id, n.parentId])).toEqual([
@@ -313,7 +317,7 @@ it('surfaces ancestor transport failures so the connection can retry', async () 
 it('terminates cyclic and excessively deep ancestry without losing the discovered pages', async () => {
     const ancestors: Record<string, object> = { 'blocks/cycle': { parent: { block_id: 'cycle' } } }
     for (let i = 0; i < 40; i++) ancestors[`blocks/b${i}`] = { parent: { block_id: `b${i + 1}` } }
-    const { notion, transport } = await fixture(
+    const { notion, requests } = await fixture(
         [page('cyclic', { block_id: 'cycle' }), page('deep', { block_id: 'b0' })],
         ancestors
     )
@@ -321,5 +325,5 @@ it('terminates cyclic and excessively deep ancestry without losing the discovere
         ['cyclic', undefined],
         ['deep', undefined]
     ])
-    expect(transport.mock.calls.filter(([url]) => !urlOf(url).includes('/children?')).length).toBeLessThanOrEqual(34)
+    expect(requests.filter((path) => !path.includes('/children?')).length).toBeLessThanOrEqual(34)
 })

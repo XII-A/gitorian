@@ -2,11 +2,11 @@
 
 ## Typography review
 
-Manually review bundled Geist Sans upright/italic prose and Geist Mono code/paths/identifiers at 12-16px, narrow widths and 200% zoom. Preserve multilingual shaping, fallback and emoji. Existing code-block and writing-direction journeys own code interaction and durable multilingual editing; appearance is not a CSS-token or screenshot assertion gate.
+Manually review bundled Geist Sans upright/italic prose and Geist Mono code/paths/identifiers at 12-16px, narrow widths and 200% zoom. Preserve multilingual shaping, fallback and emoji.
 
 ## Header atmosphere
 
-Review hub/workspace skies manually for local-time colors, breadcrumb contrast, restrained motion, reduced motion and usable static fallback. Shader draw counts, entry opacity frames and route stress loops are not automated release gates. Writing, input, recovery and persistence remain covered by the journeys below.
+Review hub/workspace skies manually for local-time colors, breadcrumb contrast, restrained motion, reduced motion and usable static fallback. Shader draw counts, entry opacity frames and route stress loops are not automated release gates. Review the affected writing and recovery paths below.
 
 Start or resume a weekly entry, edit structured writing, cite work, and recover local writing without a Notion connection.
 
@@ -20,8 +20,8 @@ Start or resume a weekly entry, edit structured writing, cite work, and recover 
 - `writing.code`: typed/pasted language fences and slash Code block use the same editable code node. Search/change Code language, Copy code, and Wrap lines/Unwrap lines retain raw text and saved language.
 - `writing.citation`: selected activity is inserted without losing surrounding writing; undo removes the insertion.
 - `writing.clipboard`: workspace right-click and Shift+F10 expose Arc Cut, Copy and Paste for the title, body and selected read-only text.
-- `writing.checklist`: formatter and task shortcut insertion, editable text beside checkboxes, Enter continuation/exit, Backspace/undo and saved checked state. Run `pnpm verify writing-checklist`.
-- `writing.slash`: literal slashes, lasting dismissal, Close menu, multiword commands and saved text. Run `pnpm test:e2e slash-menu`.
+- `writing.checklist`: formatter and task shortcut insertion, editable checkbox text, Enter continuation and exit, Backspace and undo.
+- `writing.slash`: literal slashes, lasting dismissal, Close menu, multiword commands and saved text.
 - `writing.update`: background update download preserves input, focus and autosave; explicit installation checkpoints the final revision. Owned by the [app updates journey](app-updates.md).
 
 ## How to get to it (user POV)
@@ -32,21 +32,19 @@ From the hub use `Write this week’s entry` or `Open journal` to create or resu
 
 ### Slash menu journey
 
-`tests/e2e/slash-menu.spec.ts` owns native slash-menu input in a journal-only profile. Require embedded slashes to stay literal; Escape, outside press, Close menu (pointer/Enter/Tab), and Space after bare or unmatched queries must stay dismissed during continued input. Close menu retains the query and editor focus; outside dismissal retains the outside target's focus. A fresh matching multiword command must still execute. Retain the Close menu detail, literal-writing and reload screenshots, saved-body.json and independent post-exit persisted-drafts.json; require successful run.json and cleanup.removed. The formatter-menu tests own inexpensive matching, marked/atom prefix handling, mapped dismissal positions, query recovery and create/convert semantics.
+Type embedded slashes, dismiss a query with Escape, outside click, Close menu and Space, then continue typing. Verify literal text, focus and a fresh multiword command.
 
 ### Checklist journey
 
-After `pnpm build`, run `pnpm verify writing-checklist` (`tests/e2e/writing-checklist.spec.ts`). The shared desktop fixture owns a journal-only disposable profile with disconnected providers and no repositories. Open journal from the hub creates the current week's draft; resume opens the existing draft.
+Open a new journal-only draft in the disposable desktop profile and clear the template.
 
 The journey clears the template with native selection/typing, chooses Checklist with the pointer, and types immediately. Require text to appear beside the checkbox, not below it. Enter must create an unchecked item whose empty text area accepts a pointer click after focus leaves the editor. Backspace deletes text normally; at an item's start it unwraps while preserving text, and undo restores the task and preceding paragraph. After native Home input, wait until the editor observes the caret at the task's start before sending Backspace; DOM selection and editor state settle through `selectionchange`. Enter on an empty item exits to a paragraph. Keyboard formatter selection and the editor's typed `[ ] ` shortcut reach the same behavior. Autosave, renderer reload and a post-exit read-only SQLite query must preserve the document and checked state.
-
-Inspect `run.json` for `passed: true`, `exit: 0` and `cleanup.removed: true`. Retain numbered screenshots, actions, trace, `inserted-dom.json`, `saved-body.json` and `persisted-drafts.json` in the printed evidence directory. This proves renderer reload and durable storage, not a full process restart or external publishing.
 
 ### Other writing paths
 
 Preconditions: `pnpm build`. `pnpm smoke` runs `tools/desktop-smoke.mjs` against temporary repositories and an isolated profile. It drives real writing before explicitly switching to the sample workspace. Use the existing source as the executable journey and keep its real/sample phases distinct.
 
-- **Start:** `[aria-label="Open journal"]` creates or resumes the weekly draft. `[aria-label="Journal breadcrumb"]` returns to the hub. The legacy smoke's no-draft-created expectation predates the hub's automatic writing start; the checklist journey observes the current behavior.
+- **Start:** `[aria-label="Open journal"]` creates or resumes the weekly draft. `[aria-label="Journal breadcrumb"]` returns to the hub.
 - **Type/save:** focus `[aria-label="Journal body"]`; `webContents.insertText('The draft survives a restart.')` exercises real input. Wait for a real IPC draft result containing that text, reload the workspace, and require the rendered text to survive.
 - **Recovery:** the existing harness injects a newer recovery record as explicit fault setup, then reloads and observes recovered text. This is recovery coverage, not user input.
 - **Citation:** the sample phase inserts an activity citation and tests detached reference behavior. Repeat citation in real fixture mode and verify the saved body for a real-persistence claim.
@@ -55,82 +53,75 @@ Preconditions: `pnpm build`. `pnpm smoke` runs `tools/desktop-smoke.mjs` against
 
 ## Code block journey
 
-Run `pnpm build`, `pnpm verify doctor`, then `pnpm test:e2e code-block`. This journal-only Playwright journey uses pointer/keyboard input, native Electron clipboard, the real preload and autosave, and an independent post-exit SQLite query. It covers Highlights initialization without document/history changes, native undo/redo, a typed JavaScript fence, plain-text selection and searchable keyboard language change to TypeScript, Escape focus, editing, exact code copy (including LF on Windows), measured horizontal overflow before/after keyboard wrap and pointer unwrap, an unknown pasted fence, literal Markdown paste inside code, autosave and renderer reload. Keep the numbered screenshots and code-block close-up, persisted-drafts.json, trace, actions.jsonl and run.json; require clean exit and cleanup.removed. HTML/Markdown language round trips, provider alias normalization and unknown-language fallback are covered by the focused editor/format tests. No live Notion requests are made.
+Type and paste language fences, use keyboard language selection, edit the code and undo. Check exact clipboard contents, wrap and unwrap, and retained text and language after reopening.
 
 The language, copy and wrap actions share one floating tray overlaid at the block's top-right corner, using image action colors with compact shadowless controls. Require a single code line to have equal top/bottom inset, and its toolbar to be at most 32px tall with no box-shadow. The horizontal Arc ScrollArea owns scrolling; wheel left/right and confirm the overlay toolbar stays fixed. Move the pointer across Copy, Wrap and Code language and require the same single highlight to match each control, including keyboard focus on language after Shift+Tab. Check its bounds are inside the code block, confirm Copy changes its icon without a visible status row, and inspect the centered single-line, TypeScript showcase and search-header menu screenshots. Open Code language, search through Search code language, pick by pointer/keyboard, and use one Escape to restore focus. Tab continues to the next toolbar action and an outside click retains focus on its target; one popup must contain the fixed search header and scrolling options. Scroll the language list and require the search field to stay in place. Check empty-result recovery and selected-language retention. Require colored keyword tokens after language changes and editing, with none in Plain text or an unknown language. The picker combines the pinned Highlights lexer catalog with provider language labels and Plain text. Unsupported provider/saved languages remain literal and retain their selected value; do not assert an obsolete fixed choice count. Decorations must not enter saved JSON or HTML. The engine test mounts the real React node view when asserting decoration output.
 
-Copy and wrapping remain available in read-only editors; the language action is disabled. Wrapping is local view state and resets on remount. Unknown fence languages remain visible and stored locally; the Notion adapter exports unsupported languages as plain text. The existing slash menu still owns Code block creation; its formatter-menu tests cover that entry point. Native whole-document copy/paste also exercises a multiword provider language (Visual basic) before returning to TypeScript.
+Copy and wrapping remain available in read-only editors; the language action is disabled. Wrapping is local view state and resets on remount. Unknown fence languages remain visible and stored locally; the Notion adapter exports unsupported languages as plain text. Check Code block creation through the slash menu. Native whole-document copy/paste also exercises a multiword provider language (Visual basic) before returning to TypeScript.
 
 ## Gotchas
 
 Run `pnpm verify publishing` after a build for Notion publishing feedback. This journal-only Electron fixture uses the real preload, IPC, publishing adapter, encrypted fixture credential and store with simulated Notion HTTP. Publish must show `Published to Notion` and change the header action to `Update in Notion`. Edit using native text input, update the same page, and require `Updated in Notion`, one page creation, and update requests. Reload preserves the update label. A simulated 403 must show recovery without a success toast. The runner independently checks persisted writing and retains screenshots, HTTP bodies, actions, process exit and cleanup. It makes no live Notion requests.
 
-The diagnostic's reload keeps the main process alive; it is not a full process restart. Its historical assertion names do not strengthen that proof. A full-restart persistence claim requires closing and reopening the same disposable profile. Sample-mode Publish is simulated. Real Notion publishing requires an authorized test destination and is outside this local journey. Keep the existing autosave/race/editor behavior tests while these gaps remain.
+The diagnostic's reload keeps the main process alive; it is not a full process restart. Its historical assertion names do not strengthen that proof. A full-restart persistence claim requires closing and reopening the same disposable profile. Sample-mode Publish is simulated. Real Notion publishing requires an authorized test destination and is outside this local journey.
 
 ## Workspace clipboard journey
 
-Run `pnpm build`, `pnpm verify doctor`, then `pnpm test:e2e workspace-clipboard`. The journal-only Playwright scenario owns clipboard behavior; it creates no repositories and uses no integrations.
+Use a journal-only disposable profile to review clipboard behavior.
 
-The journey starts from hub Open journal, types bold body text, copies and cuts through the mouse menu, undoes the cut and pastes the rich text. It cuts/pastes the title, checks Shift+F10, keyboard selection and Escape focus restoration, then copies selected Activity heading text with unavailable Cut/Paste actions omitted. Outside press closes the menu; reduced motion retains keyboard access. Reload and an independent post-exit SQLite read must retain the title and both bold text copies. In the selected-text menu screenshot, verify compact secondary Arc keycaps for Ctrl and X/C/V aligned at the trailing edge, no row icons, and dividers around spelling groups. Keep the named screenshots, persisted-drafts.json, trace, actions and successful run.json with cleanup evidence.
+The journey starts from hub Open journal, types bold body text, copies and cuts through the mouse menu, undoes the cut and pastes the rich text. It cuts/pastes the title, checks Shift+F10, keyboard selection and Escape focus restoration, then copies selected Activity heading text with unavailable Cut/Paste actions omitted. Outside press closes the menu; reduced motion retains keyboard access. Reload and an independent post-exit SQLite read must retain the title and both bold text copies. In the selected-text menu screenshot, verify compact secondary Arc keycaps for Ctrl and X/C/V aligned at the trailing edge, no row icons, and dividers around spelling groups.
 
 Database evidence uses `journal.sqlite`, with relational `drafts` (`body` JSON, `version` integer), `draft_selections`, `publication_attempts` and `entry_coverage`. Recovery copies carry their saved draft version. Both reopening a conflicting recovery copy and a live stale autosave open the Arc **Choose which writing to keep** dialog. Select **Saved writing** or **Recovery copy**, then submit **Keep saved writing** or **Use recovery copy**. Selection alone never resolves the conflict. Escape and outside presses cannot dismiss it; there is no close button. Both copies remain available until the chosen action succeeds. A newer saved version requires a fresh choice; a failed save leaves retry guidance inside the dialog.
 
-Run `pnpm build`, `pnpm verify doctor`, then `pnpm test:e2e draft-recovery`. This owning journey uses a journal-only disposable profile and real IPC/SQLite. Older recovery data and a second writer are explicit fixture setup; a temporary SQLite trigger simulates write failure. Require blocked dismissal, keyboard focus containment and return, selection without submission, both confirmed choices, failure/retry in the dialog, unresolved reload, another writer during resolution, and durable post-exit writing. Check dialog bounds at desktop, 1000px, 768px and 390px window widths. Retain `conflict-dialog.png`, numbered screenshots, fixture details, persisted-drafts.json, trace, actions and successful run.json with clean exit and cleanup. Reload keeps the main process running; it is not a full process restart. `tests/workspace-writing.test.ts` retains focused in-flight save/acknowledgment behavior.
+For draft conflict changes, review both confirmed choices, focus return, failure/retry and persistence after reopening.
 
 For release typing latency, run `pnpm smoke:writing:release`. It shares the development replay but loads the built renderer, retains the CPU profiles and JSON timing report, checks the persisted body against the editor, and requires p95 dispatch-to-ack under 33 ms, no application long tasks and no main-thread SQLite transactions. Development React profiling overhead remains visible in `pnpm smoke:writing`; do not relabel a failed development run as passing.
 
 ## Block-first selection
 
-Run pnpm test:e2e select-all for paragraph, multiline code and list text selection, repeated escalation, caret reset, empty-block document selection and replacement/undo through native keyboard input. The shared journal extension also supplies template editing. Code-block whole-document clipboard round trips explicitly press Select All twice.
+Use Select All in a paragraph, code block and list. Check block-first selection, repeated escalation, caret reset, replacement and undo.
 
 ## Autosave failure feedback
 
-Run `pnpm build`, `pnpm verify doctor`, then `pnpm test:e2e workspace-save-errors draft-recovery`.
-`workspace-save-errors` owns journal-only autosave rejection: its Electron IPC registration fixture rejects only the selected draft command, retaining real renderer, preload and SQLite. From hub Open journal, type "Writing that could not be saved". Require one persistent **Could not save writing** toast with **Retry saving**, no footer error, recovery storage containing later edits, and a retry that still fails without losing input. Remove the injected rejection and retry; require the toast to disappear, normal saved status, reload retention and independent post-exit SQLite evidence. Keep numbered PNGs, source.patch, actions, trace, persisted-drafts.json and successful run.json with cleanup.removed. The conflict dialog remains owned by draft-recovery; inspector diff errors remain inline.
+After a simulated failure, check that autosave offers one retry toast and preserves the latest edited text.
 
 ## Emoji
 
-Run `pnpm test:e2e emoji` in a disposable journal profile. Type `:rocket`, choose with Enter, then open `/emoji` from the formatter: it becomes a literal `:` with editing focus retained. Type to search, use the Arc category tabs, and check Recent ordering after repeated picks and renderer reload. Verify insertion replaces the trigger, unmatched queries show recovery copy, Escape retains text, and both inserted emoji survive autosave and reopening after reload. At the footer, slash, colon and pointer formatter-to-emoji menus lock the writing viewport while retaining menu scrolling; Escape restores native writing scrolling. Require the formatter picker to retain a usable height and fit within the window. The journey retains a footer formatter screenshot alongside browse, filtered, and inserted screenshots. Emoji are ordinary Unicode text, so existing save/export paths apply.
+Type `:rocket` and select with Enter. Open `/emoji`, search, use the category tabs and check Recent after reopening. Check Escape, footer scrolling and saved text.
 
 The grid retains its rows and uses browser-native `content-visibility: auto` with fixed row geometry. A bundled lossless glyph atlas avoids cold color-font shaping and painting when scrolling. Insertion still writes Unicode text. Regenerate the atlas on Windows with `node tools/generate-emoji-atlas.mjs` after updating gemoji. The generator owns and removes a disposable Electron profile.
 
-Cold-open verification retains `emoji-open-timing.json`, requires less than 200ms, and bounds the number of browser-rendered options below 400 (offscreen DOM rows remain available). The ScrollArea height has an explicit fallback before Radix publishes its placement variables. Category tests require an evenly filled strip and transparent hovered/focused tabs. Emoji option hover and keyboard selection share a brighter semantic foreground/surface mix.
+Review cold opening and scroll performance using the real picker.
 
-The same owning journey exercises seven native wheel jumps from 800 to 2400px and direction reversals under 4x CPU slowdown. `emoji-scroll-frames.json` retains animation-frame timestamps, scroll offsets and intersecting emoji rows. Require no empty sampled viewports and no frame gap over 150ms. Split traces into `before-scroll-trace.zip`, `scroll-trace.zip`, and `trace.zip`: screenshot/DOM snapshot collection is disabled only during the timed portion because profiling showed snapshot traversal distorting frame timing. Input stays native through CDP wheel events. Retain the scrolled and hover screenshots after normal tracing resumes. Category controls stay above content with a 16px group gap; check bounds at 390, 768, 1024 and 1440px, 200% zoom and the RTL mirror.
+Review rapid native scrolling and direction reversals at narrow widths, zoomed and in RTL.
 
-Flags are not offered: the catalog excludes the Flags category before building search and history lookups. The emoji journey seeds a formerly picked Syria flag, verifies no Flags tab or flag in All/Recent, and verifies `:syria` shows no matches. Stored journal text and the cached atlas stay unchanged.
-
-
+Flags are not offered: the catalog excludes the Flags category before building search and history lookups. Search and Recent omit those entries.
 
 ## Local history and optional publishing
 
-`pnpm test:e2e entry-history` owns mixed local/remote cursor pagination, gated search waiting feedback, body search, reader close clearing selection while returning keyboard focus, compact Arc header action keyboard navigation, standalone local-only Edit navigation, gated entry-body skeletons, shared warm reads without workspace payloads, generation-fenced document reads, retained remote reading, background snapshot revalidation without a loading skeleton or lost reader scroll position, exact stored-week editing after calendar preference changes, autosave/reload, disconnected publishing absence, and independent SQLite persistence. Local writing replaces linked Notion snapshots in history; image-only and title-only documents count, while empty generated date placeholders do not. Database tests own linked-empty deduplication, locale search, mixed pagination and image history references. Notion remains optional in Settings. Connected profiles missing a destination get an actionable setup control; uncertain publication verification remains in its existing recovery toast after disconnect. Integration transport scenarios remain simulations, never live publishing.
-
+Exercise local and remote pagination, body search, pending reads, focus return, exact-week editing and autosave after reopening. Database tests cover linked-empty deduplication, locale search and image references.
 
 ## Multilingual direction
 
-Build the final source, run `pnpm verify doctor`, then run `pnpm test:e2e writing-direction workspace-clipboard image-direction` sequentially through the runner. Use the existing disposable journal-only profiles; simulated native picker responses do not authorize live publishing.
+Review multilingual writing and clipboard behavior with an isolated journal profile.
 
-- `writing-direction.spec.ts` owns native Arabic/Turkish entry, independent automatic paragraphs, absence of document/block direction buttons, checklist marker geometry and full process restart. Require the restarted UI and independent SQLite body policy to agree. Retain mixed-writing and restart screenshots plus persisted-writing.json.
-- `workspace-clipboard.spec.ts` owns complete-block inherited policy transfer and destination policy for inline paste, alongside the existing native rich clipboard/context-menu scenario. Require source Automatic to stay a policy rather than a frozen inferred direction. The same journey covers partial rich-paste edges, multiline plain/Markdown destination overrides, and simulated external plain-text drop with a caret in a differently directed paragraph. The drop must use its insertion context.
-- `image-direction.spec.ts` owns an actual validated image imported through preload with a simulated native picker selection, automatic multiline Unicode captions without direction controls, focus return, read-only history caption parity and no mutation of the previously selected paragraph.
-- `tests/journal-direction.test.ts` owns the shared command interface: override reset/undo, read-only rejection, untouched-neighbor rendering, split/conversion policy, toggle unwrap and combining-mark-aware word deletion. `tests/formatter-menu.test.ts` owns template insertion without changing the destination document default.
+- Type Arabic and Turkish text, add checklists and check direction after reopening.
+- Copy complete blocks and inline text. Check that complete blocks preserve their direction policy and inline text inherits its destination.
+- Import an image and write a multiline caption. Check direction, focus return and retained content.
 - `tests/journal-database.test.ts` owns unchanged remote projection preserving exact local policy, genuine remote body replacement and stale-refresh rejection. Existing journal publishing scenarios exercise lost-response confirmation and durable local direction. Run `pnpm verify publishing` for simulated HTTP publishing feedback and independent storage evidence.
 
 Manually inspect Arabic shaping, quote/toggle placement, marker sides, long mixed paragraphs, title alignment and captions at narrow widths. Writing is automatic with no document, block or caption direction controls. Imported and saved direction policies must still round-trip. Automatic means first strong character. Notion's interface currently cannot preserve forced direction remotely, so do not claim a remote override round trip. Interface translation, language-specific search and spellcheck are outside this feature.
 
-All claimed journeys must exit zero with run.json.passed and cleanup.removed true. Keep failures and successful artifacts under ignored .ai-docs/verification; screenshots alone do not prove persistence.
+Review toggle continuation, body entry, Backspace, indentation, undo and persistence when changing the editor.
 
-Toggle editing is also owned by `writing-direction`: native closed-summary continuation, open-summary body entry, protected body Backspace, Shift+Tab/Tab movement and undo, followed by process restart and SQLite evidence. Toggles start collapsed; content brightness derives from body nodes, including non-text blocks. Inspect LTR and RTL triangle rotation and reduced motion manually.
-
-Within toggle bodies, repeated Enter retains blank paragraphs; Backspace on the final empty direct body block outdents through the same transaction as Shift+Tab. The writing-direction journey owns native input and undo for this behavior.
+Within toggle bodies, repeated Enter retains blank paragraphs; Backspace on the final empty direct body block outdents through the same transaction as Shift+Tab.
 
 Backspace on an empty body block with following siblings deletes only the blank block and keeps the later content inside the toggle. The native writing-direction scenario and editor boundary cases cover this distinction.
 
-Deleting internal blank toggle blocks moves the caret backward to the preceding block end. The native journey removes two consecutive blank lines and verifies the following text stays intact.
+Deleting internal blank toggle blocks moves the caret backward to the preceding block end. Check that following text stays intact.
 
 For a toggle containing only its single empty placeholder, Backspace returns to the summary end without changing the document; a trailing empty block after other content still outdents. Covered with empty/nonempty titles and native RTL editing.
 
 ## Spelling context menu
 
-Run `pnpm test:e2e spelling workspace-clipboard`. The isolated English journal journey right-clicks a native misspelling, captures the Arc suggestions menu, corrects and saves, learns a word through the session dictionary, and disables/re-enables spell check. The clipboard journey owns keyboard menu opening and focus restoration. Retain spelling-context-menu.png and successful run.json with cleanup.removed. The journey types each word and allows native spellchecking to mark it before opening the menu; learning removes its test dictionary entry afterward. Dictionary availability requires the native English dictionary to finish downloading.
+Use a disposable English profile to review the spelling menu, correcting and learning a word, Shift+F10, focus return and the spellcheck setting.

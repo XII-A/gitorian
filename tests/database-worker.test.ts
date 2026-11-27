@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { Worker } from 'node:worker_threads'
+import type { Worker } from 'node:worker_threads'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,12 +9,19 @@ import sharp from 'sharp'
 
 it('surfaces a stalled save without replaying it and permits an explicit retry after worker exit', async () => {
     const root = await mkdtemp(join(tmpdir(), 'gitorian-worker-stall-'))
-    const stalled = vi.fn()
-    let database = await JournalDatabase.open(join(root, 'journal.sqlite'), stalled)
+    const path = join(root, 'journal.sqlite')
+    let stalls = 0
+    let database = await JournalDatabase.open(path, () => {
+        stalls++
+    })
+    const lock = new DatabaseSync(path)
     try {
         const draft = await database.createDraft('2026-10-26')
         const edit = { ...draft, title: 'Explicitly retried writing' }
-        const post = vi.spyOn(Worker.prototype, 'postMessage').mockImplementationOnce(() => undefined)
+        lock.exec(
+            'CREATE TRIGGER prevent_stalled_write BEFORE UPDATE ON drafts ' +
+                "BEGIN SELECT RAISE(ABORT, 'write interrupted'); END; BEGIN IMMEDIATE"
+        )
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
         const outcome = database.saveDraft(edit, draft.version).then(
             () => undefined,
@@ -23,17 +30,18 @@ it('surfaces a stalled save without replaying it and permits an explicit retry a
         await vi.advanceTimersByTimeAsync(30001)
         vi.useRealTimers()
         expect(await outcome).toBeInstanceOf(Error)
-        expect(stalled).toHaveBeenCalledTimes(1)
-        expect(post).toHaveBeenCalledTimes(1)
-        post.mockRestore()
+        expect(stalls).toBe(1)
         await expect(database.draft(draft.id)).rejects.toThrow('Reopen')
+        lock.exec('ROLLBACK')
         await database.close()
-        database = await JournalDatabase.open(join(root, 'journal.sqlite'))
+        lock.exec('DROP TRIGGER prevent_stalled_write')
+        database = await JournalDatabase.open(path)
         expect((await database.draft(draft.id))?.title).toBe(draft.title)
         expect((await database.saveDraft(edit, draft.version)).title).toBe(edit.title)
     } finally {
         vi.useRealTimers()
-        vi.restoreAllMocks()
+        if (lock.isTransaction) lock.exec('ROLLBACK')
+        lock.close()
         await database.close()
         await rm(root, { recursive: true, force: true })
     }
@@ -98,48 +106,43 @@ it('keeps foreground timers responsive during a locked commit and drains the acc
     }
 })
 
-it.each(['before commit', 'after commit before acknowledgment'] as const)(
-    'recovers worker death %s through a persisted version readback',
+it.each(['before commit', 'after commit'] as const)(
+    'recovers actual worker exit %s and permits safe save retry',
     async (stage) => {
         const root = await mkdtemp(join(tmpdir(), 'gitorian-worker-death-'))
-        const database = await JournalDatabase.open(join(root, 'journal.sqlite'))
-        const post = Worker.prototype.postMessage
+        const path = join(root, 'journal.sqlite')
+        const created = new Promise<Worker>((resolve) => process.once('worker', resolve))
+        const database = await JournalDatabase.open(path)
+        const worker = await created
         try {
             const draft = await database.createDraft('2026-10-26')
             const edit = { ...draft, title: 'Recoverable writing' }
-            const fault = vi.spyOn(Worker.prototype, 'postMessage').mockImplementationOnce(function (
-                this: Worker,
-                message
-            ) {
-                if (stage === 'before commit') {
-                    void this.terminate()
-                    return
+            if (stage === 'after commit') {
+                await database.saveDraft(edit, draft.version)
+                await worker.terminate()
+            } else {
+                const lock = new DatabaseSync(path)
+                try {
+                    lock.exec(
+                        'CREATE TRIGGER prevent_interrupted_write BEFORE UPDATE ON drafts ' +
+                            "BEGIN SELECT RAISE(ABORT, 'write interrupted'); END; BEGIN IMMEDIATE"
+                    )
+                    const save = expect(database.saveDraft(edit, draft.version)).rejects.toThrow(/worker|journal/i)
+                    const exited = worker.terminate()
+                    lock.exec('ROLLBACK')
+                    await exited
+                    await save
+                    lock.exec('DROP TRIGGER prevent_interrupted_write')
+                } finally {
+                    lock.close()
                 }
-                const emit = this.emit
-                this.emit = function (event: string | symbol, ...args: unknown[]) {
-                    if (
-                        event === 'message' &&
-                        args[0] &&
-                        typeof args[0] === 'object' &&
-                        'id' in args[0] &&
-                        args[0].id === message.id
-                    ) {
-                        void this.terminate()
-                        return true
-                    }
-                    return emit.call(this, event, ...args)
-                }
-                post.call(this, message)
-            })
-            await expect(database.saveDraft(edit, draft.version)).rejects.toThrow(/worker|journal/i)
-            fault.mockRestore()
+            }
             const committed = await database.draft(draft.id)
             expect(committed?.title).toBe(stage === 'before commit' ? draft.title : edit.title)
             const retried = await database.saveDraft(edit, draft.version)
             expect(retried.title).toBe(edit.title)
             expect(retried.version).toBe(2)
         } finally {
-            vi.restoreAllMocks()
             await database.close()
             await rm(root, { recursive: true, force: true })
         }

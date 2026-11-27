@@ -1,5 +1,7 @@
 import { journalState } from './database-fixtures'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, expect, it } from 'vitest'
+import { http } from 'msw'
+import { setupServer } from 'msw/node'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -9,13 +11,12 @@ import { JournalDatabase } from '../src/main/journal-database'
 import { validateImage, downloadImage } from '../src/main/images'
 import { imageIds, imageLimits } from '../src/shared/images'
 import { initialState } from '../src/shared/model'
-vi.mock('node:dns/promises', () => ({
-    lookup: vi.fn((host: string) =>
-        Promise.resolve([{ address: host === 'private.example' ? '127.0.0.1' : '93.184.216.34', family: 4 }])
-    )
-}))
+const server = setupServer()
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+afterAll(() => server.close())
 const directories: string[] = []
 afterEach(() => {
+    server.resetHandlers()
     for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 function location() {
@@ -143,18 +144,29 @@ it('validates references and hashes before restore and rolls back image and stat
     }
 })
 it('downloads bounded images without credentials and rejects unsafe redirect destinations', async () => {
+    // IP literals exercise the real address check without depending on public DNS.
+    const publicUrl = 'https://93.184.216.34/image'
+    const privateUrl = 'https://127.0.0.1/image'
     const bytes = await picture()
-    const fetcher = vi.fn<typeof fetch>(() => Promise.resolve(new Response(bytes)))
-    expect((await downloadImage('https://files.example/image', fetcher)).bytes).toEqual(bytes)
-    expect(fetcher.mock.calls[0][1]).toMatchObject({ credentials: 'omit', redirect: 'manual' })
-    expect(fetcher.mock.calls[0][1]?.headers).toBeUndefined()
-    await expect(downloadImage('https://private.example/image', fetcher)).rejects.toThrow('public')
-    fetcher.mockImplementation(() =>
-        Promise.resolve(new Response(null, { status: 302, headers: { location: 'https://private.example/image' } }))
+    const requests: Request[] = []
+    server.use(
+        http.get(publicUrl, ({ request }) => {
+            requests.push(request)
+            return new Response(new Uint8Array(bytes))
+        })
     )
-    await expect(downloadImage('https://files.example/image', fetcher)).rejects.toThrow('public')
-    fetcher.mockImplementation(() =>
-        Promise.resolve(new Response('x', { headers: { 'content-length': String(imageLimits.bytes + 1) } }))
+    expect((await downloadImage(publicUrl, fetch)).bytes).toEqual(bytes)
+    expect(requests[0].credentials).toBe('omit')
+    expect(requests[0].redirect).toBe('manual')
+    expect(requests[0].headers.has('Authorization')).toBe(false)
+    await expect(downloadImage(privateUrl, fetch)).rejects.toThrow('public')
+    server.use(
+        http.get(publicUrl, () => {
+            return new Response(null, { status: 302, headers: { location: privateUrl } })
+        })
     )
-    await expect(downloadImage('https://files.example/image', fetcher)).rejects.toThrow('5 MB')
+    await expect(downloadImage(publicUrl, fetch)).rejects.toThrow('public')
+    // Keep the unread response body at the transport seam, where the caller owns cancellation.
+    const oversized = new Response('x', { headers: { 'content-length': String(imageLimits.bytes + 1) } })
+    await expect(downloadImage(publicUrl, () => Promise.resolve(oversized))).rejects.toThrow('5 MB')
 })

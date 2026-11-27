@@ -28,16 +28,15 @@ it('retains preparation ownership until scope disposal can release the completed
     )
     const caller = Effect.runFork(shared('source', prepare))
     await run(Deferred.await(entered))
-    const closing = run(Scope.close(scope, Exit.void))
+    const closing = Effect.runFork(Scope.close(scope, Exit.void), { immediate: true })
     try {
-        await new Promise((resolve) => setTimeout(resolve, 0))
         await run(Deferred.succeed(proceed, undefined))
-        await closing
+        await run(Fiber.join(closing))
         expect(Exit.isFailure(await run(Fiber.await(caller)))).toBe(true)
         expect(active).toBe(false)
     } finally {
         await run(Deferred.succeed(proceed, undefined))
         await run(Fiber.interrupt(caller))
-        await closing
+        await run(Fiber.join(closing))
     }
 })

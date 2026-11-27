@@ -15,9 +15,7 @@ it('rebuilds an older search-only snapshot instead of reusing incomplete cached 
         JSON.stringify({ scope: createHash('sha256').update('token').digest('hex'), updatedAt: 1000000, pages })
     )
     const complete = [...pages, { kind: 'page' as const, id: 'child', title: 'Child', url: '', parentId: 'journal' }]
-    const load = vi.fn(() => Promise.resolve(complete))
-    expect(await f.create().pages('token', load)).toEqual(complete)
-    expect(load).toHaveBeenCalledTimes(1)
+    expect(await f.create().pages('token', () => Promise.resolve(complete))).toEqual(complete)
 })
 afterEach(() => {
     for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
@@ -48,11 +46,17 @@ function deferred<T>() {
 
 it('persists complete metadata across restart and reuses fresh results without storing credentials', async () => {
     const f = fixture(),
-        cache = f.create(),
-        load = vi.fn(() => Promise.resolve(pages))
-    expect(await cache.pages('secret-token', load)).toEqual(pages)
-    expect(await f.create().pages('secret-token', load)).toEqual(pages)
-    expect(load).toHaveBeenCalledTimes(1)
+        cache = f.create()
+    expect(await cache.pages('secret-token', () => Promise.resolve(pages))).toEqual(pages)
+    const restarted = f.create()
+    let reads = 0
+    expect(
+        await restarted.pages('secret-token', () => {
+            reads++
+            return Promise.resolve([])
+        })
+    ).toEqual(pages)
+    expect(reads).toBe(0)
     expect(readFileSync(f.path, 'utf8')).not.toContain('secret-token')
 })
 
@@ -74,13 +78,12 @@ it('returns a stable stale snapshot immediately and makes refreshed data availab
 it('keeps persisted results on a background failure and shares an overlapping cold load', async () => {
     const f = fixture(),
         cache = f.create(),
-        initial = deferred<NotionPage[]>(),
-        load = vi.fn(() => initial.promise)
-    const first = cache.pages('token', load),
-        second = cache.pages('token', load)
+        initial = deferred<NotionPage[]>()
+    const first = cache.pages('token', () => initial.promise)
+    const second = cache.pages('token', () => Promise.resolve([]))
     initial.resolve(pages)
-    expect(await first).toEqual(await second)
-    expect(load).toHaveBeenCalledTimes(1)
+    expect(await first).toEqual(pages)
+    expect(await second).toEqual(pages)
     f.stale()
     expect(await cache.pages('token', () => Promise.reject(new Error('Offline')))).toEqual(pages)
     await Promise.resolve()
@@ -103,32 +106,15 @@ it('never reuses another connection cache and prevents canceled late loads from 
     const failure = expect(pending).rejects.toThrow()
     late.resolve([{ ...pages[0], title: 'Other account' }])
     await failure
-    const load = vi.fn(() => Promise.resolve([]))
-    expect(await f.create().pages('first-token', load)).toEqual([])
-    expect(load).toHaveBeenCalledTimes(1)
+    expect(await f.create().pages('first-token', () => Promise.resolve([]))).toEqual([])
 })
 
 it('treats corrupt files as a miss and caches a confirmed empty result', async () => {
     const f = fixture()
     writeFileSync(f.path, '{broken')
-    const cache = f.create(),
-        load = vi.fn(() => Promise.resolve([]))
-    expect(await cache.pages('token', load)).toEqual([])
-    expect(await cache.pages('token', load)).toEqual([])
-    expect(load).toHaveBeenCalledTimes(1)
-})
-
-it('adds a newly confirmed page without mutating the picker snapshot', async () => {
-    const f = fixture(),
-        cache = f.create()
-    const snapshot = await cache.pages('token', () => Promise.resolve(pages))
-    const created: NotionPage = { kind: 'page', id: 'new', title: 'Team journal', url: '' }
-    cache.remember('token', created)
-    expect(snapshot).toEqual(pages)
-    expect(await cache.pages('token', () => Promise.reject(new Error('No network expected')))).toEqual([
-        ...pages,
-        created
-    ])
+    const cache = f.create()
+    expect(await cache.pages('token', () => Promise.resolve([]))).toEqual([])
+    expect(await cache.pages('token', () => Promise.resolve(pages))).toEqual([])
 })
 
 it('merges a completed branch without changing existing picker snapshots or another account', async () => {

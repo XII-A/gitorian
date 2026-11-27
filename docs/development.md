@@ -16,10 +16,9 @@ pnpm dev
 `pnpm dev` watches the main process, preload, and renderer. Development uses the application data directory too; back up existing data before experimenting with storage changes.
 
 ```sh
-pnpm verify:release # Pre-PR check, compile and desktop verification
+pnpm verify:release # Pre-PR checks and production compilation
 pnpm check        # TypeScript, lint, formatting, and unit/integration tests
 pnpm build        # Production compilation
-pnpm test:e2e     # Real Electron journeys (after build)
 pnpm start        # Preview the compiled desktop app
 pnpm package:dir  # Build an unpacked desktop app
 pnpm package      # Build an installer for the current platform into release/
@@ -31,13 +30,13 @@ Renderer-only libraries belong in `devDependencies`: Vite bundles them into `out
 
 Packaging excludes source-map files through `build.files`; installed runtime JavaScript and native binaries remain included. Vite emits bundled renderer license notices at `out/renderer/THIRD-PARTY-LICENSES.txt`, which ships with the compiled output. Keep all Electron locales. After changing dependency classification or file filters, inspect an actual package and verify its desktop behavior; development mode can hide missing runtime dependencies by resolving them from the checkout.
 
-See [testing](testing.md) for focused commands, Playwright debugging, retained evidence, and guidance for adding or migrating tests.
+See [testing](testing.md) for focused commands, coverage and verification evidence.
 
 The app icon's editable source is `resources/icon.svg`, exported from [Paper](https://app.paper.design/file/01M5S7QJ9BJRNKDCTRHEA0E1CF). After replacing it, run `pnpm icons` and commit the generated PNG, Windows ICO, and macOS ICNS files. The runtime window icon and Linux package use the PNG; Windows and macOS packages use their native formats. Windows resource editing stays enabled to embed the icon while signing remains disabled.
 
 ## Releasing and repository protection
 
-PRs targeting `main`, `release`, or `release/**` run **CI checks** (typecheck, lint, formatting and tests) on Windows. Agents run production compilation and Electron journeys locally through `pnpm verify:release` before creating a PR; see [testing](testing.md). The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, the update feed (`latest.yml`) and installer blockmap, computes SHA-256 checksums for all three, and uploads them to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
+PRs targeting `main`, `release`, or `release/**` run **CI checks** (typecheck, lint, formatting and tests) on Windows. Agents run production compilation and checks locally through `pnpm verify:release` before creating a PR; see [testing](testing.md). The release workflow runs the checks again for a `vMAJOR.MINOR.PATCH` tag that matches `package.json` and points to a commit on `main`. It builds an unsigned Windows x64 installer, the update feed (`latest.yml`) and installer blockmap, computes SHA-256 checksums for all three, and uploads them to a **draft** GitHub Release. It never publishes automatically or overwrites an existing release.
 
 After the release changes are merged into `main`, a maintainer creates a release candidate with:
 

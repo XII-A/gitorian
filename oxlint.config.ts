@@ -296,7 +296,8 @@ export default defineConfig({
     plugins: ['typescript', 'react', 'jsx-a11y'],
     jsPlugins: [
         'eslint-plugin-unused-imports',
-        { name: 'eslint-parity', specifier: './tools/oxlint-rules/eslint-core.js' }
+        { name: 'eslint-parity', specifier: './tools/oxlint-rules/eslint-core.js' },
+        { name: 'landmines-testing', specifier: '@interfere/landmines/testing' }
     ],
     categories: {
         correctness: 'off',
@@ -310,6 +311,13 @@ export default defineConfig({
     options: {
         typeAware: true,
         respectEslintDisableDirectives: true
+    },
+    rules: {
+        'landmines-testing/no-fixed-sleep': 'error',
+        'landmines-testing/no-flake-masking': 'error',
+        'landmines-testing/no-test-doubles': 'error',
+        'landmines-testing/no-unsignaled-poll': 'error',
+        'landmines-testing/strict-msw': 'error'
     },
     settings: {
         react: {

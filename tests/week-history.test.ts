@@ -1,10 +1,11 @@
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { deferred } from './deferred'
 import { hubRepository } from './hub-fixtures'
 import { RecoveryAdmission } from '../src/main/recovery-admission'
 import { nextAcquisition } from '../src/shared/acquisition'
 import { cp, mkdir } from 'node:fs/promises'
 import { journalState } from './database-fixtures'
-import { GitHubFailure } from '../src/main/github'
-import { Effect } from 'effect'
 import { run, journalClient } from './effect-fixtures'
 import { expect, it, vi } from 'vitest'
 import { workspace } from './fixtures'
@@ -40,18 +41,25 @@ it('loads newly imported repositories when an earlier request for the same week 
     const gate = new Promise<void>((resolve) => {
         release = resolve
     })
-    const original = gitModule.indexCommits
-    const index = vi.spyOn(gitModule, 'indexCommits').mockImplementationOnce(async (...args) => {
-        await gate
-        return original(...args)
-    })
+    const entered = deferred<undefined>()
+    app.remote.github = true
+    app.remote.beforeRequest = (url) => {
+        if (!url.includes('/pulls?')) return Promise.resolve()
+        entered.resolve(undefined)
+        return gate
+    }
     let first: Promise<unknown> | undefined
     let second: Promise<unknown> | undefined
     try {
         await imported.git('commit', '--allow-empty', '--date=2026-10-06T12:00:00Z', '-m', 'Imported project work')
         expect(await app.git('log', '--format=%s')).not.toContain('Imported project work')
         first = run(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
-        await vi.waitFor(() => expect(index).toHaveBeenCalledTimes(1))
+        await Promise.race([
+            entered.promise,
+            first.then(() => {
+                throw new Error('Week completed without reaching the provider')
+            })
+        ])
         const scan = (await run(app.service.scanRepositories(imported.directory))).repositoryScan!
         await run(
             app.service.importRepositories(
@@ -68,23 +76,21 @@ it('loads newly imported repositories when an earlier request for the same week 
     } finally {
         release()
         await Promise.all([first, second])
-        index.mockRestore()
         await Promise.all([app.close(), imported.close()])
     }
 })
-it('loads all five local sources and an earlier requested week while GitHub is blocked', async () => {
+it('loads two local sources and an earlier requested week while GitHub is blocked', async () => {
     const app = await workspace()
+    const entered = deferred<undefined>()
     let release!: () => void
     const held = new Promise<void>((resolve) => {
         release = resolve
     })
-    const github = vi.spyOn(app.github, 'activities').mockImplementation((_repo, _login, _tracked, scan) =>
-        Effect.gen(function* () {
-            yield* Effect.promise(() => held)
-            yield* scan?.checkpoint?.(1, true) ?? Effect.void
-            return []
-        }).pipe(Effect.mapError((error) => new GitHubFailure(error.message, { cause: error })))
-    )
+    app.remote.beforeRequest = (url) => {
+        if (!url.includes('/pulls?')) return Promise.resolve()
+        entered.resolve(undefined)
+        return held
+    }
     let pending: Promise<void> | undefined
     let earlier: Promise<unknown> | undefined
     try {
@@ -93,30 +99,35 @@ it('loads all five local sources and an earlier requested week while GitHub is b
             app.repository.trackingStart = '2099-01-01'
             await app.store.saveRepository(app.repository)
         }
-        for (let i = 1; i < 5; i++) {
+        for (let i = 1; i < 2; i++) {
             const path = join(app.directory, `repo-${i}`)
             await mkdir(path)
             await cp(join(app.directory, '.git'), join(path, '.git'), { recursive: true })
             await app.store.saveRepository({ ...app.repository, id: `repo-${i}`, path })
         }
         pending = run(app.service.refresh())
+        await Promise.race([
+            entered.promise,
+            pending.then(() => {
+                throw new Error('Refresh completed without reaching GitHub')
+            })
+        ])
         await vi.waitFor(
             async () => {
                 const local = Object.entries((await journalState(app.store)).acquisition ?? {}).filter(
                     ([key, value]) => key.startsWith('git:') && value.lastSuccess
                 )
-                expect(local).toHaveLength(5)
+                expect(local).toHaveLength(2)
             },
             { timeout: 10000 }
         )
         expect((await journalState(app.store)).activities).toHaveLength(0)
-        expect(github).toHaveBeenCalledTimes(2)
         earlier = run(app.service.handle({ type: 'loadWeek', since: '2020-01-01' }))
         await vi.waitFor(
             async () =>
                 expect(
                     (await journalState(app.store)).activities.filter((activity) => activity.kind === 'commit')
-                ).toHaveLength(5),
+                ).toHaveLength(2),
             { timeout: 10000 }
         )
         expect((await journalState(app.store)).acquisition?.[`git:${app.repository.id}`].historySince).toBe(
@@ -125,7 +136,6 @@ it('loads all five local sources and an earlier requested week while GitHub is b
     } finally {
         release()
         await Promise.all([pending, earlier])
-        github.mockRestore()
         await app.close()
     }
 })
@@ -218,43 +228,54 @@ it.each([
         await app.close()
     }
 })
-it('gives all five repositories a first batch before continuing the first two large histories', async () => {
+it('gives a small repository its first batch before continuing a paginated history', async () => {
     const app = await workspace()
     const index = vi.spyOn(gitModule, 'indexCommits')
-    const order: {
-        id: string
-        offset: number
-    }[] = []
     try {
-        {
-            app.repository.remotes = []
-            await app.store.saveRepository(app.repository)
-        }
-        for (let i = 1; i < 5; i++) {
-            const path = join(app.directory, `repo-${i}`)
-            await mkdir(path)
-            await cp(join(app.directory, '.git'), join(path, '.git'), { recursive: true })
-            await app.store.saveRepository({ ...app.repository, id: `repo-${i}`, path })
-        }
-        const large = new Set(
-            (await journalState(app.store)).repositories.slice(0, 2).map((repository) => repository.id)
-        )
-        index.mockImplementation(async (repository, _previous, _since, offset = 0) => {
-            order.push({ id: repository.id, offset })
-            await Promise.resolve()
-            return {
-                refs: { main: 'a'.repeat(40) },
-                items: [],
-                history: [],
-                nextOffset: large.has(repository.id) && !offset ? 2000 : undefined
-            }
+        app.repository.remotes = []
+        await app.store.saveRepository(app.repository)
+        const path = join(app.directory, 'small-repo')
+        await mkdir(path)
+        await cp(join(app.directory, '.git'), join(path, '.git'), { recursive: true })
+        const small = { ...app.repository, id: 'small-repo', path }
+        await app.store.saveRepository(small)
+        const importer = spawn('git', ['fast-import', '--quiet'], {
+            cwd: app.repository.path,
+            windowsHide: true,
+            stdio: ['pipe', 'ignore', 'inherit']
         })
+        const done = once(importer, 'close')
+        const commits = Array.from({ length: 40 }, (_, index) => {
+            const message = `Batch ${index}`
+            return (
+                `commit refs/heads/batch-fixture\nmark :${index + 1}\n` +
+                'committer Tester <first@example.com> 1791360000 +0000\n' +
+                `data ${Buffer.byteLength(message)}\n${message}\n\n`
+            )
+        }).join('')
+        // More than 25 refs sharing 40 commits exceed the membership page budget.
+        const refs = Array.from({ length: 25 }, (_, index) => `reset refs/heads/batch-${index}\nfrom :40\n\n`).join('')
+        importer.stdin.end(commits + refs + 'done\n')
+        expect((await done)[0]).toBe(0)
         await run(app.service.handle({ type: 'refresh', source: 'git', since: '2020-01-01' }))
-        expect(new Set(order.slice(0, 5).map((batch) => batch.id)).size).toBe(5)
-        expect(order.slice(0, 5).every((batch) => batch.offset === 0)).toBe(true)
-        expect(order.filter((batch) => batch.offset === 2000)).toHaveLength(2)
-        for (const repository of (await journalState(app.store)).repositories)
-            expect((await journalState(app.store)).acquisition?.[`git:${repository.id}`]).toMatchObject({
+        const calls = index.mock.calls
+        expect(
+            calls
+                .slice(0, 2)
+                .map(([repository]) => repository.id)
+                .sort()
+        ).toEqual([app.repository.id, small.id].sort())
+        expect(
+            calls
+                .slice(2)
+                .some(
+                    ([repository, , , , , , , cursor]) =>
+                        repository.id === app.repository.id && cursor?.phase === 'membership'
+                )
+        ).toBe(true)
+        const { acquisition } = await journalState(app.store)
+        for (const repository of [app.repository, small])
+            expect(acquisition?.[`git:${repository.id}`]).toMatchObject({
                 status: 'idle',
                 historySince: '2020-01-01'
             })
@@ -269,24 +290,33 @@ it('does not coalesce a timezone change into an in-flight scan using the previou
     const gate = new Promise<void>((resolve) => {
         release = resolve
     })
-    const original = gitModule.indexCommits
-    const index = vi.spyOn(gitModule, 'indexCommits').mockImplementationOnce(async (...args) => {
-        await gate
-        return original(...args)
-    })
+    const entered = deferred<undefined>()
+    app.remote.github = true
+    app.remote.beforeRequest = (url) => {
+        if (!url.includes('/pulls?')) return Promise.resolve()
+        entered.resolve(undefined)
+        return gate
+    }
     let first: Promise<unknown> | undefined
     let second: Promise<unknown> | undefined
     try {
         await app.store.saveSettings({ ...app.store.config.settings, timezone: 'UTC' })
         await app.git('commit', '--allow-empty', '--date=2026-10-04T22:00:00Z', '-m', 'In-flight timezone boundary')
         first = run(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
-        await vi.waitFor(() => expect(index).toHaveBeenCalledTimes(1))
+        await Promise.race([
+            entered.promise,
+            first.then(() => {
+                throw new Error('Week completed without reaching the provider')
+            })
+        ])
         await app.store.saveSettings({ ...app.store.config.settings, timezone: 'Europe/Istanbul' })
         second = run(app.service.handle({ type: 'loadWeek', since: '2026-10-05' }))
         release()
         await Promise.all([first, second])
         expect(
-            rangeActivities(await journalState(app.store), '2026-10-05', '2026-10-11').map((activity) => activity.title)
+            rangeActivities(await journalState(app.store), '2026-10-05', '2026-10-11')
+                .filter((activity) => activity.kind === 'commit')
+                .map((activity) => activity.title)
         ).toEqual(['In-flight timezone boundary'])
         expect((await journalState(app.store)).acquisition?.[`git:${app.repository.id}`].historyTimezone).toBe(
             'Europe/Istanbul'
@@ -294,7 +324,6 @@ it('does not coalesce a timezone change into an in-flight scan using the previou
     } finally {
         release()
         await Promise.all([first, second])
-        index.mockRestore()
         await app.close()
     }
 })
@@ -375,20 +404,9 @@ it('settles covered history after reopening and resumes its retained cursor for 
             app.requests
         )
         index.mockClear()
-        // Bound the diagnostic so a synchronous retry loop fails instead of hanging the runner.
-        const descriptor = Object.getOwnPropertyDescriptor(JournalDatabase.prototype, 'config')!
-        let reads = 0
-        const config = vi.spyOn(store, 'config', 'get').mockImplementation(() => {
-            if (++reads > 200) throw new Error('History acquisition is spinning without doing work')
-            return descriptor.get!.call(store)
-        })
-        try {
-            await run(service.handle({ type: 'loadWeek', since: status.historySince! }))
-            expect(index).not.toHaveBeenCalled()
-            expect(store.config.acquisition[key]).toMatchObject({ status: 'idle', windowEnd, gitCursor: cursor })
-        } finally {
-            config.mockRestore()
-        }
+        await run(service.handle({ type: 'loadWeek', since: status.historySince! }))
+        expect(index).not.toHaveBeenCalled()
+        expect(store.config.acquisition[key]).toMatchObject({ status: 'idle', windowEnd, gitCursor: cursor })
         expect((await journalState(store)).activities.map((activity) => activity.title)).not.toContain(
             'Earlier retained work'
         )

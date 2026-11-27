@@ -1,8 +1,15 @@
+import { deferred } from './deferred'
 import { NotionFailure, toNotionError } from '../src/main/notion'
 import { notionClient, run, transportClient } from './effect-fixtures'
-import { afterEach, expect, it, vi } from 'vitest'
-import { Server } from 'node:http'
-import { createHash } from 'node:crypto'
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { http, passthrough } from 'msw'
+import { setupServer } from 'msw/node'
+import { channel } from 'node:diagnostics_channel'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { NotionSetupStore, type JournalSetupStore } from '../src/main/notion-setup'
+import { createHash, randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createOAuthHandler } from '../services/notion-oauth/src/handler'
@@ -13,6 +20,20 @@ import type { ConnectionAdapters } from '../src/main/notion-connection'
 import { Effect, Layer, ManagedRuntime, Scheduler } from 'effect'
 import { initialState } from '../src/shared/model'
 const origin = 'https://auth.example.com'
+const providerServer = setupServer(http.get(/^http:\/\/127\.0\.0\.1:\d+\//, () => passthrough()))
+beforeAll(() => providerServer.listen({ onUnhandledRequest: 'error' }))
+afterAll(() => providerServer.close())
+
+function tokenEndpoint(reply: (request: Request) => Response | Promise<Response>) {
+    const attempts: Request[] = []
+    providerServer.use(
+        http.post('https://api.notion.com/v1/oauth/token', ({ request }) => {
+            attempts.push(request.clone())
+            return reply(request)
+        })
+    )
+    return attempts
+}
 it('lets a host exit after provider denial without an explicit connection cancel', async () => {
     const source = new URL('../src/main/notion-connection.ts', import.meta.url).href
     const script = `
@@ -39,7 +60,7 @@ it('lets a host exit after provider denial without an explicit connection cancel
         { timeout: 10000 }
     )
     expect(result.stdout).toContain('denied')
-}, 15000)
+})
 const config = { origin, clientId: 'public-app', clientSecret: 'server-only-secret', stateSecret: 's'.repeat(48) }
 const verifier = 'v'.repeat(43)
 const challenge = createHash('sha256').update(verifier).digest('base64url')
@@ -53,10 +74,38 @@ const jsonRequest = (path: string, value: unknown) =>
         body: JSON.stringify(value)
     })
 const active: (() => Promise<void>)[] = []
+const directories: string[] = []
+
+function temporaryDirectory() {
+    const directory = mkdtempSync(join(tmpdir(), 'gitorian-oauth-'))
+    directories.push(directory)
+    return directory
+}
+function diskCredentials() {
+    const directory = temporaryDirectory()
+    const path = (key: string) => join(directory, key + '.secret')
+    return {
+        path,
+        get(key: string) {
+            return existsSync(path(key)) ? readFileSync(path(key), 'utf8') : undefined
+        },
+        set(key: string, value: string) {
+            writeFileSync(path(key), value)
+        },
+        delete(key: string) {
+            rmSync(path(key), { force: true })
+        },
+        get size() {
+            return readdirSync(directory).length
+        }
+    }
+}
+
 it.each([false, true])(
     'credential staging failure preserves the persisted pair across restart (installed=%s)',
     async (hasInstalled) => {
-        const app = desktop()
+        const disk = diskCredentials()
+        const app = desktop(origin, new Map(), { secrets: disk })
         let destination: Destination | undefined = hasInstalled ? await installed(app) : undefined
         const previous = destination
         const next = {
@@ -65,7 +114,7 @@ it.each([false, true])(
             refresh_token: 'new-refresh',
             workspace_id: 'new-workspace'
         }
-        app.provider.mockImplementation(() => Promise.resolve(response(next)))
+        app.provider.reply = () => response(next)
         await approve(app)
         await run(app.connection.poll())
         let creations = 0
@@ -82,15 +131,14 @@ it.each([false, true])(
                     return Promise.resolve()
                 }
             })
-        const write = vi.spyOn(app.secrets, 'set').mockImplementationOnce(() => {
-            throw new Error('Credential file is locked')
-        })
-        await expect(confirm()).rejects.toThrow(/Credential file/)
+        const blocked = disk.path(previous?.credentialSlot === 'a' ? 'notion-b' : 'notion-a')
+        mkdirSync(blocked)
+        await expect(confirm()).rejects.toThrow(/EISDIR|EPERM|directory|operation/i)
+        rmSync(blocked, { recursive: true })
         expect(destination).toEqual(previous)
         const restarted = desktop(origin, new Map(), { secrets: app.secrets, destination })
         expect(restarted.connection.connected()).toBe(hasInstalled)
         expect(await run(restarted.connection.token())).toBe(hasInstalled ? 'access-one' : '')
-        write.mockRestore()
         await expect(confirm()).resolves.toMatchObject({ id: 'new-journal' })
         const committed = desktop(origin, new Map(), { secrets: app.secrets, destination })
         expect(committed.connection.connected()).toBe(true)
@@ -101,9 +149,8 @@ it.each([false, true])(
 it('restart selects staged credentials if the process dies immediately after the destination commit', async () => {
     const app = desktop()
     let destination = await installed(app)
-    app.provider.mockImplementation(() =>
+    app.provider.reply = () =>
         Promise.resolve(response({ ...credentials, access_token: 'new-access', refresh_token: 'new-refresh' }))
-    )
     await approve(app)
     await run(app.connection.poll())
     await expect(
@@ -158,11 +205,10 @@ it.each([false, true])('defers credential rotation until destination commit fini
         }
     })
     await vi.waitFor(() => expect(release).toBeTypeOf('function'))
-    app.provider.mockImplementation(() =>
+    app.provider.reply = () =>
         Promise.resolve(response({ ...credentials, access_token: 'rotated-access', refresh_token: 'rotated-refresh' }))
-    )
     const refreshing = edit ? run(app.connection.token(true)) : run(app.connection.pendingToken(true))
-    expect(app.provider).toHaveBeenCalledTimes(1)
+    expect(app.provider.requests).toHaveLength(1)
     release()
     await saved
     expect(await refreshing).toBe('rotated-access')
@@ -170,8 +216,8 @@ it.each([false, true])('defers credential rotation until destination commit fini
     expect(await run(restarted.connection.token())).toBe('rotated-access')
 })
 it('rejects an intercepted handoff paired with another valid attempt before contacting Notion', async () => {
-    const provider = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(response(credentials)))
-    const handler = createOAuthHandler(config, provider)
+    const provider = tokenEndpoint(() => response(credentials))
+    const handler = createOAuthHandler(config)
     const victimState = await authorize(handler)
     const callback = await handler(new Request(`${origin}/callback?state=${victimState}&code=intercepted-code`))
     const returned = new URL(callback.headers.get('Location')!)
@@ -187,7 +233,7 @@ it('rejects an intercepted handoff paired with another valid attempt before cont
         jsonRequest('/token', { state: otherState, code: intercepted, grant: intercepted, verifier: otherVerifier })
     )
     expect(rejected.status).toBe(400)
-    expect(provider).not.toHaveBeenCalled()
+    expect(provider).toHaveLength(0)
     expect(returned.searchParams.has('code')).toBe(false)
     expect(returned.toString()).not.toContain('intercepted-code')
     const tampered = `${intercepted.slice(0, -4)}AAAA`
@@ -195,11 +241,11 @@ it('rejects an intercepted handoff paired with another valid attempt before cont
     expect(
         (await handler(jsonRequest('/token', { state: victimState, code: 'intercepted-code', verifier }))).status
     ).toBe(400)
-    expect(provider).not.toHaveBeenCalled()
-    const freshInstance = createOAuthHandler(config, provider)
+    expect(provider).toHaveLength(0)
+    const freshInstance = createOAuthHandler(config)
     const accepted = await freshInstance(jsonRequest('/token', { state: victimState, grant: intercepted, verifier }))
     expect(await accepted.json()).toEqual(credentials)
-    expect(provider).toHaveBeenCalledTimes(1)
+    expect(provider).toHaveLength(1)
 })
 it.each(['persist', 'flush'])(
     'retains confirmation after local %s fails and retries without creating another page',
@@ -208,7 +254,7 @@ it.each(['persist', 'flush'])(
         await approve(app)
         await run(app.connection.poll())
         let created = 0
-        const prepare = vi.fn((setup: JournalSetup, checkpoint: (pageId?: string) => void) => {
+        const prepare = (setup: JournalSetup, checkpoint: (pageId?: string) => void) => {
             if (!setup.pageId) created++
             checkpoint('created-journal')
             return Promise.resolve({
@@ -217,7 +263,7 @@ it.each(['persist', 'flush'])(
                 titleProperty: 'Name',
                 dateProperty: ''
             })
-        })
+        }
         let attempts = 0
         const persist = () => {
             if (++attempts === 1) {
@@ -243,6 +289,8 @@ it.each(['persist', 'flush'])(
 )
 afterEach(async () => {
     await Promise.all(active.splice(0).map((close) => close()))
+    providerServer.resetHandlers()
+    for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 async function authorize(handler: ReturnType<typeof createOAuthHandler>, port = 12345) {
     const started = await handler(new Request(`${origin}/authorize?port=${port}&challenge=${challenge}&nonce=${nonce}`))
@@ -252,8 +300,8 @@ async function authorize(handler: ReturnType<typeof createOAuthHandler>, port = 
     return location.searchParams.get('state')!
 }
 it('binds the browser callback and token exchange to the desktop verifier without a token in redirects', async () => {
-    const provider = vi.fn<typeof fetch>().mockResolvedValue(response(credentials))
-    const handler = createOAuthHandler(config, provider)
+    const provider = tokenEndpoint(() => response(credentials))
+    const handler = createOAuthHandler(config)
     const state = await authorize(handler)
     const callback = await handler(
         new Request(`${origin}/callback?state=${encodeURIComponent(state)}&code=one-use-code`)
@@ -267,24 +315,24 @@ it('binds the browser callback and token exchange to the desktop verifier withou
     expect(location.toString()).not.toContain('one-use-code')
     expect(location.toString()).not.toContain('access-one')
     expect((await handler(jsonRequest('/token', { state, grant, verifier: 'wrong' }))).status).toBe(400)
-    expect(provider).not.toHaveBeenCalled()
+    expect(provider).toHaveLength(0)
     const exchanged = await handler(jsonRequest('/token', { state, grant, verifier }))
     expect(await exchanged.json()).toEqual(credentials)
     expect(exchanged.headers.get('Cache-Control')).toBe('no-store')
-    const init = provider.mock.calls[0][1]!
-    expect(new Headers(init.headers).get('Authorization')).toBe(
+    const request = provider[0]
+    expect(request.headers.get('Authorization')).toBe(
         `Basic ${Buffer.from('public-app:server-only-secret').toString('base64')}`
     )
-    expect(JSON.parse(init.body as string)).toEqual({
+    expect(await request.json()).toEqual({
         grant_type: 'authorization_code',
         code: 'one-use-code',
         redirect_uri: `${origin}/callback`
     })
 })
 it('rejects tampering, expiration, unsafe callbacks and oversized payloads before contacting Notion', async () => {
-    const provider = vi.fn<typeof fetch>()
+    const provider = tokenEndpoint(() => response({}, 500))
     let now = 1000000
-    const handler = createOAuthHandler(config, provider, () => now)
+    const handler = createOAuthHandler(config, fetch, () => now)
     const state = await authorize(handler)
     const callback = await handler(new Request(`${origin}/callback?state=${state}&code=expires`))
     const grant = new URL(callback.headers.get('Location')!).searchParams.get('grant')!
@@ -298,14 +346,16 @@ it('rejects tampering, expiration, unsafe callbacks and oversized payloads befor
                 .status
         ).toBe(400)
     expect((await handler(jsonRequest('/refresh', { refresh_token: 'x'.repeat(20000) }))).status).toBe(413)
-    expect(provider).not.toHaveBeenCalled()
+    expect(provider).toHaveLength(0)
 })
 it('returns safe provider failures, forwards denial only to the paired app, and rotates refresh credentials', async () => {
-    const provider = vi
-        .fn<typeof fetch>()
-        .mockResolvedValueOnce(response({ error: 'invalid_grant', message: config.clientSecret }, 400))
-        .mockResolvedValueOnce(response(credentials))
-    const handler = createOAuthHandler(config, provider)
+    const provider = tokenEndpoint(async (request) => {
+        const body = (await request.json()) as { refresh_token?: string }
+        return body.refresh_token === 'expired'
+            ? response({ error: 'invalid_grant', message: config.clientSecret }, 400)
+            : response(credentials)
+    })
+    const handler = createOAuthHandler(config)
     const state = await authorize(handler)
     const denial = await handler(new Request(`${origin}/callback?state=${state}&error=access_denied`))
     expect(new URL(denial.headers.get('Location')!).searchParams.get('error')).toBe('access_denied')
@@ -313,7 +363,7 @@ it('returns safe provider failures, forwards denial only to the paired app, and 
     expect(failed.status).toBe(401)
     expect(await failed.text()).not.toContain(config.clientSecret)
     expect(await (await handler(jsonRequest('/refresh', { refresh_token: 'valid' }))).json()).toEqual(credentials)
-    expect(JSON.parse(provider.mock.calls[1][1]?.body as string)).toEqual({
+    expect(await provider[1].json()).toEqual({
         grant_type: 'refresh_token',
         refresh_token: 'valid'
     })
@@ -369,16 +419,28 @@ function connectionFixture(
 }
 function desktop(
     serviceOrigin = origin,
-    recovery = new Map<string, JournalSetup>(),
+    recovery: Map<string, JournalSetup> | JournalSetupStore = new Map<string, JournalSetup>(),
     disk?: {
-        secrets: Map<string, string>
+        secrets: Pick<Map<string, string>, 'get' | 'set' | 'delete' | 'size'> | ReturnType<typeof diskCredentials>
         destination?: Destination
     }
 ) {
     const secrets = disk?.secrets ?? new Map<string, string>()
     let readKey = 'notion'
-    const provider = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(response(credentials)))
-    const handler = createOAuthHandler({ ...config, origin: serviceOrigin }, provider)
+    const clientId = randomUUID()
+    const authorization = 'Basic ' + Buffer.from(clientId + ':' + config.clientSecret).toString('base64')
+    const provider = {
+        reply: (): Response | Promise<Response> => response(credentials),
+        requests: [] as Request[]
+    }
+    providerServer.use(
+        http.post('https://api.notion.com/v1/oauth/token', ({ request }) => {
+            if (request.headers.get('Authorization') !== authorization) return
+            provider.requests.push(request.clone())
+            return provider.reply()
+        })
+    )
+    const handler = createOAuthHandler({ ...config, origin: serviceOrigin, clientId })
     const fetcher: typeof fetch = (input, init) => handler(new Request(input, init))
     const state = initialState()
     state.settings.destination = disk?.destination
@@ -386,29 +448,37 @@ function desktop(
         prepare?: (setup: JournalSetup, checkpoint: (pageId?: string) => void) => Promise<Destination>
         commit?: (destination: Destination) => Promise<void>
         describe?: (destination: Destination) => Promise<Destination>
+        readCredential?: (key: string) => void
+        wroteCredential?: (key: string) => void
     } = {}
     const owned = ownConnection(
         {
             vault: {
                 get: (key) => {
                     readKey = key
-                    return secrets.get(key) ?? ''
+                    const value = secrets.get(key) ?? ''
+                    controls.readCredential?.(key)
+                    return value
                 },
                 set: (key, value) => {
                     secrets.set(key, value)
+                    controls.wroteCredential?.(key)
                 }
             },
             origin: serviceOrigin,
             fetcher,
-            recovery: {
-                get: (workspace) => recovery.get(workspace),
-                set: (workspace, setup) => {
-                    recovery.set(workspace, structuredClone(setup))
-                },
-                clear: (workspace) => {
-                    recovery.delete(workspace)
-                }
-            }
+            recovery:
+                recovery instanceof Map
+                    ? {
+                          get: (workspace) => recovery.get(workspace),
+                          set: (workspace, setup) => {
+                              recovery.set(workspace, structuredClone(setup))
+                          },
+                          clear: (workspace) => {
+                              recovery.delete(workspace)
+                          }
+                      }
+                    : recovery
         },
         state,
         () => ({
@@ -483,14 +553,13 @@ it.each([origin, 'http://localhost:8788'])(
         })
         expect(app.connection.connected()).toBe(true)
         expect(await run(app.connection.token())).toBe('access-one')
-        app.provider.mockImplementation(() =>
+        app.provider.reply = () =>
             Promise.resolve(response({ ...credentials, access_token: 'access-two', refresh_token: 'refresh-two' }))
-        )
         expect(await Promise.all([run(app.connection.token(true)), run(app.connection.token(true))])).toEqual([
             'access-two',
             'access-two'
         ])
-        expect(app.provider).toHaveBeenCalledTimes(2)
+        expect(app.provider.requests).toHaveLength(2)
         const restored = connectionFixture(
             {
                 get: (key) => app.secrets.get(key) ?? '',
@@ -513,12 +582,10 @@ it('ignores an exchange completing after cancellation and closes the old callbac
     const app = desktop()
     await approve(app)
     let resolve!: (value: Response) => void
-    app.provider.mockImplementation(
-        () =>
-            new Promise((done) => {
-                resolve = done
-            })
-    )
+    app.provider.reply = () =>
+        new Promise((done) => {
+            resolve = done
+        })
     const polling = run(app.connection.poll())
     await vi.waitFor(() => expect(resolve).toBeTypeOf('function'))
     await run(app.connection.cancel())
@@ -538,23 +605,31 @@ it('does not resurrect a disconnected account after a delayed refresh; installed
             return Promise.resolve({ kind: 'page', id: 'selected-page', titleProperty: 'Name', dateProperty: '' })
         }
     })
-    let resolve!: (value: Response) => void
-    app.provider.mockImplementation(
-        () =>
-            new Promise((done) => {
-                resolve = done
-            })
-    )
+    const first = deferred<undefined>()
+    const second = deferred<undefined>()
+    const firstResponse = deferred<Response>()
+    const secondResponse = deferred<Response>()
+    let rotation = 0
+    app.provider.reply = () => {
+        if (rotation++ === 0) {
+            first.resolve(undefined)
+            return firstResponse.promise
+        }
+        second.resolve(undefined)
+        return secondResponse.promise
+    }
     const refresh = run(app.connection.token(true))
-    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'))
+    await first.promise
     // Closing the settings authorization surface must not discard a valid rotated credential.
     await run(app.connection.cancel())
-    resolve(response({ ...credentials, access_token: 'after-close', refresh_token: 'after-close-refresh' }))
+    firstResponse.resolve(
+        response({ ...credentials, access_token: 'after-close', refresh_token: 'after-close-refresh' })
+    )
     expect(await refresh).toBe('after-close')
     const afterClose = run(app.connection.token(true))
-    await vi.waitFor(() => expect(app.provider).toHaveBeenCalledTimes(3))
+    await second.promise
     await run(app.connection.disconnect())
-    resolve(response({ ...credentials, access_token: 'late-token' }))
+    secondResponse.resolve(response({ ...credentials, access_token: 'late-token' }))
     await expect(afterClose).rejects.toThrow(/cancel|disconnect/i)
     expect(await run(app.connection.token())).toBe('')
 })
@@ -587,15 +662,25 @@ it('discards unconfirmed authorization, but finishes an explicitly confirmed ope
 const selectedPage = { kind: 'page' as const, id: 'selected-page', titleProperty: 'Name', dateProperty: '' }
 const rotated = { ...credentials, access_token: 'access-two', refresh_token: 'refresh-two' }
 it('keeps a saved connection usable when recovery cleanup fails and permits another destination edit', async () => {
-    const recovery = new Map<string, JournalSetup>()
+    const path = join(temporaryDirectory(), 'recovery.json')
+    const recovery = new NotionSetupStore(path)
     const app = desktop(origin, recovery)
-    vi.spyOn(recovery, 'delete').mockImplementationOnce(() => {
-        throw new Error('Recovery file is locked')
+    await approve(app)
+    await run(app.connection.poll())
+    await confirmJournal(app, {
+        prepare: (_setup, checkpoint) => {
+            checkpoint(selectedPage.id)
+            return Promise.resolve(selectedPage)
+        },
+        commit: () => {
+            mkdirSync(path + '.next')
+            return Promise.resolve()
+        }
     })
-    await installed(app)
+    rmSync(path + '.next', { recursive: true })
     expect(app.connection.connected()).toBe(true)
     expect(await run(app.connection.token())).toBe('access-one')
-    expect(recovery.size).toBe(1)
+    expect(recovery.get(credentials.workspace_id)?.pageId).toBe(selectedPage.id)
     expect(await run(app.connection.choose())).toBe(true)
     await expect(
         confirmJournal(app, {
@@ -607,7 +692,7 @@ it('keeps a saved connection usable when recovery cleanup fails and permits anot
             title: 'Another journal'
         })
     ).resolves.toMatchObject({ id: 'another-journal' })
-    expect(recovery.size).toBe(0)
+    expect(recovery.get(credentials.workspace_id)).toBeUndefined()
 })
 async function installed(app: ReturnType<typeof desktop>) {
     await approve(app)
@@ -664,15 +749,19 @@ it.each([
         await approve(app)
         await run(app.connection.poll())
     }
-    app.provider.mockResolvedValue(response(rotated))
-    const api = vi.fn<typeof fetch>((_url, init) =>
-        Promise.resolve(
-            new Headers(init?.headers).get('Authorization') === 'Bearer access-one'
+    app.provider.reply = () => response(rotated)
+    const authorizations: (string | null)[] = []
+    providerServer.use(
+        http.all('https://api.notion.com/v1/*', ({ request }) => {
+            if (request.url.endsWith('/oauth/token')) return
+            const authorization = request.headers.get('Authorization')
+            authorizations.push(authorization)
+            return authorization === 'Bearer access-one'
                 ? response({ message: 'expired' }, 401)
                 : response(confirm ? {} : { results: [], has_more: false, next_cursor: null })
-        )
+        })
     )
-    const notion = notionClient(await transportClient(api), (refresh, rejected) =>
+    const notion = notionClient(await transportClient(), (refresh, rejected) =>
         run(app.connection.pendingToken(refresh, rejected))
     )
     if (confirm) {
@@ -688,20 +777,19 @@ it.each([
         expect(await run(app.connection.pendingToken())).toBe('access-two')
     }
     expect(
-        app.provider.mock.calls.filter(
-            ([, init]) => JSON.parse(typeof init?.body === 'string' ? init.body : '{}').grant_type === 'refresh_token'
-        )
+        (
+            await Promise.all(
+                app.provider.requests.map(async (request) => (await request.json()) as { grant_type?: string })
+            )
+        ).filter((body) => body.grant_type === 'refresh_token')
     ).toHaveLength(1)
-    expect(api.mock.calls.map(([, init]) => new Headers(init?.headers).get('Authorization'))).toEqual([
-        'Bearer access-one',
-        'Bearer access-two'
-    ])
+    expect(authorizations).toEqual(['Bearer access-one', 'Bearer access-two'])
 })
 it('confirmation preserves credentials rotated by a concurrent installed-session request', async () => {
     const app = desktop()
     await installed(app)
     await run(app.connection.choose())
-    app.provider.mockResolvedValue(response(rotated))
+    app.provider.reply = () => response(rotated)
     await confirmJournal(app, {
         prepare: async () => {
             await run(app.connection.token(true, 'access-one'))
@@ -715,19 +803,21 @@ it('waits for an in-flight rotation before committing an edited destination', as
     await installed(app)
     await run(app.connection.choose())
     let finish!: (response: Response) => void
-    app.provider.mockImplementation(
-        () =>
-            new Promise((resolve) => {
-                finish = resolve
-            })
-    )
+    app.provider.reply = () =>
+        new Promise((resolve) => {
+            finish = resolve
+        })
     const refresh = run(app.connection.token(true, 'access-one'))
     await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    const prepared = deferred<undefined>()
     const saved = confirmJournal(app, {
-        prepare: () => Promise.resolve({ ...selectedPage, id: 'new-destination' })
+        prepare: () => {
+            prepared.resolve(undefined)
+            return Promise.resolve({ ...selectedPage, id: 'new-destination' })
+        }
     })
     const outcomes = Promise.allSettled([refresh, saved])
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await prepared.promise
     finish(response(rotated))
     expect((await outcomes).map((result) => result.status)).toEqual(['fulfilled', 'fulfilled'])
     expect(app.session()).toMatchObject({ ...rotated, journal: { pageId: 'new-destination' } })
@@ -801,22 +891,15 @@ it('does not reinstall destination selection after a later cancellation', async 
 })
 it('settles a start whose lifetime closes while the listener is binding', async () => {
     const app = desktop()
-    const listen = Server.prototype.listen
-    const binding = vi.spyOn(Server.prototype, 'listen').mockImplementationOnce(function (this: Server, ...args) {
-        const result = Reflect.apply(listen, this, args)
+    const listening = channel('tracing:net.server.listen:asyncStart')
+    const stop = () => {
         void app.close()
-        return result
-    })
+    }
+    listening.subscribe(stop)
     try {
-        const started = run(app.connection.start()).then(
-            () => 'started',
-            () => 'cancelled'
-        )
-        expect(await Promise.race([started, new Promise((resolve) => setTimeout(() => resolve('pending'), 500))])).toBe(
-            'cancelled'
-        )
+        await expect(run(app.connection.start())).rejects.toThrow()
     } finally {
-        binding.mockRestore()
+        listening.unsubscribe(stop)
     }
 })
 
@@ -832,7 +915,7 @@ it('keeps the current credential slot when old destination metadata finishes aft
     await vi.waitFor(() => expect(release).toBeTypeOf('function'))
     await run(app.connection.choose())
     const confirmed = await confirmJournal(app, { prepare: () => Promise.resolve(original) })
-    app.provider.mockResolvedValue(response(rotated))
+    app.provider.reply = () => response(rotated)
     await run(app.connection.token(true, 'access-one'))
     release({ ...original, title: 'Late old metadata' })
     await metadata
@@ -848,14 +931,18 @@ it('refreshes installed destination metadata without a pending setup session', a
     const destination = await installed(seed)
     const state = initialState()
     state.settings.destination = destination
-    const api = vi.fn<typeof fetch>().mockResolvedValue(
-        response({
-            id: destination.id,
-            url: 'https://notion.so/current',
-            properties: { title: { title: [{ plain_text: 'Updated journal' }] } }
+    const requests: Request[] = []
+    providerServer.use(
+        http.get('https://api.notion.com/v1/pages/' + destination.id, ({ request }) => {
+            requests.push(request)
+            return response({
+                id: destination.id,
+                url: 'https://notion.so/current',
+                properties: { title: { title: [{ plain_text: 'Updated journal' }] } }
+            })
         })
     )
-    const http = await transportClient(api)
+    const client = await transportClient()
     const app = ownConnection(
         {
             vault: {
@@ -869,12 +956,12 @@ it('refreshes installed destination metadata without a pending setup session', a
             recovery: { get: () => undefined, set: vi.fn(), clear: vi.fn() }
         },
         state,
-        (getToken) => notionClient(http, (refresh, rejected) => run(getToken(refresh, rejected)))
+        (getToken) => notionClient(client, (refresh, rejected) => run(getToken(refresh, rejected)))
     )
     expect(app.connection.connected()).toBe(true)
     await run(app.connection.refreshDestination())
     expect(state.settings.destination?.title).toBe('Updated journal')
-    expect(new Headers(api.mock.calls[0][1]?.headers).get('Authorization')).toBe('Bearer access-one')
+    expect(requests[0]?.headers.get('Authorization')).toBe('Bearer access-one')
 })
 function atNextInstruction(action: () => void | Promise<void>) {
     let armed = false,
@@ -917,19 +1004,16 @@ it('does not reinstall Notion rotation credentials after a disconnect at the sav
     await installed(app)
     let rotating = false
     const turn = atNextInstruction(() => run(app.connection.disconnect()))
-    const get = app.secrets.get.bind(app.secrets)
-    vi.spyOn(app.secrets, 'get').mockImplementation((key) => {
-        const value = get(key)
+    app.controls.readCredential = (key) => {
         if (rotating && key === 'notion-a') {
             rotating = false
             turn.pause()
         }
-        return value
-    })
-    app.provider.mockImplementation(() => {
+    }
+    app.provider.reply = () => {
         rotating = true
-        return Promise.resolve(response(rotated))
-    })
+        return response(rotated)
+    }
     await run(app.connection.token(true).pipe(Effect.withScheduler(turn.scheduler)))
     expect(turn.failure).toBeUndefined()
     const restarted = desktop(origin, new Map(), {
@@ -950,8 +1034,7 @@ it.each(['before staging', 'after staging'] as const)(
         restored.restoreId = 'restored-journal'
         restored.settings.destination = { ...selectedPage, id: 'restored-page', credentialSlot: 'b' }
         let durable = structuredClone(restored.settings.destination)
-        const get = app.secrets.get.bind(app.secrets),
-            set = app.secrets.set.bind(app.secrets)
+        const set = app.secrets.set.bind(app.secrets)
         const turn = atNextInstruction(() => {
             set(
                 'notion-b',
@@ -967,26 +1050,22 @@ it.each(['before staging', 'after staging'] as const)(
             durable = structuredClone(restored.settings.destination!)
         })
         let preparing = false
-        vi.spyOn(app.secrets, 'get').mockImplementation((key) => {
-            const value = get(key)
+        app.controls.readCredential = (key) => {
             if (preparing && boundary === 'before staging' && key === 'notion-a') {
                 preparing = false
                 turn.pause()
             }
-            return value
-        })
-        vi.spyOn(app.secrets, 'set').mockImplementation((key, value) => {
-            const result = set(key, value)
+        }
+        app.controls.wroteCredential = (key) => {
             if (preparing && boundary === 'after staging' && key === 'notion-b') {
                 preparing = false
                 turn.pause()
             }
-            return result
-        })
-        vi.spyOn(app.store, 'persist').mockImplementation(() => {
+        }
+        app.controls.commit = () => {
             durable = structuredClone(app.store.state.settings.destination!)
-            return app.store.state
-        })
+            return Promise.resolve()
+        }
         app.controls.prepare = () => {
             preparing = true
             return Promise.resolve({ ...selectedPage, id: 'old-workspace-page' })
@@ -1006,14 +1085,12 @@ it.each(['before staging', 'after staging'] as const)(
 it.each(['choose', 'poll'] as const)(
     'reports an unreadable recovery checkpoint through %s failure channel',
     async (mode) => {
-        const recovery = new Map<string, JournalSetup>()
+        const path = join(temporaryDirectory(), 'recovery.json')
+        const recovery = new NotionSetupStore(path)
         const app = desktop(origin, recovery)
         if (mode === 'choose') await installed(app)
         else await approve(app)
-        const problem = new Error('Recovery checkpoint is unreadable')
-        vi.spyOn(recovery, 'get').mockImplementation(() => {
-            throw problem
-        })
+        writeFileSync(path, '{broken')
         const result = await run(
             Effect.either(
                 mode === 'choose'
@@ -1023,7 +1100,7 @@ it.each(['choose', 'poll'] as const)(
         )
         expect(result._tag).toBe('Left')
         if (result._tag !== 'Left') throw new Error('Expected recovery read failure')
-        expect(result.left).toMatchObject({ _tag: 'ConnectionError', cause: problem })
+        expect(result.left).toMatchObject({ _tag: 'ConnectionError', cause: expect.any(SyntaxError) })
         expect(app.store.state.settings.destination?.id).toBe(mode === 'choose' ? selectedPage.id : undefined)
     }
 )

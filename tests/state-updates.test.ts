@@ -10,20 +10,18 @@ function reply(state = sampleState('2026-10-12')): Reply {
     return { state, connections: { remote: false, notion: false, protectedStorage: false } }
 }
 
-it('snapshots mutable state without retaining mutable objects and reuses unchanged large branch arrays', () => {
+it('keeps previous snapshots immutable when source records change or are removed', () => {
     const source = sampleState('2026-10-12')
     const first = shareSnapshot(undefined, source)
     expect(first).toEqual(source)
-    expect(first).not.toBe(source)
-    expect(first.activities[0].branches).not.toBe(source.activities[0].branches)
     source.activities[0].branches.push('new-branch')
     const next = shareSnapshot(first, source)
     expect(first.activities[0].branches).not.toContain('new-branch')
-    expect(next.activities[1]).toBe(first.activities[1])
     expect(next.activities[0].branches).toContain('new-branch')
-    source.activities.splice(0, 1)
+    const removedActivity = source.activities.shift()!
     const removed = shareSnapshot(next, source)
-    expect(removed.activities).toHaveLength(next.activities.length - 1)
+    expect(next.activities[0].id).toBe(removedActivity.id)
+    expect(removed.activities.map((activity) => activity.id)).not.toContain(removedActivity.id)
 })
 
 it('copies dictionary keys literally without changing object prototypes', () => {

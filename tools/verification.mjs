@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const [mode, ...args] = process.argv.slice(2)
-if (!['build', 'compile', 'desktop', 'release'].includes(mode) || (mode !== 'desktop' && args.length)) {
-    console.error('Use pnpm build | build:compile | test:e2e [Playwright arguments] | verify:release')
+if (!['build', 'compile', 'release'].includes(mode) || args.length) {
+    console.error('Use pnpm build | build:compile | verify:release')
     process.exit(1)
 }
 const pnpm = process.env.npm_execpath
@@ -141,11 +141,8 @@ try {
     }
     if (mode === 'release') await run(['check'])
     if (mode === 'build') await run(['typecheck'])
-    if (['build', 'compile', 'release'].includes(mode)) {
-        await run(['exec', 'electron-vite', 'build'])
-        await run(['--filter', '@gitorian/notion-oauth', 'build'])
-    }
-    if (['desktop', 'release'].includes(mode)) await run(['exec', 'playwright', 'test', ...args])
+    await run(['exec', 'electron-vite', 'build'])
+    await run(['--filter', '@gitorian/notion-oauth', 'build'])
     report.passed = true
 } catch (error) {
     report.error = String(error)

@@ -1,18 +1,29 @@
+import { deferred } from './deferred'
 import { Effect, Fiber, ManagedRuntime } from 'effect'
 import { Http, HttpLive } from '../src/main/http'
-import { expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { http as route } from 'msw'
+import { setupServer } from 'msw/node'
 import { transportClient, run } from './effect-fixtures'
+const server = setupServer()
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+afterEach(() => server.resetHandlers())
+afterAll(() => server.close())
+
 it('releases admission after abort even when stream cancellation never completes', async () => {
     let releaseCancellation!: () => void
     const cancellation = new Promise<void>((resolve) => {
         releaseCancellation = resolve
     })
     const stream = new ReadableStream<Uint8Array>({ cancel: () => cancellation })
-    const fetcher = vi
-        .fn<typeof fetch>()
-        .mockResolvedValueOnce(new Response(stream))
-        .mockResolvedValueOnce(new Response('{"ok":true}'))
-    const http = await transportClient(fetcher)
+    // Fetch interception wraps the body. Keep the actual reader and cancellation promise observable here.
+    const http = await transportClient((url) =>
+        Promise.resolve(
+            (url instanceof Request ? url.url : url.toString()).endsWith('/held')
+                ? new Response(stream)
+                : Response.json({ ok: true })
+        )
+    )
     const controller = new AbortController()
     const pending = run(http.request('https://api.github.com/held', 'fixture', { signal: controller.signal }))
     let deadline: ReturnType<typeof setTimeout> | undefined
@@ -37,29 +48,41 @@ it('releases admission after abort even when stream cancellation never completes
     }
 })
 it('retries temporary read failures but never replays an uncertain write', async () => {
-    const read = vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}', { status: 503 })))
-    await expect(run((await transportClient(read)).request('https://api.github.com/user', 'fixture'))).rejects.toThrow(
+    const methods: string[] = []
+    const reject = ({ request }: { request: Request }) => {
+        methods.push(request.method)
+        return Response.json({}, { status: 503 })
+    }
+    server.use(route.get('https://api.github.com/user', reject), route.post('https://api.notion.com/v1/pages', reject))
+    const client = await transportClient()
+    await expect(run(client.request('https://api.github.com/user', 'fixture'))).rejects.toThrow('503')
+    await expect(run(client.request('https://api.notion.com/v1/pages', 'fixture', { method: 'POST' }))).rejects.toThrow(
         '503'
     )
-    expect(read).toHaveBeenCalledTimes(3)
-    const write = vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}', { status: 503 })))
-    await expect(
-        run((await transportClient(write)).request('https://api.notion.com/v1/pages', 'fixture', { method: 'POST' }))
-    ).rejects.toThrow('503')
-    expect(write).toHaveBeenCalledTimes(1)
+    expect(methods).toEqual(['GET', 'GET', 'GET', 'POST'])
 })
 it('cancels retry waits without issuing another request', async () => {
     const controller = new AbortController()
-    const fetcher = vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}', { status: 503 })))
-    const pending = run(
-        (await transportClient(fetcher)).request('https://api.github.com/user', 'fixture', {
-            signal: controller.signal
+    const entered = deferred<undefined>()
+    let requests = 0
+    server.use(
+        route.get('https://api.github.com/user', () => {
+            requests++
+            entered.resolve(undefined)
+            return Response.json({}, { status: 503 })
         })
     )
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
-    controller.abort(new Error('Cancelled transport'))
-    await expect(pending).rejects.toThrow('Cancelled transport')
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    const client = await transportClient()
+    const pending = run(client.request('https://api.github.com/user', 'fixture', { signal: controller.signal }))
+    try {
+        await entered.promise
+        controller.abort(new Error('Cancelled transport'))
+        await expect(pending).rejects.toThrow('Cancelled transport')
+        expect(requests).toBe(1)
+    } finally {
+        controller.abort()
+        await pending.catch(() => undefined)
+    }
 })
 it('releases an oversized response reader and admits the next foreground request', async () => {
     let cancelled = false
@@ -71,11 +94,13 @@ it('releases an oversized response reader and admits the next foreground request
             cancelled = true
         }
     })
-    const fetcher = vi
-        .fn<typeof fetch>()
-        .mockResolvedValueOnce(new Response(stream))
-        .mockResolvedValueOnce(new Response('{"ok":true}'))
-    const http = await transportClient(fetcher)
+    const http = await transportClient((url) =>
+        Promise.resolve(
+            (url instanceof Request ? url.url : url.toString()).endsWith('/large')
+                ? new Response(stream)
+                : Response.json({ ok: true })
+        )
+    )
     await expect(
         run(http.request('https://api.github.com/large', 'fixture', {}, 'json', { maxBytes: 8 }))
     ).rejects.toMatchObject({ status: 413 })
@@ -114,36 +139,41 @@ it('interrupts the shared fetch when its last reader leaves and permits scope di
     }
 })
 it('keeps foreground reads eligible when matching background work exhausts its reserve', async () => {
-    let release!: () => void
-    const fetcher = vi
-        .fn<typeof fetch>()
-        .mockImplementationOnce(
-            () =>
-                new Promise<Response>((resolve) => {
-                    release = () =>
-                        resolve(
-                            new Response('{}', {
-                                headers: {
-                                    'x-ratelimit-remaining': '499',
-                                    'x-ratelimit-reset': String(Math.ceil(Date.now() / 1000) + 60)
-                                }
-                            })
-                        )
-                })
-        )
-        .mockResolvedValue(new Response('{"foreground":true}'))
-    const http = await transportClient(fetcher)
+    const entered = deferred<undefined>()
+    const release = deferred<undefined>()
+    const requests: string[] = []
+    server.use(
+        route.get('https://api.github.com/held', async () => {
+            requests.push('held')
+            entered.resolve(undefined)
+            await release.promise
+            return Response.json(
+                {},
+                {
+                    headers: {
+                        'x-ratelimit-remaining': '499',
+                        'x-ratelimit-reset': String(Math.ceil(Date.now() / 1000) + 60)
+                    }
+                }
+            )
+        }),
+        route.get('https://api.github.com/shared', () => {
+            requests.push('shared')
+            return Response.json({ foreground: true })
+        })
+    )
+    const http = await transportClient()
     const held = run(http.request('https://api.github.com/held', 'fixture'))
-    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    await entered.promise
     const background = run(
         http.request('https://api.github.com/shared', 'fixture', {}, 'json', { background: true })
     ).catch((error: unknown) => error)
     const foreground = run(http.request('https://api.github.com/shared', 'fixture'))
-    release()
+    release.resolve(undefined)
     await held
     expect(await foreground).toEqual({ foreground: true })
     expect(await background).toMatchObject({ status: 429 })
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(requests).toEqual(['held', 'shared'])
 })
 it('keeps different Notion representations separate in concurrent reads and ETag caching', async () => {
     const seen: {
@@ -170,38 +200,59 @@ it('keeps different Notion representations separate in concurrent reads and ETag
     ])
 })
 it('coalesces simultaneous reads even when Effect yields during admission', async () => {
-    const fetcher = vi.fn<typeof fetch>(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 50))
-        return new Response('{}')
-    })
-    const http = await transportClient(fetcher)
-    await Promise.all(
-        Array.from({ length: 2 }, () =>
-            run(http.request('https://api.notion.com/v1/pages/same', 'fixture').pipe(Effect.withMaxOpsBeforeYield(20)))
-        )
+    const entered = deferred<undefined>()
+    const release = deferred<undefined>()
+    let requests = 0
+    server.use(
+        route.get('https://api.notion.com/v1/pages/same', async () => {
+            requests++
+            entered.resolve(undefined)
+            await release.promise
+            return Response.json({ id: 'same' })
+        })
     )
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    const client = await transportClient()
+    const read = client
+        .request('https://api.notion.com/v1/pages/same', 'fixture')
+        .pipe(Effect.withMaxOpsBeforeYield(20))
+    const outcome = run(Effect.all([read, read], { concurrency: 'unbounded' }))
+    try {
+        await entered.promise
+        release.resolve(undefined)
+        expect(await outcome).toEqual([{ id: 'same' }, { id: 'same' }])
+        expect(requests).toBe(1)
+    } finally {
+        release.resolve(undefined)
+        await outcome
+    }
 })
 it.each(['shared', 'signal', 'write'] as const)(
     'owns %s requests until transport disposal and rejects reuse afterward',
     async (kind) => {
-        let signal: AbortSignal | undefined
-        const fetcher = vi.fn<typeof fetch>((_url, init) => {
-            signal = init?.signal ?? undefined
-            return new Promise<Response>(() => undefined)
-        })
-        const runtime = ManagedRuntime.make(HttpLive(fetcher))
+        const entered = deferred<Request>()
+        const release = deferred<undefined>()
+        let requests = 0
+        server.use(
+            route.all('https://api.github.com/owned', async ({ request }) => {
+                requests++
+                entered.resolve(request)
+                await release.promise
+                return Response.json({})
+            })
+        )
+        const runtime = ManagedRuntime.make(HttpLive())
         const http = await runtime.runPromise(Http)
         const init =
             kind === 'signal' ? { signal: new AbortController().signal } : kind === 'write' ? { method: 'POST' } : {}
         const reader = Effect.runFork(http.request('https://api.github.com/owned', 'fixture', init))
         try {
-            await vi.waitFor(() => expect(signal).toBeDefined())
+            const request = await entered.promise
             await runtime.dispose()
-            expect(signal?.aborted).toBe(true)
+            expect(request.signal.aborted).toBe(true)
             await expect(run(http.request('https://api.github.com/after', 'fixture', init))).rejects.toThrow('closed')
-            expect(fetcher).toHaveBeenCalledTimes(1)
+            expect(requests).toBe(1)
         } finally {
+            release.resolve(undefined)
             await Effect.runPromise(Fiber.interrupt(reader))
             await runtime.dispose()
         }
@@ -209,26 +260,39 @@ it.each(['shared', 'signal', 'write'] as const)(
 )
 it('admits queued foreground work before retrying a failed background read', async () => {
     const order: string[] = []
-    let release!: () => void
-    let backgroundAttempts = 0
-    const http = await transportClient((url) => {
-        const name = (url instanceof Request ? url.url : url.toString()).split('/').at(-1)!
-        order.push(name)
-        if (name === 'background' && ++backgroundAttempts === 1)
-            return new Promise<Response>((resolve) => {
-                release = () => resolve(new Response('{}', { status: 503 }))
-            })
-        return Promise.resolve(new Response('{}'))
-    })
-    const background = run(
-        http.request('https://api.github.com/background', 'fixture', {}, 'json', { background: true })
+    const entered = deferred<undefined>()
+    const release = deferred<undefined>()
+    server.use(
+        route.get('https://api.github.com/background', async () => {
+            order.push('background')
+            if (order.length === 1) {
+                entered.resolve(undefined)
+                await release.promise
+                return Response.json({}, { status: 503 })
+            }
+            return Response.json({})
+        }),
+        route.get('https://api.github.com/foreground', () => {
+            order.push('foreground')
+            return Response.json({})
+        })
     )
-    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
-    const foreground = run(http.request('https://api.github.com/foreground', 'fixture'))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    release()
-    await Promise.all([background, foreground])
-    expect(order).toEqual(['background', 'foreground', 'background'])
+    const client = await transportClient()
+    const background = run(
+        client.request('https://api.github.com/background', 'fixture', {}, 'json', { background: true })
+    )
+    try {
+        await entered.promise
+        const foreground = Effect.runFork(client.request('https://api.github.com/foreground', 'fixture'), {
+            immediate: true
+        })
+        release.resolve(undefined)
+        await Promise.all([background, run(Fiber.join(foreground))])
+        expect(order).toEqual(['background', 'foreground', 'background'])
+    } finally {
+        release.resolve(undefined)
+        await background
+    }
 })
 it('keeps transport children interruptible when the caller is masked', async () => {
     let release!: () => void
@@ -276,8 +340,7 @@ it('reports pause persistence failure through typed recovery and closes the unre
             headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.ceil(Date.now() / 1000) + 60) }
         }
     )
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response)
-    const http = await transportClient(fetcher, {
+    const http = await transportClient(() => Promise.resolve(response), {
         pauses: () => ({}),
         changed: () => {
             throw cause
@@ -289,11 +352,11 @@ it('reports pause persistence failure through typed recovery and closes the unre
     expect([...Cause.defects(result.cause)]).toEqual([])
     expect(cancelled).toBe(true)
     expect(response.body?.locked).toBe(false)
-    expect(fetcher).toHaveBeenCalledTimes(1)
 })
 
 it('retains the account-wide background allowance across rotation and transport restart', async () => {
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(1800000000000)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(1800000000000)
     const pauses: Record<string, number> = {}
     const store = {
         pauses: () => pauses,
@@ -301,9 +364,15 @@ it('retains the account-wide background allowance across rotation and transport 
             pauses[key] = until
         }
     }
-    const fetcher = vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}')))
+    let requests = 0
+    server.use(
+        route.get('https://api.github.com/*', () => {
+            requests++
+            return Response.json({})
+        })
+    )
     try {
-        const first = await transportClient(fetcher, store)
+        const first = await transportClient(undefined, store)
         const results = await Promise.allSettled(
             Array.from({ length: 30 }, (_, i) =>
                 run(
@@ -314,9 +383,9 @@ it('retains the account-wide background allowance across rotation and transport 
                 )
             )
         )
-        expect(fetcher).toHaveBeenCalledTimes(25)
+        expect(requests).toBe(25)
         expect(results.filter((result) => result.status === 'rejected')).toHaveLength(5)
-        const reopened = await transportClient(fetcher, store)
+        const reopened = await transportClient(undefined, store)
         await expect(
             run(
                 reopened.request('https://api.github.com/rotated', 'new-token', {}, 'json', {
@@ -325,33 +394,33 @@ it('retains the account-wide background allowance across rotation and transport 
                 })
             )
         ).rejects.toMatchObject({ status: 429 })
-        expect(fetcher).toHaveBeenCalledTimes(25)
+        expect(requests).toBe(25)
         await run(
             reopened.request('https://api.github.com/foreground', 'new-token', {}, 'json', { accountId: 'account' })
         )
-        expect(fetcher).toHaveBeenCalledTimes(26)
-        clock.mockReturnValue(1800000001000)
+        expect(requests).toBe(26)
+        vi.setSystemTime(1800000001000)
         await run(
             reopened.request('https://api.github.com/refilled', 'new-token', {}, 'json', {
                 background: true,
                 accountId: 'account'
             })
         )
-        expect(fetcher).toHaveBeenCalledTimes(27)
+        expect(requests).toBe(27)
     } finally {
-        clock.mockRestore()
+        vi.useRealTimers()
     }
 })
 
 it('counts background retry attempts inside one scoped acquisition turn', async () => {
-    const fetcher = vi.fn<typeof fetch>((url) =>
-        Promise.resolve(
-            new Response('{}', {
-                status: (url instanceof Request ? url.url : String(url)).endsWith('/retry') ? 503 : 200
-            })
-        )
+    let requests = 0
+    server.use(
+        route.get('https://api.github.com/*', ({ request }) => {
+            requests++
+            return Response.json({}, { status: request.url.endsWith('/retry') ? 503 : 200 })
+        })
     )
-    const http = await transportClient(fetcher)
+    const http = await transportClient()
     const outcomes = await run(
         http.withBackgroundTurn(
             Effect.gen(function* () {
@@ -375,7 +444,7 @@ it('counts background retry attempts inside one scoped acquisition turn', async 
             })
         )
     )
-    expect(fetcher).toHaveBeenCalledTimes(25)
+    expect(requests).toBe(25)
     expect(outcomes.filter((result) => result._tag === 'Right')).toHaveLength(22)
     expect(outcomes.filter((result) => result._tag === 'Left')).toHaveLength(8)
     await run(
@@ -384,5 +453,5 @@ it('counts background retry attempts inside one scoped acquisition turn', async 
             accountId: 'outside'
         })
     )
-    expect(fetcher).toHaveBeenCalledTimes(26)
+    expect(requests).toBe(26)
 })
