@@ -1,4 +1,5 @@
 ﻿import assert from 'node:assert/strict'
+import sharp from 'sharp'
 import { join, resolve } from 'node:path'
 import { writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
@@ -204,11 +205,18 @@ app.once('browser-window-created', (_, win) => {
                     "document.getElementById(document.activeElement.getAttribute('aria-activedescendant'))?.querySelector('[title]')?.title"
                 )
             await showPicker()
+            await pause(400)
+            await capture('palette-open')
             await wc.insertText('zzzzzzzzzz')
             await until(
-                () => js("!!document.querySelector('[data-slot=command-empty][data-empty]')"),
+                () =>
+                    js(
+                        "document.querySelector('[role=dialog] [role=status]')?.textContent === 'No results' && !!document.querySelector('[role=dialog] strong')"
+                    ),
                 'No empty result feedback'
             )
+            await pause(480)
+            await capture('palette-empty')
             await key('Enter')
             assert.equal(await paragraph(), beforeDrop)
             await key('Escape')
@@ -245,6 +253,7 @@ app.once('browser-window-created', (_, win) => {
             win.setContentSize(...size)
             await key('A', ['control'])
             await key('Backspace')
+            await pause(400)
             const first = await activeLabel()
             await key('Down')
             const second = await activeLabel()
@@ -268,6 +277,53 @@ app.once('browser-window-created', (_, win) => {
             assert.equal(await paragraph(), beforeDrop.slice(0, 2) + cited + beforeDrop.slice(5))
             await key('Z', ['control'])
             assert.equal(await paragraph(), beforeDrop)
+            // Capture the same real window while native input drives the palette, preserving frame timing.
+            const [width, height] = win.getContentSize()
+            const crop = {
+                x: Math.max(0, Math.floor((width - 700) / 2)),
+                y: 0,
+                width: Math.min(700, width),
+                height: Math.min(620, height)
+            }
+            const frames = []
+            /** @type {number[]} */
+            const times = []
+            let recording = true
+            const record = async () => {
+                while (recording) {
+                    const image = await wc.capturePage(crop)
+                    frames.push(image.resize({ width: 700 }).toPNG())
+                    times.push(performance.now())
+                    await pause(25)
+                }
+            }
+            const clip = record()
+            try {
+                await showPicker()
+                await pause(420)
+                const hover = await js(`(() => {
+                    const r = document.querySelectorAll('[role=dialog] [role=option]')[3].getBoundingClientRect()
+                    return {x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2)}
+                })()`)
+                wc.sendInputEvent({ type: 'mouseMove', ...hover })
+                await pause(400)
+                await wc.insertText('retry')
+                await pause(540)
+                await wc.insertText(' xyz')
+                await pause(550)
+                await click('[aria-label="Clear search"]')
+                await pause(480)
+                await key('Escape')
+                await pause(220)
+            } finally {
+                recording = false
+                await clip
+            }
+            assert.ok(frames.length > 12)
+            const delay = times.map((t, i) => Math.max(20, Math.round((times[i + 1] ?? t + 400) - t)))
+            await sharp(frames, { join: { animated: true } })
+                .gif({ delay, loop: 0, effort: 3 })
+                .toFile(join(output, 'palette-motion.gif'))
             await js(`(() => {
                 const data = new DataTransfer()
                 data.items.add(new File(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>'], 'fixture.svg', {type:'image/svg+xml'}))
@@ -292,6 +348,36 @@ app.once('browser-window-created', (_, win) => {
             )
             reference().close()
             reader().close()
+            wc.debugger.attach('1.3')
+            await wc.debugger.sendCommand('Emulation.setEmulatedMedia', {
+                features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
+            })
+            await until(
+                () =>
+                    js(
+                        "document.querySelector('.ws-writing-footer [role=status]')?.textContent.includes('Saved on this device')"
+                    ),
+                'Fixture edits did not finish saving before reload'
+            )
+            await win.loadURL(wc.getURL())
+            await until(() => js("document.querySelector('.tiptap')?.isContentEditable"), 'Saved draft did not reopen')
+            await js("document.querySelector('.tiptap').focus()")
+            await showPicker()
+            assert.ok(
+                await js(`(() => {
+                const dialog = document.querySelector('[role=dialog]')
+                const palette = dialog.lastElementChild
+                const style = getComputedStyle(palette)
+                return matchMedia('(prefers-reduced-motion: reduce)').matches && style.opacity === '1' &&
+                    (style.transform === 'none' || new DOMMatrix(style.transform).isIdentity)
+            })()`)
+            )
+            await key('Escape')
+            await until(
+                () => js("document.activeElement.matches('.tiptap')"),
+                'Reduced-motion dismissal did not restore focus'
+            )
+            wc.debugger.detach()
             writeFileSync(join(output, 'journey.json'), JSON.stringify({ passed: true, title, opened }))
             win.close()
         } catch (error) {

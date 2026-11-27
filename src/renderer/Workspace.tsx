@@ -1,3 +1,4 @@
+import { useShortcut, useShortcutHint } from '@ui-sdk/react/shortcuts'
 import { WorkspaceContextMenu } from './WorkspaceContextMenu'
 import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
@@ -98,31 +99,13 @@ export function Workspace({
     const [canCite, setCanCite] = useState(false)
     const editor = useRef<EditorHandle>(null)
     const [pickerOpen, setPickerOpen] = useState(false)
-    useEffect(() => {
-        if (!canCite) return
-        const openPicker = (event: KeyboardEvent) => {
-            const primary = navigator.platform.includes('Mac') ? event.metaKey : event.ctrlKey
-            if (
-                !primary ||
-                !event.shiftKey ||
-                event.altKey ||
-                event.key.toLowerCase() !== 'p' ||
-                event.defaultPrevented ||
-                event.isComposing ||
-                event.repeat ||
-                !(event.target instanceof Element) ||
-                !(
-                    event.target.closest('.writing-workspace') ||
-                    (event.target === document.body && !document.querySelector('[role="dialog"]'))
-                )
-            )
-                return
-            event.preventDefault()
-            setPickerOpen(true)
-        }
-        window.addEventListener('keydown', openPicker)
-        return () => window.removeEventListener('keydown', openPicker)
-    }, [canCite])
+    const shortcut = useShortcutHint('mod+shift+p')
+    useShortcut(canCite && !pickerOpen ? 'mod+shift+p' : null, () => setPickerOpen(true), {
+        description: 'Cite an activity',
+        when: () =>
+            !!document.activeElement?.closest('.writing-workspace') ||
+            (document.activeElement === document.body && !document.querySelector('[role="dialog"]'))
+    })
     const [notice, setNotice] = useState('')
     const [detached, setDetached] = useState<string>()
     const channel = useRef<BroadcastChannel | undefined>(undefined)
@@ -346,8 +329,8 @@ export function Workspace({
                             size="sm"
                             disabled={!canCite}
                             aria-label="Cite an activity"
-                            aria-keyshortcuts="Control+Shift+P Meta+Shift+P"
-                            title="Cite an activity"
+                            aria-keyshortcuts={shortcut.ariaKeyshortcuts}
+                            title={`Cite an activity (${shortcut.text})`}
                             onClick={() => setPickerOpen(true)}
                         >
                             <Quote size={16} aria-hidden="true" />
@@ -583,6 +566,7 @@ export function Workspace({
                     {inspector}
                 </div>
                 <CitationPicker
+                    shortcut={shortcut.text}
                     activities={items}
                     repositories={state.repositories}
                     open={canCite && pickerOpen}

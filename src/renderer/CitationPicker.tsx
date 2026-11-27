@@ -1,122 +1,90 @@
-﻿import { useMemo, useState } from 'react'
-import { createCommandController } from '@ui-sdk/core/command'
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@ui-sdk/react/command'
+import { useMemo } from 'react'
+import * as Dialog from '@radix-ui/react-dialog'
 import type { Activity, Repository } from '../shared/model'
-import { Dialog, DialogContent } from './components/arc/dialog/dialog'
-import { CornerDownLeft } from 'lucide-react'
-import { ScrollArea } from './components/arc/scroll-area/scroll-area'
-import { Input } from './components/arc/input/input'
+import { CommandPalette } from './components/arc/command-palette/command-palette'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
 import styles from './CitationPicker.module.css'
+
+interface ActivityCommandsProps {
+    activities: Activity[]
+    repositories: Repository[]
+    shortcut: string
+    onChoose: (activity: Activity) => void
+}
 
 export function CitationPicker({
     activities,
     repositories,
     open,
+    shortcut,
     onOpenChange,
     onChoose,
     onReturn
-}: {
-    activities: Activity[]
-    repositories: Repository[]
+}: ActivityCommandsProps & {
     open: boolean
     onOpenChange: (open: boolean) => void
-    onChoose: (activity: Activity) => void
     onReturn: () => void
 }) {
-    const [controller] = useState(createCommandController)
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent
-                title="Cite an activity"
-                backdrop="dim"
-                onOpenAutoFocus={(event) => {
-                    event.preventDefault()
-                    controller.focus()
-                }}
-                onCloseAutoFocus={(event) => {
-                    event.preventDefault()
-                    onReturn()
-                }}
-                onEscapeKeyDown={(event) => event.stopPropagation()}
-            >
-                <Results
-                    activities={activities}
-                    repositories={repositories}
-                    controller={controller}
-                    onChoose={(activity) => {
-                        onOpenChange(false)
-                        onChoose(activity)
+        <Dialog.Root open={open} onOpenChange={onOpenChange}>
+            <Dialog.Portal>
+                <Dialog.Overlay className={styles.overlay} />
+                <Dialog.Content
+                    className={styles.dialog}
+                    aria-describedby={undefined}
+                    onEscapeKeyDown={(event) => event.stopPropagation()}
+                    onCloseAutoFocus={(event) => {
+                        event.preventDefault()
+                        onReturn()
                     }}
-                />
-            </DialogContent>
-        </Dialog>
+                >
+                    <Dialog.Title className={styles.srOnly}>Cite an activity</Dialog.Title>
+                    <ActivityCommands
+                        activities={activities}
+                        repositories={repositories}
+                        shortcut={shortcut}
+                        onClose={() => onOpenChange(false)}
+                        onChoose={onChoose}
+                    />
+                </Dialog.Content>
+            </Dialog.Portal>
+        </Dialog.Root>
     )
 }
 
-function Results({
+function ActivityCommands({
     activities,
     repositories,
-    controller,
+    shortcut,
+    onClose,
     onChoose
-}: {
-    activities: Activity[]
-    repositories: Repository[]
-    controller: ReturnType<typeof createCommandController>
-    onChoose: (activity: Activity) => void
-}) {
-    const { items, byId } = useMemo(() => {
+}: ActivityCommandsProps & { onClose: () => void }) {
+    const items = useMemo(() => {
         const names = new Map(repositories.map((repo) => [repo.id, repo.name]))
-        const byId = new Map(activities.map((activity) => [activity.id, activity]))
-        const items = activities.map((activity) => ({
-            value: activity.id,
+        return activities.map((activity) => ({
+            id: activity.id,
             label: activity.title.trim() || 'Untitled activity',
+            group: names.get(activity.repositoryId) ?? 'Repository',
+            description: activity.sha?.slice(0, 7) ?? activity.branches[0],
             keywords: [names.get(activity.repositoryId) ?? '', activity.sha ?? '', ...activity.branches],
-            repository: names.get(activity.repositoryId) ?? 'Repository'
+            icon: <WorkspaceIcon name={activity.kind === 'commit' ? 'commit' : 'change-request'} />
         }))
-        return { items, byId }
     }, [activities, repositories])
     return (
-        <Command
-            controller={controller}
+        <CommandPalette
             items={items}
-            className={styles.command}
-            onAction={(id) => {
-                const activity = byId.get(id)
-                if (activity) onChoose(activity)
+            emptyLabel="No activities this week"
+            label="Search activities"
+            placeholder="Search activities to cite…"
+            shortcutHint={shortcut}
+            onClose={onClose}
+            onSelect={(item) => {
+                const activity = activities.find((activity) => activity.id === item.id)
+                if (activity) {
+                    onClose()
+                    onChoose(activity)
+                }
             }}
-        >
-            <CommandInput render={<Input label="Search activities" hideLabel placeholder="Search activities…" />} />
-            <ScrollArea className={styles.results} fade={8}>
-                <CommandEmpty className={styles.empty}>No matching activities</CommandEmpty>
-                <CommandList aria-label="Activities">
-                    {({ items: matches }) =>
-                        (matches as typeof items).map((item) => {
-                            const activity = byId.get(item.value)!
-                            return (
-                                <CommandItem
-                                    key={item.value}
-                                    className={styles.item}
-                                    value={item.value}
-                                    label={item.label}
-                                >
-                                    <WorkspaceIcon name={activity.kind === 'commit' ? 'commit' : 'change-request'} />
-                                    <span className={styles.text}>
-                                        <span className={styles.title} title={item.label}>
-                                            {item.label}
-                                        </span>
-                                        <span className={styles.meta}>
-                                            {item.repository}
-                                            {activity.sha && <code> · {activity.sha.slice(0, 7)}</code>}
-                                        </span>
-                                    </span>
-                                    <CornerDownLeft className={styles.enter} size={14} aria-hidden="true" />
-                                </CommandItem>
-                            )
-                        })
-                    }
-                </CommandList>
-            </ScrollArea>
-        </Command>
+        />
     )
 }
