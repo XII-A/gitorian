@@ -51,8 +51,8 @@ shell.openExternal = (url) => {
     return Promise.resolve()
 }
 const pause = (ms) => new Promise((done) => setTimeout(done, ms))
-async function until(check, message) {
-    for (let i = 0; i < 100; i++) {
+async function until(check, message, attempts = 100) {
+    for (let i = 0; i < attempts; i++) {
         if (await check()) return
         await pause(50)
     }
@@ -166,13 +166,34 @@ app.once('browser-window-created', (_, win) => {
             })()`)
             assert.equal(transfer[0].data, activity.id)
             wc.debugger.attach('1.3')
-            const drag = (type, items) =>
+            const drag = (type, items, point = dropPoint) =>
                 wc.debugger.sendCommand('Input.dispatchDragEvent', {
                     type,
-                    ...dropPoint,
+                    ...point,
                     data: { items, dragOperationsMask: 1 }
                 })
             const beforeDrop = await paragraph()
+            const linkCount = () => js("document.querySelectorAll('.tiptap a').length")
+            const beforeLinks = Number(await linkCount())
+            const betweenParagraphs = await js(`(() => {
+                const [first, second] = document.querySelectorAll('.tiptap p')
+                const a = first.getBoundingClientRect(), b = second.getBoundingClientRect()
+                return {x: Math.round(a.left + a.width / 2), y: Math.round((a.bottom + b.top) / 2)}
+            })()`)
+            await drag('dragEnter', transfer, betweenParagraphs)
+            await drag('dragOver', transfer, betweenParagraphs)
+            assert.ok(
+                await js("!!document.querySelector('.prosemirror-dropcursor-block')"),
+                'Missing paragraph drop guide'
+            )
+            await drag('drop', transfer, betweenParagraphs)
+            const dropGuide = '.prosemirror-dropcursor-block, .prosemirror-dropcursor-inline'
+            const guideCleared = () => js(`!document.querySelector(${JSON.stringify(dropGuide)})`)
+            await until(guideCleared, 'Paragraph drop guide lingered after citing the activity', 5)
+            assert.equal(await linkCount(), beforeLinks + 1)
+            await key('Z', ['control'])
+            assert.equal(await linkCount(), beforeLinks)
+            assert.equal(await paragraph(), beforeDrop)
             for (const [items, finish] of [
                 [transfer, 'dragCancel'],
                 [[{ ...transfer[0], data: 'missing-activity' }], 'drop'],
@@ -182,6 +203,7 @@ app.once('browser-window-created', (_, win) => {
                 await drag('dragEnter', items)
                 await drag('dragOver', items)
                 await drag(finish, items)
+                if (finish === 'drop') await until(guideCleared, 'Inline drop guide lingered after drop', 5)
                 if (finish === 'dragCancel' || items[0].data === 'missing-activity') {
                     assert.equal(await paragraph(), beforeDrop)
                 } else {

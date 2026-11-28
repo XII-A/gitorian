@@ -538,8 +538,8 @@ export function Workspace({
                         }}
                         onDropCapture={(event) => {
                             if (!event.dataTransfer.types.includes(activityDragType)) return
+                            // Claim the insertion but let the editor receive the drop to clear its guide.
                             event.preventDefault()
-                            event.stopPropagation()
                             if (
                                 !canCite ||
                                 !(event.target instanceof Element) ||
