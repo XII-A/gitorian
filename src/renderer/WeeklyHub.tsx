@@ -1,3 +1,4 @@
+import { shortcuts } from './journal-shortcuts'
 import { JournalCommandPalette } from './JournalCommandPalette'
 import { activityLink } from './workspace-model'
 import { summarizeRepositoryActivity } from './repository-markers'
@@ -44,7 +45,7 @@ import { ActivityDayFilter, ActivityDayRows, useActivityDays } from './ActivityD
 import { HubActivityDialog, type HubActivityDialogHandle } from './HubActivityDialog'
 import { HeaderAtmosphere } from './HeaderAtmosphere'
 import './hub.css'
-import { offsetDay, journalWeek } from './hub-model'
+import { offsetDay, journalWeek, weekEntryAction } from './hub-model'
 import { useActivityProjection } from './use-activity-projection'
 import { Tooltip } from './components/arc/tooltip/tooltip'
 import { EntryHistory } from './EntryHistory'
@@ -202,6 +203,9 @@ export function WeeklyHub({
     )
     const currentWeek = weekOf(new Date(), state.settings)
     const [start, setStart] = useState(initialWeek || currentWeek)
+    const history = useRef<{ openEntry: (id: string) => void }>(null)
+    const entry = useMemo(() => weekEntryAction(state, start, currentWeek), [state, start, currentWeek])
+    const openEntry = () => (entry.readerId ? history.current?.openEntry(entry.readerId) : onWrite(start))
     const end = offsetDay(start, 6)
     const dayFilter = useActivityDays(start)
     const [project, setProject] = useState('all')
@@ -318,7 +322,14 @@ export function WeeklyHub({
         </div>
     )
     const chart = (
-        <ActivityChart activities={items} week={start} timezone={state.settings.timezone} className="hub-chart" />
+        <ActivityChart
+            selectedDay={dayFilter.day}
+            onDayChange={dayFilter.setDay}
+            activities={items}
+            week={start}
+            timezone={state.settings.timezone}
+            className="hub-chart"
+        />
     )
     const stats = (
         <div className="hub-stats">
@@ -428,6 +439,7 @@ export function WeeklyHub({
                             <ActivitySourcesButton state={state} onClick={onSources} />
                             <AppUpdateButton />
                             <EntryHistory
+                                ref={history}
                                 open={entriesOpen}
                                 setOpen={setEntriesOpen}
                                 state={state}
@@ -464,7 +476,7 @@ export function WeeklyHub({
                             on.
                         </p>
                         <div className="hub-hero-action">
-                            <Button onClick={() => onWrite(start)}>Write this week’s entry →</Button>
+                            <Button onClick={openEntry}>{entry.label} →</Button>
                         </div>
                     </header>
 
@@ -565,6 +577,8 @@ export function WeeklyHub({
                                             <aside>
                                                 <RepositoryActivity
                                                     onHighlightChange={highlightRepository}
+                                                    project={project}
+                                                    onProjectChange={setProject}
                                                     summary={repositorySummary}
                                                     hasRepositories={state.repositories.some((repo) => !repo.removed)}
                                                 />
@@ -600,9 +614,9 @@ export function WeeklyHub({
                     repositories={repositories}
                     actions={[
                         {
-                            label: 'Write this week’s entry',
+                            label: entry.label,
                             icon: <PencilLine size={16} aria-hidden="true" />,
-                            run: () => onWrite(start)
+                            run: openEntry
                         },
                         {
                             label: 'Previous entries',
@@ -611,18 +625,21 @@ export function WeeklyHub({
                         },
                         {
                             label: refreshLabel,
+                            shortcut: shortcuts.refresh,
                             icon: <RefreshCw size={16} aria-hidden="true" />,
                             run: refresh,
                             restoreFocus: true
                         },
                         {
                             label: 'Previous week',
+                            shortcut: shortcuts.previous,
                             icon: <ChevronLeft size={16} aria-hidden="true" />,
                             run: () => setStart(shiftWeek(start, -1)),
                             restoreFocus: true
                         },
                         {
                             label: 'Next week',
+                            shortcut: shortcuts.next,
                             icon: <ChevronRight size={16} aria-hidden="true" />,
                             run: () => setStart(shiftWeek(start, 1)),
                             restoreFocus: true
@@ -637,7 +654,12 @@ export function WeeklyHub({
                                   }
                               ]
                             : []),
-                        { label: 'Open settings', icon: <Settings size={16} aria-hidden="true" />, run: onSettings },
+                        {
+                            label: 'Open settings',
+                            shortcut: shortcuts.settings,
+                            icon: <Settings size={16} aria-hidden="true" />,
+                            run: onSettings
+                        },
                         ...(sourceProblems(state).length
                             ? [
                                   {

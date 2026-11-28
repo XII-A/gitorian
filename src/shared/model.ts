@@ -215,6 +215,7 @@ export const stateSchema = z.object({
         .object({
             since: z.string(),
             until: z.string(),
+            publishedEntryId: z.string().optional(),
             next: z.object({ instant: z.number(), id: z.string() }).optional()
         })
         .optional(),

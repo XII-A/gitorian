@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, type Ref, useRef, useState } from 'react'
 import { BookOpen, ChevronRight, LoaderCircle, PencilLine, X } from 'lucide-react'
 import type { Command, EntryPage, Reply, State } from '../shared/model'
 import { Dialog, DialogClose, DialogContent } from './components/arc/dialog/dialog'
@@ -24,12 +24,14 @@ function entryDate(date: string, options: Intl.DateTimeFormatOptions) {
 }
 
 export function EntryHistory({
+    ref,
     open,
     setOpen,
     state,
     onWrite,
     run
 }: {
+    ref?: Ref<{ openEntry: (id: string) => void }>
     open: boolean
     setOpen: (open: boolean) => void
     state: State
@@ -39,6 +41,17 @@ export function EntryHistory({
     const [query, setQuery] = useState('')
     const [selectedId, setSelectedId] = useState<string>()
     const [reading, setReading] = useState(false)
+    useImperativeHandle(
+        ref,
+        () => ({
+            openEntry(id) {
+                setSelectedId(id)
+                setOpen(true)
+                setReading(true)
+            }
+        }),
+        [setOpen]
+    )
     const motion = useHistoryMotion(open, reading, () => {
         setReading(false)
         setOpen(false)

@@ -2,6 +2,7 @@ import { activityUpdating } from './background-work'
 import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import type { Command, Reply, InspectorTab } from '../shared/model'
 import { inspectorTabSchema } from '../shared/model'
+import { journalModalOpen } from './journal-shortcuts'
 import { WeeklyHub } from './WeeklyHub'
 import { Settings } from './Settings'
 import { StartupRecovery } from './StartupRecovery'
@@ -185,12 +186,7 @@ function JournalApp() {
                 setCommandsOpen(false)
                 return
             }
-            if (
-                document.querySelector(
-                    '[role="dialog"]:not([data-state="closed"]), [role="alertdialog"], [data-command-pending], dialog:modal'
-                )
-            )
-                return
+            if (journalModalOpen()) return
             event.preventDefault()
             event.stopPropagation()
             setCommandsOpen(true)

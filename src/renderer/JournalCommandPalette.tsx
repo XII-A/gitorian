@@ -1,13 +1,15 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import type { Activity, Repository } from '../shared/model'
 import { CommandPalette, type CommandItem } from './components/arc/command-palette/command-palette'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
 import { changeRequestNumber } from './pull-request'
+import { journalOverlayOpen, journalShortcut, shortcuts } from './journal-shortcuts'
 import styles from './JournalCommandPalette.module.css'
 
 interface PaletteAction {
+    shortcut?: string
     label: string
     icon?: ReactNode
     run: () => void | Promise<void>
@@ -46,6 +48,20 @@ export function JournalCommandPalette({ open, onOpenChange, restoreEditorFocus, 
         return () => clearTimeout(timer)
     }, [open, present])
 
+    const handleShortcut = useEffectEvent((event: KeyboardEvent) => {
+        if (open || present) return
+        const shortcut = journalShortcut(event)
+        if (!shortcut || journalOverlayOpen(shortcut)) return
+        const action = props.actions.find((item) => item.shortcut === shortcut)
+        if (!action) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (!event.repeat) void action.run()
+    })
+    useEffect(() => {
+        window.addEventListener('keydown', handleShortcut, true)
+        return () => window.removeEventListener('keydown', handleShortcut, true)
+    }, [])
     if (!open && !present) return null
     function select(action: PaletteAction) {
         if (!open || command.current) return
@@ -107,6 +123,7 @@ function JournalCommands({
             id: 'action:' + action.label,
             label: action.label,
             icon: action.icon,
+            shortcut: action.shortcut,
             group: 'Actions',
             primary: action
         }))
@@ -160,7 +177,7 @@ function JournalCommands({
             items={commands}
             label="Command palette"
             placeholder="Search actions and activities…"
-            modifierLabel={/Mac/i.test(navigator.platform) ? '⌘' : 'Ctrl'}
+            modifierLabel={shortcuts.primaryModifier}
             onClose={close}
             onSelect={(item) => select(byId.get(item.id)!.primary)}
             onModEnter={(item) => {

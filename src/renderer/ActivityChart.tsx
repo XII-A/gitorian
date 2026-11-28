@@ -11,10 +11,14 @@ import './activity-chart.css'
 
 export function ActivityChart({
     activities,
+    selectedDay,
+    onDayChange,
     timezone,
     className,
     week
 }: {
+    selectedDay: string
+    onDayChange: (day: string) => void
     activities: Activity[]
     timezone: string
     className?: string
@@ -118,7 +122,8 @@ export function ActivityChart({
                     compact
                     showAverage={false}
                     onActiveChange={preview}
-                    onDatumSelect={preview}
+                    selectedKey={selectedDay === 'all' ? undefined : selectedDay}
+                    onDatumSelect={(datum) => onDayChange(datum.key === selectedDay ? 'all' : datum.key)}
                     aria-describedby={open ? summaryId : undefined}
                 />
             </div>

@@ -63,6 +63,7 @@ export interface BarChartProps {
     /** Connect the scrubbed day to a contextual preview. Null means scrubbing ended. */
     onActiveChange?: (datum: BarChartDatum | null) => void
     /** Enter, Space, or a tap requests an interactive view of this day. */
+    selectedKey?: string
     onDatumSelect?: (datum: BarChartDatum) => void
     /** Associates the keyboard scrubber with an external count summary. */
     'aria-describedby'?: string
@@ -272,6 +273,7 @@ function TickLabel({
 
 function AxisLabel({
     text,
+    selected,
     size,
     shift,
     place,
@@ -279,6 +281,7 @@ function AxisLabel({
     reduced
 }: {
     text: string
+    selected: boolean
     size: number
     shift: number
     place: number
@@ -291,6 +294,7 @@ function AxisLabel({
     return (
         <motion.span
             className={styles.axisLabel}
+            data-selected={selected || undefined}
             style={{ x }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -458,6 +462,7 @@ export function BarChart({
     compact = false,
     onActiveChange,
     onDatumSelect,
+    selectedKey,
     'aria-describedby': describedBy
 }: BarChartProps) {
     const reduced = useReducedMotionSafe()
@@ -638,7 +643,7 @@ export function BarChart({
     }
     const release = (event: PointerEvent<HTMLDivElement>) => {
         const datum = data[pointAt(event.clientX)]
-        if (datum) onDatumSelect?.(datum)
+        if (datum && event.button === 0) onDatumSelect?.(datum)
         if (event.pointerType !== 'mouse') setActive(null)
     }
 
@@ -687,7 +692,7 @@ export function BarChart({
                     />
                 </span>
             </div>
-            <div className={styles.chart} data-scrubbing={scrubbing || undefined}>
+            <div className={styles.chart} data-scrubbing={scrubbing || !!selectedKey || undefined}>
                 <div ref={plot} className={styles.plot} style={{ height }}>
                     <svg className={styles.svg} width="100%" height={height} role="img" aria-label={summary}>
                         <AnimatePresence initial={false}>
@@ -714,7 +719,7 @@ export function BarChart({
                                     value={item.value}
                                     delay={known.fresh.get(item.key) ?? at * revealStep}
                                     shown={shown}
-                                    active={index === at}
+                                    active={index === at || item.key === selectedKey}
                                     frame={frame}
                                     scale={scale}
                                     height={height}
@@ -769,6 +774,7 @@ export function BarChart({
                                 <AxisLabel
                                     key={`${item.key}:${item.axisLabel}`}
                                     text={item.axisLabel}
+                                    selected={item.key === selectedKey}
                                     size={labelSizes[item.axisLabel] ?? 0}
                                     shift={shownLabels.get(item.key) ?? 0}
                                     place={last - at}
@@ -799,7 +805,7 @@ export function BarChart({
                     aria-valuemin={1}
                     aria-valuemax={Math.max(1, data.length)}
                     aria-valuenow={(index ?? last) + 1}
-                    aria-valuetext={valueText}
+                    aria-valuetext={reading?.key === selectedKey && selectedKey ? `${valueText}, selected` : valueText}
                     aria-describedby={describedBy}
                     onPointerDown={onPointerDown}
                     onPointerMove={onPointerMove}

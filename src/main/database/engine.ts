@@ -1713,7 +1713,18 @@ export class JournalEngine {
                   }))
             : []
         state.saves = state.drafts.flatMap((d) => this.listPublications(d.id))
+        // Entry history uses the calendar date recorded by the publication. Only fetch
+        // its identity here; opening the reader loads the document on demand.
+        const afterRange = new Date(Date.parse(until) + 86400000).toISOString().slice(0, 10)
+        const publication = this.db
+            .select({ id: t.entries.id })
+            .from(t.entries)
+            .where(and(gte(t.entries.date, week), lt(t.entries.date, afterRange)))
+            .orderBy(desc(t.entries.date), desc(t.entries.id))
+            .limit(1)
+            .get()
         state.activityPage = {
+            publishedEntryId: publication?.id,
             since: week,
             until,
             next: candidates.length > limit && page.length ? page[page.length - 1] : undefined

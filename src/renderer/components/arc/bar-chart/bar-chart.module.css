@@ -224,6 +224,16 @@
         transition: none;
     }
 }
+.axisLabel[data-selected] {
+    color: var(--foreground);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.scrubber:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
 .measure {
     position: absolute;
     top: 0;

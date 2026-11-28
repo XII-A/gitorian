@@ -67,6 +67,10 @@ Arabic and Turkish text can publish to Notion. Notion chooses remote direction a
 
 Place the caret in the draft, or select text to replace. Choose **Cite in entry** in the activity inspector, or drag an activity row to a word in the draft. Undo restores the previous writing.
 
+On the Hub, choose a day bar or a repository in the chart to filter the timeline. Choose it again to clear that filter. The day chart also filters Workspace activity. Use arrow keys to explore a chart and Enter or Space to select.
+
+Use **Alt+←** and **Alt+→** to change weeks outside a text field, **F5** to refresh, and **Ctrl+,** to open Settings. In Workspace, `Ctrl+\` toggles focus on writing, including while editing. On macOS, use **⌘** in place of Ctrl.
+
 Press **Ctrl+K** (**⌘K** on macOS) to open the command palette. Search for an activity by title, kind, repository, branch, SHA or request number. Use the arrow keys to highlight it. Press **Enter** to inspect it or **Ctrl+Enter** (**⌘Enter** on macOS) to cite it at the draft caret. The **Cite** button in the palette works too. Press **Escape** to return to your previous control.
 
 Click a citation to open its provider page. Activities with only a local source open in a Gitorian reference window. Local references publish to Notion as plain text.

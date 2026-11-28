@@ -4,10 +4,14 @@ import type { RepositorySummary } from './repository-markers'
 import './repository-activity.css'
 
 export function RepositoryActivity({
+    project,
+    onProjectChange,
     summary,
     hasRepositories,
     onHighlightChange
 }: {
+    project: string
+    onProjectChange: (key: string) => void
     summary: RepositorySummary
     hasRepositories: boolean
     onHighlightChange?: (key: string | null) => void
@@ -33,6 +37,9 @@ export function RepositoryActivity({
                 <div className="repository-chart">
                     <WaffleChart
                         data={data}
+                        activeKey={project === 'all' ? null : project}
+                        onActiveChange={(key) => onProjectChange(key ?? 'all')}
+                        isSelectable={(key) => summary.byId.has(key)}
                         onPreviewChange={onHighlightChange}
                         fillOrder="rows"
                         compactLegend

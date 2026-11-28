@@ -214,6 +214,9 @@ it('finds old unlinked entries in bounded history without sending document bodie
                 }
             })
         expect((await database.readWorkspace()).entries).toEqual([])
+        const archived = await database.readWorkspace({ since: '2019-12-30', until: '2020-01-05' })
+        expect(archived.activityPage?.publishedEntryId).toBe('entry-54')
+        expect(archived.entries).toEqual([])
         const first = await database.entryHistory('')
         expect(first.items).toHaveLength(50)
         expect(first.items[0]).not.toHaveProperty('body')

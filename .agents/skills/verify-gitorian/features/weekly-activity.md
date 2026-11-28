@@ -2,6 +2,10 @@
 
 Review the selected week's work, load older history, and recover failed sources without hiding healthy repositories.
 
+## Chart filters and shortcuts
+
+In a populated week, click a day bar twice and confirm the day chip and rows filter then reset. Repeat with a repository legend button and a waffle cell. Use arrows and Enter or Space to select a chart category by keyboard. Check the Hub entry action against an untouched week, saved writing and a publication. Open the palette and compare shortcut badges with the resulting actions. Try Alt+Left and Alt+Right with and without editor focus, F5 to refresh, Ctrl+, for Settings and Ctrl+\ for Workspace focus. Use Command in place of Ctrl on macOS. Hover Refresh and Focus to check the bottom tooltip and pill.
+
 ## Missing local repositories
 
 Build, import a disposable Git repository and move its folder to simulate an unavailable source.
