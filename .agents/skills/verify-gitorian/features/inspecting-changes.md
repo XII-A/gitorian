@@ -16,7 +16,7 @@ Open activity details, review changed files and diffs, and move a read-only refe
 
 ## How to get to it (user POV)
 
-Click a hub activity to open its detail dialog. Open journal and select activity for the workspace inspector. From the inspector use Pop out diff; Dock back to workspace returns the reference.
+Click a hub activity to open its detail dialog. Use the hub writing CTA and select activity for the workspace inspector. From the inspector use Pop out diff; Dock back to workspace returns the reference.
 
 ## Driving it with Electron
 

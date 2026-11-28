@@ -280,8 +280,8 @@ app.on('browser-window-created', (_, window) => {
                 window.webContents.once('did-finish-load', done)
                 window.webContents.reload()
             })
-            await wait(`!!document.querySelector('[aria-label="Open journal"]')`)
-            await click('[aria-label="Open journal"]')
+            await wait(`!!document.querySelector('.hub-hero-action button')`)
+            await click('.hub-hero-action button')
             await wait(`!!document.querySelector('[aria-label="Journal body"]')`)
             assert(
                 await js(
@@ -384,7 +384,7 @@ app.on('browser-window-created', (_, window) => {
             await wait(`document.querySelector('.app-update-popover')?.textContent.includes('Ready to update')`)
             await shot('06-hub-update-popover')
             await escape()
-            await click('[aria-label="Open journal"]')
+            await click('.hub-hero-action button')
             await wait(`!!document.querySelector('[aria-label="Journal body"]')`)
             await js(`window.__editor=document.querySelector('[aria-label="Journal body"]')`)
             await js(`window.__editor.focus()`)
@@ -441,8 +441,8 @@ app.on('browser-window-created', (_, window) => {
                 window.webContents.once('did-finish-load', done)
                 window.webContents.reload()
             })
-            await wait(`!!document.querySelector('[aria-label="Open journal"]')`)
-            await click('[aria-label="Open journal"]')
+            await wait(`!!document.querySelector('.hub-hero-action button')`)
+            await click('.hub-hero-action button')
             await wait(
                 `!!document.querySelector('[aria-label="Update ready"]') && !!document.querySelector('[aria-label="Journal body"]')`
             )

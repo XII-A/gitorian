@@ -111,7 +111,7 @@ app.on('browser-window-created', (_, window) => {
             record('Real previous-week Git acquisition', state)
             for (const surface of ['hub', 'workspace']) {
                 if (surface === 'workspace') {
-                    await js(`document.querySelector('[aria-label="Open journal"]').click()`)
+                    await js(`document.querySelector('.hub-hero-action button').click()`)
                     await wait(`!!document.querySelector('.ws-activity-filters')`)
                 }
                 const group = surface === 'hub' ? '.hub-day' : '.ws-day-group'

@@ -187,7 +187,7 @@ The lightbox observes its mounted image viewport, including changes to the botto
 
 Electron 44.5.1 bundles Chromium 152.0.7977.130, whose `HideCursorWhileTyping` path calls Win32 `ShowCursor` on the UI thread. Native file dialogs inherit the hidden cursor; their pointer events do not run Chromium's restoring filter. A wheel event in the app shows it again. Startup disables this feature on Windows while preserving other disabled features. Remove this workaround when the bundled Chromium includes [upstream fix a2be9ee](https://github.com/chromium/chromium/commit/a2be9eeac1d506dae63b2994cd605d83bb7622ea).
 
-Header icon sizing belongs to `.hub-utility-icons`; the text-bearing Continue setup button keeps its intrinsic width, padding and independent hover target.
+On the hub, Refresh sits beside the week picker. Entries and Continue setup retain their intrinsic label widths and share the small control height. Header actions stay borderless ghost pills at rest, reveal translucent Arc surfaces on hover or while open, and wrap in reading order.
 
 ## Emoji rendering
 

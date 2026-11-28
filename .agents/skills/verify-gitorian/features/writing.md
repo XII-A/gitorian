@@ -26,7 +26,7 @@ Start or resume a weekly entry, edit structured writing, cite work, and recover 
 
 ## How to get to it (user POV)
 
-From the hub use `Write this week’s entry` or `Open journal` to create or resume the current week's draft. An empty week reached inside the workspace offers `Start this week’s entry`. In the workspace, edit Entry title and Journal body; inspect activity and use its citation action.
+From the hub use `Write this week’s entry` to create or resume the current week's draft. An empty week reached inside the workspace offers `Start this week’s entry`. In the workspace, edit Entry title and Journal body; inspect activity and use its citation action.
 
 ## Driving it with Electron
 
@@ -44,7 +44,7 @@ The journey clears the template with native selection/typing, chooses Checklist 
 
 Preconditions: `pnpm build`. `pnpm smoke` runs `tools/desktop-smoke.mjs` against temporary repositories and an isolated profile. It drives real writing before explicitly switching to the sample workspace. Use the existing source as the executable journey and keep its real/sample phases distinct.
 
-- **Start:** `[aria-label="Open journal"]` creates or resumes the weekly draft. `[aria-label="Journal breadcrumb"]` returns to the hub.
+- **Start:** `.hub-hero-action button` creates or resumes the weekly draft. `[aria-label="Journal breadcrumb"]` returns to the hub.
 - **Type/save:** focus `[aria-label="Journal body"]`; `webContents.insertText('The draft survives a restart.')` exercises real input. Wait for a real IPC draft result containing that text, reload the workspace, and require the rendered text to survive.
 - **Recovery:** the existing harness injects a newer recovery record as explicit fault setup, then reloads and observes recovered text. This is recovery coverage, not user input.
 - **Citation:** Run `pnpm verify citations` with a built renderer. Select text mid-draft, inspect an activity and cite it. Check surrounding text, subsequent typing, undo, activation and persisted links in the disposable journal. Drop a row between paragraphs and inside a word, check that the drop guide clears promptly, undo the copy, and check cancellation, unknown activity IDs and ordinary text and image drops. Open the keyboard picker on a selection, search, navigate with both arrows, confirm with Enter and dismiss with Escape. Use Ctrl+Enter (Cmd+Enter on macOS) to inspect the highlighted result from focus mode, from Related on the same activity, and with that activity popped out. Check that Details takes focus and the next citation uses the saved selection. Check undo, empty results and long titles. Wheel the results, drag the overlay thumb, and use End and Home with focus in search. The journey captures the Arc palette open, filtered and empty, the opened Details panel, and a real-time animation of pointer navigation, filtering, clearing and dismissal.
@@ -69,7 +69,7 @@ The diagnostic's reload keeps the main process alive; it is not a full process r
 
 Use a journal-only disposable profile to review clipboard behavior.
 
-The journey starts from hub Open journal, types bold body text, copies and cuts through the mouse menu, undoes the cut and pastes the rich text. It cuts/pastes the title, checks Shift+F10, keyboard selection and Escape focus restoration, then copies selected Activity heading text with unavailable Cut/Paste actions omitted. Outside press closes the menu; reduced motion retains keyboard access. Reload and an independent post-exit SQLite read must retain the title and both bold text copies. In the selected-text menu screenshot, verify compact secondary Arc keycaps for Ctrl and X/C/V aligned at the trailing edge, no row icons, and dividers around spelling groups.
+The journey starts from the hub writing CTA, types bold body text, copies and cuts through the mouse menu, undoes the cut and pastes the rich text. It cuts/pastes the title, checks Shift+F10, keyboard selection and Escape focus restoration, then copies selected Activity heading text with unavailable Cut/Paste actions omitted. Outside press closes the menu; reduced motion retains keyboard access. Reload and an independent post-exit SQLite read must retain the title and both bold text copies. In the selected-text menu screenshot, verify compact secondary Arc keycaps for Ctrl and X/C/V aligned at the trailing edge, no row icons, and dividers around spelling groups.
 
 Database evidence uses `journal.sqlite`, with relational `drafts` (`body` JSON, `version` integer), `draft_selections`, `publication_attempts` and `entry_coverage`. Recovery copies carry their saved draft version. Both reopening a conflicting recovery copy and a live stale autosave open the Arc **Choose which writing to keep** dialog. Select **Saved writing** or **Recovery copy**, then submit **Keep saved writing** or **Use recovery copy**. Selection alone never resolves the conflict. Escape and outside presses cannot dismiss it; there is no close button. Both copies remain available until the chosen action succeeds. A newer saved version requires a fresh choice; a failed save leaves retry guidance inside the dialog.
 

@@ -276,7 +276,7 @@ try {
         (await evaluate(`__electron.app.getVersion()`)) === '0.1.4',
         'Installed baseline reports the old application version'
     )
-    await js(`document.querySelector('[aria-label="Open journal"]').click()`)
+    await js(`document.querySelector('.hub-hero-action button').click()`)
     await wait(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.includes('Start this week'))`)
     await js(
         `Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('Start this week')).click()`
@@ -304,8 +304,8 @@ try {
         (await evaluate(`__electron.app.getVersion()`)) === '0.1.4',
         'Ordinary exit with an update ready does not install it'
     )
-    await wait(`!!document.querySelector('[aria-label="Open journal"]')`)
-    await js(`document.querySelector('[aria-label="Open journal"]').click()`)
+    await wait(`!!document.querySelector('.hub-hero-action button')`)
+    await js(`document.querySelector('.hub-hero-action button').click()`)
     await wait(`!!document.querySelector('[aria-label="Journal body"]')`)
     await wait(`!!document.querySelector('[aria-label="Update ready"]')`)
     await js(`document.querySelector('[aria-label="Update ready"]').click()`)
@@ -328,7 +328,7 @@ try {
     await connect()
     assert((await evaluate(`__electron.app.getVersion()`)) === '0.1.5', 'Real NSIS handoff relaunches the new version')
     await wait(`!!document.querySelector('[aria-label="Open settings"]')`)
-    await js(`document.querySelector('[aria-label="Open journal"]').click()`)
+    await js(`document.querySelector('.hub-hero-action button').click()`)
     await wait(`!!document.querySelector('[aria-label="Journal body"]')`)
     assert(
         await js(

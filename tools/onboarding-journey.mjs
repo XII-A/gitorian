@@ -20,7 +20,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
     const headerGeometry = []
     const checkHeaderShape = async (stage) => {
         const geometry =
-            await js(`(() => ({width:innerWidth,buttons:Array.from(document.querySelectorAll('.hub-utilities button:not(.hub-setup-trigger)')).map(node=>{
+            await js(`(() => ({width:innerWidth,buttons:Array.from(document.querySelectorAll('.hub-refresh, .hub-utility-icons button:not(.history-trigger)')).map(node=>{
             const r=node.getBoundingClientRect();return {name:node.getAttribute('aria-label'),width:r.width,height:r.height};
         })}))()`)
         headerGeometry.push({ stage, ...geometry })
@@ -366,6 +366,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
             window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
             await wait(`!!document.querySelector('.hub-thread-layout')`)
             await finishRevealTrace('keyboard-dismiss', true)
+            await assert("document.activeElement?.matches('.hub-setup-trigger')")
             record({ fixture: 'Reset only onboarding visibility to exercise pointer dismissal independently' })
             await js(`localStorage.setItem(${JSON.stringify(key)},'active')`)
             await reload()
@@ -396,7 +397,7 @@ export async function onboardingJourney({ window, directory, output, js, wait, a
         await assert(`!document.querySelector('.hub-activity-preview')`)
         await shot('05-resume-popover')
         await assert(
-            `(() => {const nodes=Array.from(document.querySelectorAll('.hub-utility-icons button')); const trigger=document.querySelector('.hub-setup-trigger').getBoundingClientRect(); return nodes.length===4 && nodes.every(n=>n.getBoundingClientRect().left >= trigger.right - 1)})()`
+            `(() => {const nodes=Array.from(document.querySelectorAll('.hub-utility-icons button')); const trigger=document.querySelector('.hub-setup-trigger').getBoundingClientRect(); return nodes.some(n=>n.matches('.history-trigger')) && nodes.every(n=>n.getBoundingClientRect().left >= trigger.right - 1)})()`
         )
         window.setContentSize(320, 900)
         await pause(200)

@@ -123,8 +123,8 @@ app.on('browser-window-created', (_, window) => {
             throw new Error(`Not ready: ${expression}`)
         }
         try {
-            await wait(`!!document.querySelector('[aria-label="Open journal"]')`)
-            await js(`document.querySelector('[aria-label="Open journal"]').click()`)
+            await wait(`!!document.querySelector('.hub-hero-action button')`)
+            await js(`document.querySelector('.hub-hero-action button').click()`)
             await wait(`!!document.querySelector('.tiptap[contenteditable="true"]')`)
             await js(
                 `window.__smokeFile=()=>new File([Uint8Array.from(atob(${JSON.stringify(base64)}),c=>c.charCodeAt(0))],'system.png',{type:'image/png'});true`
@@ -527,8 +527,8 @@ app.on('browser-window-created', (_, window) => {
                 window.webContents.once('did-finish-load', done)
                 window.webContents.reload()
             })
-            await wait(`!!document.querySelector('[aria-label="Open journal"]')`)
-            await js(`document.querySelector('[aria-label="Open journal"]').click()`)
+            await wait(`!!document.querySelector('.hub-hero-action button')`)
+            await js(`document.querySelector('.hub-hero-action button').click()`)
             await wait(`document.querySelectorAll('.journal-image-preview img').length===4`)
             await js(`document.querySelectorAll('.journal-image-preview img').forEach(i=>i.loading='eager')`)
             await wait(

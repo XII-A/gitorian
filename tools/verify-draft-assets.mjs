@@ -301,7 +301,7 @@ try {
     await screenshot('03-writing-saved')
     await stop()
     await start()
-    await click('[aria-label="Open journal"]')
+    await click('.hub-hero-action button')
     await wait(`document.querySelector('[aria-label="Journal body"]')?.innerText.includes(${JSON.stringify(writing)})`)
     assert(true, 'Native writing survives full process quit and restart')
     await screenshot('04-writing-after-restart')
