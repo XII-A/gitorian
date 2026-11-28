@@ -1,3 +1,4 @@
+import { localCitationId } from './citation'
 import type { JournalNode } from './model'
 import { codeLanguage, notionCodeLanguage } from './code-languages'
 
@@ -26,7 +27,10 @@ function richText(nodes: JournalNode[] = []): RichText[] {
         return (
             (node.text ?? '').match(/[\s\S]{1,2000}/g)?.map((content) => ({
                 type: 'text' as const,
-                text: { content, ...(typeof link === 'string' ? { link: { url: link } } : {}) },
+                text: {
+                    content,
+                    ...(typeof link === 'string' && !localCitationId(link) ? { link: { url: link } } : {})
+                },
                 annotations: {
                     bold: marks.some((mark) => mark.type === 'bold'),
                     italic: marks.some((mark) => mark.type === 'italic'),

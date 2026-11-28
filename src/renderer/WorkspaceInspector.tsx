@@ -2,7 +2,7 @@ import { renderEmoji } from './provider-emoji'
 import { EmptyState } from './components/arc/empty-state/empty-state'
 import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
 import { readableError } from './background-work'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type Ref } from 'react'
 import type { Activity, Command, Reply, State, InspectorTab } from '../shared/model'
 import { Button } from './components/arc/button/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/arc/tabs/tabs'
@@ -29,7 +29,9 @@ interface Props {
     error?: string
     reference?: boolean
     canCite?: boolean
-    initialTab?: InspectorTab
+    tab: InspectorTab
+    onTabChange: (tab: InspectorTab) => void
+    headingRef?: Ref<HTMLHeadingElement>
     citationStatus?: string
     onCite: () => void
     onPopout?: (tab: InspectorTab) => void
@@ -44,15 +46,16 @@ export function WorkspaceInspector({
     error,
     reference,
     canCite,
-    initialTab = 'details',
+    tab,
+    onTabChange,
+    headingRef,
     citationStatus,
     onCite,
     onPopout,
     onClose,
     onInspect
 }: Props) {
-    const [tab, setTab] = useState<InspectorTab>(initialTab)
-    const [diffActivity, setDiffActivity] = useState(initialTab === 'diff' ? activity.id : undefined)
+    const [diffActivity, setDiffActivity] = useState(tab === 'diff' ? activity.id : undefined)
     const preparationRef = useRef({ state, activity, run })
     preparationRef.current = { state, activity, run }
     useEffect(() => {
@@ -61,9 +64,8 @@ export function WorkspaceInspector({
     }, [activity.id, activity.revision, activity.sourceVersion, state.restoreId])
     const titleId = useId()
     useEffect(() => {
-        setTab(initialTab)
-        if (initialTab === 'diff') setDiffActivity(activity.id)
-    }, [activity.id, initialTab])
+        if (tab === 'diff') setDiffActivity(activity.id)
+    }, [activity.id, tab])
     const repository = state.repositories.find((repo) => repo.id === activity.repositoryId)
     const related = useMemo(
         () =>
@@ -97,8 +99,7 @@ export function WorkspaceInspector({
                 variant="underline"
                 onValueChange={(value) => {
                     if (value !== 'details' && value !== 'diff' && value !== 'related') return
-                    setTab(value)
-                    if (value === 'diff') setDiffActivity(activity.id)
+                    onTabChange(value)
                     if (value === 'diff' && !hasCachedDetails(state, activity)) onInspect?.(activity, 'diff')
                     if (value === 'details' && !hasFileStatistics(activity) && !loading)
                         onInspect?.(activity, 'details')
@@ -110,6 +111,8 @@ export function WorkspaceInspector({
                         <div className="ws-inspector-summary">
                             <h2
                                 id={titleId}
+                                ref={headingRef}
+                                tabIndex={-1}
                                 className="ws-inspector-title"
                                 title={activity.kind === 'commit' ? activity.title : renderEmoji(activity.title)}
                             >

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { registerWritingCheckpoint } from './writing-checkpoint'
-import type { Command, Draft, JournalNode, Reply, State } from '../shared/model'
+import type { Command, Draft, Reply, State } from '../shared/model'
 import { draftSchema } from '../shared/model'
 import { plainText } from '../shared/notion-format'
 import { Editor, type EditorHandle } from './Editor'
@@ -13,18 +13,13 @@ import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
 import { useToastStack } from './components/arc/toast-stack/toast-stack'
 
-export interface Citation {
-    id: number
-    title: string
-    url?: string
-}
 interface Props {
     state: State
     week: string
     initialWrite?: boolean
     notionConnected: boolean
     run: (command: Command) => Promise<Reply | undefined>
-    citation?: Citation
+    editor: React.RefObject<EditorHandle | null>
     publishTarget: HTMLElement | null
     onReady: (ready: boolean) => void
     onSettings: () => void
@@ -41,7 +36,7 @@ export function WorkspaceDraft({
     initialWrite = false,
     notionConnected,
     run,
-    citation,
+    editor,
     publishTarget,
     onReady,
     onSettings
@@ -61,7 +56,6 @@ export function WorkspaceDraft({
     const [words, setWords] = useState(0)
     const [focusWriting, setFocusWriting] = useState(initialWrite)
     const writingStarted = useRef(false)
-    const editor = useRef<EditorHandle>(null)
     const bodySnapshot = useRef<EditorSnapshot | undefined>(undefined)
     const wordTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
     const { toast, dismiss, update } = useToastStack()
@@ -368,20 +362,6 @@ export function WorkspaceDraft({
         },
         [edit]
     )
-    useEffect(() => {
-        if (!citation || !latest.current) return
-        const content: JournalNode = {
-            type: 'paragraph',
-            content: [
-                {
-                    type: 'text',
-                    text: citation.title,
-                    ...(citation.url ? { marks: [{ type: 'link', attrs: { href: citation.url } }] } : {})
-                }
-            ]
-        }
-        editor.current?.insertBlock(content)
-    }, [citation])
     const create = useCallback(async () => {
         setBusy(true)
         if (!(await persist())) {

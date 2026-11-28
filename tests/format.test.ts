@@ -2,6 +2,26 @@ import { expect, it } from 'vitest'
 import { fromNotion, plainText, toNotion } from '../src/shared/notion-format'
 import type { JournalNode } from '../src/shared/model'
 
+it('publishes the label of a device-local citation without a journal-only destination', () => {
+    const blocks = toNotion({
+        type: 'doc',
+        content: [
+            {
+                type: 'paragraph',
+                content: [
+                    {
+                        type: 'text',
+                        text: 'Offline work',
+                        marks: [{ type: 'link', attrs: { href: '#gitorian-activity=local%3A42' } }]
+                    }
+                ]
+            }
+        ]
+    })
+    expect(blocks[0].paragraph).toMatchObject({ rich_text: [{ text: { content: 'Offline work' } }] })
+    expect(JSON.stringify(blocks)).not.toContain('#gitorian-activity')
+})
+
 it.each([
     ['typescript', 'typescript'],
     ['js', 'javascript'],

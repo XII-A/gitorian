@@ -1,0 +1,47 @@
+﻿.overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--background) 56%, transparent);
+    animation: fade-in var(--duration-fast) var(--ease-enter);
+}
+.dialog {
+    position: fixed;
+    z-index: 51;
+    inset-block-start: min(18dvh, 9rem);
+    inset-inline: 0;
+    width: min(38rem, calc(100% - var(--space-6)));
+    margin-inline: auto;
+}
+.srOnly {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+    overflow: hidden;
+}
+.overlay[data-state='closed'],
+.dialog[data-state='closed'] {
+    animation: fade-out var(--duration-fast) var(--ease-standard) forwards;
+    pointer-events: none;
+}
+@keyframes fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+@keyframes fade-out {
+    to {
+        opacity: 0;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .overlay,
+    .overlay[data-state='closed'],
+    .dialog[data-state='closed'] {
+        animation: none;
+    }
+}

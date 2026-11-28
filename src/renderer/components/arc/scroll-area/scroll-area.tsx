@@ -1,5 +1,6 @@
 'use client'
 
+import { motion } from 'motion/react'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
 import type { CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactNode, Ref, UIEvent } from 'react'
 import styles from './scroll-area.module.css'
@@ -40,6 +41,8 @@ export interface ScrollAreaProps extends Omit<HTMLAttributes<HTMLDivElement>, 'o
     label?: string
     /** Turns vertical wheel movement into horizontal scrolling for horizontal areas. Defaults to true. */
     wheelToHorizontal?: boolean
+    /** Account for viewport scroll offsets in descendants' Motion layout animations. */
+    layoutScroll?: boolean
     viewportClassName?: string
     viewportStyle?: CSSProperties
     viewportRef?: Ref<HTMLDivElement>
@@ -63,6 +66,7 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
         snap,
         label,
         wheelToHorizontal = true,
+        layoutScroll = false,
         viewportClassName,
         viewportStyle,
         viewportRef,
@@ -73,6 +77,7 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
     },
     forwardedRef
 ) {
+    const Viewport = layoutScroll ? motion.div : 'div'
     const rootRef = useRef<HTMLDivElement>(null)
     const viewport = useRef<HTMLDivElement>(null)
     const tracks = useRef<Record<Axis, HTMLDivElement | null>>({ x: null, y: null })
@@ -273,7 +278,8 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
             {...rest}
         >
             {startOverlay}
-            <div
+            <Viewport
+                {...(layoutScroll && { layoutScroll: true })}
                 ref={viewport}
                 className={[styles.viewport, viewportClassName].filter(Boolean).join(' ')}
                 data-fade={fade > 0 ? orientation : undefined}
@@ -284,7 +290,7 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
                 onScroll={handleScroll}
             >
                 {children}
-            </div>
+            </Viewport>
             {vertical && bar('y')}
             {horizontal && bar('x')}
             {endOverlay}

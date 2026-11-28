@@ -1,3 +1,4 @@
+import { useShortcut, useShortcutHint } from '@ui-sdk/react/shortcuts'
 import { WorkspaceContextMenu } from './WorkspaceContextMenu'
 import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
@@ -15,10 +16,13 @@ import { TagInput } from './components/arc/tag-input/tag-input'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
+import { CitationPicker } from './CitationPicker'
+import { Quote } from 'lucide-react'
 import { WorkspaceDraft } from './WorkspaceDraft'
-import type { Citation } from './WorkspaceDraft'
+import type { EditorHandle } from './Editor'
+import { localCitationHref } from '../shared/citation'
 import { WorkspaceInspector } from './WorkspaceInspector'
-import { activityLink, dateKey, dateValue, formatDay } from './workspace-model'
+import { activityDragType, activityLink, dateKey, dateValue, formatDay } from './workspace-model'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
 import { ExpandingSearch } from './components/arc/expanding-search/expanding-search'
 import { ActivityChart } from './ActivityChart'
@@ -93,10 +97,24 @@ export function Workspace({
     const [historyError, setHistoryError] = useState('')
     const [historyBusy, setHistoryBusy] = useState(false)
     const [canCite, setCanCite] = useState(false)
-    const [citation, setCitation] = useState<Citation>()
+    const editor = useRef<EditorHandle>(null)
+    const [pickerOpen, setPickerOpen] = useState(false)
+    const inspectorHeading = useRef<HTMLHeadingElement>(null)
+    const focusInspectorAfterPicker = useRef(false)
+    const shortcut = useShortcutHint('mod+shift+p')
+    useShortcut(canCite && !pickerOpen ? 'mod+shift+p' : null, () => setPickerOpen(true), {
+        description: 'Cite an activity',
+        when: () =>
+            !!document.activeElement?.closest('.writing-workspace') ||
+            (document.activeElement === document.body && !document.querySelector('[role="dialog"]'))
+    })
     const [notice, setNotice] = useState('')
     const [detached, setDetached] = useState<string>()
     const channel = useRef<BroadcastChannel | undefined>(undefined)
+    const dockActivity = (activityId: string) => {
+        channel.current?.postMessage({ type: 'close', activityId })
+        setDetached(undefined)
+    }
     const requestId = useRef(0)
     const inspectionState = useRef(state)
     inspectionState.current = state
@@ -156,16 +174,17 @@ export function Workspace({
     )
     const currentWeek = weekOf(new Date(), state.settings)
     const cite = useCallback(
-        (activity: Activity) => {
+        (activity: Activity, point?: { left: number; top: number }) => {
             if (!canCite) {
                 setNotice('Open or create an editable draft to add a citation.')
                 return
             }
-            setCitation({
-                id: Date.now(),
-                title: activity.sha ? `${activity.title} (${activity.sha.slice(0, 7)})` : activity.title,
-                url: activityLink(activity, state)
-            })
+            const title = activity.title.trim() || 'Untitled activity'
+            editor.current?.cite(
+                activity.sha ? `${title} (${activity.sha.slice(0, 7)})` : title,
+                activityLink(activity, state) ?? localCitationHref(activity.id),
+                point
+            )
         },
         [canCite, state]
     )
@@ -194,12 +213,12 @@ export function Workspace({
         }
     }, [state, items, cite, canCite])
     const changeWeek = (value: string) => {
+        setPickerOpen(false)
         setWeek(value)
         setSelectedId(undefined)
         setDetached(undefined)
         setDetailError('')
         setNotice('')
-        setCitation(undefined)
         const url = new URL(window.location.href)
         url.searchParams.set('week', value)
         window.history.replaceState({}, '', url)
@@ -261,7 +280,9 @@ export function Workspace({
                 loading={detailBusy}
                 error={detailError}
                 canCite={canCite}
-                initialTab={inspectionTab}
+                tab={inspectionTab}
+                onTabChange={setInspectionTab}
+                headingRef={inspectorHeading}
                 onCite={() => cite(selected)}
                 onInspect={(item, tab) => void inspect(item, tab)}
                 onPopout={popout}
@@ -311,6 +332,17 @@ export function Workspace({
                     <div className="ws-utilities">
                         <ActivitySourcesButton state={state} onClick={onSources} />
                         <AppUpdateButton />
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!canCite}
+                            aria-label="Cite an activity"
+                            aria-keyshortcuts={shortcut.ariaKeyshortcuts}
+                            title={`Cite an activity (${shortcut.text})`}
+                            onClick={() => setPickerOpen(true)}
+                        >
+                            <Quote size={16} aria-hidden="true" />
+                        </Button>
 
                         <Button
                             variant="ghost"
@@ -486,14 +518,7 @@ export function Workspace({
                             <div className="ws-detached-status">
                                 <WorkspaceIcon name="popout" />
                                 <span>Diff open in another window.</span>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                        channel.current?.postMessage({ type: 'close', activityId: detached })
-                                        setDetached(undefined)
-                                    }}
-                                >
+                                <Button variant="ghost" size="sm" onClick={() => dockActivity(detached)}>
                                     Dock back
                                 </Button>
                             </div>
@@ -501,19 +526,29 @@ export function Workspace({
                     </aside>
                     <div
                         className="ws-draft-host"
-                        onDragOver={(event) => {
-                            if (canCite && event.dataTransfer.types.includes('application/x-gitorian-activity'))
-                                event.preventDefault()
+                        onDragOverCapture={(event) => {
+                            if (!event.dataTransfer.types.includes(activityDragType)) return
+                            event.preventDefault()
+                            event.dataTransfer.dropEffect =
+                                canCite &&
+                                event.target instanceof Element &&
+                                event.target.closest('.tiptap[contenteditable="true"]')
+                                    ? 'copy'
+                                    : 'none'
                         }}
-                        onDrop={(event) => {
-                            const item = state.activities.find(
-                                (activity) =>
-                                    activity.id === event.dataTransfer.getData('application/x-gitorian-activity')
+                        onDropCapture={(event) => {
+                            if (!event.dataTransfer.types.includes(activityDragType)) return
+                            // Claim the insertion but let the editor receive the drop to clear its guide.
+                            event.preventDefault()
+                            if (
+                                !canCite ||
+                                !(event.target instanceof Element) ||
+                                !event.target.closest('.tiptap[contenteditable="true"]')
                             )
-                            if (item && canCite) {
-                                event.preventDefault()
-                                cite(item)
-                            }
+                                return
+                            const id = event.dataTransfer.getData(activityDragType)
+                            const activity = items.find((item) => item.id === id)
+                            if (activity) cite(activity, { left: event.clientX, top: event.clientY })
                         }}
                     >
                         <WorkspaceDraft
@@ -523,7 +558,7 @@ export function Workspace({
                             initialWrite={week === writingWeek.current}
                             notionConnected={notionConnected}
                             run={run}
-                            citation={citation}
+                            editor={editor}
                             publishTarget={publishTarget}
                             onReady={setCanCite}
                             onSettings={onSettings}
@@ -531,6 +566,25 @@ export function Workspace({
                     </div>
                     {inspector}
                 </div>
+                <CitationPicker
+                    activities={items}
+                    repositories={state.repositories}
+                    open={canCite && pickerOpen}
+                    onOpenChange={setPickerOpen}
+                    onChoose={cite}
+                    onInspect={(activity) => {
+                        focusInspectorAfterPicker.current = true
+                        setFocus(false)
+                        if (activity.id === detached) dockActivity(activity.id)
+                        void inspect(activity)
+                    }}
+                    onReturn={() => {
+                        if (focusInspectorAfterPicker.current && inspectorHeading.current)
+                            inspectorHeading.current.focus()
+                        else editor.current?.focus()
+                        focusInspectorAfterPicker.current = false
+                    }}
+                />
                 <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
                     <DialogContent
                         title="Browse branch history"

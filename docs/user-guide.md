@@ -62,3 +62,11 @@ Writing direction is automatic, with no document or block direction buttons abov
 Lists, checklists, quotes and toggles follow their writing direction. Image captions detect their writing direction automatically. Imported direction settings are saved with your writing and templates and survive backups. Inserting a template preserves its source policy without changing surrounding writing. Rich clipboard blocks carry direction; inline text uses the destination paragraph, and plain text/Markdown uses the destination policy.
 
 Arabic and Turkish text can publish to Notion. Notion chooses remote direction automatically because its integration interface does not expose manual direction settings. Local overrides remain available when the remote content is unchanged; editing the body in Notion replaces the local published copy on refresh, without reconstructing unsupported overrides. The app interface and formatting command names remain English. Language-specific search matching and spellcheck dictionaries are separate from writing direction.
+
+## Cite an activity while writing
+
+Place the caret in the draft, or select text to replace. Choose **Cite in entry** in the activity inspector, or drag an activity row to a word in the draft. Undo restores the previous writing.
+
+Press **Ctrl+Shift+P** on Windows or Linux, or **Cmd+Shift+P** on macOS, to search the week's activities. The quotation-mark button in the workspace header opens the same picker. Search by title, repository, branch or SHA. Use the arrow keys to highlight an activity. Press **Enter** to cite it or **Ctrl+Enter** (**Cmd+Enter** on macOS) to open its Details panel. Escape returns to writing.
+
+Click a citation to open its provider page. Activities with only a local source open in a Gitorian reference window. Local references publish to Notion as plain text.
