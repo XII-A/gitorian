@@ -1,3 +1,4 @@
+import { seedWindowedProfile } from './seed-windowed-profile.mjs'
 import { tsImport } from 'tsx/esm/api'
 import { seedJournal } from './seed-journal.mjs'
 import { app } from 'electron'
@@ -11,6 +12,7 @@ const output = process.env.GITORIAN_VERIFY_OUTPUT
 if (!process.env.GITORIAN_VERIFY_STATE || !output) throw new Error('Run pnpm verify activity-filters')
 const directory = join(process.env.GITORIAN_VERIFY_STATE, 'profile')
 app.setPath('userData', directory)
+seedWindowedProfile(app.getPath('userData'))
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 let started = false
 app.on('browser-window-created', (_, window) => {

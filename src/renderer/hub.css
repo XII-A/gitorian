@@ -52,43 +52,50 @@
     margin-inline: auto;
     padding: var(--space-6) var(--space-10);
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
     gap: var(--space-6);
 }
 .hub-date-controls {
     display: flex;
-    gap: var(--space-3);
     align-items: center;
-    flex-wrap: wrap;
-}
-.hub-date-controls > div {
-    width: 290px;
-}
-.hub-date-controls label {
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
+    gap: var(--space-2);
 }
 .hub-utilities {
     display: flex;
     align-items: center;
+    margin-inline-start: auto;
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: var(--space-2);
 }
 .hub-utility-icons {
     display: flex;
-    flex: none;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     align-items: center;
     gap: var(--space-2);
 }
-.hub-utility-icons button:not(.app-update-trigger) {
+.hub-utilities button,
+.hub-date-controls .hub-refresh {
+    border-radius: var(--radius-pill);
+    --button-hover-background: color-mix(in srgb, var(--surface-raised) 84%, transparent);
+    --button-hover-border: var(--border);
+}
+.hub-utilities button[aria-expanded='true'] {
+    color: var(--foreground);
+    background: var(--button-hover-background);
+    border-color: var(--button-hover-border);
+}
+.hub-date-controls .hub-refresh,
+.hub-utility-icons button:not(.history-trigger) {
+    flex: none;
     width: var(--control-height-sm);
     padding: 0;
 }
 .hub-utilities .hub-setup-trigger {
     width: auto;
-    min-height: 44px;
     padding-inline: var(--space-3);
 }
 .hub-content {
@@ -133,6 +140,7 @@
 }
 .hub-stats {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--space-8);
     padding-block: var(--space-2) var(--space-5);
 }
@@ -151,6 +159,11 @@
 .hub-stats > div > span {
     font-size: var(--text-xs);
     color: var(--text-secondary);
+}
+.hub-section-heading .hub-line-metric-empty {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
 }
 .hub-filter-sentinel {
     height: 1px;
@@ -557,9 +570,6 @@
         align-items: stretch;
         gap: var(--space-6);
     }
-    .hub-setup-trigger {
-        min-height: 44px;
-    }
 }
 .hub-thread-layout {
     display: grid;
@@ -644,7 +654,7 @@
 @media (max-width: 1000px) {
     .hub-stats {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         gap: var(--space-6);
     }
     .hub-thread-layout {
@@ -677,6 +687,11 @@
         align-items: stretch;
         gap: var(--space-5);
     }
+    .hub-summary-content {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-5);
+    }
     .hub-thread-summary .hub-chart {
         width: 100%;
     }
@@ -686,24 +701,12 @@
 }
 @media (max-width: 540px) {
     .hub-timeline .hub-section-heading {
-        align-items: start;
-        flex-direction: column;
+        flex-wrap: wrap;
     }
     .hub-topbar {
         flex-wrap: wrap;
         gap: var(--space-4);
         padding-inline: var(--space-4);
-    }
-    .hub-date-controls {
-        gap: var(--space-2);
-        width: 100%;
-    }
-    .hub-date-controls > div {
-        flex: 1;
-        width: auto;
-    }
-    .hub-utilities {
-        margin-inline-start: auto;
     }
     .hub-content {
         width: calc(100% - 32px);

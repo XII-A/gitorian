@@ -1,4 +1,3 @@
-import { useShortcut, useShortcutHint } from '@ui-sdk/react/shortcuts'
 import { WorkspaceContextMenu } from './WorkspaceContextMenu'
 import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
@@ -9,6 +8,7 @@ import type { Activity, Command, Reply, State, InspectorTab } from '../shared/mo
 import { localDate, shiftWeek, weekOf } from '../shared/model'
 import { offsetDay, journalWeek } from './hub-model'
 import { useActivityProjection } from './use-activity-projection'
+import { Tooltip } from './components/arc/tooltip/tooltip'
 import { Button } from './components/arc/button/button'
 import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
 import { Combobox } from './components/arc/combobox/combobox'
@@ -16,8 +16,10 @@ import { TagInput } from './components/arc/tag-input/tag-input'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
-import { CitationPicker } from './CitationPicker'
-import { Quote } from 'lucide-react'
+import { shortcuts } from './journal-shortcuts'
+import { JournalCommandPalette } from './JournalCommandPalette'
+import { sourceProblems } from './background-work'
+import { ArrowLeft, ChevronLeft, ChevronRight, GitBranch, Layers, RefreshCw, Settings } from 'lucide-react'
 import { WorkspaceDraft } from './WorkspaceDraft'
 import type { EditorHandle } from './Editor'
 import { localCitationHref } from '../shared/citation'
@@ -46,6 +48,8 @@ function ClearHistoryIcon() {
 }
 
 interface Props {
+    commandsOpen: boolean
+    setCommandsOpen: (open: boolean) => void
     state: State
     notionConnected: boolean
     run: (command: Command) => Promise<Reply | undefined>
@@ -57,6 +61,8 @@ interface Props {
     onSettings: () => void
 }
 export function Workspace({
+    commandsOpen,
+    setCommandsOpen,
     state,
     notionConnected,
     run,
@@ -98,16 +104,7 @@ export function Workspace({
     const [historyBusy, setHistoryBusy] = useState(false)
     const [canCite, setCanCite] = useState(false)
     const editor = useRef<EditorHandle>(null)
-    const [pickerOpen, setPickerOpen] = useState(false)
     const inspectorHeading = useRef<HTMLHeadingElement>(null)
-    const focusInspectorAfterPicker = useRef(false)
-    const shortcut = useShortcutHint('mod+shift+p')
-    useShortcut(canCite && !pickerOpen ? 'mod+shift+p' : null, () => setPickerOpen(true), {
-        description: 'Cite an activity',
-        when: () =>
-            !!document.activeElement?.closest('.writing-workspace') ||
-            (document.activeElement === document.body && !document.querySelector('[role="dialog"]'))
-    })
     const [notice, setNotice] = useState('')
     const [detached, setDetached] = useState<string>()
     const channel = useRef<BroadcastChannel | undefined>(undefined)
@@ -213,7 +210,7 @@ export function Workspace({
         }
     }, [state, items, cite, canCite])
     const changeWeek = (value: string) => {
-        setPickerOpen(false)
+        setCommandsOpen(false)
         setWeek(value)
         setSelectedId(undefined)
         setDetached(undefined)
@@ -246,6 +243,7 @@ export function Workspace({
         offsetDay(week, 6),
         state.settings.timezone
     )
+    const focusLabel = focus ? 'Show activity panels' : 'Focus on writing'
     const loadingWeek = useWeekHistory(state, run, week)
     const emptyActivityAction = useCallback(() => {
         dayFilter.setDay('all')
@@ -332,38 +330,28 @@ export function Workspace({
                     <div className="ws-utilities">
                         <ActivitySourcesButton state={state} onClick={onSources} />
                         <AppUpdateButton />
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={!canCite}
-                            aria-label="Cite an activity"
-                            aria-keyshortcuts={shortcut.ariaKeyshortcuts}
-                            title={`Cite an activity (${shortcut.text})`}
-                            onClick={() => setPickerOpen(true)}
-                        >
-                            <Quote size={16} aria-hidden="true" />
-                        </Button>
-
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={refresh}
-                            loading={refreshing || loadingWeek}
-                            aria-label={refreshLabel}
-                            title={refreshLabel}
-                        >
-                            <WorkspaceIcon name="refresh" width={16} height={16} />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setFocus((value) => !value)}
-                            aria-label={focus ? 'Show activity panels' : 'Focus on writing'}
-                            aria-pressed={focus}
-                            title={focus ? 'Show activity panels' : 'Focus on writing'}
-                        >
-                            <WorkspaceIcon name="focus" width={17} height={17} />
-                        </Button>
+                        <Tooltip content={refreshLabel} side="bottom">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={refresh}
+                                loading={refreshing || loadingWeek}
+                                aria-label={refreshLabel}
+                            >
+                                <WorkspaceIcon name="refresh" width={16} height={16} />
+                            </Button>
+                        </Tooltip>
+                        <Tooltip content={focusLabel} side="bottom">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setFocus((value) => !value)}
+                                aria-label={focusLabel}
+                                aria-pressed={focus}
+                            >
+                                <WorkspaceIcon name="focus" width={17} height={17} />
+                            </Button>
+                        </Tooltip>
                         <div className="ws-publish" ref={setPublishTarget} />
                     </div>
                 </header>
@@ -413,6 +401,8 @@ export function Workspace({
                             />
                         </div>
                         <ActivityChart
+                            selectedDay={dayFilter.day}
+                            onDayChange={dayFilter.setDay}
                             activities={items}
                             timezone={state.settings.timezone}
                             week={week}
@@ -566,24 +556,80 @@ export function Workspace({
                     </div>
                     {inspector}
                 </div>
-                <CitationPicker
+                <JournalCommandPalette
+                    open={commandsOpen}
+                    onOpenChange={setCommandsOpen}
                     activities={items}
                     repositories={state.repositories}
-                    open={canCite && pickerOpen}
-                    onOpenChange={setPickerOpen}
-                    onChoose={cite}
-                    onInspect={(activity) => {
-                        focusInspectorAfterPicker.current = true
+                    actions={[
+                        {
+                            label: 'Back to weekly overview',
+                            icon: <ArrowLeft size={16} aria-hidden="true" />,
+                            run: () => onBack(week)
+                        },
+                        {
+                            label: focusLabel,
+                            shortcut: shortcuts.focus,
+                            icon: <WorkspaceIcon name="focus" width={16} height={16} />,
+                            run: () => setFocus(!focus),
+                            restoreFocus: true
+                        },
+                        {
+                            label: refreshLabel,
+                            shortcut: shortcuts.refresh,
+                            icon: <RefreshCw size={16} aria-hidden="true" />,
+                            run: refresh,
+                            restoreFocus: true
+                        },
+                        {
+                            label: 'Browse branch history',
+                            icon: <GitBranch size={16} aria-hidden="true" />,
+                            run: () => {
+                                setHistoryError('')
+                                setHistoryOpen(true)
+                            }
+                        },
+                        {
+                            label: 'Previous week',
+                            shortcut: shortcuts.previous,
+                            icon: <ChevronLeft size={16} />,
+                            run: () => changeWeek(shiftWeek(week, -1)),
+                            restoreFocus: true
+                        },
+                        {
+                            label: 'Next week',
+                            shortcut: shortcuts.next,
+                            icon: <ChevronRight size={16} />,
+                            run: () => changeWeek(shiftWeek(week, 1)),
+                            restoreFocus: true
+                        },
+                        {
+                            label: 'Open settings',
+                            shortcut: shortcuts.settings,
+                            icon: <Settings size={16} aria-hidden="true" />,
+                            run: onSettings
+                        },
+                        ...(sourceProblems(state).length
+                            ? [
+                                  {
+                                      label: 'Review activity sources',
+                                      icon: <Layers size={16} aria-hidden="true" />,
+                                      run: onSources
+                                  }
+                              ]
+                            : [])
+                    ]}
+                    primaryLabel="Inspect"
+                    onActivity={(activity) => {
                         setFocus(false)
                         if (activity.id === detached) dockActivity(activity.id)
                         void inspect(activity)
+                        requestAnimationFrame(() => inspectorHeading.current?.focus())
                     }}
-                    onReturn={() => {
-                        if (focusInspectorAfterPicker.current && inspectorHeading.current)
-                            inspectorHeading.current.focus()
-                        else editor.current?.focus()
-                        focusInspectorAfterPicker.current = false
-                    }}
+                    restoreEditorFocus={() => editor.current?.focus()}
+                    secondaryLabel="Cite"
+                    secondaryRestoreFocus
+                    secondaryAction={(activity) => (canCite ? () => cite(activity) : undefined)}
                 />
                 <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
                     <DialogContent

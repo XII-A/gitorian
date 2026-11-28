@@ -1,4 +1,5 @@
-﻿import assert from 'node:assert/strict'
+﻿import { seedWindowedProfile } from './seed-windowed-profile.mjs'
+import assert from 'node:assert/strict'
 import sharp from 'sharp'
 import { join, resolve } from 'node:path'
 import { writeFileSync } from 'node:fs'
@@ -10,6 +11,7 @@ import { seedJournal } from './seed-journal.mjs'
 const output = process.env.GITORIAN_VERIFY_OUTPUT
 const profile = join(process.env.GITORIAN_VERIFY_STATE, 'profile')
 app.setPath('userData', profile)
+seedWindowedProfile(app.getPath('userData'))
 const { sampleState } = await tsImport('../tests/workspace-fixture.ts', import.meta.url)
 const week = '2026-10-05'
 /** @type {import('../src/shared/model').State} */
@@ -216,7 +218,7 @@ app.once('browser-window-created', (_, win) => {
             wc.debugger.detach()
             await select(2, 5)
             const showPicker = async () => {
-                await key('P', [process.platform === 'darwin' ? 'meta' : 'control', 'shift'])
+                await key('K', [process.platform === 'darwin' ? 'meta' : 'control'])
                 await until(
                     () => js("document.activeElement.matches('[role=dialog] input[role=combobox]')"),
                     'Picker search did not take focus'
@@ -229,7 +231,7 @@ app.once('browser-window-created', (_, win) => {
             await showPicker()
             await pause(400)
             await capture('palette-open')
-            const results = `document.querySelector('[aria-label="Activity results"]')`
+            const results = `document.querySelector('[aria-label="Command palette results"]')`
             const searchTop = () => js("document.querySelector('[role=dialog] input').getBoundingClientRect().top")
             const fixedTop = await searchTop()
             const wheelPoint = await js(
@@ -280,8 +282,8 @@ app.once('browser-window-created', (_, win) => {
             await pause(480)
             await capture('palette-empty')
             await key('Enter')
-            const inspectModifier = process.platform === 'darwin' ? 'meta' : 'control'
-            await key('Enter', [inspectModifier])
+            const commandModifier = process.platform === 'darwin' ? 'meta' : 'control'
+            await key('Enter', [commandModifier])
             assert.ok(await js("document.activeElement.matches('[role=dialog] input')"))
             assert.equal(await paragraph(), beforeDrop)
             await key('Escape')
@@ -298,14 +300,14 @@ app.once('browser-window-created', (_, win) => {
             const inspectedTitle = await activeLabel()
             assert.ok(inspectedTitle && inspectedTitle !== activity.title)
             const inspectHighlighted = async () => {
-                await key('Enter', [inspectModifier])
+                await key('Enter')
                 await until(
                     () =>
                         js(`document.activeElement.matches('.ws-inspector-title') &&
                             document.activeElement.textContent === ${JSON.stringify(inspectedTitle)} &&
                             !!document.querySelector('.ws-inspector [data-value="details"][aria-selected="true"]') &&
                             document.activeElement.getBoundingClientRect().height > 0 && !document.querySelector('[role=dialog]')`),
-                    'Modified Enter did not open and focus Details for the highlighted activity'
+                    'Enter did not open and focus Details for the highlighted activity'
                 )
                 assert.equal(await paragraph(), beforeDrop)
             }
@@ -372,7 +374,7 @@ app.once('browser-window-created', (_, win) => {
             const chosenLabel = await activeLabel()
             await pause(300)
             await capture('picker')
-            await key('Enter')
+            await key('Enter', [commandModifier])
             await until(
                 () => js("document.activeElement.matches('.tiptap') && !document.querySelector('[role=dialog]')"),
                 'Selection did not return to writing'

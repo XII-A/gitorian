@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import { BookOpen, ChevronRight, History, LoaderCircle, PencilLine, X } from 'lucide-react'
+import { useEffect, useImperativeHandle, type Ref, useRef, useState } from 'react'
+import { BookOpen, ChevronRight, LoaderCircle, PencilLine, X } from 'lucide-react'
 import type { Command, EntryPage, Reply, State } from '../shared/model'
 import { Dialog, DialogClose, DialogContent } from './components/arc/dialog/dialog'
 import { useHistoryMotion } from './use-history-motion'
 import { Drawer, DrawerContent, DrawerTrigger, useDrawerItem } from './components/arc/drawer/drawer'
-import { Tooltip } from './components/arc/tooltip/tooltip'
 import { Button } from './components/arc/button/button'
 import { SearchField } from './components/arc/search-field/search-field'
 import { ScrollArea } from './components/arc/scroll-area/scroll-area'
@@ -25,18 +24,34 @@ function entryDate(date: string, options: Intl.DateTimeFormatOptions) {
 }
 
 export function EntryHistory({
+    ref,
+    open,
+    setOpen,
     state,
     onWrite,
     run
 }: {
+    ref?: Ref<{ openEntry: (id: string) => void }>
+    open: boolean
+    setOpen: (open: boolean) => void
     state: State
     onWrite: (week: string) => void
     run: (command: Command) => Promise<Reply | undefined>
 }) {
-    const [open, setOpen] = useState(false)
     const [query, setQuery] = useState('')
     const [selectedId, setSelectedId] = useState<string>()
     const [reading, setReading] = useState(false)
+    useImperativeHandle(
+        ref,
+        () => ({
+            openEntry(id) {
+                setSelectedId(id)
+                setOpen(true)
+                setReading(true)
+            }
+        }),
+        [setOpen]
+    )
     const motion = useHistoryMotion(open, reading, () => {
         setReading(false)
         setOpen(false)
@@ -105,13 +120,12 @@ export function EntryHistory({
                 }
             }}
         >
-            <Tooltip content="Previous entries" side="bottom">
-                <DrawerTrigger asChild>
-                    <Button className="history-trigger" variant="ghost" size="sm" aria-label="Previous entries">
-                        <History size={16} strokeWidth={1.75} aria-hidden="true" />
-                    </Button>
-                </DrawerTrigger>
-            </Tooltip>
+            <DrawerTrigger asChild>
+                <Button className="history-trigger" variant="ghost" size="sm" aria-label="Previous entries">
+                    <BookOpen size={16} strokeWidth={1.75} aria-hidden="true" />
+                    Entries
+                </Button>
+            </DrawerTrigger>
             <DrawerContent
                 className="entry-history"
                 coordinatedMotion={motion.drawer}

@@ -66,9 +66,14 @@ app.on('browser-window-created', (_, window) => {
             )
             record(`Native application icon: ${iconResult.trim()}`)
             for (let attempt = 0; attempt < 50; attempt++) {
-                if (await evaluate(`!!document.querySelector('.window-title-bar')`)) break
+                if (await evaluate(`!!document.querySelector('[aria-label="Restore window"]')`)) break
                 await pause(100)
             }
+            assert.ok(window.isMaximized(), 'Fresh profile did not start maximized')
+            assert.deepEqual(await evaluate(`window.journal.windowControls.action('state')`), { maximized: true })
+            await evaluate(`document.querySelector('[aria-label="Restore window"]').click()`)
+            for (let attempt = 0; attempt < 50 && window.isMaximized(); attempt++) await pause(50)
+            assert.equal(window.isMaximized(), false, 'Initial restore action failed')
             assert.equal(window.isMenuBarVisible(), false, 'Native menu is still visible')
             window.webContents.debugger.attach('1.3')
             /** @param {number} x @param {number} y */
@@ -127,7 +132,10 @@ app.on('browser-window-created', (_, window) => {
             assert.ok(await hidden(), 'Title bar is not hidden at rest')
             assert.deepEqual(
                 await evaluate(
-                    `(() => { const r = document.getElementById('root').getBoundingClientRect(); return [r.x, r.y, innerWidth-r.right, innerHeight-r.bottom] })()`
+                    `(() => {
+                        const r = document.getElementById('root').getBoundingClientRect()
+                        return [r.x, r.y, innerWidth - r.right, innerHeight - r.bottom].map(Math.round)
+                    })()`
                 ),
                 [6, 6, 6, 6],
                 'Frame must stay thin on every edge'

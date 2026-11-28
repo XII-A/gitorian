@@ -1,9 +1,41 @@
 import { describe, expect, it } from 'vitest'
 import { initialState } from '../src/shared/model'
 import type { Activity } from '../src/shared/model'
-import { journalWeek, offsetDay } from '../src/renderer/hub-model'
+import { journalWeek, offsetDay, weekEntryAction } from '../src/renderer/hub-model'
 import { projectActivityRange, rangeActivities } from '../src/renderer/activity-projection'
+import { shortcutLabels } from '../src/renderer/journal-shortcuts'
 import { sampleState } from './workspace-fixture'
+
+it.each([
+    ['Win32', 'Ctrl'],
+    ['Linux x86_64', 'Ctrl'],
+    ['MacIntel', '⌘']
+])('labels desktop shortcuts for %s', (platform, modifier) => {
+    expect(shortcutLabels(platform)).toMatchObject({
+        settings: modifier + '+,',
+        focus: modifier + '+\\',
+        previous: 'Alt+←',
+        next: 'Alt+→',
+        refresh: 'F5'
+    })
+})
+
+it('opens the writing or publication belonging to the viewed week', () => {
+    const week = '2026-10-05'
+    const state = sampleState(week)
+    const draft = state.drafts[0]
+    expect(weekEntryAction(state, week, week).label).toBe('Continue this week’s entry')
+    expect(weekEntryAction(state, '2026-09-28', week)).toEqual({ label: 'Open entry', readerId: 'notion:sample-entry' })
+    draft.publishedEntryId = 'published'
+    expect(weekEntryAction(state, week, week).label).toBe('Open this week’s entry')
+    state.drafts = [
+        { ...draft, publishedEntryId: undefined, title: '2026-10-05 – 2026-10-11', body: state.settings.template }
+    ]
+    state.entries = []
+    expect(weekEntryAction(state, week, week).label).toBe('Write this week’s entry')
+    state.activityPage = { since: week, until: '2026-10-11', publishedEntryId: 'imported' }
+    expect(weekEntryAction(state, week, '2026-10-12')).toEqual({ label: 'Open entry', readerId: 'notion:imported' })
+})
 
 describe('weekly hub calendar ranges', () => {
     it('includes both endpoints in the journal timezone, even across the DST transition', () => {

@@ -54,6 +54,7 @@ export interface WaffleChartProps {
     /** Controlled focused category. Others dim while one is focused. */
     activeKey?: string | null
     defaultActiveKey?: string | null
+    isSelectable?: (key: string) => boolean
     onActiveChange?: (key: string | null) => void
     /** Effective hover, keyboard or pinned category for linked views. */
     onPreviewChange?: (key: string | null) => void
@@ -152,6 +153,7 @@ export function WaffleChart({
     activeKey,
     defaultActiveKey = null,
     onActiveChange,
+    isSelectable,
     onPreviewChange,
     legend = true,
     showValues = false,
@@ -205,6 +207,9 @@ export function WaffleChart({
     const setPinned = (key: string | null) => {
         if (activeKey === undefined) setOwnActive(key)
         onActiveChange?.(key)
+    }
+    const toggle = (key: string | undefined) => {
+        if (key && (!isSelectable || isSelectable(key))) setPinned(pinned === key ? null : key)
     }
     const [pointer, setPointer] = useState<Pointer>(null)
     const [preview, setPreview] = useState<string | null>(null)
@@ -313,6 +318,11 @@ export function WaffleChart({
     // Arrows walk the grid cell by cell; Page keys jump between categories.
     const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         if (empty) return
+        if ((event.key === 'Enter' || event.key === ' ') && onActiveChange) {
+            event.preventDefault()
+            toggle((pointer ?? pointAt(0))?.key)
+            return
+        }
         if (event.key === 'Escape' && pointer) {
             event.preventDefault()
             setPointer(null)
@@ -384,6 +394,11 @@ export function WaffleChart({
                         tabIndex={empty ? -1 : 0}
                         aria-roledescription="waffle chart"
                         aria-label={`${label}. ${count} cells. Use arrow keys to move between cells, Page Up and Page Down to jump between categories.`}
+                        onClick={
+                            onActiveChange
+                                ? (event) => toggle(pointAt(slotAt(event.clientX, event.clientY))?.key)
+                                : undefined
+                        }
                         onPointerMove={onPointerMove}
                         onPointerDown={onPointerDown}
                         onPointerUp={(event) => {
@@ -492,10 +507,11 @@ export function WaffleChart({
                                 <button
                                     type="button"
                                     className={styles.item}
+                                    disabled={isSelectable && !isSelectable(item.key)}
                                     aria-pressed={pinned === item.key}
                                     data-on={active === item.key || undefined}
                                     data-dim={(active !== null && active !== item.key) || undefined}
-                                    onClick={() => setPinned(pinned === item.key ? null : item.key)}
+                                    onClick={() => toggle(item.key)}
                                     onPointerEnter={(event) => {
                                         if (event.pointerType === 'mouse') setPreview(item.key)
                                     }}

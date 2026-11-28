@@ -90,7 +90,9 @@ it('preserves old and new rename paths and filenames containing whitespace in co
         await app.git('mv', 'work.txt', 'renamed work.txt')
         await writeFile(join(app.directory, ' leading space.txt'), 'new file\n')
         await writeFile(join(app.directory, 'binary.dat'), Buffer.from([0, 1, 2, 3]))
-        await app.git('add', 'binary.dat')
+        await writeFile(join(app.directory, '.gitattributes'), 'special.txt linguist-generated=true\n')
+        await writeFile(join(app.directory, 'special.txt'), 'one\ntwo\n')
+        await app.git('add', '.gitattributes', 'special.txt', 'binary.dat')
         await app.git('add', ' leading space.txt')
         await app.git('commit', '-m', 'Rename work and add a file')
         const details = await commitDetails(app.repository, await app.git('rev-parse', 'HEAD'), false)
@@ -107,6 +109,34 @@ it('preserves old and new rename paths and filenames containing whitespace in co
             ])
         )
         expect(details.diff).toBe('')
+        const indexed = await indexCommits(app.repository, {}, '')
+        const latest = indexed.items.find((item) => item.title === 'Rename work and add a file')!
+        const legacyConfiguration = JSON.stringify([
+            app.repository.path,
+            app.repository.remote,
+            app.repository.emails,
+            app.store.generation
+        ])
+        const legacy = { ...latest, weeklyChangeSummary: undefined }
+        await app.store.applyAcquisitionBatch({
+            repository: app.repository,
+            activities: [legacy],
+            historyDelta: { configuration: legacyConfiguration, refs: indexed.refs, items: [legacy] }
+        })
+        await app.store.saveCheckpoint('git:' + app.repository.id, {
+            status: 'idle',
+            configuration: legacyConfiguration
+        })
+        await run(app.service.refresh({ source: 'git' }))
+        const backup = await app.store.export()
+        await app.store.restore(backup)
+        expect((await app.store.activity(latest.id))?.weeklyChangeSummary).toEqual({
+            categories: { Other: { files: 3, additions: 2, deletions: 0 } },
+            binaryFiles: 1,
+            excludedFiles: 1,
+            excludedAdditions: 2,
+            excludedDeletions: 0
+        })
     } finally {
         await app.close()
     }

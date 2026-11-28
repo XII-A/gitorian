@@ -1,3 +1,4 @@
+import { seedWindowedProfile } from './seed-windowed-profile.mjs'
 import { app, dialog } from 'electron'
 import assert from 'node:assert/strict'
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -9,6 +10,7 @@ const scratch = process.env.GITORIAN_VERIFY_STATE
 const output = process.env.GITORIAN_VERIFY_OUTPUT
 if (!scratch || !output) throw new Error('Run pnpm verify activity-days')
 app.setPath('userData', join(scratch, 'profile'))
+seedWindowedProfile(app.getPath('userData'))
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 const repository = join(scratch, 'busy-week')
 mkdirSync(repository)
@@ -111,7 +113,7 @@ app.on('browser-window-created', (_, window) => {
             record('Real previous-week Git acquisition', state)
             for (const surface of ['hub', 'workspace']) {
                 if (surface === 'workspace') {
-                    await js(`document.querySelector('[aria-label="Open journal"]').click()`)
+                    await js(`document.querySelector('.hub-hero-action button').click()`)
                     await wait(`!!document.querySelector('.ws-activity-filters')`)
                 }
                 const group = surface === 'hub' ? '.hub-day' : '.ws-day-group'

@@ -1,3 +1,4 @@
+import { seedWindowedProfile } from './seed-windowed-profile.mjs'
 import { seedJournal } from './seed-journal.mjs'
 import { app, dialog, ipcMain } from 'electron'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
@@ -10,6 +11,7 @@ mkdirSync(resolve('.ai-docs'), { recursive: true })
 const appRoot = process.env.IMAGE_SMOKE_APP ?? '.'
 const directory = mkdtempSync(resolve('.ai-docs/image-smoke-'))
 app.setPath('userData', directory)
+seedWindowedProfile(app.getPath('userData'))
 const day = new Date()
 day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7))
 const week = day.toISOString().slice(0, 10)
@@ -102,7 +104,6 @@ app.on('browser-window-created', (_, window) => {
     if (checking) return
     checking = true
     smokeWindow = window
-    window.setContentSize(1560, 1000)
     window.webContents.debugger.attach('1.3')
     void window.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
     const cdp = (method, parameters = {}) => window.webContents.debugger.sendCommand(method, parameters)
@@ -114,6 +115,7 @@ app.on('browser-window-created', (_, window) => {
         return (await window.webContents.capturePage(undefined, { stayAwake: true })).toPNG()
     }
     window.webContents.once('did-finish-load', async () => {
+        window.setContentSize(1560, 1000)
         const js = (expression) => window.webContents.executeJavaScript(expression)
         const wait = async (expression) => {
             for (let attempt = 0; attempt < 100; attempt++) {
@@ -123,8 +125,8 @@ app.on('browser-window-created', (_, window) => {
             throw new Error(`Not ready: ${expression}`)
         }
         try {
-            await wait(`!!document.querySelector('[aria-label="Open journal"]')`)
-            await js(`document.querySelector('[aria-label="Open journal"]').click()`)
+            await wait(`!!document.querySelector('.hub-hero-action button')`)
+            await js(`document.querySelector('.hub-hero-action button').click()`)
             await wait(`!!document.querySelector('.tiptap[contenteditable="true"]')`)
             await js(
                 `window.__smokeFile=()=>new File([Uint8Array.from(atob(${JSON.stringify(base64)}),c=>c.charCodeAt(0))],'system.png',{type:'image/png'});true`
@@ -527,8 +529,8 @@ app.on('browser-window-created', (_, window) => {
                 window.webContents.once('did-finish-load', done)
                 window.webContents.reload()
             })
-            await wait(`!!document.querySelector('[aria-label="Open journal"]')`)
-            await js(`document.querySelector('[aria-label="Open journal"]').click()`)
+            await wait(`!!document.querySelector('.hub-hero-action button')`)
+            await js(`document.querySelector('.hub-hero-action button').click()`)
             await wait(`document.querySelectorAll('.journal-image-preview img').length===4`)
             await js(`document.querySelectorAll('.journal-image-preview img').forEach(i=>i.loading='eager')`)
             await wait(

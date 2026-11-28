@@ -41,6 +41,19 @@ export const repositorySchema = z.object({
     branches: z.array(z.string()).default([]),
     remotes: z.array(z.string()).optional()
 })
+export const changeCategories = ['Runtime', 'Tests', 'Evals', 'Docs', 'Other'] as const
+const count = z.number().int().nonnegative()
+const weeklyChangeSummarySchema = z.object({
+    categories: z.partialRecord(
+        z.enum(changeCategories),
+        z.object({ additions: count, deletions: count, files: count })
+    ),
+    binaryFiles: count,
+    excludedFiles: count,
+    excludedAdditions: count,
+    excludedDeletions: count
+})
+export type WeeklyChangeSummary = z.infer<typeof weeklyChangeSummarySchema>
 export const activitySchema = z.object({
     id: z.string(),
     repositoryId: z.string(),
@@ -103,6 +116,7 @@ export const activitySchema = z.object({
             sessionGeneration: z.number().optional()
         })
         .optional(),
+    weeklyChangeSummary: weeklyChangeSummarySchema.optional(),
     filesLoaded: z.boolean().optional(),
     disposition: z.enum(['inbox', 'deferred', 'dismissed']),
     deferUntil: z.string().optional(),
@@ -201,6 +215,7 @@ export const stateSchema = z.object({
         .object({
             since: z.string(),
             until: z.string(),
+            publishedEntryId: z.string().optional(),
             next: z.object({ instant: z.number(), id: z.string() }).optional()
         })
         .optional(),

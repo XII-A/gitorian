@@ -1,3 +1,4 @@
+import { seedWindowedProfile } from './seed-windowed-profile.mjs'
 import { app, BrowserWindow, nativeTheme } from 'electron'
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -7,6 +8,7 @@ const scratch = process.env.GITORIAN_VERIFY_STATE
 const output = process.env.GITORIAN_VERIFY_OUTPUT
 if (!scratch || !output) throw new Error('Run pnpm verify line-statistics with an owned disposable profile')
 app.setPath('userData', join(scratch, 'profile'))
+seedWindowedProfile(app.getPath('userData'))
 const fixture = JSON.parse(readFileSync(join(output, 'fixture.json'), 'utf8'))
 let failPr = true
 const requests = []

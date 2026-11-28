@@ -16,12 +16,15 @@ export interface CommandItem {
     group?: string
     keywords?: string[]
     icon?: ReactNode
+    primaryLabel?: string
+    secondaryLabel?: string
     shortcut?: string
 }
 export interface CommandPaletteProps {
     items: CommandItem[]
     placeholder?: string
     onSelect?: (item: CommandItem) => void
+    modifierLabel?: string
     onModEnter?: (item: CommandItem) => void
     onClose?: () => void
     label?: string
@@ -129,6 +132,7 @@ export function CommandPalette({
     placeholder = 'Search commands',
     onSelect,
     onModEnter,
+    modifierLabel,
     onClose,
     label = 'Command palette',
     autoFocus = false,
@@ -159,9 +163,12 @@ export function CommandPalette({
             else grouped.set(group, [entry])
         }
         const flat: CommandItem[] = []
-        const groups = [...grouped.entries()].map(
-            ([group, entries]) => [group, entries.map(({ item }) => ({ item, index: flat.push(item) - 1 }))] as const
-        )
+        const groups = [...grouped.entries()]
+            .sort(([a], [b]) => Number(b === 'Actions') - Number(a === 'Actions'))
+            .map(
+                ([group, entries]) =>
+                    [group, entries.map(({ item }) => ({ item, index: flat.push(item) - 1 }))] as const
+            )
         return {
             groupedItems: groups,
             filtered: flat,
@@ -179,7 +186,8 @@ export function CommandPalette({
     const glide = shift.glide && !reduced
     // The first result is active until the pointer or the arrow keys pick another, so Enter always has a target.
     const safeActiveIndex = filtered.length ? Math.min(activeIndex ?? 0, filtered.length - 1) : -1
-    const activeId = filtered[safeActiveIndex]?.id
+    const activeItem = filtered[safeActiveIndex]
+    const activeId = activeItem?.id
 
     useEffect(() => {
         if (autoFocus) inputRef.current?.focus({ preventScroll: true })
@@ -236,11 +244,8 @@ export function CommandPalette({
 
     function choose(item: CommandItem, action = onSelect) {
         action?.(item)
-        setQuery('')
-        setActiveIndex(null)
-        inputRef.current?.focus()
     }
-    function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
         if (event.nativeEvent.isComposing) return
         const target = filtered[safeActiveIndex]
         if (
@@ -252,7 +257,7 @@ export function CommandPalette({
         ) {
             event.preventDefault()
             event.stopPropagation()
-            if (target) choose(target, onModEnter)
+            if (target?.secondaryLabel) choose(target, onModEnter)
             return
         }
         if (event.target !== inputRef.current) return
@@ -281,20 +286,7 @@ export function CommandPalette({
     }
 
     return (
-        <motion.div
-            className={styles.palette}
-            onKeyDown={handleKeyDown}
-            initial={reduced ? false : { opacity: 0, y: 6, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={
-                reduced
-                    ? { duration: 0 }
-                    : {
-                          default: motionTokens.spring.smooth,
-                          opacity: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] }
-                      }
-            }
-        >
+        <div className={styles.palette}>
             <div className={styles.searchRow}>
                 <span className={styles.searchIcon}>
                     <Search width={18} height={18} strokeWidth={1.75} aria-hidden="true" />
@@ -304,6 +296,7 @@ export function CommandPalette({
                 </label>
                 <input
                     ref={inputRef}
+                    onKeyDown={handleKeyDown}
                     id={inputId}
                     role="combobox"
                     aria-autocomplete="list"
@@ -315,7 +308,7 @@ export function CommandPalette({
                         setQuery(event.target.value)
                         setActiveIndex(null)
                     }}
-                    aria-keyshortcuts={onModEnter ? 'Control+Enter Meta+Enter' : undefined}
+                    aria-keyshortcuts={activeItem?.secondaryLabel ? 'Control+Enter Meta+Enter' : undefined}
                     placeholder={placeholder}
                     autoComplete="off"
                 />
@@ -378,10 +371,10 @@ export function CommandPalette({
                 transition={reduced ? { duration: 0 } : motionTokens.spring.smooth}
             >
                 <ScrollArea
-                    label="Activity results"
+                    label={`${label} results`}
                     layoutScroll
                     viewportRef={viewportRef}
-                    maxHeight="min(342px, 62dvh)"
+                    maxHeight="min(420px, 55dvh)"
                     fade={8}
                     viewportStyle={{ overscrollBehaviorY: 'contain' }}
                 >
@@ -444,7 +437,12 @@ export function CommandPalette({
                                                             tabIndex={-1}
                                                             role="option"
                                                             aria-selected={index === safeActiveIndex}
-                                                            onClick={() => choose(item)}
+                                                            onClick={(event) => {
+                                                                if (event.ctrlKey || event.metaKey) {
+                                                                    if (item.secondaryLabel && onModEnter)
+                                                                        choose(item, onModEnter)
+                                                                } else choose(item)
+                                                            }}
                                                             onPointerMove={(event) => {
                                                                 // Ignore the synthetic moves browsers send while the list scrolls under a still pointer.
                                                                 if (
@@ -530,6 +528,21 @@ export function CommandPalette({
                     </div>
                 </ScrollArea>
             </motion.div>
+            {activeItem && (
+                <footer className={styles.footer}>
+                    <span>
+                        <kbd>↵</kbd>
+                        {activeItem.primaryLabel ?? 'Run'}
+                    </span>
+                    {activeItem.secondaryLabel && (
+                        <button type="button" onClick={() => onModEnter?.(activeItem)}>
+                            <kbd>{modifierLabel}</kbd>
+                            <kbd>↵</kbd>
+                            {activeItem.secondaryLabel}
+                        </button>
+                    )}
+                </footer>
+            )}
             <span className={styles.visuallyHidden} role="status" aria-live="polite">
                 {query.trim()
                     ? filtered.length
@@ -537,7 +550,7 @@ export function CommandPalette({
                         : 'No results'
                     : ''}
             </span>
-        </motion.div>
+        </div>
     )
 }
 

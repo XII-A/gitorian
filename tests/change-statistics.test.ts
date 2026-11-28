@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { summarizeChanges } from '../src/shared/change-statistics'
+import { isExcludedFromWeeklyLineStats, weeklyLineStats, summarizeChanges } from '../src/shared/change-statistics'
 
 it('partitions all text changes once, with eval/test paths taking precedence over source and docs', () => {
     const result = summarizeChanges([
@@ -34,4 +34,42 @@ it('distinguishes unavailable old metadata, binary-only changes, and confirmed z
         deletions: 0
     })
     expect(summarizeChanges([]).total).toEqual({ additions: 0, deletions: 0 })
+})
+
+it('filters weekly noise without masking source, test or documentation paths', () => {
+    for (const name of [
+        'app/pnpm-lock.yaml',
+        'drizzle/meta/001_snapshot.json',
+        'client.gen.ts',
+        'a/__generated__/api.ts',
+        'ui.snap',
+        'assets/image.svg'
+    ])
+        expect(isExcludedFromWeeklyLineStats(name), name).toBe(true)
+    for (const name of ['src/client.ts', 'tests/client.test.ts', 'docs/generated-code.md'])
+        expect(isExcludedFromWeeklyLineStats(name), name).toBe(false)
+})
+
+it('counts commits once, distinguishes partial coverage, and accepts confirmed empty evidence', () => {
+    const known = {
+        kind: 'commit',
+        filesLoaded: true,
+        files: [{ name: 'src/app.ts', status: 'M', lineStats: { additions: 3, deletions: 1 } }]
+    } as const
+    const files = [...known.files]
+    const unknown = { kind: 'commit' as const, files: [] }
+    expect(weeklyLineStats([])).toMatchObject({ missing: 0, total: { additions: 0, deletions: 0 } })
+    expect(weeklyLineStats([unknown])).toMatchObject({ missing: 1, total: undefined })
+    expect(weeklyLineStats([{ ...known, files: [] }])).toMatchObject({
+        missing: 0,
+        total: { additions: 0, deletions: 0 }
+    })
+    expect(
+        weeklyLineStats([
+            { ...known, files },
+            { ...known, files, kind: 'review' },
+            { ...known, files, kind: 'change-request' },
+            unknown
+        ])
+    ).toMatchObject({ missing: 1, total: { additions: 3, deletions: 1 } })
 })

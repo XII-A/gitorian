@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { registerWritingCheckpoint } from './writing-checkpoint'
 import type { Command, Draft, Reply, State } from '../shared/model'
+import { draftForWeek } from './hub-model'
 import { draftSchema } from '../shared/model'
 import { plainText } from '../shared/notion-format'
 import { Editor, type EditorHandle } from './Editor'
@@ -66,7 +67,7 @@ export function WorkspaceDraft({
     const pending = useRef<Promise<boolean> | undefined>(undefined)
     const mounted = useRef(true)
     const notifiedSave = useRef('')
-    const drafts = state.drafts.filter((item) => item.week === week)
+    const savedDraft = draftForWeek(state, week)
     const ready = !!draft && !busy && !recoveryConflict
     const storageKey = `gitorian:recovery:${state.restoreId ?? 'local'}:${week}`
     const snapshot = useCallback(() => {
@@ -284,11 +285,10 @@ export function WorkspaceDraft({
         [busy, imagesReady, cache, persist]
     )
     useEffect(() => {
-        const first = drafts.at(-1)
-        if (!latest.current && first) {
-            choose(first)
+        if (!latest.current && savedDraft) {
+            choose(savedDraft)
         }
-        const confirmed = drafts.find((item) => item.id === latest.current?.id && item.publishedEntryId)
+        const confirmed = savedDraft?.publishedEntryId && savedDraft.id === latest.current?.id ? savedDraft : undefined
         if (confirmed && !latest.current?.publishedEntryId) {
             if (dirty.current) {
                 latest.current = { ...latest.current!, publishedEntryId: confirmed.publishedEntryId }
@@ -301,7 +301,7 @@ export function WorkspaceDraft({
                 setStatus('Published to Notion')
             }
         }
-    }, [drafts, choose])
+    }, [savedDraft, choose])
     useEffect(() => {
         onReady(ready)
         return () => onReady(false)
@@ -370,7 +370,7 @@ export function WorkspaceDraft({
         }
         const result = await run({ type: 'newDraft', week })
         if (!mounted.current) return
-        const created = result?.state.drafts.filter((item) => item.week === week).at(-1)
+        const created = result && draftForWeek(result.state, week)
         if (created) {
             setFocusWriting(true)
             choose(created)
@@ -380,8 +380,8 @@ export function WorkspaceDraft({
     useEffect(() => {
         if (!initialWrite || writingStarted.current) return
         writingStarted.current = true
-        if (!latest.current && drafts.length === 0) void create()
-    }, [initialWrite, drafts.length, create])
+        if (!latest.current && !savedDraft) void create()
+    }, [initialWrite, savedDraft, create])
     const publish = async () => {
         if (!imagesReady) return
         const updating = !!latest.current?.publishedEntryId

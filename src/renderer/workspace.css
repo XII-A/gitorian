@@ -56,6 +56,17 @@
     width: var(--control-height-sm);
     padding: 0;
 }
+.ws-utilities > button {
+    border-radius: var(--radius-pill);
+    color: var(--text-secondary);
+    --button-hover-background: color-mix(in srgb, var(--surface-raised) 84%, transparent);
+    --button-hover-border: var(--border);
+}
+.ws-utilities > button:is(:enabled:hover, :active, [aria-pressed='true'], [aria-expanded='true']) {
+    color: var(--foreground);
+    background: var(--button-hover-background);
+    border-color: var(--button-hover-border);
+}
 .ws-date {
     justify-self: center;
 }

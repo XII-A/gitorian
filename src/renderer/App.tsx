@@ -2,9 +2,9 @@ import { activityUpdating } from './background-work'
 import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import type { Command, Reply, InspectorTab } from '../shared/model'
 import { inspectorTabSchema } from '../shared/model'
+import { journalModalOpen } from './journal-shortcuts'
 import { WeeklyHub } from './WeeklyHub'
 import { Settings } from './Settings'
-import { CommandMenu } from './components/CommandMenu'
 import { StartupRecovery } from './StartupRecovery'
 import { Workspace } from './Workspace'
 import { WorkspaceReference } from './WorkspaceReference'
@@ -20,7 +20,7 @@ import { WindowTitleBar } from './WindowTitleBar'
 import { useOnboarding } from './use-onboarding'
 import type { SetupSection } from './GettingStarted'
 import { AppUpdateNotifications } from './AppUpdates'
-import { RecoveryProvider, useRecovery, WindowRecovery } from './Diagnostics'
+import { RecoveryProvider, WindowRecovery } from './Diagnostics'
 import { useActivityDiffIntents } from './diff-preparation'
 
 export function App() {
@@ -39,7 +39,6 @@ export function App() {
 }
 
 function JournalApp() {
-    const { refreshLabel, prepareRefresh } = useRecovery()
     const [screen, setScreen] = useState<'hub' | 'workspace'>('hub')
     const [reply, setReply] = useState<Reply>()
     const [remotes, setRemotes] = useState<Record<string, string[]>>({})
@@ -163,6 +162,39 @@ function JournalApp() {
         return () => clearInterval(timer)
     }, [run])
     useEffect(() => {
+        const openPalette = (event: KeyboardEvent) => {
+            if (
+                event.key.toLowerCase() !== 'k' ||
+                !(event.ctrlKey || event.metaKey) ||
+                event.shiftKey ||
+                event.altKey ||
+                event.isComposing ||
+                settingsOpen ||
+                reference ||
+                !reply
+            )
+                return
+            if (commandsOpen) {
+                if (
+                    document.querySelector(
+                        '[role="dialog"]:not([data-state="closed"]):not([data-command-palette]), [role="alertdialog"], dialog:modal'
+                    )
+                )
+                    return
+                event.preventDefault()
+                event.stopPropagation()
+                setCommandsOpen(false)
+                return
+            }
+            if (journalModalOpen()) return
+            event.preventDefault()
+            event.stopPropagation()
+            setCommandsOpen(true)
+        }
+        window.addEventListener('keydown', openPalette, true)
+        return () => window.removeEventListener('keydown', openPalette, true)
+    }, [commandsOpen, settingsOpen, reference, reply])
+    useEffect(() => {
         const keyboard = (event: KeyboardEvent) => {
             const editing =
                 event.target instanceof HTMLElement &&
@@ -179,16 +211,6 @@ function JournalApp() {
                 !commandsOpen
             )
                 setScreen('hub')
-            if (
-                (event.ctrlKey || event.metaKey) &&
-                event.key.toLowerCase() === 'k' &&
-                !settingsOpen &&
-                !editing &&
-                !reference
-            ) {
-                event.preventDefault()
-                setCommandsOpen((open) => !open)
-            }
         }
         window.addEventListener('keydown', keyboard)
         return () => window.removeEventListener('keydown', keyboard)
@@ -264,6 +286,8 @@ function JournalApp() {
                 />
             ) : screen === 'workspace' && reply ? (
                 <Workspace
+                    commandsOpen={commandsOpen}
+                    setCommandsOpen={setCommandsOpen}
                     state={reply.state}
                     notionConnected={reply.connections.notion}
                     run={run}
@@ -279,6 +303,8 @@ function JournalApp() {
                 />
             ) : reply && !reference ? (
                 <WeeklyHub
+                    commandsOpen={commandsOpen}
+                    setCommandsOpen={setCommandsOpen}
                     initialWeek={workspaceWeek}
                     state={reply.state}
                     run={run}
@@ -317,29 +343,6 @@ function JournalApp() {
                     remotes={remotes}
                     run={run}
                     close={() => setSettingsOpen(false)}
-                />
-            )}
-            {commandsOpen && reply && (
-                <CommandMenu
-                    close={() => setCommandsOpen(false)}
-                    commands={[
-                        { name: 'Open journal', hint: 'Writing workspace', action: () => openWorkspace() },
-                        { name: 'Back to week', hint: 'Weekly hub', action: backToHub },
-                        {
-                            name: 'Open settings',
-                            hint: 'Repositories and connections',
-                            action: () => setSettingsOpen(true)
-                        },
-                        {
-                            name: refreshLabel,
-                            hint: 'Discover work',
-                            action: () => {
-                                void prepareRefresh().then(async (ready) => {
-                                    if (ready) await run({ type: 'refresh' })
-                                })
-                            }
-                        }
-                    ]}
                 />
             )}
         </>

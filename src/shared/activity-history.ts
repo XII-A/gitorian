@@ -3,6 +3,6 @@ import type { Repository, State } from './model'
 
 // Coverage belongs to a source configuration, rather than just a calendar date.
 export const gitConfiguration = (repository: Repository, state: Pick<State, 'settings' | 'restoreId'>) =>
-    JSON.stringify([repository.path, repository.remote, repository.emails, state.restoreId])
+    JSON.stringify([repository.path, repository.remote, repository.emails, state.restoreId, 'weekly-lines-v1'])
 export const contributionConfiguration = (repository: Repository, _state: Pick<State, 'settings' | 'restoreId'>) =>
     remoteConfiguration(repository)

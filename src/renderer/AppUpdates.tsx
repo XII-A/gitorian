@@ -57,6 +57,16 @@ function useAppUpdateState() {
     )
 }
 
+export function useReadyUpdate() {
+    return useSyncExternalStore(
+        subscribe,
+        () => state.status === 'ready',
+        () => false
+    )
+        ? installUpdate
+        : undefined
+}
+
 async function installUpdate() {
     if (installing || state.status !== 'ready' || !window.journal.appUpdates) return
     installing = true

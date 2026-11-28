@@ -1,13 +1,29 @@
+import { shortcuts } from './journal-shortcuts'
+import { JournalCommandPalette } from './JournalCommandPalette'
+import { activityLink } from './workspace-model'
 import { summarizeRepositoryActivity } from './repository-markers'
 import { RepositoryActivity } from './RepositoryActivity'
 import { ActivityFilterStrip } from './ActivityFilterStrip'
-import { AppUpdateButton } from './AppUpdates'
+import { AppUpdateButton, useReadyUpdate } from './AppUpdates'
 import { ActivitySourcesButton } from './ActivitySourcesButton'
 import { Alert } from './components/arc/alert/alert'
-import { readableError } from './background-work'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { readableError, sourceProblems } from './background-work'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
-import { BookOpen, Check, GitCommitHorizontal, ListChecks, RefreshCw, Settings2 } from 'lucide-react'
+import {
+    BookOpen,
+    Calendar,
+    Check,
+    ChevronLeft,
+    ChevronRight,
+    Download,
+    GitCommitHorizontal,
+    Layers,
+    ListChecks,
+    PencilLine,
+    RefreshCw,
+    Settings
+} from 'lucide-react'
 import { AnimatePresence, motion, stagger, useIsPresent, usePresenceData } from 'motion/react'
 import type { Variants } from 'motion/react'
 import { motionTokens } from './components/arc/motion-tokens'
@@ -21,6 +37,7 @@ import { Button } from './components/arc/button/button'
 import { AnimatedCounter } from './components/arc/animated-counter/animated-counter'
 import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
 import { ProjectFilter } from './ProjectFilter'
+import { WeeklyLineMetric } from './ChangeStatistics'
 import { ActivityChart } from './ActivityChart'
 import { ActivityRow } from './ActivityRow'
 import { ActivityHover } from './ActivityHover'
@@ -28,7 +45,7 @@ import { ActivityDayFilter, ActivityDayRows, useActivityDays } from './ActivityD
 import { HubActivityDialog, type HubActivityDialogHandle } from './HubActivityDialog'
 import { HeaderAtmosphere } from './HeaderAtmosphere'
 import './hub.css'
-import { offsetDay, journalWeek } from './hub-model'
+import { offsetDay, journalWeek, weekEntryAction } from './hub-model'
 import { useActivityProjection } from './use-activity-projection'
 import { Tooltip } from './components/arc/tooltip/tooltip'
 import { EntryHistory } from './EntryHistory'
@@ -105,6 +122,8 @@ const formatDate = (date: string, options: Intl.DateTimeFormatOptions = { month:
     dateValue(date).toLocaleDateString('en-US', options)
 
 interface Props {
+    commandsOpen: boolean
+    setCommandsOpen: (open: boolean) => void
     initialWeek?: string
     state: State
     run: (command: Command) => Promise<Reply | undefined>
@@ -119,6 +138,8 @@ interface Props {
 }
 
 export function WeeklyHub({
+    commandsOpen,
+    setCommandsOpen,
     state,
     run,
     error,
@@ -131,6 +152,8 @@ export function WeeklyHub({
     onSetup,
     settingsOpen
 }: Props) {
+    const installUpdate = useReadyUpdate()
+    const [entriesOpen, setEntriesOpen] = useState(false)
     const [setupOpen, setSetupOpen] = useState(false)
     const [reduced, setReduced] = useState(false)
     useEffect(() => {
@@ -152,13 +175,20 @@ export function WeeklyHub({
     }, [onboarding.visibility, settingsOpen])
     const animateReveal = hasShownSetup.current && !skipReveal.current
     const setupTrigger = useRef<HTMLButtonElement>(null)
+    const focusAfterDismiss = useRef(false)
+    useLayoutEffect(() => {
+        if (focusAfterDismiss.current && setupTrigger.current) {
+            setupTrigger.current.focus()
+            focusAfterDismiss.current = false
+        }
+    }, [onboarding.visibility])
     const openingSettings = useRef(false)
     const dismissSetup = (event: MouseEvent<HTMLButtonElement>) => {
         skipReveal.current = event.detail === 0
         setRetainSetup(false)
+        focusAfterDismiss.current = true
         onboarding.dismiss()
         setSetupOpen(false)
-        requestAnimationFrame(() => setupTrigger.current?.focus())
     }
     const setup = (dismissible = false) => (
         <GettingStarted
@@ -173,6 +203,9 @@ export function WeeklyHub({
     )
     const currentWeek = weekOf(new Date(), state.settings)
     const [start, setStart] = useState(initialWeek || currentWeek)
+    const history = useRef<{ openEntry: (id: string) => void }>(null)
+    const entry = useMemo(() => weekEntryAction(state, start, currentWeek), [state, start, currentWeek])
+    const openEntry = () => (entry.readerId ? history.current?.openEntry(entry.readerId) : onWrite(start))
     const end = offsetDay(start, 6)
     const dayFilter = useActivityDays(start)
     const [project, setProject] = useState('all')
@@ -289,7 +322,14 @@ export function WeeklyHub({
         </div>
     )
     const chart = (
-        <ActivityChart activities={items} week={start} timezone={state.settings.timezone} className="hub-chart" />
+        <ActivityChart
+            selectedDay={dayFilter.day}
+            onDayChange={dayFilter.setDay}
+            activities={items}
+            week={start}
+            timezone={state.settings.timezone}
+            className="hub-chart"
+        />
     )
     const stats = (
         <div className="hub-stats">
@@ -348,6 +388,18 @@ export function WeeklyHub({
                                 })
                             }))}
                         />
+                        <Tooltip content={refreshLabel} side="bottom">
+                            <Button
+                                className="hub-refresh"
+                                variant="ghost"
+                                size="sm"
+                                loading={busy || loadingWeek}
+                                onClick={() => void refresh()}
+                                aria-label={refreshLabel}
+                            >
+                                <RefreshCw size={16} aria-hidden="true" />
+                            </Button>
+                        </Tooltip>
                     </div>
                     <div className="hub-utilities">
                         {onboarding.visibility === 'dismissed' && (
@@ -386,32 +438,17 @@ export function WeeklyHub({
                         <div className="hub-utility-icons">
                             <ActivitySourcesButton state={state} onClick={onSources} />
                             <AppUpdateButton />
-                            <Tooltip content="Open journal" side="bottom">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => onWrite(start)}
-                                    aria-label="Open journal"
-                                >
-                                    <BookOpen size={17} aria-hidden="true" />
-                                </Button>
-                            </Tooltip>
-                            <EntryHistory state={state} run={run} onWrite={(week) => onWrite(week || currentWeek)} />
-                            <Tooltip content={refreshLabel} side="bottom">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    loading={busy || loadingWeek}
-                                    onClick={() => void refresh()}
-                                    aria-label={refreshLabel}
-                                >
-                                    <RefreshCw size={16} aria-hidden="true" />
-                                </Button>
-                            </Tooltip>
-
+                            <EntryHistory
+                                ref={history}
+                                open={entriesOpen}
+                                setOpen={setEntriesOpen}
+                                state={state}
+                                run={run}
+                                onWrite={(week) => onWrite(week || currentWeek)}
+                            />
                             <Tooltip content="Open settings" side="bottom">
                                 <Button variant="ghost" size="sm" onClick={onSettings} aria-label="Open settings">
-                                    <Settings2 size={17} aria-hidden="true" />
+                                    <Settings size={17} aria-hidden="true" />
                                 </Button>
                             </Tooltip>
                         </div>
@@ -439,7 +476,7 @@ export function WeeklyHub({
                             on.
                         </p>
                         <div className="hub-hero-action">
-                            <Button onClick={() => onWrite(start)}>Write this week’s entry →</Button>
+                            <Button onClick={openEntry}>{entry.label} →</Button>
                         </div>
                     </header>
 
@@ -491,6 +528,7 @@ export function WeeklyHub({
                                                 <style ref={highlightRules} />
                                                 <div className="hub-section-heading">
                                                     <h2>Activity this week</h2>
+                                                    <WeeklyLineMetric activities={commits} />
                                                 </div>
                                                 {filters}
                                                 {dayGroups.length ? (
@@ -539,6 +577,8 @@ export function WeeklyHub({
                                             <aside>
                                                 <RepositoryActivity
                                                     onHighlightChange={highlightRepository}
+                                                    project={project}
+                                                    onProjectChange={setProject}
                                                     summary={repositorySummary}
                                                     hasRepositories={state.repositories.some((repo) => !repo.removed)}
                                                 />
@@ -567,6 +607,86 @@ export function WeeklyHub({
                         ? 'Setup complete. Your weekly stats are now available.'
                         : ''}
                 </div>
+                <JournalCommandPalette
+                    open={commandsOpen}
+                    onOpenChange={setCommandsOpen}
+                    activities={items}
+                    repositories={repositories}
+                    actions={[
+                        {
+                            label: entry.label,
+                            icon: <PencilLine size={16} aria-hidden="true" />,
+                            run: openEntry
+                        },
+                        {
+                            label: 'Previous entries',
+                            icon: <BookOpen size={16} aria-hidden="true" />,
+                            run: () => setEntriesOpen(true)
+                        },
+                        {
+                            label: refreshLabel,
+                            shortcut: shortcuts.refresh,
+                            icon: <RefreshCw size={16} aria-hidden="true" />,
+                            run: refresh,
+                            restoreFocus: true
+                        },
+                        {
+                            label: 'Previous week',
+                            shortcut: shortcuts.previous,
+                            icon: <ChevronLeft size={16} aria-hidden="true" />,
+                            run: () => setStart(shiftWeek(start, -1)),
+                            restoreFocus: true
+                        },
+                        {
+                            label: 'Next week',
+                            shortcut: shortcuts.next,
+                            icon: <ChevronRight size={16} aria-hidden="true" />,
+                            run: () => setStart(shiftWeek(start, 1)),
+                            restoreFocus: true
+                        },
+                        ...(start !== currentWeek
+                            ? [
+                                  {
+                                      label: 'Go to this week',
+                                      icon: <Calendar size={16} aria-hidden="true" />,
+                                      run: () => setStart(currentWeek),
+                                      restoreFocus: true
+                                  }
+                              ]
+                            : []),
+                        {
+                            label: 'Open settings',
+                            shortcut: shortcuts.settings,
+                            icon: <Settings size={16} aria-hidden="true" />,
+                            run: onSettings
+                        },
+                        ...(sourceProblems(state).length
+                            ? [
+                                  {
+                                      label: 'Review activity sources',
+                                      icon: <Layers size={16} aria-hidden="true" />,
+                                      run: onSources
+                                  }
+                              ]
+                            : []),
+                        ...(installUpdate
+                            ? [
+                                  {
+                                      label: 'Install update',
+                                      icon: <Download size={16} aria-hidden="true" />,
+                                      run: installUpdate
+                                  }
+                              ]
+                            : [])
+                    ]}
+                    primaryLabel="Open details"
+                    onActivity={(activity) => detailDialog.current?.open(activity)}
+                    secondaryLabel="Open in browser"
+                    secondaryAction={(activity) => {
+                        const url = activityLink(activity, state)
+                        return url ? () => void run({ type: 'open', url }) : undefined
+                    }}
+                />
                 <HubActivityDialog ref={detailDialog} state={state} onActivity={onActivity} />
             </main>
         </ScrollArea>
