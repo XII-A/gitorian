@@ -1,4 +1,3 @@
-import { useShortcut, useShortcutHint } from '@ui-sdk/react/shortcuts'
 import { WorkspaceContextMenu } from './WorkspaceContextMenu'
 import { ActivityFilterStrip } from './ActivityFilterStrip'
 import { AppUpdateButton } from './AppUpdates'
@@ -16,8 +15,9 @@ import { TagInput } from './components/arc/tag-input/tag-input'
 import { Dialog, DialogContent } from './components/arc/dialog/dialog'
 import SegmentedControl from './components/arc/segmented-control/segmented-control'
 import { WorkspaceIcon } from './components/WorkspaceIcon'
-import { CitationPicker } from './CitationPicker'
-import { Quote } from 'lucide-react'
+import { JournalCommandPalette } from './JournalCommandPalette'
+import { sourceProblems } from './background-work'
+import { ArrowLeft, GitBranch, Layers, RefreshCw, Settings } from 'lucide-react'
 import { WorkspaceDraft } from './WorkspaceDraft'
 import type { EditorHandle } from './Editor'
 import { localCitationHref } from '../shared/citation'
@@ -46,6 +46,8 @@ function ClearHistoryIcon() {
 }
 
 interface Props {
+    commandsOpen: boolean
+    setCommandsOpen: (open: boolean) => void
     state: State
     notionConnected: boolean
     run: (command: Command) => Promise<Reply | undefined>
@@ -57,6 +59,8 @@ interface Props {
     onSettings: () => void
 }
 export function Workspace({
+    commandsOpen,
+    setCommandsOpen,
     state,
     notionConnected,
     run,
@@ -98,16 +102,7 @@ export function Workspace({
     const [historyBusy, setHistoryBusy] = useState(false)
     const [canCite, setCanCite] = useState(false)
     const editor = useRef<EditorHandle>(null)
-    const [pickerOpen, setPickerOpen] = useState(false)
     const inspectorHeading = useRef<HTMLHeadingElement>(null)
-    const focusInspectorAfterPicker = useRef(false)
-    const shortcut = useShortcutHint('mod+shift+p')
-    useShortcut(canCite && !pickerOpen ? 'mod+shift+p' : null, () => setPickerOpen(true), {
-        description: 'Cite an activity',
-        when: () =>
-            !!document.activeElement?.closest('.writing-workspace') ||
-            (document.activeElement === document.body && !document.querySelector('[role="dialog"]'))
-    })
     const [notice, setNotice] = useState('')
     const [detached, setDetached] = useState<string>()
     const channel = useRef<BroadcastChannel | undefined>(undefined)
@@ -213,7 +208,7 @@ export function Workspace({
         }
     }, [state, items, cite, canCite])
     const changeWeek = (value: string) => {
-        setPickerOpen(false)
+        setCommandsOpen(false)
         setWeek(value)
         setSelectedId(undefined)
         setDetached(undefined)
@@ -332,18 +327,6 @@ export function Workspace({
                     <div className="ws-utilities">
                         <ActivitySourcesButton state={state} onClick={onSources} />
                         <AppUpdateButton />
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={!canCite}
-                            aria-label="Cite an activity"
-                            aria-keyshortcuts={shortcut.ariaKeyshortcuts}
-                            title={`Cite an activity (${shortcut.text})`}
-                            onClick={() => setPickerOpen(true)}
-                        >
-                            <Quote size={16} aria-hidden="true" />
-                        </Button>
-
                         <Button
                             variant="ghost"
                             size="sm"
@@ -566,24 +549,59 @@ export function Workspace({
                     </div>
                     {inspector}
                 </div>
-                <CitationPicker
+                <JournalCommandPalette
+                    open={commandsOpen}
+                    onOpenChange={setCommandsOpen}
                     activities={items}
                     repositories={state.repositories}
-                    open={canCite && pickerOpen}
-                    onOpenChange={setPickerOpen}
-                    onChoose={cite}
-                    onInspect={(activity) => {
-                        focusInspectorAfterPicker.current = true
+                    actions={[
+                        {
+                            label: 'Back to weekly overview',
+                            icon: <ArrowLeft size={16} aria-hidden="true" />,
+                            run: () => onBack(week)
+                        },
+                        {
+                            label: focus ? 'Show activity panels' : 'Focus on writing',
+                            icon: <WorkspaceIcon name="focus" width={16} height={16} />,
+                            run: () => setFocus(!focus),
+                            restoreFocus: true
+                        },
+                        {
+                            label: refreshLabel,
+                            icon: <RefreshCw size={16} aria-hidden="true" />,
+                            run: refresh,
+                            restoreFocus: true
+                        },
+                        {
+                            label: 'Browse branch history',
+                            icon: <GitBranch size={16} aria-hidden="true" />,
+                            run: () => {
+                                setHistoryError('')
+                                setHistoryOpen(true)
+                            }
+                        },
+                        { label: 'Open settings', icon: <Settings size={16} aria-hidden="true" />, run: onSettings },
+                        ...(sourceProblems(state).length
+                            ? [
+                                  {
+                                      label: 'Review activity sources',
+                                      icon: <Layers size={16} aria-hidden="true" />,
+                                      run: onSources
+                                  }
+                              ]
+                            : [])
+                    ]}
+                    primaryLabel="Inspect"
+                    onActivity={(activity) => {
                         setFocus(false)
                         if (activity.id === detached) dockActivity(activity.id)
                         void inspect(activity)
+                        requestAnimationFrame(() => inspectorHeading.current?.focus())
                     }}
-                    onReturn={() => {
-                        if (focusInspectorAfterPicker.current && inspectorHeading.current)
-                            inspectorHeading.current.focus()
-                        else editor.current?.focus()
-                        focusInspectorAfterPicker.current = false
-                    }}
+                    restoreEditorFocus={() => editor.current?.focus()}
+                    secondaryLabel="Cite"
+                    secondaryRestoreFocus
+                    secondaryAction={(activity) => (canCite ? () => cite(activity) : undefined)}
                 />
                 <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
                     <DialogContent

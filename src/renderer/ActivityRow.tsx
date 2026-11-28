@@ -1,3 +1,4 @@
+import { changeRequestNumber } from './pull-request'
 import { renderEmoji } from './provider-emoji'
 import type { ButtonHTMLAttributes, CSSProperties } from 'react'
 import { ChevronRight, Folder, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest } from 'lucide-react'
@@ -32,7 +33,7 @@ export function ActivityRow({
 }: Props) {
     const Icon =
         activity.kind === 'commit' ? GitCommitHorizontal : activity.kind === 'merged' ? GitMerge : GitPullRequest
-    const pullNumber = activity.remoteSource?.number ?? activity.changeRequestId?.match(/(?:^|[:/])(\d+)$/)?.[1]
+    const pullNumber = changeRequestNumber(activity)
     const reference =
         activity.kind === 'commit'
             ? activity.sha?.slice(0, 7)

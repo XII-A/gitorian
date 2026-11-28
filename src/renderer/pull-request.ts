@@ -1,5 +1,9 @@
 import type { Activity } from '../shared/model'
 
+export function changeRequestNumber(activity: Activity) {
+    return activity.remoteSource?.number ?? activity.changeRequestId?.match(/(?:^|[:/])(\d+)$/)?.[1]
+}
+
 export function isPullRequest(activity: Activity) {
     return activity.kind === 'change-request' || activity.kind === 'opened' || activity.kind === 'merged'
 }

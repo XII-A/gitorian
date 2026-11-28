@@ -1,13 +1,28 @@
+import { JournalCommandPalette } from './JournalCommandPalette'
+import { activityLink } from './workspace-model'
 import { summarizeRepositoryActivity } from './repository-markers'
 import { RepositoryActivity } from './RepositoryActivity'
 import { ActivityFilterStrip } from './ActivityFilterStrip'
-import { AppUpdateButton } from './AppUpdates'
+import { AppUpdateButton, useReadyUpdate } from './AppUpdates'
 import { ActivitySourcesButton } from './ActivitySourcesButton'
 import { Alert } from './components/arc/alert/alert'
-import { readableError } from './background-work'
+import { readableError, sourceProblems } from './background-work'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
-import { Check, GitCommitHorizontal, ListChecks, RefreshCw, Settings } from 'lucide-react'
+import {
+    BookOpen,
+    Calendar,
+    Check,
+    ChevronLeft,
+    ChevronRight,
+    Download,
+    GitCommitHorizontal,
+    Layers,
+    ListChecks,
+    PencilLine,
+    RefreshCw,
+    Settings
+} from 'lucide-react'
 import { AnimatePresence, motion, stagger, useIsPresent, usePresenceData } from 'motion/react'
 import type { Variants } from 'motion/react'
 import { motionTokens } from './components/arc/motion-tokens'
@@ -105,6 +120,8 @@ const formatDate = (date: string, options: Intl.DateTimeFormatOptions = { month:
     dateValue(date).toLocaleDateString('en-US', options)
 
 interface Props {
+    commandsOpen: boolean
+    setCommandsOpen: (open: boolean) => void
     initialWeek?: string
     state: State
     run: (command: Command) => Promise<Reply | undefined>
@@ -119,6 +136,8 @@ interface Props {
 }
 
 export function WeeklyHub({
+    commandsOpen,
+    setCommandsOpen,
     state,
     run,
     error,
@@ -131,6 +150,8 @@ export function WeeklyHub({
     onSetup,
     settingsOpen
 }: Props) {
+    const installUpdate = useReadyUpdate()
+    const [entriesOpen, setEntriesOpen] = useState(false)
     const [setupOpen, setSetupOpen] = useState(false)
     const [reduced, setReduced] = useState(false)
     useEffect(() => {
@@ -405,7 +426,13 @@ export function WeeklyHub({
                         <div className="hub-utility-icons">
                             <ActivitySourcesButton state={state} onClick={onSources} />
                             <AppUpdateButton />
-                            <EntryHistory state={state} run={run} onWrite={(week) => onWrite(week || currentWeek)} />
+                            <EntryHistory
+                                open={entriesOpen}
+                                setOpen={setEntriesOpen}
+                                state={state}
+                                run={run}
+                                onWrite={(week) => onWrite(week || currentWeek)}
+                            />
                             <Tooltip content="Open settings" side="bottom">
                                 <Button variant="ghost" size="sm" onClick={onSettings} aria-label="Open settings">
                                     <Settings size={17} aria-hidden="true" />
@@ -564,6 +591,78 @@ export function WeeklyHub({
                         ? 'Setup complete. Your weekly stats are now available.'
                         : ''}
                 </div>
+                <JournalCommandPalette
+                    open={commandsOpen}
+                    onOpenChange={setCommandsOpen}
+                    activities={items}
+                    repositories={repositories}
+                    actions={[
+                        {
+                            label: 'Write this week’s entry',
+                            icon: <PencilLine size={16} aria-hidden="true" />,
+                            run: () => onWrite(start)
+                        },
+                        {
+                            label: 'Previous entries',
+                            icon: <BookOpen size={16} aria-hidden="true" />,
+                            run: () => setEntriesOpen(true)
+                        },
+                        {
+                            label: refreshLabel,
+                            icon: <RefreshCw size={16} aria-hidden="true" />,
+                            run: refresh,
+                            restoreFocus: true
+                        },
+                        {
+                            label: 'Previous week',
+                            icon: <ChevronLeft size={16} aria-hidden="true" />,
+                            run: () => setStart(shiftWeek(start, -1)),
+                            restoreFocus: true
+                        },
+                        {
+                            label: 'Next week',
+                            icon: <ChevronRight size={16} aria-hidden="true" />,
+                            run: () => setStart(shiftWeek(start, 1)),
+                            restoreFocus: true
+                        },
+                        ...(start !== currentWeek
+                            ? [
+                                  {
+                                      label: 'Go to this week',
+                                      icon: <Calendar size={16} aria-hidden="true" />,
+                                      run: () => setStart(currentWeek),
+                                      restoreFocus: true
+                                  }
+                              ]
+                            : []),
+                        { label: 'Open settings', icon: <Settings size={16} aria-hidden="true" />, run: onSettings },
+                        ...(sourceProblems(state).length
+                            ? [
+                                  {
+                                      label: 'Review activity sources',
+                                      icon: <Layers size={16} aria-hidden="true" />,
+                                      run: onSources
+                                  }
+                              ]
+                            : []),
+                        ...(installUpdate
+                            ? [
+                                  {
+                                      label: 'Install update',
+                                      icon: <Download size={16} aria-hidden="true" />,
+                                      run: installUpdate
+                                  }
+                              ]
+                            : [])
+                    ]}
+                    primaryLabel="Open details"
+                    onActivity={(activity) => detailDialog.current?.open(activity)}
+                    secondaryLabel="Open in browser"
+                    secondaryAction={(activity) => {
+                        const url = activityLink(activity, state)
+                        return url ? () => void run({ type: 'open', url }) : undefined
+                    }}
+                />
                 <HubActivityDialog ref={detailDialog} state={state} onActivity={onActivity} />
             </main>
         </ScrollArea>

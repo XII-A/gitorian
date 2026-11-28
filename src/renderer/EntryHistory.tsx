@@ -24,15 +24,18 @@ function entryDate(date: string, options: Intl.DateTimeFormatOptions) {
 }
 
 export function EntryHistory({
+    open,
+    setOpen,
     state,
     onWrite,
     run
 }: {
+    open: boolean
+    setOpen: (open: boolean) => void
     state: State
     onWrite: (week: string) => void
     run: (command: Command) => Promise<Reply | undefined>
 }) {
-    const [open, setOpen] = useState(false)
     const [query, setQuery] = useState('')
     const [selectedId, setSelectedId] = useState<string>()
     const [reading, setReading] = useState(false)

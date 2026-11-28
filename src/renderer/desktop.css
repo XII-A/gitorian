@@ -294,42 +294,6 @@ label:empty {
 .path {
     font-size: 12px;
 }
-.command-menu {
-    width: min(520px, 90vw);
-    border-radius: var(--radius-control);
-    background: var(--surface);
-}
-.command-menu [data-arc-dialog-header] {
-    padding: 16px 20px;
-}
-.command-menu [data-arc-dialog-body] {
-    padding: 16px;
-}
-.command-menu label {
-    font-size: 12px;
-    margin: 0 0 8px;
-}
-.command-results {
-    padding-top: 12px;
-    max-height: 380px;
-    overflow: auto;
-}
-.command-item {
-    width: 100%;
-    padding: 10px 12px;
-}
-.command-item .row.between {
-    width: 100%;
-}
-.command-help {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-    color: var(--text-muted);
-    border-top: 1px solid var(--border);
-    margin-top: 12px;
-    padding-top: 12px;
-}
 fieldset {
     padding: 16px;
     border-color: var(--border);
