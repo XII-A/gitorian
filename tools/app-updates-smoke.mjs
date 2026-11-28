@@ -1,3 +1,4 @@
+import { seedWindowedProfile } from './seed-windowed-profile.mjs'
 import { app, ipcMain } from 'electron'
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -17,6 +18,7 @@ const output = resolve(process.env.GITORIAN_VERIFY_OUTPUT)
 mkdirSync(join(directory, 'profile'), { recursive: true })
 mkdirSync(join(directory, 'cache'), { recursive: true })
 app.setPath('userData', join(directory, 'profile'))
+seedWindowedProfile(app.getPath('userData'))
 // Launching a script rather than an installed app otherwise reports Electron's version.
 app.getVersion = () => '0.1.4'
 process.env.LOCALAPPDATA = join(directory, 'cache')
@@ -139,9 +141,9 @@ let passed = false
 app.on('browser-window-created', (_, window) => {
     window.show = () => window.hide()
     window.webContents.setBackgroundThrottling(false)
-    window.setContentSize(1280, 900)
     window.webContents.debugger.attach('1.3')
     window.webContents.once('did-finish-load', async () => {
+        window.setContentSize(1280, 900)
         if (checking) return
         checking = true
         const js = (code) => window.webContents.executeJavaScript(code)

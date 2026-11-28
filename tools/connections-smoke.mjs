@@ -1,3 +1,4 @@
+import { seedWindowedProfile } from './seed-windowed-profile.mjs'
 import { Effect, Layer, ManagedRuntime } from 'effect'
 import { onboardingJourney } from './onboarding-journey.mjs'
 import { app, shell, nativeTheme, ipcMain } from 'electron'
@@ -27,6 +28,7 @@ const directory = process.env.GITORIAN_VERIFY_STATE
 const output = process.env.GITORIAN_VERIFY_OUTPUT
 if (!directory || !output) throw new Error('Use pnpm verify notion for managed isolation and cleanup')
 app.setPath('userData', join(directory, 'profile'))
+seedWindowedProfile(app.getPath('userData'))
 nativeTheme.themeSource = 'dark'
 mkdirSync(output, { recursive: true })
 for (const file of [
@@ -547,9 +549,9 @@ syncBuiltinESMExports()
 let checking = false
 app.on('browser-window-created', (_, window) => {
     window.setMinimumSize(320, 400)
-    window.setContentSize(1280, 900)
     window.webContents.setBackgroundThrottling(false)
     window.webContents.once('did-finish-load', async () => {
+        window.setContentSize(1280, 900)
         if (checking) return
         checking = true
         const js = async (expression) => {

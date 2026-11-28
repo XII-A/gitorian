@@ -1,3 +1,4 @@
+import { seedWindowedProfile } from './seed-windowed-profile.mjs'
 import { app, dialog } from 'electron'
 import assert from 'node:assert/strict'
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -9,6 +10,7 @@ const scratch = process.env.GITORIAN_VERIFY_STATE
 const output = process.env.GITORIAN_VERIFY_OUTPUT
 if (!scratch || !output) throw new Error('Run pnpm verify hub-dialog')
 app.setPath('userData', join(scratch, 'profile'))
+seedWindowedProfile(app.getPath('userData'))
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 const samples = [
     { name: 'weekly-j', count: 18, title: 'Polish the weekly overview' },

@@ -1,6 +1,6 @@
 import { installSpellingMenu } from './spelling-menu'
 import { NotionDiscoveryCache } from './notion-discovery-cache'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, protocol } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, protocol, screen } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import { ReplyUpdates } from '../shared/state-updates'
@@ -27,6 +27,7 @@ import { NotionSetupStore } from './notion-setup'
 import { JournalService } from './service'
 import { inspectRepository } from './git'
 import { watchWindowTitleBar } from './window-title-bar'
+import { loadWindowState, minimumWindowSize, restoreWindowsBounds, trackWindowState } from './window-state'
 import { imageLimits, imageIdPattern, imageExtension } from '../shared/images'
 import { WindowsUpdater } from './windows-updater'
 import { AppUpdates } from './app-updates'
@@ -83,13 +84,21 @@ function holdJournal(): () => void {
     return () => runtime.runSync(Scope.close(scope, Exit.void))
 }
 function windowFor(reference?: { kind: string; id: string; tab?: InspectorTab }): BrowserWindow {
+    const file = join(app.getPath('userData'), 'window-state.json')
+    const state = reference
+        ? undefined
+        : loadWindowState(
+              file,
+              screen.getPrimaryDisplay().workArea,
+              screen.getAllDisplays().map((display) => display.workArea)
+          )
+    const { maximized, ...bounds } = state ?? { width: 1400, height: 1000, maximized: false }
     const window = new BrowserWindow({
         title: 'Gitorian',
         icon: join(directory, '../../resources/icon.png'),
-        width: reference ? 1400 : 1560,
-        height: 1000,
-        minWidth: reference ? 600 : 1000,
-        minHeight: 640,
+        ...bounds,
+        minWidth: reference ? 600 : Math.min(bounds.width, minimumWindowSize.width),
+        minHeight: Math.min(bounds.height, minimumWindowSize.height),
         backgroundColor: '#151715',
         show: false,
         frame: process.platform !== 'win32',
@@ -100,6 +109,7 @@ function windowFor(reference?: { kind: string; id: string; tab?: InspectorTab })
             nodeIntegration: false
         }
     })
+    if (state && process.platform === 'win32') restoreWindowsBounds(window, state)
     window.on('unresponsive', () => diagnostics?.failure('renderer-hang'))
     window.on('responsive', () => diagnostics?.observe({ type: 'health', operation: 'renderer', phase: 'responsive' }))
     window.webContents.on('render-process-gone', (_event, details) => {
@@ -133,7 +143,10 @@ function windowFor(reference?: { kind: string; id: string; tab?: InspectorTab })
         event.preventDefault()
     })
     window.once('ready-to-show', () => {
-        window.show()
+        if (maximized) window.maximize()
+        if (!window.isVisible()) window.show()
+        sendWindowState()
+        if (!reference) trackWindowState(file, window)
     })
     const parameters = new URLSearchParams()
     if (reference) {

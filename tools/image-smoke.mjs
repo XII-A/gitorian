@@ -1,3 +1,4 @@
+import { seedWindowedProfile } from './seed-windowed-profile.mjs'
 import { seedJournal } from './seed-journal.mjs'
 import { app, dialog, ipcMain } from 'electron'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
@@ -10,6 +11,7 @@ mkdirSync(resolve('.ai-docs'), { recursive: true })
 const appRoot = process.env.IMAGE_SMOKE_APP ?? '.'
 const directory = mkdtempSync(resolve('.ai-docs/image-smoke-'))
 app.setPath('userData', directory)
+seedWindowedProfile(app.getPath('userData'))
 const day = new Date()
 day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7))
 const week = day.toISOString().slice(0, 10)
@@ -102,7 +104,6 @@ app.on('browser-window-created', (_, window) => {
     if (checking) return
     checking = true
     smokeWindow = window
-    window.setContentSize(1560, 1000)
     window.webContents.debugger.attach('1.3')
     void window.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true })
     const cdp = (method, parameters = {}) => window.webContents.debugger.sendCommand(method, parameters)
@@ -114,6 +115,7 @@ app.on('browser-window-created', (_, window) => {
         return (await window.webContents.capturePage(undefined, { stayAwake: true })).toPNG()
     }
     window.webContents.once('did-finish-load', async () => {
+        window.setContentSize(1560, 1000)
         const js = (expression) => window.webContents.executeJavaScript(expression)
         const wait = async (expression) => {
             for (let attempt = 0; attempt < 100; attempt++) {

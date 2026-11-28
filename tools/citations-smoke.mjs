@@ -1,4 +1,5 @@
-﻿import assert from 'node:assert/strict'
+﻿import { seedWindowedProfile } from './seed-windowed-profile.mjs'
+import assert from 'node:assert/strict'
 import sharp from 'sharp'
 import { join, resolve } from 'node:path'
 import { writeFileSync } from 'node:fs'
@@ -10,6 +11,7 @@ import { seedJournal } from './seed-journal.mjs'
 const output = process.env.GITORIAN_VERIFY_OUTPUT
 const profile = join(process.env.GITORIAN_VERIFY_STATE, 'profile')
 app.setPath('userData', profile)
+seedWindowedProfile(app.getPath('userData'))
 const { sampleState } = await tsImport('../tests/workspace-fixture.ts', import.meta.url)
 const week = '2026-10-05'
 /** @type {import('../src/shared/model').State} */
