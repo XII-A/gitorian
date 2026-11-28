@@ -121,6 +121,7 @@ export const activities = sqliteTable(
         localQualified: integer({ mode: 'boolean' }).notNull().default(false),
         remoteIdentity: text(),
         remoteSource: text({ mode: 'json' }).$type<Activity['remoteSource']>(),
+        weeklyChangeSummary: text({ mode: 'json' }).$type<Activity['weeklyChangeSummary']>(),
         filesLoaded: integer({ mode: 'boolean' }).notNull(),
         disposition: text({ enum: ['inbox', 'deferred', 'dismissed'] }).notNull(),
         deferUntil: text(),

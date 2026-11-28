@@ -6,6 +6,8 @@ import { basename } from 'node:path'
 import { realpath, stat } from 'node:fs/promises'
 import type { Activity, Repository, State } from '../shared/model'
 import { localDate } from '../shared/model'
+import { addWeeklyFile, emptyWeeklySummary, type LineStats } from '../shared/change-statistics'
+import type { WeeklyChangeSummary } from '../shared/model'
 import { WorkQueue } from './work-queue'
 
 const execute = promisify(execFile)
@@ -55,66 +57,144 @@ export async function git(
     )
     return result.stdout
 }
-/** Stream bounded message previews; a pathological body never fills execFile's stdout buffer. */
+
+interface HistoryRow {
+    metadata: string[]
+    summary?: WeeklyChangeSummary
+}
+
+interface HistoryFile {
+    name: string
+    stats: LineStats | null
+    summary: WeeklyChangeSummary
+}
+
+/** Resolve nested .gitattributes with Git. Paths travel over stdin, including rename destinations. */
+async function applyFileBatch(path: string, files: HistoryFile[], signal?: AbortSignal) {
+    const paths = [...new Set(files.filter((file) => file.stats !== null).map((file) => file.name))]
+    const excluded = new Set<string>()
+    if (paths.length) {
+        const request = execute(
+            'git',
+            ['check-attr', '-z', '--stdin', 'linguist-generated', 'linguist-vendored', 'diff', 'binary'],
+            {
+                cwd: path,
+                encoding: 'utf8',
+                windowsHide: true,
+                timeout: 30000,
+                maxBuffer: 16_000_000,
+                signal
+            }
+        )
+        request.child.stdin!.on('error', () => {
+            /* execFile reports process failure. */
+        })
+        request.child.stdin!.end(paths.join('\0') + '\0')
+        const fields = (await request).stdout.split('\0')
+        for (let i = 0; i + 2 < fields.length; i += 3) {
+            const attr = fields[i + 1],
+                value = fields[i + 2]
+            if (attr === 'diff' ? value === 'unset' : value === 'true' || value === 'set') excluded.add(fields[i])
+        }
+    }
+    for (const file of files) addWeeklyFile(file.summary, file.name, file.stats, excluded.has(file.name))
+}
+
+/** NUL framing keeps messages, unusual paths and rename pairs unambiguous. Cap previews as bytes arrive. */
 async function historyLog(
     path: string,
     args: string[],
     background: boolean,
     signal?: AbortSignal,
     input?: string
-): Promise<string[]> {
+): Promise<HistoryRow[]> {
     return processes.run(
-        () =>
-            new Promise<string[]>((resolve, reject) => {
-                const child = spawn('git', ['--no-optional-locks', '-c', 'core.quotepath=false', ...args], {
-                    cwd: path,
-                    windowsHide: true,
-                    signal,
-                    timeout: 30000,
-                    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat' },
-                    stdio: ['pipe', 'pipe', 'pipe']
-                })
-                child.stdin.on('error', () => {
-                    /* Process failure is reported on close/error. */
-                })
-                child.stdin.end(input)
-                const rows: string[] = []
-                let row = '',
-                    fields: string[] = [],
-                    oversized = false,
-                    stderr = ''
-                child.stdout.setEncoding('utf8')
-                child.stderr.setEncoding('utf8')
-                child.stderr.on('data', (chunk: string) => {
-                    stderr = (stderr + chunk).slice(-4096)
-                })
-                child.stdout.on('data', (chunk: string) => {
-                    let start = 0
-                    for (;;) {
-                        const end = chunk.indexOf('\0', start)
-                        const part = chunk.slice(start, end < 0 ? undefined : end)
-                        if (row.length + part.length > 8192) oversized = true
-                        row = (row + part).slice(0, 8192)
-                        if (end < 0) break
-                        fields.push(
-                            oversized && fields.length === 4
-                                ? 'Commit message exceeds the acquisition preview limit. Open the commit in Git to read the complete message.'
-                                : row
-                        )
-                        row = ''
-                        oversized = false
-                        if (fields.length === 5) {
-                            rows.push(fields.join('\0'))
-                            fields = []
-                        }
-                        start = end + 1
-                    }
-                })
+        async () => {
+            const child = spawn('git', ['--no-optional-locks', '-c', 'core.quotepath=false', ...args], {
+                cwd: path,
+                windowsHide: true,
+                signal,
+                timeout: 30000,
+                env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_PAGER: 'cat' },
+                stdio: ['pipe', 'pipe', 'pipe']
+            })
+            let stderr = ''
+            const closed = new Promise<number | null>((resolve, reject) => {
                 child.on('error', reject)
-                child.on('close', (code) =>
-                    code === 0 ? resolve(rows) : reject(new Error(stderr || `Git history failed (${code})`))
-                )
-            }),
+                child.on('close', resolve)
+            })
+            child.stdin.on('error', () => {
+                /* Process failure is reported on close/error. */
+            })
+            child.stdin.end(input)
+            child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+                stderr = (stderr + chunk).slice(-4096)
+            })
+            child.stdout.setEncoding('utf8')
+            const rows: HistoryRow[] = []
+            let current: HistoryRow | undefined
+            let field = '',
+                oversized = false,
+                renameFields = 0,
+                renameStats: LineStats | null = null
+            let files: HistoryFile[] = [],
+                batchSize = 0
+            function accept(value: string) {
+                if (current && current.metadata.length < 5) {
+                    current.metadata.push(
+                        oversized && current.metadata.length === 4
+                            ? 'Commit message exceeds the acquisition preview limit. Open the commit in Git to read the complete message.'
+                            : value
+                    )
+                    return
+                }
+                if (renameFields) {
+                    if (--renameFields === 0)
+                        files.push({ name: value, stats: renameStats, summary: current!.summary! })
+                } else if (value === 'commit') {
+                    current = { metadata: [], summary: input !== undefined ? emptyWeeklySummary() : undefined }
+                    rows.push(current)
+                } else if (value && current?.summary) {
+                    const match = /^\n?(\d+|-)\t(\d+|-)\t([\s\S]*)$/.exec(value)
+                    if (!match) throw new Error('Git returned malformed line statistics.')
+                    const stats = match[1] === '-' ? null : { additions: Number(match[1]), deletions: Number(match[2]) }
+                    if (match[3]) files.push({ name: match[3], stats, summary: current.summary })
+                    else {
+                        renameFields = 2
+                        renameStats = stats
+                    }
+                }
+                batchSize += value.length
+            }
+            async function consume() {
+                for await (const chunk of child.stdout) {
+                    const parts = (chunk as string).split('\0')
+                    for (const [i, part] of parts.entries()) {
+                        const preview = current?.metadata.length === 4
+                        if (preview && field.length + part.length > 8192) oversized = true
+                        field += preview ? part.slice(0, 8192 - field.length) : part
+                        if (i === parts.length - 1) break
+                        accept(field)
+                        field = ''
+                        oversized = false
+                        if (files.length >= 512 || batchSize >= 256_000) {
+                            await applyFileBatch(path, files, signal)
+                            files = []
+                            batchSize = 0
+                        }
+                    }
+                }
+                if (field || renameFields) throw new Error('Git returned incomplete history.')
+                await applyFileBatch(path, files, signal)
+            }
+            try {
+                const [code] = await Promise.all([closed, consume()])
+                if (code !== 0) throw new Error(stderr || 'Git history failed')
+                return rows
+            } finally {
+                if (child.exitCode === null) child.kill()
+            }
+        },
         background ? 0 : 1,
         signal
     )
@@ -213,7 +293,9 @@ export async function commits(
             `--max-count=${limit}`,
             `--skip=${offset}`,
             ...(excludedTips.length ? ['--not', ...excludedTips] : []),
-            '--format=%H%x00%aI%x00%ae%x00%<(200,trunc)%s%x00%B%x00',
+            '-z',
+            ...(tips ? ['--numstat', '-M', '--no-ext-diff', '--no-textconv', '--diff-merges=first-parent'] : []),
+            '--format=commit%x00%H%x00%aI%x00%ae%x00%<(200,trunc)%s%x00%B',
             '--'
         ],
         background,
@@ -221,9 +303,8 @@ export async function commits(
         tips?.map((tip) => tip + '\n').join('')
     )
     return rows
-        .filter((row) => row.trim())
         .map<Activity>((row) => {
-            const [sha, date, author, title, description] = row.trimStart().split('\0')
+            const [sha, date, author, title, description] = row.metadata
             if (
                 !/^[a-f0-9]{40,64}$/.test(sha) ||
                 !Number.isFinite(Date.parse(date)) ||
@@ -245,6 +326,7 @@ export async function commits(
                 description,
                 branches: branch ? [branch] : [],
                 files: [],
+                weeklyChangeSummary: row.summary,
                 disposition: 'inbox',
                 explicit: false,
                 deletedBranches: []

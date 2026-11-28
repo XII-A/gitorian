@@ -1,3 +1,4 @@
+import { emptyWeeklySummary, addWeeklyFile } from '../src/shared/change-statistics'
 import { initialState } from '../src/shared/model'
 import type { Activity, State } from '../src/shared/model'
 import { offsetDay } from '../src/renderer/hub-model'
@@ -127,6 +128,21 @@ export function sampleState(week: string): State {
         explicit: false,
         deletedBranches: []
     }))
+    for (const [index, activity] of state.activities.entries()) {
+        if (activity.kind !== 'commit') continue
+        if (index === 13)
+            activity.files = [{ name: 'docs/sync.md', status: 'M', lineStats: { additions: 41, deletions: 9 } }]
+        if (index === 4)
+            activity.files.push(
+                { name: 'evals/retry.ts', status: 'A', lineStats: { additions: 26, deletions: 0 } },
+                { name: 'package.json', status: 'M', lineStats: { additions: 2, deletions: 1 } },
+                { name: 'pnpm-lock.yaml', status: 'M', lineStats: { additions: 1240, deletions: 310 } },
+                { name: 'types.generated.ts', status: 'M', lineStats: { additions: 120, deletions: 30 } },
+                { name: 'icons/sync.svg', status: 'A', lineStats: { additions: 32, deletions: 0 } }
+            )
+        activity.weeklyChangeSummary = emptyWeeklySummary()
+        for (const file of activity.files) addWeeklyFile(activity.weeklyChangeSummary, file.name, file.lineStats!)
+    }
     state.diffs = Object.fromEntries(state.activities.map((activity) => [activity.id, patch]))
     state.drafts = [
         {

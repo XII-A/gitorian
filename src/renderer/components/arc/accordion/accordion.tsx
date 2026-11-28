@@ -96,7 +96,8 @@ function AccordionPanel({
     const [height, setHeight] = useState<number | null>(null)
     useLayoutEffect(() => {
         if (!plain || !inner.current) return
-        const measure = () => setHeight(inner.current?.getBoundingClientRect().height ?? 0)
+        // An opening popover scales its children. Measure layout height before that transform.
+        const measure = () => setHeight(inner.current?.offsetHeight ?? 0)
         measure()
         const observer = new ResizeObserver(measure)
         observer.observe(inner.current)

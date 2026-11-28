@@ -842,6 +842,7 @@ export class JournalEngine {
                       ])
                     : null,
             remoteSource: a.remoteSource ?? null,
+            weeklyChangeSummary: a.weeklyChangeSummary ?? previous?.weeklyChangeSummary ?? null,
             filesLoaded: !!a.filesLoaded,
             disposition: a.disposition,
             deferUntil: a.deferUntil ?? null,

@@ -13,6 +13,10 @@ Build, import a disposable Git repository and move its folder to simulate an una
 
 `tests/acquisition.test.ts` owns remote collection continuing while the local folder is missing, existing-folder Git/permission errors staying errors, and both sources resuming when a stopped repository is re-enabled through Settings or folder import. A missing Git executable must never be classified as a missing repository folder.
 
+## Weekly line totals
+
+In a populated week, find the compact addition and deletion counts at the right of the “Activity this week” heading, below the four monochrome summary metrics. Open the metric with Enter. Check that only areas with counted files appear in the popover. Expand the compact Excluded Arc Accordion footer with Space and compare the file counts, excluded line totals and unindexed commit coverage. Escape returns focus to the metric. At 320px the heading and metric can wrap and both must fit within the timeline. At 200% zoom scroll the popover’s Arc ScrollArea to the last detail. Check an excluded-only week for the empty table replacement, a partially indexed week without exclusions for a single coverage note, and an unavailable week for static “Line counts unavailable” text in the heading. A week without commits shows a muted, static +0 −0.
+
 ## Acquisition ownership
 
 `ActivityAcquisition` owns Effect coalescing, source serialization and FIFO batch admission. Acquisition and week-history tests cover first-batch fairness, retry sharing and durable checkpoints.

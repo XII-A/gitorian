@@ -36,6 +36,7 @@ import { Button } from './components/arc/button/button'
 import { AnimatedCounter } from './components/arc/animated-counter/animated-counter'
 import { DateRangePicker } from './components/arc/date-range-picker/date-range-picker'
 import { ProjectFilter } from './ProjectFilter'
+import { WeeklyLineMetric } from './ChangeStatistics'
 import { ActivityChart } from './ActivityChart'
 import { ActivityRow } from './ActivityRow'
 import { ActivityHover } from './ActivityHover'
@@ -515,6 +516,7 @@ export function WeeklyHub({
                                                 <style ref={highlightRules} />
                                                 <div className="hub-section-heading">
                                                     <h2>Activity this week</h2>
+                                                    <WeeklyLineMetric activities={commits} />
                                                 </div>
                                                 {filters}
                                                 {dayGroups.length ? (

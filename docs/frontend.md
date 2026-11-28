@@ -32,6 +32,8 @@ The local Arc `EmptyState.iconVariant="plain"` extension removes the icon frame 
 
 Background source warnings use a short one-line toast title and a `Review` action. The notification viewport may be wider on desktop but must stay within the viewport on phones. The local toast-stack responsive breakpoint moves actions below the copy at 24rem or narrower, keeping source-warning titles on one line on phones. Never truncate the title or force overflowing text to stay on one line.
 
+The Hub shows compact addition and deletion counts at the right of the “Activity this week” heading. The four summary metrics above remain monochrome. The counts sum commits in the displayed week and open an Arc Popover with a named Arc ScrollArea. Its table uses first-parent Git line counts and omits lockfiles, generated and vendored paths, snapshots, compiled assets, SVGs and binaries. A compact “Excluded” footer uses a collapsed Arc Accordion to show exclusion details and any unindexed commits. Indexing honors the checkout’s Git attributes. Older commits use available file statistics until refresh indexes their summaries. A partial or unavailable label identifies missing coverage. Per-activity file details retain their full totals.
+
 ## Typography
 
 The shared font interface lives in `components/arc/foundation.css`: `--font-body` selects bundled Geist Sans (`Geist Variable`), `--font-display` resolves to that same family, and `--font-mono` selects bundled Geist Mono (`Geist Mono Variable`). Load normal and real italic variable faces once in `src.tsx`. The document uses the body token, including startup, portals and detached references. Do not redefine font roles per page or use brand-specific aliases.
